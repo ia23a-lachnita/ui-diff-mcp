@@ -1,97 +1,118 @@
+import fs from "node:fs/promises";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { CompareUiImagesInputSchema, CompareUiImagesOutputSchema, ModelHealthOutputSchema } from "./schemas/tool-schemas.js";
+import { CompareUiImagesInputSchema } from "./schemas/tool-schemas.js";
 import { runUiDiff } from "./pipeline/run-ui-diff.js";
 import { captureMobileScreen } from "./capture/mobile-capture.js";
+import { probeRequiredModels } from "./models/probes.js";
+import { getRequiredModels } from "./models/model-registry.js";
+import { UiDiffReportSchema } from "./schemas/core.js";
 
-const compareUiImagesInput = z.object(CompareUiImagesInputSchema);
-const compareUiImagesOutput = z.object(CompareUiImagesOutputSchema);
-const modelHealthOutput = z.object(ModelHealthOutputSchema);
-const readReportInput = z.object({ reportPath: z.string().min(1) });
-const readReportOutput = z.object({ report: z.any() });
-const captureScreenInput = z.object({ target: z.enum(["adb", "ios-simctl"]) });
-const captureScreenOutput = z.object({ imagePath: z.string().min(1) });
+function toRecord(v: unknown): Record<string, unknown> {
+  return v as Record<string, unknown>;
+}
 
+function buildRunInput(input: {
+  expectedImagePath: string;
+  actualImagePath: string;
+  projectRoot?: string | undefined;
+  runLabel?: string | undefined;
+  mode?: "full" | "deterministic_only" | "free_only" | undefined;
+}) {
+  return {
+    expectedImagePath: input.expectedImagePath,
+    actualImagePath: input.actualImagePath,
+    mode: input.mode ?? "full",
+    ...(input.projectRoot !== undefined ? { projectRoot: input.projectRoot } : {}),
+    ...(input.runLabel !== undefined ? { runLabel: input.runLabel } : {})
+  };
+}
 
 export function createServer(): McpServer {
   const server = new McpServer({
     name: "ui-diff-mcp",
-    version: "0.1.0",
+    version: "0.1.0"
   });
 
   server.tool(
     "compare_ui_images",
-    "Compares an expected mobile mockup image against an actual mobile screenshot.",
-    compareUiImagesInput,
-    compareUiImagesOutput,
-    async (input: z.infer<typeof compareUiImagesInput>) => {
-      const result = await runUiDiff(input);
+    "Compares an expected mobile mockup image against an actual mobile screenshot and reports visible UI differences.",
+    CompareUiImagesInputSchema,
+    async (input) => {
+      const result = await runUiDiff(buildRunInput(input));
       return {
-        content: result.summary,
-        structuredContent: result,
+        content: [{ type: "text" as const, text: result.summary }],
+        structuredContent: toRecord(result)
       };
-    },
+    }
   );
 
   server.tool(
-      "discover_ui_diffs",
-      "Alias for compare_ui_images.",
-      compareUiImagesInput,
-      compareUiImagesOutput,
-      async (input: z.infer<typeof compareUiImagesInput>) => {
-          const result = await runUiDiff(input);
-          return {
-            content: result.summary,
-            structuredContent: result,
-          };
-      },
+    "discover_ui_diffs",
+    "Alias for compare_ui_images. Compares expected mockup against actual screenshot.",
+    CompareUiImagesInputSchema,
+    async (input) => {
+      const result = await runUiDiff(buildRunInput(input));
+      return {
+        content: [{ type: "text" as const, text: result.summary }],
+        structuredContent: toRecord(result)
+      };
+    }
   );
 
   server.tool(
-      "ui_diff_model_health",
-      "Checks the health of the visual models.",
-      z.object({}),
-      modelHealthOutput,
-      async () => {
-        // Placeholder
-        return {
-          content: "Models are healthy.",
-          structuredContent: {
-            checkedAt: new Date().toISOString(),
-            results: [],
-          },
-        };
-      },
+    "ui_diff_model_health",
+    "Checks health of all visual models used by the diff pipeline.",
+    {},
+    async () => {
+      const apiKey = process.env["OPENROUTER_API_KEY"] ?? "";
+      const results = await probeRequiredModels(getRequiredModels(), apiKey);
+      const output = {
+        checkedAt: new Date().toISOString(),
+        results: results.map(r => ({
+          role: r.role,
+          provider: r.provider,
+          model: r.model,
+          status: r.status,
+          ...(r.detail !== undefined ? { detail: r.detail } : {})
+        }))
+      };
+      const passing = results.filter(r => r.status === "pass").length;
+      return {
+        content: [{ type: "text" as const, text: `Model health checked: ${passing}/${results.length} passing.` }],
+        structuredContent: toRecord(output)
+      };
+    }
   );
 
   server.tool(
-        "read_ui_diff_report",
-        "Reads a UI diff report JSON file.",
-        readReportInput,
-        readReportOutput,
-        async (input: z.infer<typeof readReportInput>) => {
-            // In a real implementation, this would read and validate the file.
-            return {
-                content: `Reading report from ${input.reportPath}`,
-                structuredContent: {
-                    report: { "placeholder": true }
-                }
-            }
-        }
+    "read_ui_diff_report",
+    "Reads and returns a previously generated UI diff report JSON file.",
+    { reportPath: z.string().min(1) },
+    async (input) => {
+      if (!input.reportPath.endsWith(".json")) {
+        throw new Error("reportPath must be a .json file");
+      }
+      const raw = await fs.readFile(input.reportPath, "utf8");
+      const parsed = UiDiffReportSchema.parse(JSON.parse(raw));
+      return {
+        content: [{ type: "text" as const, text: `Report loaded: run ${parsed.runId}, ${parsed.diffs.length} diffs.` }],
+        structuredContent: toRecord({ report: parsed })
+      };
+    }
   );
 
   server.tool(
-        "capture_mobile_screen",
-        "Captures a screenshot from a mobile device.",
-        captureScreenInput,
-        captureScreenOutput,
-        async (input: z.infer<typeof captureScreenInput>) => {
-            const imagePath = await captureMobileScreen(input.target);
-            return {
-                content: `Screenshot captured to ${imagePath}`,
-                structuredContent: { imagePath }
-            }
-        }
+    "capture_mobile_screen",
+    "Captures a screenshot from a connected mobile device using adb or ios-simctl.",
+    { target: z.enum(["adb", "ios-simctl"]) },
+    async (input) => {
+      const imagePath = await captureMobileScreen(input.target);
+      return {
+        content: [{ type: "text" as const, text: `Screenshot captured to ${imagePath}` }],
+        structuredContent: toRecord({ imagePath })
+      };
+    }
   );
 
   return server;

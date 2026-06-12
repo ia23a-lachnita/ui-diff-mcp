@@ -1,16 +1,38 @@
-// Placeholder for mobile-capture.ts
 import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import os from "node:os";
+import path from "node:path";
+import crypto from "node:crypto";
 
-export const captureMobileScreen = (target: "adb" | "ios-simctl"): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    if (target === "adb") {
-      // Placeholder for adb screenshot command
-      resolve("path/to/screenshot.png");
-    } else if (target === "ios-simctl") {
-      // Placeholder for ios-simctl screenshot command
-      resolve("path/to/screenshot.png");
-    } else {
-      reject(new Error("Unsupported target"));
+const execFileAsync = promisify(execFile);
+
+export async function captureMobileScreen(
+  target: "adb" | "ios-simctl"
+): Promise<string> {
+  const outPath = path.join(os.tmpdir(), `ui-diff-capture-${crypto.randomBytes(4).toString("hex")}.png`);
+
+  if (target === "adb") {
+    try {
+      await execFileAsync("adb", ["exec-out", "screencap", "-p"], {
+        encoding: "buffer",
+        timeout: 30000
+      });
+      await execFileAsync("adb", ["shell", "screencap", "-p", "/sdcard/screen.png"], { timeout: 30000 });
+      await execFileAsync("adb", ["pull", "/sdcard/screen.png", outPath], { timeout: 30000 });
+      return outPath;
+    } catch (err) {
+      throw new Error(`adb capture failed: ${err instanceof Error ? err.message : String(err)}`);
     }
-  });
-};
+  }
+
+  if (target === "ios-simctl") {
+    try {
+      await execFileAsync("xcrun", ["simctl", "io", "booted", "screenshot", outPath], { timeout: 30000 });
+      return outPath;
+    } catch (err) {
+      throw new Error(`ios-simctl capture failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  throw new Error(`Unsupported capture target: ${target}`);
+}
