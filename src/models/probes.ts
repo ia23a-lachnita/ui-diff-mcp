@@ -104,13 +104,52 @@ export async function probeOpenRouterModel(entry: ModelEntry, apiKey: string): P
   }
 }
 
+export async function probeNvidiaModel(entry: ModelEntry): Promise<ProbeResult> {
+  const baseUrl = process.env["NVIDIA_VLM_BASE_URL"];
+  const apiKey = process.env["NVIDIA_API_KEY"];
+
+  if (!baseUrl || !apiKey) {
+    return {
+      role: entry.role,
+      provider: entry.provider,
+      model: entry.model,
+      status: "not_checked",
+      checkedAt: new Date().toISOString(),
+      detail: "NVIDIA_VLM_BASE_URL or NVIDIA_API_KEY not set"
+    };
+  }
+
+  const { callNvidiaVisionJson } = await import("./nvidia-client.js");
+  const blueBase64 = await makeBluePng64();
+
+  try {
+    const result = await callNvidiaVisionJson({
+      apiKey,
+      model: entry.model,
+      prompt: "What is the dominant color? Return JSON: {\"dominantColor\":\"<color>\"}",
+      images: [`data:image/png;base64,${blueBase64}`],
+      jsonSchema: { name: "probe", schema: { type: "object", properties: { dominantColor: { type: "string" } }, required: ["dominantColor"], additionalProperties: false } },
+      timeoutMs: 30000
+    });
+
+    const parsed = result.parsed as { dominantColor?: string };
+    if (typeof parsed.dominantColor === "string" && /blue/i.test(parsed.dominantColor)) {
+      return { role: entry.role, provider: entry.provider, model: entry.model, status: "pass", checkedAt: new Date().toISOString() };
+    }
+    return { role: entry.role, provider: entry.provider, model: entry.model, status: "fail", checkedAt: new Date().toISOString(), detail: `Unexpected: ${JSON.stringify(parsed)}` };
+  } catch (err) {
+    return { role: entry.role, provider: entry.provider, model: entry.model, status: "fail", checkedAt: new Date().toISOString(), detail: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 export async function probeRequiredModels(
   entries: ModelEntry[],
   openRouterApiKey: string
 ): Promise<ProbeResult[]> {
   return Promise.all(
-    entries
-      .filter(e => e.provider === "openrouter")
-      .map(e => probeOpenRouterModel(e, openRouterApiKey))
+    entries.map(e => {
+      if (e.provider === "nvidia") return probeNvidiaModel(e);
+      return probeOpenRouterModel(e, openRouterApiKey);
+    })
   );
 }

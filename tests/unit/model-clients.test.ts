@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { callOpenRouterVisionJson } from "../../src/models/openrouter-client.js";
+import { callNvidiaVisionJson } from "../../src/models/nvidia-client.js";
 
 const FAKE_API_KEY = "sk-test-key";
 const FAKE_MODEL = "qwen/qwen3-vl-30b-a3b-instruct";
@@ -134,5 +135,64 @@ describe("callOpenRouterVisionJson", () => {
     };
     const imgContent = body.messages[0]?.content.find(c => c.type === "image_url");
     expect(imgContent?.image_url?.url).toMatch(/^data:image\/png;base64,/);
+  });
+});
+
+describe("callNvidiaVisionJson", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    vi.stubEnv("NVIDIA_VLM_BASE_URL", "http://nvidia.test");
+    vi.stubEnv("NVIDIA_API_KEY", "nvidia-test-key");
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+
+  it("sends request to NVIDIA base URL and parses JSON content", async () => {
+    const mockFetch = makeFetchMock(200, {
+      model: "nvidia/test-model",
+      choices: [{ message: { content: '{"color":"blue"}' } }]
+    });
+    vi.stubGlobal("fetch", mockFetch);
+
+    const result = await callNvidiaVisionJson({
+      apiKey: "nvidia-test-key",
+      model: "nvidia/test-model",
+      prompt: "What color?",
+      images: [],
+      jsonSchema: { name: "s", schema: {} },
+      timeoutMs: 5000
+    });
+
+    expect(result.parsed).toEqual({ color: "blue" });
+    const callArgs = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(callArgs[0]).toContain("http://nvidia.test");
+  });
+
+  it("throws when NVIDIA env vars are missing", async () => {
+    vi.unstubAllEnvs();
+    await expect(callNvidiaVisionJson({
+      apiKey: "",
+      model: "nvidia/test-model",
+      prompt: "test",
+      images: [],
+      jsonSchema: { name: "s", schema: {} },
+      timeoutMs: 5000
+    })).rejects.toThrow(/NVIDIA_VLM_BASE_URL/);
+  });
+
+  it("throws on HTTP 500 from NVIDIA endpoint", async () => {
+    vi.stubGlobal("fetch", makeFetchMock(500, { error: "internal" }));
+
+    await expect(callNvidiaVisionJson({
+      apiKey: "nvidia-test-key",
+      model: "nvidia/test-model",
+      prompt: "test",
+      images: [],
+      jsonSchema: { name: "s", schema: {} },
+      timeoutMs: 5000
+    })).rejects.toThrow("500");
   });
 });
