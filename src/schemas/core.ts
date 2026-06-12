@@ -1,0 +1,126 @@
+import { z } from "zod";
+
+export const BoxSchema = z.object({
+  x: z.number().finite().min(0),
+  y: z.number().finite().min(0),
+  width: z.number().finite().positive(),
+  height: z.number().finite().positive()
+});
+export type Box = z.infer<typeof BoxSchema>;
+
+export const NormalizedBoxSchema = z.object({
+  x: z.number().finite().min(0).max(1),
+  y: z.number().finite().min(0).max(1),
+  width: z.number().finite().positive().max(1),
+  height: z.number().finite().positive().max(1)
+});
+export type NormalizedBox = z.infer<typeof NormalizedBoxSchema>;
+
+export const UiElementTypeSchema = z.enum([
+  "text",
+  "button",
+  "card",
+  "image",
+  "icon",
+  "chart",
+  "nav",
+  "list_item",
+  "unknown"
+]);
+export type UiElementType = z.infer<typeof UiElementTypeSchema>;
+
+export const UiCriterionSchema = z.enum([
+  "presence",
+  "geometry",
+  "spacing_alignment",
+  "typography_content",
+  "color_appearance",
+  "icon_image",
+  "layering_clipping",
+  "component_state",
+  "chart_special_geometry",
+  "unclassified_visual_change"
+]);
+export type UiCriterion = z.infer<typeof UiCriterionSchema>;
+
+export const UiElementSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1),
+  type: UiElementTypeSchema,
+  box: BoxSchema,
+  normalizedBox: NormalizedBoxSchema,
+  text: z.string().optional(),
+  confidence: z.number().finite().min(0).max(1),
+  source: z.enum(["locator", "ocr", "deterministic", "merged"]),
+  parentId: z.string().optional(),
+  childIds: z.array(z.string()).default([])
+});
+export type UiElement = z.infer<typeof UiElementSchema>;
+
+export const PairingStatusSchema = z.enum(["matched", "missing", "extra", "uncertain"]);
+export type PairingStatus = z.infer<typeof PairingStatusSchema>;
+
+export const ElementPairSchema = z.object({
+  id: z.string().min(1),
+  expectedId: z.string().optional(),
+  actualId: z.string().optional(),
+  status: PairingStatusSchema,
+  score: z.number().finite().min(0).max(1),
+  reasons: z.array(z.string()).default([])
+});
+export type ElementPair = z.infer<typeof ElementPairSchema>;
+
+export const DeterministicMeasurementSchema = z.object({
+  name: z.string().min(1),
+  value: z.union([z.number(), z.string(), z.boolean()]),
+  unit: z.string().optional()
+});
+export type DeterministicMeasurement = z.infer<typeof DeterministicMeasurementSchema>;
+
+export const DiffRecordSchema = z.object({
+  id: z.string().min(1),
+  pairId: z.string().optional(),
+  criterion: UiCriterionSchema,
+  severity: z.enum(["low", "medium", "high"]),
+  title: z.string().min(1),
+  location: BoxSchema,
+  evidence: z.array(z.string().min(1)).min(1),
+  measurements: z.array(DeterministicMeasurementSchema).default([]),
+  artifactPaths: z.array(z.string().min(1)).default([]),
+  reviewerStatus: z.enum(["accepted", "rejected", "needs_escalation", "not_reviewed"]),
+  model: z.string().optional()
+});
+export type DiffRecord = z.infer<typeof DiffRecordSchema>;
+
+export const RunStatusSchema = z.enum(["complete", "incomplete", "model_unavailable", "failed"]);
+export type RunStatus = z.infer<typeof RunStatusSchema>;
+
+export const VisualClassificationStatusSchema = z.enum(["complete", "incomplete", "not_run"]);
+export type VisualClassificationStatus = z.infer<typeof VisualClassificationStatusSchema>;
+
+export const UiDiffReportSchema = z.object({
+  schemaVersion: z.literal("0.1"),
+  runId: z.string().min(1),
+  createdAt: z.string().datetime(),
+  status: RunStatusSchema,
+  visualClassificationStatus: VisualClassificationStatusSchema,
+  expectedImagePath: z.string().min(1),
+  actualImagePath: z.string().min(1),
+  artifactRoot: z.string().min(1),
+  elements: z.object({
+    expected: z.array(UiElementSchema),
+    actual: z.array(UiElementSchema)
+  }),
+  pairs: z.array(ElementPairSchema),
+  diffs: z.array(DiffRecordSchema),
+  modelHealth: z.array(z.object({
+    role: z.string().min(1),
+    provider: z.string().min(1),
+    model: z.string().min(1),
+    status: z.enum(["pass", "fail", "not_checked"]),
+    checkedAt: z.string().datetime(),
+    detail: z.string().optional()
+  })),
+  warnings: z.array(z.string()).default([])
+});
+export type UiDiffReport = z.infer<typeof UiDiffReportSchema>;
