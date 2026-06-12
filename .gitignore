@@ -1,0 +1,12 @@
+.codex/
+node_modules/
+dist/
+coverage/
+.ui-diff/
+.ui-diff-live/
+artifacts/
+*.log
+.env
+.env.*
+api-keys.txt
+!.env.example
