@@ -1,0 +1,19 @@
+flowchart TD
+  A["MCP tool call: expectedImage + actualImage"] --> B["Normalize images"]
+  B --> C["Deterministic signals"]
+  C --> C1["Pixel and edge masks"]
+  C --> C2["OCR boxes and text"]
+  C --> C3["Color and geometry measurements"]
+  B --> D["LocateAnythingSidecar"]
+  D --> E["Expected UI element map"]
+  D --> F["Actual UI element map"]
+  C1 --> G["Diff mass clusters"]
+  E --> H["Target pairing graph"]
+  F --> H
+  C --> H
+  G --> H
+  H --> I["Diff candidate builder"]
+  I --> J["Criterion auditor: Qwen3-VL-30B"]
+  J --> K["Consistency reviewer: Gemini Flash Lite"]
+  K --> L["Coverage gate"]
+  L --> M["report.json + visual artifacts + compact MCP result"]

@@ -1,0 +1,22 @@
+flowchart TD
+  A["Expected image"] --> B["LocateAnything: detect UI categories"]
+  A --> C["OCR and text boxes"]
+  A --> D["Edge/color/layout signals"]
+  B --> E["Expected raw element boxes"]
+  C --> E
+  D --> F["Box refinement and snapping"]
+  E --> F
+  F --> G["Expected element map"]
+
+  H["Actual image"] --> I["LocateAnything: detect UI categories"]
+  H --> J["OCR and text boxes"]
+  H --> K["Edge/color/layout signals"]
+  I --> L["Actual raw element boxes"]
+  J --> L
+  K --> M["Box refinement and snapping"]
+  L --> M
+  M --> N["Actual element map"]
+
+  G --> O["Pairing graph"]
+  N --> O
+  O --> P["Matched, missing, extra, uncertain pairs"]

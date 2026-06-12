@@ -1,0 +1,21 @@
+flowchart TD
+  A["Paired expected/actual element"] --> B["Crop expected + actual + local overlay"]
+  B --> C["Deterministic measurements"]
+  C --> C1["Geometry delta"]
+  C --> C2["Color delta"]
+  C --> C3["Text/OCR delta"]
+  C --> C4["Edge/pixel delta"]
+  C1 --> D["Criteria selector"]
+  C2 --> D
+  C3 --> D
+  C4 --> D
+  D --> E["Run only triggered criteria"]
+  E --> F["Qwen3-VL-30B criterion audit"]
+  F --> G["Structured diff records"]
+  G --> H["Gemini Flash Lite review"]
+  H --> I["Merge duplicates"]
+  I --> J["Coverage gate"]
+  J --> K{"Any diff mass unassigned?"}
+  K -- "yes" --> L["Report unclassified_visual_change"]
+  K -- "no" --> M["Complete visual diff report"]
+  L --> M

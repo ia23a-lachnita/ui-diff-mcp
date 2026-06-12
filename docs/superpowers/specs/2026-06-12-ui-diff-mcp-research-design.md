@@ -1,6 +1,6 @@
 # UI Diff MCP Research Design
 
-**Status:** draft after project-owner rejection of the first plan. Gemini 3 Pro Preview review in progress.
+**Status:** draft v2 after project-owner rejection of the first plan. This version makes model choices, locator deployment, and diff flow explicit.
 
 **Purpose:** `ui-diff-mcp` compares a mockup image and an actual mobile app screenshot, then reports every meaningful visual difference with location, visual category, evidence, and artifacts.
 
@@ -15,10 +15,12 @@
 - Pixel comparison is still useful as a coverage signal. `pixelmatch` is fast and has anti-aliasing handling and configurable thresholds, but pixel diff alone cannot classify UI differences.
 - Visual regression tools converge on the same loop: capture, compare, report. Most struggle with dynamic content, mobile devices, and explaining what changed; this MCP should specialize in those gaps rather than become a dashboard product.
 - UI target discovery should use visual grounding. Research on UI grounding frames the problem as locating a UI element from a screenshot and language expression, not relying on app metadata.
-- LocateAnything is a strong candidate for target discovery because it explicitly supports GUI grounding, dense detection, text localization, and bounding-box generation. It should be an optional locator adapter, not assumed available.
-- OpenRouter and NVIDIA can both support multimodal structured outputs, but model support varies by provider and date. The MCP must run health probes against candidate models instead of hardcoding a permanent “best” model.
-- OpenRouter’s live model metadata on 2026-06-12 showed `nex-agi/nex-n2-pro:free` as a free model with both image input and structured-output support. This is a candidate, not a guarantee.
-- NVIDIA Nemotron Nano 12B v2 VL is a relevant reviewer/vision candidate, especially for image/document-style understanding, but the exact endpoint/free availability must be probed at runtime.
+- **Locator model decision:** use `nvidia/LocateAnything-3B` for target localization. It is designed for GUI grounding, OCR localization, dense detection, and box output. It reports SOTA ScreenSpot-Pro GUI grounding mean F1 60.3 and emits coordinate tokens that can be parsed into boxes.
+- **Locator deployment decision:** use a `LocateAnythingSidecar` adapter, not the public Hugging Face Space. The public Space API was probed on 2026-06-12 and connected, but failed with a GPU-duration runtime error. The sidecar can be local Docker/Python or a managed endpoint; the TypeScript MCP talks to it over HTTP.
+- **Auditor model decision:** use `qwen/qwen3-vl-30b-a3b-instruct` through OpenRouter as the default criterion auditor. It supports image input, structured outputs, tools, 262K context, and was probed successfully with image+JSON on 2026-06-12.
+- **Fast/cheap auditor decision:** use `qwen/qwen3-vl-8b-instruct` through OpenRouter when speed/cost matters. It passed image+JSON probing and is cheaper, but its synthetic box probe was less precise than the 30B model, so it should classify cropped diffs rather than own target localization.
+- **Reviewer decision:** use `google/gemini-2.5-flash-lite` through OpenRouter for default review because it passed image+JSON probing, is cheap, fast, and independent from the Qwen auditor family. Use `qwen/qwen3-vl-235b-a22b-instruct` only as a high-quality paid escalation.
+- **Free-only mode:** `nex-agi/nex-n2-pro:free` and `nvidia/nemotron-nano-12b-v2-vl:free` both passed a corrected 64x64 generated image+JSON probe. They can run free-only audits, but they are not default locator/auditor choices because they are either general-agentic (`nex`) or not advertised with structured outputs in OpenRouter metadata (`nemotron`).
 - Free-tier model APIs are not stable infrastructure. Rate limits, endpoint churn, and model capability changes must be expected and reported as `model_unavailable`, not hidden behind degraded reports.
 - LangGraph.js is useful for durable state, streaming, interrupts, and resumed graph execution. For the first version, a typed DAG/pipeline is faster to build and easier to test; keep the design LangGraph-compatible, but do not make LangGraph a required dependency until runs need resumability or human review.
 
@@ -65,7 +67,7 @@ MCP tool
   -> image intake/capture
   -> normalize expected + actual
   -> deterministic signal extraction
-  -> model locator pass
+  -> LocateAnything target localization
   -> target pairing graph
   -> criterion audit passes
   -> reviewer/consistency pass
@@ -74,6 +76,33 @@ MCP tool
 ```
 
 Use a plain typed orchestrator for MVP. Represent each stage as a node-like function with typed inputs/outputs so it can later move into LangGraph if durable execution becomes useful.
+
+Architecture diagram source:
+
+- `docs/architecture/diagrams/ui-diff-architecture.mmd`
+- `docs/architecture/diagrams/ui-diff-architecture.svg`
+
+```mermaid
+flowchart TD
+  A["MCP tool call: expectedImage + actualImage"] --> B["Normalize images"]
+  B --> C["Deterministic signals"]
+  C --> C1["Pixel and edge masks"]
+  C --> C2["OCR boxes and text"]
+  C --> C3["Color and geometry measurements"]
+  B --> D["LocateAnythingSidecar"]
+  D --> E["Expected UI element map"]
+  D --> F["Actual UI element map"]
+  C1 --> G["Diff mass clusters"]
+  E --> H["Target pairing graph"]
+  F --> H
+  C --> H
+  G --> H
+  H --> I["Diff candidate builder"]
+  I --> J["Criterion auditor: Qwen3-VL-30B"]
+  J --> K["Consistency reviewer: Gemini Flash Lite"]
+  K --> L["Coverage gate"]
+  L --> M["report.json + visual artifacts + compact MCP result"]
+```
 
 ### Why Not LangGraph First
 
@@ -129,19 +158,113 @@ The report groups differences by target and criterion, but the target discovery 
 
 The first plan’s manual target config is rejected. Target discovery must be generated by the MCP.
 
+Target discovery diagram source:
+
+- `docs/architecture/diagrams/target-discovery-flow.mmd`
+- `docs/architecture/diagrams/target-discovery-flow.svg`
+
+```mermaid
+flowchart TD
+  A["Expected image"] --> B["LocateAnything: detect UI categories"]
+  A --> C["OCR and text boxes"]
+  A --> D["Edge/color/layout signals"]
+  B --> E["Expected raw element boxes"]
+  C --> E
+  D --> F["Box refinement and snapping"]
+  E --> F
+  F --> G["Expected element map"]
+
+  H["Actual image"] --> I["LocateAnything: detect UI categories"]
+  H --> J["OCR and text boxes"]
+  H --> K["Edge/color/layout signals"]
+  I --> L["Actual raw element boxes"]
+  J --> L
+  K --> M["Box refinement and snapping"]
+  L --> M
+  M --> N["Actual element map"]
+
+  G --> O["Pairing graph"]
+  N --> O
+  O --> P["Matched, missing, extra, uncertain pairs"]
+```
+
 ### Stage 1: Visual Signals
 
-Create pixel/edge/color/OCR signals from expected and actual images. Diff-region clustering means connected-component grouping over changed-pixel or changed-edge masks. It is not a fallback and not a user-facing strategy; it is a coverage signal that says, “there is changed visual mass here.”
+Create pixel/edge/color/OCR signals from expected and actual images. Diff-region clustering means connected-component grouping over changed-pixel or changed-edge masks. It is not a user-facing strategy; it is a coverage signal that says, “there is changed visual mass here.”
 
-### Stage 2: Locator Model
+### Stage 2: LocateAnything Locator
 
-Run a locator pass over expected and actual separately. Preferred adapters:
+Run `nvidia/LocateAnything-3B` over expected and actual separately through `LocateAnythingSidecar`.
 
-1. A tested OpenRouter/NVIDIA vision model that passes a bounding-box JSON probe.
-2. LocateAnything through a cloud/NIM/Hugging Face endpoint or separately managed local service.
-3. A generic VLM locator prompt as a weaker temporary path.
+Prompts are category queries, not broad “tell me everything” prompts:
 
-Do not bundle local LocateAnything into the MVP. A 3B VLM local deployment would require Python/PyTorch, GPU setup, or a separate model-serving stack, which would slow delivery and make installation fragile. Keep the core MCP lightweight and define `LocateAnythingProvider` as an adapter interface for a later companion service or cloud endpoint.
+- `Locate all text labels.`
+- `Locate all buttons and tappable controls.`
+- `Locate all cards and panels.`
+- `Locate all icons.`
+- `Locate all charts, progress indicators, and rings.`
+- `Locate all navigation/tab elements.`
+- `Locate all list rows and repeated item containers.`
+- `Detect all text in box format.`
+
+LocateAnything returns box tokens in a normalized 0..1000 coordinate space. The sidecar parses those boxes, converts them to pixels, removes duplicates, and returns a typed `ElementMap`.
+
+Do not depend on the public Hugging Face Space for MVP. It was probed successfully for connection but failed runtime execution with: `The requested GPU duration (240s) is larger than the maximum allowed`.
+
+### LocateAnythingSidecar HTTP Contract
+
+The TypeScript MCP owns orchestration and validation. The sidecar only localizes elements.
+
+Endpoint:
+
+```text
+POST /v1/locate-ui-elements
+```
+
+Request:
+
+```json
+{
+  "imagePath": "absolute/path/to/image.png",
+  "queries": [
+    { "id": "text", "prompt": "Detect all text in box format." },
+    { "id": "controls", "prompt": "Locate all buttons and tappable controls." },
+    { "id": "cards", "prompt": "Locate all cards and panels." },
+    { "id": "charts", "prompt": "Locate all charts, progress indicators, and rings." }
+  ],
+  "generationMode": "hybrid",
+  "maxBoxesPerQuery": 200
+}
+```
+
+Response:
+
+```json
+{
+  "model": "nvidia/LocateAnything-3B",
+  "image": { "width": 1080, "height": 2400 },
+  "elements": [
+    {
+      "queryId": "controls",
+      "label": "search button",
+      "box": { "x": 120, "y": 220, "width": 160, "height": 56 },
+      "rawBox1000": [111, 92, 259, 115],
+      "confidence": 0.82,
+      "rawText": "<ref>search button</ref><box><111><92><259><115></box>"
+    }
+  ],
+  "warnings": []
+}
+```
+
+Validation rules:
+
+- `box` is always pixel coordinates in the input image coordinate space.
+- `rawBox1000` is the original LocateAnything normalized coordinate token.
+- Boxes outside image bounds are rejected, not clipped silently.
+- Duplicates are allowed in sidecar output; TypeScript merges them with deterministic IoU rules.
+- A sidecar failure returns HTTP 503 with `{ "error": "locator_unavailable", "detail": "..." }`.
+- The MCP report records sidecar model, generation mode, query prompts, duration, and warnings.
 
 Locator output:
 
@@ -172,7 +295,19 @@ Pair expected elements to actual elements using:
 
 Unpaired expected elements become possible missing elements. Unpaired actual elements become possible extra elements.
 
-### Stage 4: Diff Candidates
+### Stage 4: Box Refinement
+
+Raw model boxes are not trusted as exact. They are refined by deterministic signals:
+
+- Snap to nearest edge-mask bounding rectangle when IoU is plausible.
+- Expand to include OCR boxes that are visually inside the same target.
+- Split one coarse box into child boxes when OCR/layout signals show repeated rows.
+- Merge duplicate boxes from category prompts when IoU is high and labels agree.
+- Keep both parent and child boxes for hierarchy, but audit the smallest box that covers the visible diff.
+
+The synthetic box probe showed why this matters: general VLMs often return approximate boxes. LocateAnything is selected because it is designed for grounding, but even its outputs still go through snapping and coverage checks.
+
+### Stage 5: Diff Candidates
 
 Create candidates from:
 
@@ -181,6 +316,35 @@ Create candidates from:
 - Changed-pixel clusters not covered by any paired or unpaired element.
 
 The last category is reported explicitly as `unclassified_visual_change`, so no diff disappears.
+
+Diff-finding diagram source:
+
+- `docs/architecture/diagrams/diff-finding-flow.mmd`
+- `docs/architecture/diagrams/diff-finding-flow.svg`
+
+```mermaid
+flowchart TD
+  A["Paired expected/actual element"] --> B["Crop expected + actual + local overlay"]
+  B --> C["Deterministic measurements"]
+  C --> C1["Geometry delta"]
+  C --> C2["Color delta"]
+  C --> C3["Text/OCR delta"]
+  C --> C4["Edge/pixel delta"]
+  C1 --> D["Criteria selector"]
+  C2 --> D
+  C3 --> D
+  C4 --> D
+  D --> E["Run only triggered criteria"]
+  E --> F["Qwen3-VL-30B criterion audit"]
+  F --> G["Structured diff records"]
+  G --> H["Gemini Flash Lite review"]
+  H --> I["Merge duplicates"]
+  I --> J["Coverage gate"]
+  J --> K{"Any diff mass unassigned?"}
+  K -- "yes" --> L["Report unclassified_visual_change"]
+  K -- "no" --> M["Complete visual diff report"]
+  L --> M
+```
 
 ---
 
@@ -201,11 +365,27 @@ Prompt payload must be minimal:
 - Reviewer: diff record, same crops, deterministic measurements.
 - Full expected/actual screens are included only for locator and for auditor cases where local context is insufficient.
 
+The model roles are deliberately not “personas” with broad authority. They are narrow jobs:
+
+- LocateAnything locates boxes.
+- Qwen3-VL-30B classifies visible diffs in already paired, already cropped targets.
+- Gemini Flash Lite checks whether the diff record is supported by the crop evidence.
+- Deterministic code owns coverage and geometry bookkeeping.
+
 ---
 
 ## Model Strategy
 
-Use provider adapters, not fixed model assumptions.
+Use fixed default models by role, with probes proving that the currently reachable endpoint still behaves correctly.
+
+| Role | Default model | Provider | Why |
+| --- | --- | --- | --- |
+| Locator | `nvidia/LocateAnything-3B` | `LocateAnythingSidecar` | Purpose-built grounding model with GUI grounding, OCR localization, dense detection, and box-token output. |
+| Criterion auditor | `qwen/qwen3-vl-30b-a3b-instruct` | OpenRouter | Best balance from current probe plus model description: strong visual/spatial understanding, structured outputs, low cost. |
+| Fast auditor | `qwen/qwen3-vl-8b-instruct` | OpenRouter | Cheaper/faster for crop-level classification; passed image+JSON probe. |
+| Reviewer | `google/gemini-2.5-flash-lite` | OpenRouter | Independent model family, fast, cheap, passed image+JSON probe. |
+| High-quality escalation | `qwen/qwen3-vl-235b-a22b-instruct` | OpenRouter | Stronger but more expensive; use when reviewer rejects or diff remains uncertain. |
+| Free-only mode | `nex-agi/nex-n2-pro:free` plus `nvidia/nemotron-nano-12b-v2-vl:free` | OpenRouter | Both passed corrected image+JSON probe; not default because free endpoints are rate-limited and less role-specialized. |
 
 ### Required Probe
 
@@ -243,9 +423,27 @@ Rate-limit policy:
 
 ### Current Candidate Notes
 
-- OpenRouter: live metadata on 2026-06-12 found `nex-agi/nex-n2-pro:free` as a free structured-output image-input candidate.
-- NVIDIA: `nvidia/nemotron-nano-12b-v2-vl` is a relevant vision candidate and is also available through OpenRouter as a free variant in some listings, but availability must be probed.
-- LocateAnything: best-aligned locator candidate by task fit, but adapter availability must be verified.
+- OpenRouter metadata on 2026-06-12: `qwen/qwen3-vl-30b-a3b-instruct`, `qwen/qwen3-vl-8b-instruct`, `qwen/qwen3-vl-235b-a22b-instruct`, `google/gemini-2.5-flash-lite`, and `nex-agi/nex-n2-pro:free` advertise image input and structured outputs.
+- Corrected generated-PNG image+JSON probe on 2026-06-12: `nex-agi/nex-n2-pro:free`, Qwen3-VL 8B/30B/235B, Gemini Flash Lite, OpenRouter Nemotron free, and native NVIDIA Nemotron all returned parseable JSON and correctly identified a hidden blue image.
+- Synthetic bounding-box probe on 2026-06-12: general VLM boxes were approximate. Qwen3-VL-30B was the closest among probed cloud VLMs, but the result still required deterministic snapping. This confirms LocateAnything should own localization.
+- Public Hugging Face LocateAnything Space probe on 2026-06-12: connection succeeded, but inference returned a GPU-duration runtime error. Do not rely on the public demo Space.
+
+### Probe Results From This Workspace
+
+Generated image probe: 64x64 solid blue PNG encoded as a data URL, so the color was not visible in the URL.
+
+Bounding-box probe: 100x100 image with a red rectangle at normalized box `{ x: 0.20, y: 0.30, width: 0.40, height: 0.40 }`.
+
+| Model | Role decision | Image+JSON probe | Box probe |
+| --- | --- | --- | --- |
+| `nvidia/LocateAnything-3B` | Locator default through sidecar | Verified by model card/source, not run locally in this workspace | Exact model is designed for box tokens and GUI grounding; public Space could not execute due GPU-duration error |
+| `qwen/qwen3-vl-30b-a3b-instruct` | Default auditor | Pass, blue image correctly identified | Best cloud VLM probe among tested models; approximate box `{0.167,0.333,0.333,0.333}` |
+| `qwen/qwen3-vl-8b-instruct` | Fast auditor | Pass | Approximate box too small/center-biased; use for crop classification, not localization |
+| `google/gemini-2.5-flash-lite` | Default reviewer | Pass | Approximate; use as reviewer, not locator |
+| `qwen/qwen3-vl-235b-a22b-instruct` | Escalation | Pass | Approximate; stronger model but not worth default cost for locator |
+| `nex-agi/nex-n2-pro:free` | Free-only auditor/reviewer | Pass after corrected parser/probe | Structured call initially had envelope quirks; not role-specialized |
+| `nvidia/nemotron-nano-12b-v2-vl:free` | Free-only reviewer | Pass after corrected generated image probe | Does not advertise structured outputs in OpenRouter metadata; use only after probe |
+| Native `nvidia/nemotron-nano-12b-v2-vl` | Optional NVIDIA reviewer | Pass after corrected generated image probe | Good document/VQA model, but not a locator |
 
 ---
 
@@ -326,6 +524,10 @@ Use TypeScript, MCP TypeScript SDK, Sharp/PNGJS/pixelmatch, Zod, and direct prov
 - [OpenRouter image inputs](https://openrouter.ai/docs/guides/overview/multimodal/image-understanding)
 - [OpenRouter models API](https://openrouter.ai/docs/api/api-reference/models/get-models)
 - [OpenRouter free router](https://openrouter.ai/openrouter/free)
+- [OpenRouter Nex-N2-Pro free model page](https://openrouter.ai/nex-agi/nex-n2-pro:free)
+- [OpenRouter Qwen3-VL 8B model page](https://openrouter.ai/qwen/qwen3-vl-8b-instruct)
+- [OpenRouter Qwen3-VL 30B model page](https://openrouter.ai/qwen/qwen3-vl-30b-a3b-instruct)
+- [OpenRouter Nemotron Nano free model page](https://openrouter.ai/nvidia/nemotron-nano-12b-v2-vl:free)
 - [NVIDIA NIM VLM API reference](https://docs.nvidia.com/nim/vision-language-models/latest/api-reference.html)
 - [NVIDIA NIM VLM structured generation](https://docs.nvidia.com/nim/vision-language-models/1.0.0/structured-generation.html)
 - [NVIDIA LocateAnything](https://research.nvidia.com/labs/lpr/locate-anything/)
@@ -359,3 +561,16 @@ Gemini 3 Pro Preview review pass 2:
 - Must-fix: none.
 - Should-fix: none.
 - Rationale: the design now handles free-tier rate limits, enforces strict model health probing, and correctly defers heavy local VLM deployment behind an adapter interface.
+
+Gemini 3 Pro Preview review pass 3:
+
+- `AGREEMENT_STATUS: agree`
+- Must-fix: none.
+- Should-fix: define `LocateAnythingSidecar` HTTP schema early in implementation.
+- Change incorporated: added the full sidecar request/response/failure contract and coordinate validation rules.
+
+Final Gemini 3 Pro Preview blocker-only pass:
+
+- `AGREEMENT_STATUS: agree`
+- Must-fix: none.
+- Rationale: the HTTP contract cleanly decouples the heavy local VLM from the TypeScript MCP while preserving strict box coordinates and validation.
