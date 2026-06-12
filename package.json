@@ -1,0 +1,37 @@
+{
+  "name": "ui-diff-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "ui-diff-mcp": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "start": "node dist/index.js",
+    "verify": "npm run typecheck && npm test && npm run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "pixelmatch": "7.2.0",
+    "pngjs": "7.0.0",
+    "sharp": "0.35.1",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/pixelmatch": "5.2.6",
+    "@types/node": "^22.19.0",
+    "@types/pngjs": "^6.0.5",
+    "@vitest/coverage-v8": "4.1.8",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.0",
+    "vitest": "4.1.8"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

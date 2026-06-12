@@ -9,8 +9,8 @@ This file is the persistent handoff state for implementation agents. Read it bef
 - Latest pushed commit at status creation: `5badb60 docs: add ui diff mcp implementation plan`.
 - Approved spec: `docs/superpowers/specs/2026-06-12-ui-diff-mcp-research-design.md`.
 - Active implementation plan: `docs/superpowers/plans/2026-06-12-ui-diff-mcp-mvp-implementation.md`.
-- Current task: none.
-- Next task: Task 1, TypeScript MCP Foundation.
+- Current task: Task 1, TypeScript MCP Foundation.
+- Next task: Task 2, Core Schemas And Contracts.
 - Last verification: `git status --short --branch` showed `master...origin/master` clean before this status file was created.
 - Open blockers: none.
 
