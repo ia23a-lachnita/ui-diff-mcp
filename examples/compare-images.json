@@ -1,0 +1,5 @@
+{
+  "expectedImagePath": "C:/absolute/path/to/mockup.png",
+  "actualImagePath": "C:/absolute/path/to/screenshot.png",
+  "mode": "full"
+}
