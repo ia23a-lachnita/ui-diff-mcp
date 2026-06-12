@@ -7,6 +7,7 @@ import { writeRectPng } from "../../src/testing/fixture-images.js";
 import { area, containsCenter, expandBox, fromNormalizedBox, intersect, iou, toNormalizedBox } from "../../src/signals/geometry.js";
 import { computePixelDiff } from "../../src/signals/pixel-diff.js";
 import { sampleColorStats } from "../../src/signals/color.js";
+import { extractEdgeMask } from "../../src/signals/edge.js";
 
 let tmpDir: string;
 
@@ -127,5 +128,28 @@ describe("colorSampling", () => {
     expect(stats.avgR).toBeGreaterThan(200);
     expect(stats.avgG).toBeLessThan(50);
     expect(stats.avgB).toBeLessThan(50);
+  });
+});
+
+describe("edgeDetection", () => {
+  it("finds edges of a sharp rectangle", async () => {
+    const fixturePath = await writeRectPng(
+      tmpDir, "edge-fixture.png", 100, 100,
+      255, 255, 255,
+      20, 20, 60, 60,
+      0, 0, 0
+    );
+    const normalized = await loadNormalizedImage(
+      fixturePath,
+      path.join(tmpDir, "norm-edge.png")
+    );
+
+    const result = extractEdgeMask(normalized.rgba, normalized.width, normalized.height);
+    expect(result.components.length).toBeGreaterThan(0);
+
+    const totalEdgePixels = result.components.reduce((sum, c) => sum + c.pixelCount, 0);
+    // Perimeter of a 60x60 box is 240. Expect something in that ballpark.
+    expect(totalEdgePixels).toBeGreaterThan(200);
+    expect(totalEdgePixels).toBeLessThan(500);
   });
 });
