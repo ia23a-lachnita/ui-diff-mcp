@@ -1,0 +1,17 @@
+flowchart TD
+  A["Task 1: TypeScript MCP foundation"] --> B["Task 2: Core schemas and result contracts"]
+  B --> C["Task 3: Image normalization and artifacts"]
+  C --> D["Task 4: Deterministic signal extraction"]
+  D --> E["Task 5: LocateAnything sidecar client"]
+  E --> F["Task 6: Target refinement and pairing graph"]
+  F --> G["Task 7: Model provider probes and JSON schemas"]
+  G --> H["Task 8: Criterion audit pipeline"]
+  H --> I["Task 9: Report writer and coverage gate"]
+  I --> J["Task 10: MCP tool surface"]
+  J --> K["Task 11: End-to-end fixtures"]
+  K --> L["Task 12: Documentation and release check"]
+
+  D --> H
+  E --> H
+  G --> J
+  I --> J
