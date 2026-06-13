@@ -14,17 +14,23 @@ Clone Eagle and install the Embodied package in a Python environment with CUDA s
 
 ```powershell
 git clone https://github.com/NVlabs/Eagle.git C:\Users\xursc\projects\Eagle
+python -m venv C:\Users\xursc\projects\.venvs\ui-diff-mcp-locateanything
+C:\Users\xursc\projects\.venvs\ui-diff-mcp-locateanything\Scripts\python.exe -m pip install --upgrade pip setuptools wheel
+C:\Users\xursc\projects\.venvs\ui-diff-mcp-locateanything\Scripts\python.exe -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
 cd C:\Users\xursc\projects\Eagle\Embodied
-pip install -e .
+C:\Users\xursc\projects\.venvs\ui-diff-mcp-locateanything\Scripts\python.exe -m pip install --no-deps -e .
 cd C:\Users\xursc\projects\ui-diff-mcp
-pip install -r sidecars\locateanything\requirements.txt
+C:\Users\xursc\projects\.venvs\ui-diff-mcp-locateanything\Scripts\python.exe -m pip install -r sidecars\locateanything\requirements.txt
 ```
 
 Then start the adapter:
 
 ```powershell
 $env:LOCATEANYTHING_EAGLE_EMBODIED_DIR="C:\Users\xursc\projects\Eagle\Embodied"
-.\scripts\start-locateanything-sidecar.ps1
+$env:LOCATEANYTHING_IN_TOKEN_LIMIT="4096"
+$env:LOCATEANYTHING_GENERATION_MODE="hybrid"
+$env:LOCATEANYTHING_MAX_NEW_TOKENS="512"
+C:\Users\xursc\projects\.venvs\ui-diff-mcp-locateanything\Scripts\python.exe -m uvicorn sidecars.locateanything.server:app --host 127.0.0.1 --port 39731
 ```
 
 The default URL is:
@@ -39,7 +45,15 @@ The TypeScript client sends `imageBase64` and `imageMimeType` with each request,
 
 ## Hardware Note
 
-An RTX 3070 with 8 GB VRAM may fail to load or run `nvidia/LocateAnything-3B`. Treat CUDA out-of-memory as a release-gate blocker for that machine, not as a passing live result.
+An RTX 3070 with 8 GB VRAM may fail to run `nvidia/LocateAnything-3B` at the model repository's default image token budget. The sidecar supports an explicit memory budget:
+
+```powershell
+$env:LOCATEANYTHING_IN_TOKEN_LIMIT="4096"
+$env:LOCATEANYTHING_GENERATION_MODE="hybrid"
+$env:LOCATEANYTHING_MAX_NEW_TOKENS="512"
+```
+
+The helper script sets `LOCATEANYTHING_IN_TOKEN_LIMIT=4096`, `LOCATEANYTHING_GENERATION_MODE=hybrid`, and `LOCATEANYTHING_MAX_NEW_TOKENS=512` when the variables are unset. Use a higher token limit only on GPUs with enough free VRAM. Treat CUDA out-of-memory as a release-gate blocker for that machine, not as a passing live result.
 
 ## Verification
 

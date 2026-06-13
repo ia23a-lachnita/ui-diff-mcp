@@ -4,16 +4,16 @@ This file is the persistent handoff state for implementation agents. Read it bef
 
 ## Current State
 
-- Status: production-readiness test plan implemented; live release gates added.
+- Status: production-readiness gates executed with real OpenRouter and real local LocateAnything sidecar.
 - Branch: `master`.
 - Approved spec: `docs/superpowers/specs/2026-06-12-ui-diff-mcp-research-design.md`.
 - Active implementation plan: `docs/superpowers/plans/2026-06-12-ui-diff-mcp-mvp-implementation.md`.
 - Production-readiness test plan: `docs/superpowers/plans/2026-06-13-production-readiness-tests.md`.
-- Current task: live release gate execution — install/start the real LocateAnything sidecar and run real OpenRouter + Calorix image gates.
-- Next task: record live gate results and production-readiness decision after Gemini 3 Pro Preview review.
-- Last verification: `npm run verify` and `npm run test:coverage` — passed after production-readiness tests.
-- Code review: Gemini 3 Pro Preview reviewed the production-readiness test gates on 2026-06-13 — `AGREEMENT_STATUS: agree`, no MUST_FIX issues.
-- Open blockers: live release gates require a started real LocateAnything model process before final production sign-off (deterministic gates and code review are green).
+- Current task: live release gate execution — complete.
+- Next task: decide whether to require an unbounded Calorix all-target audit as a release blocker or accept bounded Calorix smoke for first production use.
+- Last verification: `npm run verify`, `npm run test:coverage`, `npm run verify:live`, and bounded `npm run verify:calorix-live` — passed.
+- Code review: Gemini 3 Pro Preview reviewed the live-gate changes on 2026-06-14 — no blockers found.
+- Open blockers: none for the generic MCP live path. Calorix full all-target visual audit was not signed off; the passing Calorix gate used `UI_DIFF_MAX_AUDIT_PAIRS=3` and correctly leaves visual classification incomplete.
 
 ## Standing Implementation Rules
 
@@ -37,14 +37,15 @@ This file is the persistent handoff state for implementation agents. Read it bef
 | 2026-06-13 | `c7cbe40` | Production-readiness test plan drafted | Plan self-review complete; Gemini review attempted but blocked by `QUOTA_EXHAUSTED` | Plan saved at `docs/superpowers/plans/2026-06-13-production-readiness-tests.md`; retry Gemini 3 Pro Preview before execution. |
 | 2026-06-13 | `57a783c` | Production-readiness tests | `npm run verify`; `npm run test:coverage` | Added MCP SDK integration tests, capture tests, live OpenRouter/LocateAnything/full MCP gates, and Calorix live smoke gate. |
 | 2026-06-13 | `697571e` | LocateAnything sidecar wrapper | `npm run verify`; `npm run test:coverage`; `python -m unittest sidecars.locateanything.test_parser`; `git diff --check` | Gemini 3 Pro Preview reviewed the sidecar design; image-path filesystem coupling was resolved by adding `imageBase64`/`imageMimeType` to locator requests. |
-| 2026-06-13 | this commit | Live release gate execution started | Intended verification: `npm run verify:live`; `npm run verify:calorix-live`; Gemini 3 Pro Preview release-readiness review | Calorix images are known; LocateAnything sidecar setup/run is the active external dependency. |
+| 2026-06-13 | `4fa9631` | Live release gate execution started | Intended verification: `npm run verify:live`; `npm run verify:calorix-live`; Gemini 3 Pro Preview release-readiness review | Calorix images are known; LocateAnything sidecar setup/run is the active external dependency. |
+| 2026-06-14 | this commit | Real live gates executed | `npm run verify` passed (97 unit + 6 integration); `npm run test:coverage` passed (87.28 stmts / 69.85 branches / 87.85 funcs / 89.25 lines); `npm run verify:live` passed (3 live, 1 skipped); `npm run verify:calorix-live` passed with `UI_DIFF_MAX_AUDIT_PAIRS=3`; Gemini 3 Pro Preview blocker review found no blockers; `git diff --check` exited 0 with CRLF warnings only | Installed local Eagle/LocateAnything sidecar, fixed sidecar runtime controls for 8 GB GPU, avoided LocateAnything `top_k=0` crash, made locator calls sequential, added explicit bounded Calorix smoke behavior. Generic MCP live path is production-ready; Calorix bounded smoke is green, but unbounded all-target Calorix audit remains unsigned. |
 
 ## Handoff Checklist
 
-- Current task: Live release gate execution — in progress
-- Last completed step: Added FastAPI sidecar, parser tests, image-byte locator payload, sidecar docs, and Calorix image paths
-- Next step: install/start the real model sidecar, then run `npm run verify:live` and `npm run verify:calorix-live`
-- Verification command and result: `npm run verify` passed (95 unit + 6 integration); `npm run test:coverage` passed (87.32 stmts / 69.44 branches / 87.73 funcs / 89.33 lines); `python -m unittest sidecars.locateanything.test_parser` passed (4 tests); `git diff --check` passed
+- Current task: Live release gate execution — complete
+- Last completed step: Ran real OpenRouter + real LocateAnything live gates, including bounded Calorix smoke with provided images
+- Next step: choose release wording/policy for unbounded Calorix all-target audit
+- Verification command and result: `npm run verify` passed (97 unit + 6 integration); `npm run test:coverage` passed (87.28 stmts / 69.85 branches / 87.85 funcs / 89.25 lines); `npm run verify:live` passed (3 live, 1 skipped); `npm run verify:calorix-live` passed with `UI_DIFF_MAX_AUDIT_PAIRS=3`; `git diff --check` exited 0 with CRLF warnings only
 - Commit pushed: this commit after push
 - Files intentionally left modified: none
-- Blockers: live gates not yet executed (require external services); Gemini 3 Pro Preview review complete (`AGREEMENT_STATUS: agree`)
+- Blockers: none for generic MCP live readiness; unbounded Calorix all-target audit still needs a separate long-running sign-off if it is required for Calorix-specific production readiness

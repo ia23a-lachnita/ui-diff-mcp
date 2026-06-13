@@ -28,7 +28,7 @@ describe.skipIf(!calorixLive)("Calorix live UI diff smoke", () => {
           projectRoot,
           mode: "full"
         }
-      }, undefined, { timeout: 180000, maxTotalTimeout: 240000 });
+      }, undefined, { timeout: 600000, maxTotalTimeout: 900000 });
 
       expect(result.isError).not.toBe(true);
       const structured = result.structuredContent as { status: string; reportPath: string; artifactRoot: string };
@@ -42,5 +42,5 @@ describe.skipIf(!calorixLive)("Calorix live UI diff smoke", () => {
     } finally {
       await started.close();
     }
-  }, 240000);
+  }, 900000);
 });

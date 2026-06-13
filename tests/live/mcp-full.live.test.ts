@@ -37,7 +37,7 @@ describe.skipIf(!liveEnabled)("live full MCP discover_ui_diffs", () => {
         projectRoot: tmpDir,
         mode: "full"
       }
-    }, undefined, { timeout: 180000, maxTotalTimeout: 240000 });
+    }, undefined, { timeout: 600000, maxTotalTimeout: 900000 });
 
     expect(result.isError).not.toBe(true);
     const structured = result.structuredContent as {
@@ -60,5 +60,5 @@ describe.skipIf(!liveEnabled)("live full MCP discover_ui_diffs", () => {
     for (const forbidden of ["root cause", "change the code", "edit config", "acceptance passed"]) {
       expect(reportText.includes(forbidden)).toBe(false);
     }
-  }, 240000);
+  }, 900000);
 });

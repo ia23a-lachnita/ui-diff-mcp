@@ -119,6 +119,12 @@ describe("runUiDiff with mock sidecar and models (full mode)", () => {
     expect(Array.isArray(report.diffs)).toBe(true);
     expect(Array.isArray(report.elements.expected)).toBe(true);
     expect(report.visualClassificationStatus).toBe("complete");
+    const sidecarCalls = mockFetch.mock.calls.filter(([url]) =>
+      typeof url === "string" && url.includes("/v1/locate-ui-elements")
+    );
+    expect(sidecarCalls).toHaveLength(2);
+    const firstSidecarBody = JSON.parse(String(sidecarCalls[0]?.[1]?.body)) as { queries: unknown[] };
+    expect(firstSidecarBody.queries).toHaveLength(1);
   });
 
   it("returns model_unavailable when required models are not_checked", async () => {

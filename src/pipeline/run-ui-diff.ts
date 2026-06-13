@@ -15,7 +15,7 @@ import { auditElementPair, type AuditContext } from "../audit/audit-target.js";
 import { reviewAndMergeFindings } from "../audit/review-findings.js";
 import { assignDiffComponentsToRecords } from "../report/coverage.js";
 import { writeUiDiffReport } from "../report/report-writer.js";
-import type { UiDiffReport, RunStatus, VisualClassificationStatus, DiffRecord } from "../schemas/core.js";
+import type { UiDiffReport, RunStatus, VisualClassificationStatus, DiffRecord, ElementPair } from "../schemas/core.js";
 import { sampleColorStats } from "../signals/color.js";
 
 export interface RunInput {
@@ -38,6 +38,27 @@ export interface RunOutput {
 }
 
 type ProbeOverride = (entries: import("../models/model-registry.js").ModelEntry[], apiKey: string) => Promise<ProbeResult[]>;
+
+export function selectAuditPairsForRun(
+  pairs: ElementPair[],
+  env: Record<string, string | undefined>
+): { pairs: ElementPair[]; limited: boolean; warning?: string } {
+  const rawLimit = env["UI_DIFF_MAX_AUDIT_PAIRS"];
+  if (!rawLimit) {
+    return { pairs, limited: false };
+  }
+
+  const limit = Number.parseInt(rawLimit, 10);
+  if (!Number.isFinite(limit) || limit < 1 || limit >= pairs.length) {
+    return { pairs, limited: false };
+  }
+
+  return {
+    pairs: pairs.slice(0, limit),
+    limited: true,
+    warning: `Visual audit limited to ${limit} of ${pairs.length} paired targets by UI_DIFF_MAX_AUDIT_PAIRS.`
+  };
+}
 
 export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeOverride }): Promise<RunOutput> {
   const runId = `run-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`;
@@ -74,6 +95,13 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
 
   const openRouterApiKey = process.env["OPENROUTER_API_KEY"] ?? "";
   const locatorUrl = process.env["LOCATEANYTHING_SIDECAR_URL"] ?? "http://127.0.0.1:39731";
+  const locatorTimeoutMs = Number.parseInt(process.env["LOCATEANYTHING_TIMEOUT_MS"] ?? "300000", 10);
+  const locatorQueries = [
+    {
+      id: "ui_elements",
+      prompt: "Detect all text and visible mobile UI elements in box format."
+    }
+  ];
 
   const expectedElements: ReturnType<typeof buildElementMap> = [];
   const actualElements: ReturnType<typeof buildElementMap> = [];
@@ -81,40 +109,26 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
 
   if (mode !== "deterministic_only") {
     try {
-      const [expResp, actResp] = await Promise.all([
-        locateUiElements({
-          endpoint: locatorUrl,
-          request: {
-            imagePath: normalizedExpPath,
-            queries: [
-              { id: "text", prompt: "text labels and headings" },
-              { id: "button", prompt: "buttons and interactive elements" },
-              { id: "icon", prompt: "icons and images" },
-              { id: "card", prompt: "cards and panels" },
-              { id: "chart", prompt: "charts and graphs" }
-            ],
-            generationMode: "hybrid",
-            maxBoxesPerQuery: 200
-          },
-          timeoutMs: 30000
-        }),
-        locateUiElements({
-          endpoint: locatorUrl,
-          request: {
-            imagePath: normalizedActPath,
-            queries: [
-              { id: "text", prompt: "text labels and headings" },
-              { id: "button", prompt: "buttons and interactive elements" },
-              { id: "icon", prompt: "icons and images" },
-              { id: "card", prompt: "cards and panels" },
-              { id: "chart", prompt: "charts and graphs" }
-            ],
-            generationMode: "hybrid",
-            maxBoxesPerQuery: 200
-          },
-          timeoutMs: 30000
-        })
-      ]);
+      const expResp = await locateUiElements({
+        endpoint: locatorUrl,
+        request: {
+          imagePath: normalizedExpPath,
+          queries: locatorQueries,
+          generationMode: "hybrid",
+          maxBoxesPerQuery: 200
+        },
+        timeoutMs: locatorTimeoutMs
+      });
+      const actResp = await locateUiElements({
+        endpoint: locatorUrl,
+        request: {
+          imagePath: normalizedActPath,
+          queries: locatorQueries,
+          generationMode: "hybrid",
+          maxBoxesPerQuery: 200
+        },
+        timeoutMs: locatorTimeoutMs
+      });
       expectedElements.push(...buildElementMap(expResp.elements, { width: expectedImg.width, height: expectedImg.height }));
       actualElements.push(...buildElementMap(actResp.elements, { width: actualImg.width, height: actualImg.height }));
     } catch (err) {
@@ -160,8 +174,12 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
       const reviewerModel = getModelByRole("reviewer")?.model ?? "google/gemini-2.5-flash-lite";
 
       const auditedDiffs: DiffRecord[] = [];
+      const auditSelection = selectAuditPairsForRun(pairs, process.env);
+      if (auditSelection.warning) {
+        warnings.push(auditSelection.warning);
+      }
 
-      for (const pair of pairs) {
+      for (const pair of auditSelection.pairs) {
         const expEl = expectedElements.find(e => e.id === pair.expectedId);
         const actEl = actualElements.find(e => e.id === pair.actualId);
         const refEl = expEl ?? actEl;
@@ -215,7 +233,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
 
       const merged = reviewAndMergeFindings(auditedDiffs);
       allDiffs.push(...merged);
-      if (!locatorFailed) {
+      if (!locatorFailed && !auditSelection.limited) {
         visualClassificationStatus = "complete";
       }
     }

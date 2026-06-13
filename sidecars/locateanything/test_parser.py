@@ -1,6 +1,27 @@
 import unittest
 
 from sidecars.locateanything.parser import parse_elements
+from sidecars.locateanything.server import (
+    _apply_worker_runtime_config,
+    _locateanything_generation_mode,
+    _locateanything_max_new_tokens,
+    _locateanything_top_k,
+)
+
+
+class _FakeImageProcessor:
+    def __init__(self) -> None:
+        self.in_token_limit = 25600
+
+
+class _FakeProcessor:
+    def __init__(self) -> None:
+        self.image_processor = _FakeImageProcessor()
+
+
+class _FakeWorker:
+    def __init__(self) -> None:
+        self.processor = _FakeProcessor()
 
 
 class LocateAnythingParserTests(unittest.TestCase):
@@ -68,6 +89,49 @@ class LocateAnythingParserTests(unittest.TestCase):
         self.assertEqual(len(elements), 1)
         self.assertEqual(elements[0]["label"], "one")
         self.assertEqual(warnings, ["query text returned more than maxBoxesPerQuery=1; extra boxes were ignored"])
+
+
+class LocateAnythingServerConfigTests(unittest.TestCase):
+    def test_applies_env_token_limit_to_worker_image_processor(self) -> None:
+        worker = _FakeWorker()
+
+        _apply_worker_runtime_config(worker, {"LOCATEANYTHING_IN_TOKEN_LIMIT": "1024"})
+
+        self.assertEqual(worker.processor.image_processor.in_token_limit, 1024)
+
+    def test_rejects_invalid_env_token_limit(self) -> None:
+        worker = _FakeWorker()
+
+        with self.assertRaises(ValueError):
+            _apply_worker_runtime_config(worker, {"LOCATEANYTHING_IN_TOKEN_LIMIT": "0"})
+
+    def test_maps_public_generation_modes_to_worker_modes(self) -> None:
+        self.assertEqual(_locateanything_generation_mode("detection", {}), "fast")
+        self.assertEqual(_locateanything_generation_mode("grounding", {}), "slow")
+        self.assertEqual(_locateanything_generation_mode("hybrid", {}), "hybrid")
+
+    def test_generation_mode_env_override(self) -> None:
+        self.assertEqual(
+            _locateanything_generation_mode("hybrid", {"LOCATEANYTHING_GENERATION_MODE": "slow"}),
+            "slow",
+        )
+
+        with self.assertRaises(ValueError):
+            _locateanything_generation_mode("hybrid", {"LOCATEANYTHING_GENERATION_MODE": "invalid"})
+
+    def test_top_k_is_none_unless_positive_env_value_is_set(self) -> None:
+        self.assertIsNone(_locateanything_top_k({}))
+        self.assertEqual(_locateanything_top_k({"LOCATEANYTHING_TOP_K": "5"}), 5)
+
+        with self.assertRaises(ValueError):
+            _locateanything_top_k({"LOCATEANYTHING_TOP_K": "0"})
+
+    def test_max_new_tokens_defaults_to_bounded_value(self) -> None:
+        self.assertEqual(_locateanything_max_new_tokens({}), 512)
+        self.assertEqual(_locateanything_max_new_tokens({"LOCATEANYTHING_MAX_NEW_TOKENS": "256"}), 256)
+
+        with self.assertRaises(ValueError):
+            _locateanything_max_new_tokens({"LOCATEANYTHING_MAX_NEW_TOKENS": "0"})
 
 
 if __name__ == "__main__":

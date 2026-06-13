@@ -43,6 +43,9 @@ Create a `.env` file in the root of the project and add the following variables:
 - `OPENROUTER_API_KEY` (required)
 - `LOCATEANYTHING_SIDECAR_URL` (optional, defaults to `http://127.0.0.1:39731`)
 - `LOCATEANYTHING_EAGLE_EMBODIED_DIR` (required only when starting the local LocateAnything sidecar)
+- `LOCATEANYTHING_IN_TOKEN_LIMIT` (optional local sidecar image-token budget; `4096` is the helper-script default)
+- `LOCATEANYTHING_GENERATION_MODE` (optional local sidecar worker mode: `fast`, `slow`, or `hybrid`; `hybrid` is the helper-script default)
+- `LOCATEANYTHING_MAX_NEW_TOKENS` (optional local sidecar generation cap; `512` is the helper-script default)
 - `NVIDIA_API_KEY` (optional)
 - `NVIDIA_VLM_BASE_URL` (optional)
 
@@ -54,15 +57,18 @@ The MCP calls a sidecar endpoint at `POST /v1/locate-ui-elements`. Start the loc
 
 ```powershell
 git clone https://github.com/NVlabs/Eagle.git C:\Users\xursc\projects\Eagle
+python -m venv C:\Users\xursc\projects\.venvs\ui-diff-mcp-locateanything
+C:\Users\xursc\projects\.venvs\ui-diff-mcp-locateanything\Scripts\python.exe -m pip install --upgrade pip setuptools wheel
+C:\Users\xursc\projects\.venvs\ui-diff-mcp-locateanything\Scripts\python.exe -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
 cd C:\Users\xursc\projects\Eagle\Embodied
-pip install -e .
+C:\Users\xursc\projects\.venvs\ui-diff-mcp-locateanything\Scripts\python.exe -m pip install --no-deps -e .
 cd C:\Users\xursc\projects\ui-diff-mcp
-pip install -r sidecars\locateanything\requirements.txt
+C:\Users\xursc\projects\.venvs\ui-diff-mcp-locateanything\Scripts\python.exe -m pip install -r sidecars\locateanything\requirements.txt
 $env:LOCATEANYTHING_EAGLE_EMBODIED_DIR="C:\Users\xursc\projects\Eagle\Embodied"
 .\scripts\start-locateanything-sidecar.ps1
 ```
 
-The TypeScript client sends image bytes with each locator request, so `LOCATEANYTHING_SIDECAR_URL` can point to a remote GPU service that exposes the same contract. Local RTX 3070 8 GB runs may fail with CUDA out-of-memory; that is a live-gate blocker for the local machine.
+The TypeScript client sends image bytes with each locator request, so `LOCATEANYTHING_SIDECAR_URL` can point to a remote GPU service that exposes the same contract. The helper script sets `LOCATEANYTHING_IN_TOKEN_LIMIT=4096`, `LOCATEANYTHING_GENERATION_MODE=hybrid`, and `LOCATEANYTHING_MAX_NEW_TOKENS=512` unless already set; raise the token limit only on GPUs with enough free VRAM. Local RTX 3070 8 GB runs may still fail with CUDA out-of-memory; that is a live-gate blocker for the local machine.
 
 Parser-only sidecar tests are included in `npm run verify` and can also be run directly:
 

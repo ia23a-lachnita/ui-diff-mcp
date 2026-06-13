@@ -14,10 +14,10 @@
     "test:watch": "vitest --exclude \"tests/live/**/*.test.ts\" --exclude \"tests/integration/**/*.test.ts\"",
     "test:sidecar": "python -m unittest sidecars.locateanything.test_parser",
     "test:coverage": "vitest run --coverage --exclude \"tests/live/**/*.test.ts\" --exclude \"tests/integration/**/*.test.ts\"",
-    "test:live": "vitest run tests/live/ --testTimeout 180000",
+    "test:live": "vitest run tests/live/ --testTimeout 900000",
     "verify": "npm run typecheck && npm test && npm run test:sidecar && npm run build && npm run test:integration",
     "verify:live": "node scripts/require-live-env.js RUN_UI_DIFF_LIVE && npm run build && npm run test:live",
-    "verify:calorix-live": "node scripts/require-live-env.js RUN_CALORIX_UI_DIFF_LIVE && npm run build && vitest run tests/live/calorix-smoke.live.test.ts --testTimeout 240000",
+    "verify:calorix-live": "node scripts/require-live-env.js RUN_CALORIX_UI_DIFF_LIVE && npm run build && vitest run tests/live/calorix-smoke.live.test.ts --testTimeout 900000",
     "start": "node dist/src/index.js"
   },
   "dependencies": {

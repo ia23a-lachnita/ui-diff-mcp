@@ -48,15 +48,24 @@ export interface MockSidecar {
   server: http.Server;
   port: number;
   url: string;
+  requests: Array<{ queries: unknown[] }>;
   stop(): Promise<void>;
 }
 
 export function startMockSidecar(opts: MockSidecarOptions): Promise<MockSidecar> {
   return new Promise((resolve, reject) => {
+    const requests: Array<{ queries: unknown[] }> = [];
     const server = http.createServer((req, res) => {
       if (req.method === "POST" && req.url === "/v1/locate-ui-elements") {
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(makeSidecarResponse(opts.imageWidth, opts.imageHeight));
+        let body = "";
+        req.on("data", chunk => {
+          body += chunk;
+        });
+        req.on("end", () => {
+          requests.push(JSON.parse(body) as { queries: unknown[] });
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(makeSidecarResponse(opts.imageWidth, opts.imageHeight));
+        });
       } else {
         res.writeHead(404);
         res.end("Not found");
@@ -74,6 +83,7 @@ export function startMockSidecar(opts: MockSidecarOptions): Promise<MockSidecar>
         server,
         port,
         url: `http://127.0.0.1:${port}`,
+        requests,
         stop: () => new Promise(res => server.close(() => res()))
       });
     });

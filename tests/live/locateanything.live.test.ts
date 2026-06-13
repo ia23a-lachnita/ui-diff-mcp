@@ -28,14 +28,15 @@ describe.skipIf(!liveEnabled)("live LocateAnything sidecar", () => {
       request: {
         imagePath: expected,
         queries: [
-          { id: "text", prompt: "Detect all text in box format." },
-          { id: "button", prompt: "Locate all buttons and tappable controls." },
-          { id: "card", prompt: "Locate all cards and panels." }
+          {
+            id: "ui_elements",
+            prompt: "Detect all text and visible mobile UI elements in box format."
+          }
         ],
         generationMode: "hybrid",
         maxBoxesPerQuery: 50
       },
-      timeoutMs: 120000
+      timeoutMs: 300000
     });
 
     expect(response.model).toContain("LocateAnything");
@@ -49,5 +50,5 @@ describe.skipIf(!liveEnabled)("live LocateAnything sidecar", () => {
       expect(element.box.y + element.box.height).toBeLessThanOrEqual(response.image.height);
       expect(element.rawBox1000).toHaveLength(4);
     }
-  }, 180000);
+  }, 360000);
 });
