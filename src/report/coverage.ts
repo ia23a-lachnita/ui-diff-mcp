@@ -14,7 +14,8 @@ function componentOverlapsDiff(component: PixelComponent, diff: DiffRecord): boo
 export function assignDiffComponentsToRecords(
   components: PixelComponent[],
   diffs: DiffRecord[],
-  minArea: number
+  minArea: number,
+  pixelDiffArtifactPath?: string
 ): DiffRecord[] {
   const result = [...diffs];
 
@@ -39,7 +40,7 @@ export function assignDiffComponentsToRecords(
         { name: "pixelCount", value: component.pixelCount },
         { name: "componentArea", value: component.box.width * component.box.height, unit: "px²" }
       ],
-      artifactPaths: [],
+      artifactPaths: pixelDiffArtifactPath ? [pixelDiffArtifactPath] : [],
       reviewerStatus: "not_reviewed"
     };
 

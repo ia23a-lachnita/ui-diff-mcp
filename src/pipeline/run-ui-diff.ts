@@ -1,7 +1,9 @@
 import crypto from "node:crypto";
 import path from "node:path";
+import sharp from "sharp";
 import { resolveInputImagePath, createRunDirectory } from "../security/paths.js";
 import { loadNormalizedImage } from "../images/normalize.js";
+import { writeOverlay } from "../images/artifacts.js";
 import { computePixelDiff } from "../signals/pixel-diff.js";
 import { extractEdgeMask } from "../signals/edge.js";
 import { locateUiElements, LocatorUnavailableError } from "../locator/locateanything-client.js";
@@ -55,6 +57,12 @@ export async function runUiDiff(input: RunInput): Promise<RunOutput> {
   });
 
   const pixelDiff = computePixelDiff(normalizedExpPath, normalizedActPath);
+  const pixelDiffPngPath = path.join(runDir, "pixel-diff.png");
+  await sharp(Buffer.from(pixelDiff.diffBuffer), {
+    raw: { width: pixelDiff.width, height: pixelDiff.height, channels: 4 }
+  }).png().toFile(pixelDiffPngPath);
+  const overlayPath = path.join(runDir, "diff-overlay.png");
+  await writeOverlay(normalizedExpPath, pixelDiffPngPath, overlayPath);
   const edgeMask = extractEdgeMask(expectedImg.rgba, expectedImg.width, expectedImg.height);
 
   let status: RunStatus = "complete";
@@ -207,7 +215,8 @@ export async function runUiDiff(input: RunInput): Promise<RunOutput> {
   const finalDiffs = assignDiffComponentsToRecords(
     pixelDiff.components.filter(c => c.pixelCount >= 50),
     allDiffs,
-    50
+    50,
+    pixelDiffPngPath
   );
 
   const report: UiDiffReport = {

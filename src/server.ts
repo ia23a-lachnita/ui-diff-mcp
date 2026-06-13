@@ -95,9 +95,9 @@ export function createServer(): McpServer {
         throw new Error("reportPath must be a .json file");
       }
       const resolved = path.resolve(input.reportPath);
-      const allowedDir = path.join(process.cwd(), ".ui-diff", "runs");
-      if (!resolved.startsWith(allowedDir + path.sep) && resolved !== allowedDir) {
-        throw new Error("reportPath must be within the .ui-diff/runs/ directory");
+      const needle = path.sep + ".ui-diff" + path.sep + "runs" + path.sep;
+      if (!resolved.includes(needle)) {
+        throw new Error("reportPath must be within a .ui-diff/runs/ directory");
       }
       const raw = await fs.readFile(resolved, "utf8");
       const parsed = UiDiffReportSchema.parse(JSON.parse(raw));
