@@ -77,6 +77,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
 
   const expectedElements: ReturnType<typeof buildElementMap> = [];
   const actualElements: ReturnType<typeof buildElementMap> = [];
+  let locatorFailed = false;
 
   if (mode !== "deterministic_only") {
     try {
@@ -117,6 +118,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
       expectedElements.push(...buildElementMap(expResp.elements, { width: expectedImg.width, height: expectedImg.height }));
       actualElements.push(...buildElementMap(actResp.elements, { width: actualImg.width, height: actualImg.height }));
     } catch (err) {
+      locatorFailed = true;
       status = "model_unavailable";
       visualClassificationStatus = "incomplete";
       if (err instanceof LocatorUnavailableError) {
@@ -213,7 +215,9 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
 
       const merged = reviewAndMergeFindings(auditedDiffs);
       allDiffs.push(...merged);
-      visualClassificationStatus = "complete";
+      if (!locatorFailed) {
+        visualClassificationStatus = "complete";
+      }
     }
   }
 

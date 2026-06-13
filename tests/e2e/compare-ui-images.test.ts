@@ -149,4 +149,31 @@ describe("runUiDiff with mock sidecar and models (full mode)", () => {
       ])
     );
   });
+
+  it("keeps visualClassificationStatus incomplete when locator fails even if models pass", async () => {
+    const { expected, actual } = await writeTwoButtonFixture(
+      tmpDir, "e.png", "a.png"
+    );
+
+    const probeOverride = async () => [
+      { role: "auditor", provider: "openrouter", model: "qwen/qwen3-vl-30b-a3b-instruct", status: "pass" as const, checkedAt: new Date().toISOString() },
+      { role: "reviewer", provider: "openrouter", model: "google/gemini-2.5-flash-lite", status: "pass" as const, checkedAt: new Date().toISOString() }
+    ];
+
+    // No fetch mock — locator points at a dead port so sidecar call fails
+    vi.stubEnv("LOCATEANYTHING_SIDECAR_URL", "http://127.0.0.1:9999");
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("ECONNREFUSED")));
+
+    const result = await runUiDiff({
+      expectedImagePath: expected,
+      actualImagePath: actual,
+      projectRoot: tmpDir,
+      mode: "full"
+    }, { probeOverride });
+
+    expect(result.status).toBe("model_unavailable");
+    const reportRaw = await import("node:fs/promises").then(fs => fs.readFile(result.reportPath, "utf8"));
+    const report = JSON.parse(reportRaw) as { visualClassificationStatus: string };
+    expect(report.visualClassificationStatus).toBe("incomplete");
+  });
 });
