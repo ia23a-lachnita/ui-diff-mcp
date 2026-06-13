@@ -2,7 +2,13 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { CompareUiImagesInputSchema } from "./schemas/tool-schemas.js";
+import {
+  CompareUiImagesInputSchema,
+  CompareUiImagesOutputSchema,
+  ModelHealthOutputSchema,
+  ReadUiDiffReportOutputSchema,
+  CaptureScreenOutputSchema
+} from "./schemas/tool-schemas.js";
 import { runUiDiff } from "./pipeline/run-ui-diff.js";
 import { captureMobileScreen } from "./capture/mobile-capture.js";
 import { probeRequiredModels } from "./models/probes.js";
@@ -35,12 +41,15 @@ export function createServer(): McpServer {
     version: "0.1.0"
   });
 
-  server.tool(
+  server.registerTool(
     "compare_ui_images",
-    "Compares an expected mobile mockup image against an actual mobile screenshot and reports visible UI differences.",
-    CompareUiImagesInputSchema,
+    {
+      description: "Compares an expected mobile mockup image against an actual mobile screenshot using only deterministic methods (no visual models).",
+      inputSchema: CompareUiImagesInputSchema,
+      outputSchema: CompareUiImagesOutputSchema
+    },
     async (input) => {
-      const result = await runUiDiff(buildRunInput(input));
+      const result = await runUiDiff(buildRunInput({ ...input, mode: "deterministic_only" }));
       return {
         content: [{ type: "text" as const, text: result.summary }],
         structuredContent: toRecord(result)
@@ -48,10 +57,13 @@ export function createServer(): McpServer {
     }
   );
 
-  server.tool(
+  server.registerTool(
     "discover_ui_diffs",
-    "Alias for compare_ui_images. Compares expected mockup against actual screenshot.",
-    CompareUiImagesInputSchema,
+    {
+      description: "Runs full UI diff analysis, including visual model-based target discovery and classification. Compares expected mockup against actual screenshot.",
+      inputSchema: CompareUiImagesInputSchema,
+      outputSchema: CompareUiImagesOutputSchema
+    },
     async (input) => {
       const result = await runUiDiff(buildRunInput(input));
       return {
@@ -61,10 +73,12 @@ export function createServer(): McpServer {
     }
   );
 
-  server.tool(
+  server.registerTool(
     "ui_diff_model_health",
-    "Checks health of all visual models used by the diff pipeline.",
-    {},
+    {
+      description: "Checks health of all visual models used by the diff pipeline.",
+      outputSchema: ModelHealthOutputSchema
+    },
     async () => {
       const apiKey = process.env["OPENROUTER_API_KEY"] ?? "";
       const results = await probeRequiredModels(getRequiredModels(), apiKey);
@@ -86,10 +100,13 @@ export function createServer(): McpServer {
     }
   );
 
-  server.tool(
+  server.registerTool(
     "read_ui_diff_report",
-    "Reads and returns a previously generated UI diff report JSON file.",
-    { reportPath: z.string().min(1) },
+    {
+      description: "Reads and returns a previously generated UI diff report JSON file.",
+      inputSchema: { reportPath: z.string().min(1) },
+      outputSchema: ReadUiDiffReportOutputSchema
+    },
     async (input) => {
       if (!input.reportPath.endsWith(".json")) {
         throw new Error("reportPath must be a .json file");
@@ -108,10 +125,13 @@ export function createServer(): McpServer {
     }
   );
 
-  server.tool(
+  server.registerTool(
     "capture_mobile_screen",
-    "Captures a screenshot from a connected mobile device using adb or ios-simctl.",
-    { target: z.enum(["adb", "ios-simctl"]) },
+    {
+      description: "Captures a screenshot from a connected mobile device using adb or ios-simctl.",
+      inputSchema: { target: z.enum(["adb", "ios-simctl"]) },
+      outputSchema: CaptureScreenOutputSchema
+    },
     async (input) => {
       const imagePath = await captureMobileScreen(input.target);
       return {

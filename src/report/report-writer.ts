@@ -8,6 +8,7 @@ export interface CompactOutput {
   diffCount: number;
   reportPath: string;
   artifactRoot: string;
+  runArtifacts: string[];
   summary: string;
   warnings: string[];
 }
@@ -44,6 +45,7 @@ export async function writeUiDiffReport(
     diffCount,
     reportPath,
     artifactRoot: reportDir,
+    runArtifacts: report.runArtifacts ?? [],
     summary,
     warnings: report.warnings ?? []
   };

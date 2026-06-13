@@ -33,7 +33,7 @@ npm run build
 ## Running the server
 
 ```bash
-node C:/Users/xursc/projects/ui-diff-mcp/dist/index.js
+node dist/src/index.js
 ```
 
 ## Environment Variables
@@ -46,3 +46,36 @@ Create a `.env` file in the root of the project and add the following variables:
 - `NVIDIA_VLM_BASE_URL` (optional)
 
 This implementation requires no user-authored target map, ROI map, ignore mask, or anchor dump.
+
+## MCP Integration
+
+### Claude Code (project-scoped `.mcp.json`)
+
+Add to `<project>/.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "ui-diff": {
+      "command": "node",
+      "args": ["C:\\Users\\xursc\\projects\\ui-diff-mcp\\dist\\src\\index.js"],
+      "env": {
+        "OPENROUTER_API_KEY": "<your-key>"
+      }
+    }
+  }
+}
+```
+
+### Codex (project-scoped `.codex/config.toml`)
+
+Add to `<project>/.codex/config.toml`:
+
+```toml
+[mcp_servers.ui-diff]
+command = "node"
+args = ['C:\Users\xursc\projects\ui-diff-mcp\dist\src\index.js']
+enabled = true
+```
+
+Set `OPENROUTER_API_KEY` in your shell environment or a `.env` file before starting Codex.

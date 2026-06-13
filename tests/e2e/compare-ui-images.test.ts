@@ -90,24 +90,63 @@ describe("runUiDiff with mock sidecar and models (full mode)", () => {
         evidence: ["actual y=70px, expected y=50px"],
         reviewerDecision: "accepted"
       }
-    ]);
+    ], { sidecarImageWidth: 200, sidecarImageHeight: 400 });
     vi.stubGlobal("fetch", mockFetch);
     vi.stubEnv("LOCATEANYTHING_SIDECAR_URL", sidecar.url);
     vi.stubEnv("OPENROUTER_API_KEY", "sk-test-e2e");
+
+    const probeOverride = async () => [
+      { role: "auditor", provider: "openrouter", model: "qwen/qwen3-vl-30b-a3b-instruct", status: "pass" as const, checkedAt: new Date().toISOString() },
+      { role: "reviewer", provider: "openrouter", model: "google/gemini-2.5-flash-lite", status: "pass" as const, checkedAt: new Date().toISOString() }
+    ];
 
     const result = await runUiDiff({
       expectedImagePath: expected,
       actualImagePath: actual,
       projectRoot: tmpDir,
       mode: "full"
-    });
+    }, { probeOverride });
 
     expect(result.runId).toBeTruthy();
-    expect(["complete", "model_unavailable", "incomplete"]).toContain(result.status);
+    expect(result.status).toBe("complete");
 
     const reportRaw = await fs.readFile(result.reportPath, "utf8");
-    const report = JSON.parse(reportRaw) as { diffs: unknown[]; elements: { expected: unknown[]; actual: unknown[] } };
+    const report = JSON.parse(reportRaw) as {
+      diffs: unknown[];
+      elements: { expected: unknown[]; actual: unknown[] };
+      visualClassificationStatus: string;
+    };
     expect(Array.isArray(report.diffs)).toBe(true);
     expect(Array.isArray(report.elements.expected)).toBe(true);
+    expect(report.visualClassificationStatus).toBe("complete");
+  });
+
+  it("returns model_unavailable when required models are not_checked", async () => {
+    const { expected, actual } = await writeTwoButtonFixture(
+      tmpDir, "e.png", "a.png"
+    );
+
+    const probeOverride = async () => [
+      { role: "auditor", provider: "openrouter", model: "qwen/qwen3-vl-30b-a3b-instruct", status: "not_checked" as const, checkedAt: new Date().toISOString(), detail: "No API key provided" },
+      { role: "reviewer", provider: "openrouter", model: "google/gemini-2.5-flash-lite", status: "not_checked" as const, checkedAt: new Date().toISOString(), detail: "No API key provided" }
+    ];
+
+    const mockFetch = makeMockFetch([]);
+    vi.stubGlobal("fetch", mockFetch);
+    vi.stubEnv("LOCATEANYTHING_SIDECAR_URL", "http://127.0.0.1:9999");
+
+    const result = await runUiDiff({
+      expectedImagePath: expected,
+      actualImagePath: actual,
+      projectRoot: tmpDir,
+      mode: "full"
+    }, { probeOverride });
+
+    expect(result.status).toBe("model_unavailable");
+    expect(result.warnings).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("Required models unavailable")
+      ])
+    );
   });
 });

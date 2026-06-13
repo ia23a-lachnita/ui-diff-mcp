@@ -10,7 +10,7 @@ import { locateUiElements, LocatorUnavailableError } from "../locator/locateanyt
 import { buildElementMap } from "../locator/element-map.js";
 import { pairElements } from "../pairing/pair-elements.js";
 import { getModelByRole, getRequiredModels } from "../models/model-registry.js";
-import { probeRequiredModels } from "../models/probes.js";
+import { probeRequiredModels, type ProbeResult } from "../models/probes.js";
 import { auditElementPair, type AuditContext } from "../audit/audit-target.js";
 import { reviewAndMergeFindings } from "../audit/review-findings.js";
 import { assignDiffComponentsToRecords } from "../report/coverage.js";
@@ -32,11 +32,14 @@ export interface RunOutput {
   diffCount: number;
   reportPath: string;
   artifactRoot: string;
+  runArtifacts: string[];
   summary: string;
   warnings: string[];
 }
 
-export async function runUiDiff(input: RunInput): Promise<RunOutput> {
+type ProbeOverride = (entries: import("../models/model-registry.js").ModelEntry[], apiKey: string) => Promise<ProbeResult[]>;
+
+export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeOverride }): Promise<RunOutput> {
   const runId = `run-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`;
   const warnings: string[] = [];
   const mode = input.mode ?? "full";
@@ -114,6 +117,8 @@ export async function runUiDiff(input: RunInput): Promise<RunOutput> {
       expectedElements.push(...buildElementMap(expResp.elements, { width: expectedImg.width, height: expectedImg.height }));
       actualElements.push(...buildElementMap(actResp.elements, { width: actualImg.width, height: actualImg.height }));
     } catch (err) {
+      status = "model_unavailable";
+      visualClassificationStatus = "incomplete";
       if (err instanceof LocatorUnavailableError) {
         warnings.push(`Locator unavailable: ${err.message}. Skipping element discovery.`);
       } else {
@@ -127,7 +132,8 @@ export async function runUiDiff(input: RunInput): Promise<RunOutput> {
   const modelHealth: UiDiffReport["modelHealth"] = [];
 
   if (mode === "full" || mode === "free_only") {
-    const probeResults = await probeRequiredModels(getRequiredModels(), openRouterApiKey);
+    const probe = opts?.probeOverride ?? probeRequiredModels;
+    const probeResults = await probe(getRequiredModels(), openRouterApiKey);
     for (const p of probeResults) {
       modelHealth.push({
         role: p.role,
@@ -142,7 +148,6 @@ export async function runUiDiff(input: RunInput): Promise<RunOutput> {
     const requiredFailed = modelHealth.filter(
       m => (m.status === "fail" || m.status === "not_checked") && (m.role === "auditor" || m.role === "reviewer")
     );
-
     if (requiredFailed.length > 0) {
       status = "model_unavailable";
       visualClassificationStatus = "incomplete";

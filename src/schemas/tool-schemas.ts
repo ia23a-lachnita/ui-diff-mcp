@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { RunStatusSchema } from "./core.js";
+import { RunStatusSchema, UiDiffReportSchema } from "./core.js";
 
 export const CompareUiImagesInputSchema = {
   expectedImagePath: z.string().min(1),
@@ -15,6 +15,7 @@ export const CompareUiImagesOutputSchema = {
   diffCount: z.number().int().min(0),
   reportPath: z.string().min(1),
   artifactRoot: z.string().min(1),
+  runArtifacts: z.array(z.string()).default([]),
   summary: z.string().min(1),
   warnings: z.array(z.string()).default([])
 };
@@ -28,4 +29,12 @@ export const ModelHealthOutputSchema = {
     status: z.enum(["pass", "fail", "not_checked"]),
     detail: z.string().optional()
   }))
+};
+
+export const ReadUiDiffReportOutputSchema = {
+  report: UiDiffReportSchema
+};
+
+export const CaptureScreenOutputSchema = {
+  imagePath: z.string().min(1)
 };

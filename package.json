@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "bin": {
-    "ui-diff-mcp": "./dist/index.js"
+    "ui-diff-mcp": "./dist/src/index.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -12,7 +12,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "start": "node dist/index.js",
+    "start": "node dist/src/index.js",
     "verify": "npm run typecheck && npm test && npm run build"
   },
   "dependencies": {
