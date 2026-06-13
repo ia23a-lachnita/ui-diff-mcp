@@ -9,11 +9,11 @@ This file is the persistent handoff state for implementation agents. Read it bef
 - Approved spec: `docs/superpowers/specs/2026-06-12-ui-diff-mcp-research-design.md`.
 - Active implementation plan: `docs/superpowers/plans/2026-06-12-ui-diff-mcp-mvp-implementation.md`.
 - Production-readiness test plan: `docs/superpowers/plans/2026-06-13-production-readiness-tests.md`.
-- Current task: none.
-- Next task: run live gates with real OpenRouter key, real LocateAnything sidecar, and Calorix image pair before production sign-off.
+- Current task: LocateAnything sidecar wrapper added; verification in progress.
+- Next task: start the real LocateAnything sidecar and run live gates with real OpenRouter key and Calorix image pair before production sign-off.
 - Last verification: `npm run verify` and `npm run test:coverage` — passed after production-readiness tests.
 - Code review: Gemini 3 Pro Preview reviewed the production-readiness test gates on 2026-06-13 — `AGREEMENT_STATUS: agree`, no MUST_FIX issues.
-- Open blockers: live release gates require configured external services before final production sign-off (deterministic gates and code review are green).
+- Open blockers: live release gates require a real LocateAnything model process before final production sign-off (deterministic gates and code review are green).
 
 ## Standing Implementation Rules
 
@@ -36,13 +36,14 @@ This file is the persistent handoff state for implementation agents. Read it bef
 | 2026-06-13 | `8576473` | Status SHA catch-up | docs only | Updated handoff checklist to reflect current HEAD after status-only commit. |
 | 2026-06-13 | `c7cbe40` | Production-readiness test plan drafted | Plan self-review complete; Gemini review attempted but blocked by `QUOTA_EXHAUSTED` | Plan saved at `docs/superpowers/plans/2026-06-13-production-readiness-tests.md`; retry Gemini 3 Pro Preview before execution. |
 | 2026-06-13 | `57a783c` | Production-readiness tests | `npm run verify`; `npm run test:coverage` | Added MCP SDK integration tests, capture tests, live OpenRouter/LocateAnything/full MCP gates, and Calorix live smoke gate. |
+| 2026-06-13 | this commit | LocateAnything sidecar wrapper | `npm run verify`; `npm run test:coverage`; `python -m unittest sidecars.locateanything.test_parser`; `git diff --check` | Gemini 3 Pro Preview reviewed the sidecar design; image-path filesystem coupling was resolved by adding `imageBase64`/`imageMimeType` to locator requests. |
 
 ## Handoff Checklist
 
-- Current task: none — production-readiness test plan fully implemented (Tasks 1-8)
-- Last completed step: Raised coverage thresholds (85/68/85/85) and synced this status file
-- Next step: run the live gates (`npm run verify:live`, `npm run verify:calorix-live`) with real credentials/sidecar before production sign-off (Gemini 3 Pro Preview review of the test gates is complete — `AGREEMENT_STATUS: agree`)
-- Verification command and result: `npm run verify` passed (90 unit + 6 integration); `npm run test:coverage` passed raised thresholds (87.02 stmts / 68.64 branches / 87.5 funcs / 89.13 lines)
-- Commit pushed: see latest commit on `master`
+- Current task: LocateAnything sidecar wrapper — implementation complete
+- Last completed step: Added FastAPI sidecar, parser tests, image-byte locator payload, sidecar docs, and Calorix image paths
+- Next step: start the real model sidecar, then run `npm run verify:live` and `npm run verify:calorix-live`
+- Verification command and result: `npm run verify` passed (95 unit + 6 integration); `npm run test:coverage` passed (87.32 stmts / 69.44 branches / 87.73 funcs / 89.33 lines); `python -m unittest sidecars.locateanything.test_parser` passed (4 tests); `git diff --check` passed
+- Commit pushed: this commit after push
 - Files intentionally left modified: none
 - Blockers: live gates not yet executed (require external services); Gemini 3 Pro Preview review complete (`AGREEMENT_STATUS: agree`)

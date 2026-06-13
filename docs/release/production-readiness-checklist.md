@@ -41,8 +41,8 @@ Required result:
 $env:RUN_CALORIX_UI_DIFF_LIVE="1"
 $env:OPENROUTER_API_KEY="<real-openrouter-key>"
 $env:LOCATEANYTHING_SIDECAR_URL="http://127.0.0.1:39731"
-$env:UI_DIFF_LIVE_EXPECTED_IMAGE="C:\absolute\path\to\mockup.png"
-$env:UI_DIFF_LIVE_ACTUAL_IMAGE="C:\absolute\path\to\screenshot.png"
+$env:UI_DIFF_LIVE_EXPECTED_IMAGE="C:\Users\xursc\projects\calorix\docs\mockups\image\dark\single\Today.png"
+$env:UI_DIFF_LIVE_ACTUAL_IMAGE="C:\Users\xursc\projects\calorix\docs\screenshots\today-screen-2026-06-09-criterion-audit-validation.png"
 npm run verify:calorix-live
 ```
 

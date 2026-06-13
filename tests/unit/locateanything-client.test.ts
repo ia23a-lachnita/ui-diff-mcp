@@ -1,4 +1,7 @@
 import http from "node:http";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   LocatorUnavailableError,
@@ -33,16 +36,143 @@ function stopServer(server: http.Server): Promise<void> {
   return new Promise(resolve => server.close(() => resolve()));
 }
 
+async function startCaptureServer(): Promise<{
+  port: number;
+  getPostedBody: () => unknown;
+}> {
+  let postedBody: unknown;
+  const { server: s, port } = await startServer(async (req, res) => {
+    const chunks: Buffer[] = [];
+    for await (const chunk of req) chunks.push(Buffer.from(chunk));
+    postedBody = JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({
+      model: "nvidia/LocateAnything-3B",
+      image: { width: 1, height: 1 },
+      elements: [],
+      warnings: []
+    }));
+  });
+  server = s;
+  return { port, getPostedBody: () => postedBody };
+}
+
 let server: http.Server | null = null;
+let tmpDir = "";
+
+beforeEach(async () => {
+  tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ui-diff-locator-client-"));
+});
 
 afterEach(async () => {
   if (server) {
     await stopServer(server);
     server = null;
   }
+  if (tmpDir) {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+    tmpDir = "";
+  }
 });
 
 describe("locateUiElements", () => {
+  it("sends image bytes so remote sidecars do not need the same filesystem", async () => {
+    const pngPath = path.join(tmpDir, "fixture.png");
+    await fs.writeFile(
+      pngPath,
+      Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+        "base64"
+      )
+    );
+
+    const { port, getPostedBody } = await startCaptureServer();
+
+    await locateUiElements({
+      endpoint: `http://127.0.0.1:${port}`,
+      request: { ...BASE_REQUEST, imagePath: pngPath },
+      timeoutMs: 5000
+    });
+
+    expect(getPostedBody()).toMatchObject({
+      imagePath: pngPath,
+      imageMimeType: "image/png",
+      imageBase64: expect.any(String)
+    });
+  });
+
+  it("preserves a caller-provided image payload", async () => {
+    const { port, getPostedBody } = await startCaptureServer();
+
+    await locateUiElements({
+      endpoint: `http://127.0.0.1:${port}`,
+      request: {
+        ...BASE_REQUEST,
+        imagePath: "remote-trace.jpeg",
+        imageBase64: "already-encoded",
+        imageMimeType: "image/jpeg"
+      },
+      timeoutMs: 5000
+    });
+
+    expect(getPostedBody()).toMatchObject({
+      imagePath: "remote-trace.jpeg",
+      imageBase64: "already-encoded",
+      imageMimeType: "image/jpeg"
+    });
+  });
+
+  it("uses jpeg MIME type when enriching jpeg files", async () => {
+    const jpegPath = path.join(tmpDir, "fixture.jpeg");
+    await fs.writeFile(jpegPath, Buffer.from("not-a-real-jpeg-but-sent-as-bytes"));
+    const { port, getPostedBody } = await startCaptureServer();
+
+    await locateUiElements({
+      endpoint: `http://127.0.0.1:${port}`,
+      request: { ...BASE_REQUEST, imagePath: jpegPath },
+      timeoutMs: 5000
+    });
+
+    expect(getPostedBody()).toMatchObject({
+      imagePath: jpegPath,
+      imageMimeType: "image/jpeg",
+      imageBase64: Buffer.from("not-a-real-jpeg-but-sent-as-bytes").toString("base64")
+    });
+  });
+
+  it("keeps path-only compatibility when the image cannot be read", async () => {
+    const missingPath = path.join(tmpDir, "missing.webp");
+    const { port, getPostedBody } = await startCaptureServer();
+
+    await locateUiElements({
+      endpoint: `http://127.0.0.1:${port}`,
+      request: { ...BASE_REQUEST, imagePath: missingPath },
+      timeoutMs: 5000
+    });
+
+    expect(getPostedBody()).toEqual({
+      ...BASE_REQUEST,
+      imagePath: missingPath
+    });
+  });
+
+  it("keeps path-only compatibility for unsupported image extensions", async () => {
+    const bmpPath = path.join(tmpDir, "fixture.bmp");
+    await fs.writeFile(bmpPath, Buffer.from("bytes"));
+    const { port, getPostedBody } = await startCaptureServer();
+
+    await locateUiElements({
+      endpoint: `http://127.0.0.1:${port}`,
+      request: { ...BASE_REQUEST, imagePath: bmpPath },
+      timeoutMs: 5000
+    });
+
+    expect(getPostedBody()).toEqual({
+      ...BASE_REQUEST,
+      imagePath: bmpPath
+    });
+  });
+
   it("parses a valid sidecar response", async () => {
     const body = JSON.stringify({
       model: "nvidia/LocateAnything-3B",

@@ -1,0 +1,1 @@
+"""LocateAnything sidecar adapter package."""

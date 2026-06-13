@@ -1,7 +1,11 @@
 import { z } from "zod";
+import fs from "node:fs/promises";
+import path from "node:path";
 
 export const LocateAnythingRequestSchema = z.object({
   imagePath: z.string().min(1),
+  imageBase64: z.string().min(1).optional(),
+  imageMimeType: z.enum(["image/png", "image/jpeg", "image/webp"]).optional(),
   queries: z.array(z.object({
     id: z.string().min(1),
     prompt: z.string().min(1)
@@ -59,15 +63,42 @@ export interface LocateClientOptions {
   timeoutMs: number;
 }
 
+function mimeTypeForImagePath(imagePath: string): LocateAnythingRequest["imageMimeType"] | undefined {
+  const ext = path.extname(imagePath).toLowerCase();
+  if (ext === ".png") return "image/png";
+  if (ext === ".jpg" || ext === ".jpeg") return "image/jpeg";
+  if (ext === ".webp") return "image/webp";
+  return undefined;
+}
+
+async function withImagePayload(request: LocateAnythingRequest): Promise<LocateAnythingRequest> {
+  if (request.imageBase64) return request;
+
+  const imageMimeType = mimeTypeForImagePath(request.imagePath);
+  if (!imageMimeType) return request;
+
+  try {
+    const imageBytes = await fs.readFile(request.imagePath);
+    return {
+      ...request,
+      imageBase64: imageBytes.toString("base64"),
+      imageMimeType
+    };
+  } catch {
+    return request;
+  }
+}
+
 export async function locateUiElements(options: LocateClientOptions): Promise<LocateAnythingResponse> {
   const { endpoint, request, timeoutMs } = options;
+  const requestBody = await withImagePayload(request);
 
   let rawResponse: Response;
   try {
     rawResponse = await fetch(`${endpoint}/v1/locate-ui-elements`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(request),
+      body: JSON.stringify(requestBody),
       signal: AbortSignal.timeout(timeoutMs)
     });
   } catch (err) {

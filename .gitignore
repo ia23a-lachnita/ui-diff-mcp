@@ -6,6 +6,7 @@ coverage/
 .ui-diff-live/
 artifacts/
 *.log
+__pycache__/
 .env
 .env.*
 api-keys.txt
