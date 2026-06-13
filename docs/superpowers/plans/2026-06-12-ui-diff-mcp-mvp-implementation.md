@@ -1,6 +1,6 @@
 # UI Diff MCP MVP Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Build the first usable `ui-diff-mcp` server that compares an expected mobile mockup image against an actual mobile screenshot and reports visible UI differences with locations, evidence, and artifacts.
 
@@ -93,7 +93,7 @@ flowchart TD
 - Create: `src/server.ts`
 - Test: `tests/unit/server.test.ts`
 
-- [ ] **Step 1: Create package metadata and scripts**
+- [x] **Step 1: Create package metadata and scripts**
 
 Use this `package.json`:
 
@@ -137,13 +137,13 @@ Use this `package.json`:
 }
 ```
 
-- [ ] **Step 2: Install dependencies**
+- [x] **Step 2: Install dependencies**
 
 Run: `npm install`
 
 Expected: `package-lock.json` is created and `npm audit` summary contains no critical vulnerability.
 
-- [ ] **Step 3: Create strict TypeScript settings**
+- [x] **Step 3: Create strict TypeScript settings**
 
 Use this `tsconfig.json`:
 
@@ -169,7 +169,7 @@ Use this `tsconfig.json`:
 }
 ```
 
-- [ ] **Step 4: Create Vitest settings**
+- [x] **Step 4: Create Vitest settings**
 
 Use this `vitest.config.ts`:
 
@@ -190,7 +190,7 @@ export default defineConfig({
 });
 ```
 
-- [ ] **Step 5: Create server entrypoint**
+- [x] **Step 5: Create server entrypoint**
 
 Use this `src/index.ts`:
 
@@ -204,7 +204,7 @@ const transport = new StdioServerTransport();
 await server.connect(transport);
 ```
 
-- [ ] **Step 6: Create empty tool registry**
+- [x] **Step 6: Create empty tool registry**
 
 Use this `src/server.ts`:
 
@@ -219,7 +219,7 @@ export function createServer(): McpServer {
 }
 ```
 
-- [ ] **Step 7: Add foundation test**
+- [x] **Step 7: Add foundation test**
 
 Use this `tests/unit/server.test.ts`:
 
@@ -235,7 +235,7 @@ describe("createServer", () => {
 });
 ```
 
-- [ ] **Step 8: Verify and commit**
+- [x] **Step 8: Verify and commit**
 
 Run: `npm run verify`
 
@@ -256,7 +256,7 @@ git push
 - Create: `src/schemas/tool-schemas.ts`
 - Test: `tests/unit/schemas.test.ts`
 
-- [ ] **Step 1: Define shared schemas**
+- [x] **Step 1: Define shared schemas**
 
 Create `src/schemas/core.ts` with these exported Zod schemas and inferred types:
 
@@ -389,7 +389,7 @@ export const UiDiffReportSchema = z.object({
 export type UiDiffReport = z.infer<typeof UiDiffReportSchema>;
 ```
 
-- [ ] **Step 2: Define MCP tool schemas**
+- [x] **Step 2: Define MCP tool schemas**
 
 Create `src/schemas/tool-schemas.ts`:
 
@@ -427,7 +427,7 @@ export const ModelHealthOutputSchema = {
 };
 ```
 
-- [ ] **Step 3: Add schema tests**
+- [x] **Step 3: Add schema tests**
 
 Use this `tests/unit/schemas.test.ts`:
 
@@ -476,7 +476,7 @@ describe("core schemas", () => {
 });
 ```
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 Run: `npm run verify`
 
@@ -499,7 +499,7 @@ git push
 - Create: `src/testing/fixture-images.ts`
 - Test: `tests/unit/images.test.ts`
 
-- [ ] **Step 1: Create safe path helpers**
+- [x] **Step 1: Create safe path helpers**
 
 Implement `resolveInputImagePath`, `createRunDirectory`, and `assertSupportedImagePath` in `src/security/paths.ts`. Supported extensions are `.png`, `.jpg`, `.jpeg`, and `.webp`. Resolve all paths to absolute paths and reject paths containing null bytes or unsupported extensions.
 
@@ -507,11 +507,11 @@ Implement `resolveInputImagePath`, `createRunDirectory`, and `assertSupportedIma
 export const SUPPORTED_IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp"]);
 ```
 
-- [ ] **Step 2: Create fixture image generator**
+- [x] **Step 2: Create fixture image generator**
 
 Implement `writeSolidPng`, `writeRectPng`, and `writeTwoButtonFixture` in `src/testing/fixture-images.ts` using Sharp. The functions write deterministic PNGs into a caller-provided directory.
 
-- [ ] **Step 3: Create normalization module**
+- [x] **Step 3: Create normalization module**
 
 Implement `loadNormalizedImage(inputPath, outputPath, targetSize?)` in `src/images/normalize.ts`. It must:
 
@@ -522,15 +522,15 @@ Implement `loadNormalizedImage(inputPath, outputPath, targetSize?)` in `src/imag
 - write a PNG artifact,
 - return `{ path, width, height, channels, rgba }`.
 
-- [ ] **Step 4: Create artifact module**
+- [x] **Step 4: Create artifact module**
 
 Implement `writeCrop`, `writeOverlay`, and `writeJsonArtifact` in `src/images/artifacts.ts`. `writeCrop` must clamp only after its caller has validated the box against image bounds; invalid boxes throw before Sharp extraction.
 
-- [ ] **Step 5: Add image tests**
+- [x] **Step 5: Add image tests**
 
 Use tests that generate a 100x100 fixture, normalize it, assert width/height/channels, crop a 40x40 rectangle, and assert unsupported extensions are rejected.
 
-- [ ] **Step 6: Verify and commit**
+- [x] **Step 6: Verify and commit**
 
 Run: `npm run verify`
 
@@ -553,27 +553,27 @@ git push
 - Create: `src/signals/edge.ts`
 - Test: `tests/unit/signals.test.ts`
 
-- [ ] **Step 1: Implement box math**
+- [x] **Step 1: Implement box math**
 
 In `src/signals/geometry.ts`, implement `area`, `intersect`, `iou`, `toNormalizedBox`, `fromNormalizedBox`, `containsCenter`, and `expandBox`. Unit tests must include partial overlap, no overlap, and exact overlap.
 
-- [ ] **Step 2: Implement pixel diff mask**
+- [x] **Step 2: Implement pixel diff mask**
 
 In `src/signals/pixel-diff.ts`, use `PNG.sync.read` and `pixelmatch` to create a diff PNG plus connected components. Return changed pixel count, changed percent, and components with pixel boxes and area.
 
-- [ ] **Step 3: Implement color samples**
+- [x] **Step 3: Implement color samples**
 
 In `src/signals/color.ts`, sample average RGBA and dominant simple palette inside a box. Use deterministic integer rounding.
 
-- [ ] **Step 4: Implement edge mask**
+- [x] **Step 4: Implement edge mask**
 
 In `src/signals/edge.ts`, implement a simple grayscale Sobel edge detector over RGBA buffers and return edge components above a threshold.
 
-- [ ] **Step 5: Add signal tests**
+- [x] **Step 5: Add signal tests**
 
 Generate two 100x100 images where the actual image shifts a red rectangle by 10px. Assert pixel diff detects at least two components, IoU is below 1, and color sampling sees red inside the expected rectangle.
 
-- [ ] **Step 6: Verify and commit**
+- [x] **Step 6: Verify and commit**
 
 Run: `npm run verify`
 
@@ -593,7 +593,7 @@ git push
 - Create: `src/locator/locateanything-client.ts`
 - Test: `tests/unit/locateanything-client.test.ts`
 
-- [ ] **Step 1: Implement sidecar schemas**
+- [x] **Step 1: Implement sidecar schemas**
 
 Define request and response Zod schemas that exactly match the approved contract:
 
@@ -611,15 +611,15 @@ export const LocateAnythingRequestSchema = z.object({
 
 The response schema must include `model`, `image.width`, `image.height`, `elements[].queryId`, `elements[].label`, `elements[].box`, `elements[].rawBox1000`, `elements[].confidence`, `elements[].rawText`, and `warnings`.
 
-- [ ] **Step 2: Implement HTTP client**
+- [x] **Step 2: Implement HTTP client**
 
 Implement `locateUiElements({ endpoint, request, timeoutMs })`. Use `AbortSignal.timeout(timeoutMs)`, POST JSON to `/v1/locate-ui-elements`, parse JSON, reject non-2xx responses with a typed `LocatorUnavailableError`, and reject boxes that exceed image bounds.
 
-- [ ] **Step 3: Add sidecar client tests**
+- [x] **Step 3: Add sidecar client tests**
 
 Use a local `node:http` test server. Test one valid response, one out-of-bounds box rejection, and one HTTP 503 response that becomes `LocatorUnavailableError` with code `locator_unavailable`.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 Run: `npm run verify`
 
@@ -641,15 +641,15 @@ git push
 - Test: `tests/unit/element-map.test.ts`
 - Test: `tests/unit/pair-elements.test.ts`
 
-- [ ] **Step 1: Implement element map creation**
+- [x] **Step 1: Implement element map creation**
 
 Implement `buildElementMap(rawElements, imageSize, deterministicBoxes)`. It must convert sidecar elements into `UiElement` records, merge duplicates with IoU >= 0.82, create stable IDs from type/label/box hash, and keep parent/child relations when one box contains another.
 
-- [ ] **Step 2: Implement box snapping**
+- [x] **Step 2: Implement box snapping**
 
 Add `snapElementBoxesToSignals(elements, edgeComponents, textBoxes)`. A raw element box can snap to a deterministic box only when IoU >= 0.55 or when the deterministic box center is inside the raw box and area ratio is between 0.35 and 2.2. Record a warning when a box changes by more than 12px.
 
-- [ ] **Step 3: Implement pairing**
+- [x] **Step 3: Implement pairing**
 
 Implement `pairElements(expectedElements, actualElements)`. Score candidates using normalized weighted terms:
 
@@ -659,11 +659,11 @@ Implement `pairElements(expectedElements, actualElements)`. Score candidates usi
 
 Create `matched` pairs at score >= 0.62, `uncertain` pairs at score >= 0.45, `missing` for unpaired expected elements, and `extra` for unpaired actual elements.
 
-- [ ] **Step 4: Add pairing tests**
+- [x] **Step 4: Add pairing tests**
 
 Test a shifted button pair, a missing expected label, an extra actual icon, and two duplicate locator boxes that merge into one element.
 
-- [ ] **Step 5: Verify and commit**
+- [x] **Step 5: Verify and commit**
 
 Run: `npm run verify`
 
@@ -687,27 +687,27 @@ git push
 - Test: `tests/unit/model-registry.test.ts`
 - Test: `tests/unit/model-clients.test.ts`
 
-- [ ] **Step 1: Implement fixed model registry**
+- [x] **Step 1: Implement fixed model registry**
 
 Define model roles with exact IDs from the approved spec. Do not auto-substitute models. Store probe TTLs as 15 minutes for free-only models and 24 hours for pinned paid/local models.
 
-- [ ] **Step 2: Implement OpenRouter adapter**
+- [x] **Step 2: Implement OpenRouter adapter**
 
 Implement `callOpenRouterVisionJson({ apiKey, model, prompt, images, jsonSchema, timeoutMs })`. Send multipart message content with text first and `image_url` data URLs after it. Use `response_format: { type: "json_schema", json_schema: { name, strict: true, schema } }`. Return raw provider metadata and parsed JSON.
 
-- [ ] **Step 3: Implement NVIDIA adapter**
+- [x] **Step 3: Implement NVIDIA adapter**
 
 Implement the same interface for an OpenAI-compatible NVIDIA endpoint. Use `NVIDIA_API_KEY` and `NVIDIA_VLM_BASE_URL`. Keep this adapter optional; absence of environment variables reports `not_checked`.
 
-- [ ] **Step 4: Implement probes**
+- [x] **Step 4: Implement probes**
 
 Create probes that generate a 64x64 blue PNG and a 100x100 red-rectangle PNG. Probe image input, JSON schema compliance, known-color reading, known box reading, timeout behavior, and expected/actual ordering. A failed probe excludes that model for the current run and returns `model_unavailable` if no required model remains.
 
-- [ ] **Step 5: Add provider tests with mocked fetch**
+- [x] **Step 5: Add provider tests with mocked fetch**
 
 Mock `globalThis.fetch` and test: OpenRouter request shape, JSON schema payload, data URL image ordering, failed HTTP status, malformed JSON, and missing API key status.
 
-- [ ] **Step 6: Verify and commit**
+- [x] **Step 6: Verify and commit**
 
 Run: `npm run verify`
 
@@ -730,27 +730,27 @@ git push
 - Create: `src/audit/review-findings.ts`
 - Test: `tests/unit/audit.test.ts`
 
-- [ ] **Step 1: Implement built-in criteria**
+- [x] **Step 1: Implement built-in criteria**
 
 Create one rubric object per criterion: presence, geometry, spacing/alignment, typography/content, color/appearance, icon/image, layering/clipping, component state, chart/special geometry, and unclassified visual change. Each rubric must produce a JSON-only audit result with `hasDiff`, `severity`, `title`, `evidence`, and `measurements`.
 
-- [ ] **Step 2: Implement deterministic criterion triggers**
+- [x] **Step 2: Implement deterministic criterion triggers**
 
 Map measurements to criteria: unmatched pair triggers presence; box delta triggers geometry; gap/baseline delta triggers spacing/alignment; OCR delta triggers typography/content; color sample delta triggers color/appearance; edge/crop mismatch in icon/image boxes triggers icon/image; overlap/clipping triggers layering/clipping; state words and selected/nav pairs trigger component state; chart type plus edge/pixel mismatch triggers chart/special geometry.
 
-- [ ] **Step 3: Implement prompt builders**
+- [x] **Step 3: Implement prompt builders**
 
 Prompts must forbid causality explanations and implementation recommendations. The auditor prompt sees expected crop, actual crop, local overlay, target metadata, one criterion, deterministic measurements, and strict JSON schema. The reviewer prompt can accept, reject, or mark needs escalation based only on supplied evidence.
 
-- [ ] **Step 4: Implement audit orchestration**
+- [x] **Step 4: Implement audit orchestration**
 
 Implement `auditElementPair(pair, context)`. It writes crops and overlay artifacts, selects criteria, calls the auditor model for each triggered criterion, validates JSON, calls the reviewer, and returns accepted diff records plus rejected records in debug metadata.
 
-- [ ] **Step 5: Add audit tests**
+- [x] **Step 5: Add audit tests**
 
 Mock model calls. Test that a shifted button triggers geometry only, a changed label triggers typography/content, a reviewer rejection removes a diff from final records, and prompt text contains no code-edit advice section.
 
-- [ ] **Step 6: Verify and commit**
+- [x] **Step 6: Verify and commit**
 
 Run: `npm run verify`
 
@@ -771,19 +771,19 @@ git push
 - Create: `src/report/report-writer.ts`
 - Test: `tests/unit/report.test.ts`
 
-- [ ] **Step 1: Implement coverage assignment**
+- [x] **Step 1: Implement coverage assignment**
 
 Implement `assignDiffComponentsToRecords(components, diffs, minArea)`. Every changed-pixel component with area >= `minArea` must either overlap a diff location or become a new `unclassified_visual_change` diff record with artifact evidence.
 
-- [ ] **Step 2: Implement report writer**
+- [x] **Step 2: Implement report writer**
 
 Implement `writeUiDiffReport(reportDraft)`. It writes `report.json`, `artifacts/index.json`, compact summary fields, and paths relative to the run root where possible.
 
-- [ ] **Step 3: Add report tests**
+- [x] **Step 3: Add report tests**
 
 Test that uncovered components produce `unclassified_visual_change`, report JSON validates with `UiDiffReportSchema`, and compact output contains `runId`, `status`, `diffCount`, `reportPath`, and `artifactRoot`.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 Run: `npm run verify`
 
@@ -806,15 +806,15 @@ git push
 - Create: `src/capture/mobile-capture.ts`
 - Test: `tests/unit/tools.test.ts`
 
-- [ ] **Step 1: Implement pipeline orchestration**
+- [x] **Step 1: Implement pipeline orchestration**
 
 Implement `runUiDiff(input)` in `src/pipeline/run-ui-diff.ts`. The sequence is exactly: resolve paths, create run directory, normalize images, extract deterministic signals, call locator, build element maps, pair elements, probe required models, audit pairs, run coverage gate, write report, return compact output.
 
-- [ ] **Step 2: Implement stage timing metadata**
+- [x] **Step 2: Implement stage timing metadata**
 
 Add `StageResult<T>` in `src/pipeline/stages.ts` with `name`, `startedAt`, `completedAt`, `durationMs`, `warnings`, and `data`. Include stage timings in `report.json`.
 
-- [ ] **Step 3: Register MCP tools**
+- [x] **Step 3: Register MCP tools**
 
 Modify `src/server.ts` to register:
 
@@ -826,15 +826,15 @@ Modify `src/server.ts` to register:
 
 Each tool must declare Zod input and output schemas. Each non-error response must return both `content` and `structuredContent`.
 
-- [ ] **Step 4: Implement narrow capture**
+- [x] **Step 4: Implement narrow capture**
 
 Implement `capture_mobile_screen` only for explicit supported targets: `adb` and `ios-simctl`. Use `execFile` or `spawn` with argument arrays through `node:child_process`, never shell strings. If the required executable is absent, return a structured error.
 
-- [ ] **Step 5: Add tool tests**
+- [x] **Step 5: Add tool tests**
 
 Mock `runUiDiff` and assert `compare_ui_images` returns structured content. Test that `read_ui_diff_report` reads only a validated report path and that capture rejects unknown target kinds.
 
-- [ ] **Step 6: Verify and commit**
+- [x] **Step 6: Verify and commit**
 
 Run: `npm run verify`
 
@@ -856,19 +856,19 @@ git push
 - Create: `tests/fixtures/mock-models.ts`
 - Create: `examples/compare-images.json`
 
-- [ ] **Step 1: Create fixture sidecar**
+- [x] **Step 1: Create fixture sidecar**
 
 Implement a local HTTP sidecar fixture that returns text, button, card, icon, and chart boxes for generated expected and actual screenshots.
 
-- [ ] **Step 2: Create fixture models**
+- [x] **Step 2: Create fixture models**
 
 Implement mocked auditor and reviewer responses. The fixture must produce one geometry diff, one typography/content diff, one extra element diff, and one uncovered component that becomes `unclassified_visual_change`.
 
-- [ ] **Step 3: Add end-to-end test**
+- [x] **Step 3: Add end-to-end test**
 
 Run the full pipeline against generated screenshots. Assert `status === "complete"`, `diffCount === 4`, report exists, normalized images exist, crop artifacts exist, overlay exists, and every diff has location and evidence.
 
-- [ ] **Step 4: Add example payload**
+- [x] **Step 4: Add example payload**
 
 Create `examples/compare-images.json`:
 
@@ -880,7 +880,7 @@ Create `examples/compare-images.json`:
 }
 ```
 
-- [ ] **Step 5: Verify and commit**
+- [x] **Step 5: Verify and commit**
 
 Run: `npm run verify`
 
@@ -901,7 +901,7 @@ git push
 - Create: `.env.example`
 - Modify: `.gitignore` if new local artifacts appear during implementation.
 
-- [ ] **Step 1: Document install and run**
+- [x] **Step 1: Document install and run**
 
 Update `README.md` with:
 
@@ -914,7 +914,7 @@ Update `README.md` with:
 - first Calorix use case paths
 - statement that no user-authored target map, ROI map, ignore mask, or anchor dump is required.
 
-- [ ] **Step 2: Add environment example**
+- [x] **Step 2: Add environment example**
 
 Create `.env.example` with variable names and empty values only:
 
@@ -925,7 +925,7 @@ NVIDIA_API_KEY=
 NVIDIA_VLM_BASE_URL=
 ```
 
-- [ ] **Step 3: Run final verification**
+- [x] **Step 3: Run final verification**
 
 Run:
 
@@ -937,7 +937,7 @@ git status --short
 
 Expected: verify passes, `git diff --check` prints no whitespace errors, and only intentional docs/example files are unstaged before committing.
 
-- [ ] **Step 4: Commit and push**
+- [x] **Step 4: Commit and push**
 
 Commit and push:
 

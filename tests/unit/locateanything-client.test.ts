@@ -52,7 +52,7 @@ describe("locateUiElements", () => {
           queryId: "q1",
           label: "Sign in button",
           box: { x: 10, y: 20, width: 80, height: 40 },
-          rawBox1000: { x: 50, y: 50, width: 400, height: 100 },
+          rawBox1000: [50, 50, 400, 100],
           confidence: 0.92
         }
       ],
@@ -84,7 +84,7 @@ describe("locateUiElements", () => {
           queryId: "q1",
           label: "out of bounds",
           box: { x: 80, y: 80, width: 40, height: 40 },
-          rawBox1000: { x: 800, y: 800, width: 400, height: 400 },
+          rawBox1000: [800, 800, 400, 400],
           confidence: 0.7
         }
       ],

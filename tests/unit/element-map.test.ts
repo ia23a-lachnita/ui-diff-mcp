@@ -7,7 +7,7 @@ function makeEl(id: string, label: string, x: number, y: number, w: number, h: n
     queryId: id,
     label,
     box: { x, y, width: w, height: h },
-    rawBox1000: { x: x * 5, y: y * 5, width: w * 5, height: h * 5 },
+    rawBox1000: [x * 5, y * 5, w * 5, h * 5],
     confidence: 0.9
   };
 }

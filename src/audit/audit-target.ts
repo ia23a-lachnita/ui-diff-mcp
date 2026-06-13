@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import fs from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
 import { z } from "zod";
@@ -27,26 +28,38 @@ export interface AuditContext {
   triggerCtx: TriggerContext;
 }
 
-async function extractCropBase64(
+async function extractCrop(
   imagePath: string,
   box: { x: number; y: number; width: number; height: number },
   imageWidth: number,
-  imageHeight: number
-): Promise<string> {
+  imageHeight: number,
+  savePath?: string
+): Promise<{ base64: string; savedPath: string | undefined }> {
   const x = Math.max(0, Math.round(box.x));
   const y = Math.max(0, Math.round(box.y));
   const w = Math.min(Math.round(box.width), imageWidth - x);
   const h = Math.min(Math.round(box.height), imageHeight - y);
+
+  let buf: Buffer;
   if (w <= 0 || h <= 0) {
-    return await sharp({
+    buf = await sharp({
       create: { width: 1, height: 1, channels: 3, background: { r: 128, g: 128, b: 128 } }
-    }).png().toBuffer().then(b => b.toString("base64"));
+    }).png().toBuffer();
+  } else {
+    buf = await sharp(imagePath)
+      .extract({ left: x, top: y, width: w, height: h })
+      .png()
+      .toBuffer();
   }
-  const buf = await sharp(imagePath)
-    .extract({ left: x, top: y, width: w, height: h })
-    .png()
-    .toBuffer();
-  return buf.toString("base64");
+
+  let savedPath: string | undefined;
+  if (savePath) {
+    await fs.mkdir(path.dirname(savePath), { recursive: true });
+    await fs.writeFile(savePath, buf);
+    savedPath = savePath;
+  }
+
+  return { base64: buf.toString("base64"), savedPath };
 }
 
 function diffId(): string {
@@ -68,18 +81,26 @@ export async function auditElementPair(
 
   const criteria = selectTriggeredCriteria(ctx.triggerCtx);
 
+  const pairSlug = pair.id.slice(0, 12);
   let expectedCropB64: string | null = null;
   let actualCropB64: string | null = null;
+  const cropArtifacts: string[] = [];
 
   if (expectedEl) {
-    expectedCropB64 = await extractCropBase64(
-      ctx.expectedImagePath, expectedEl.box, ctx.imageWidth, ctx.imageHeight
+    const result = await extractCrop(
+      ctx.expectedImagePath, expectedEl.box, ctx.imageWidth, ctx.imageHeight,
+      path.join(ctx.artifactDir, `${pairSlug}-expected-crop.png`)
     );
+    expectedCropB64 = result.base64;
+    if (result.savedPath) cropArtifacts.push(result.savedPath);
   }
   if (actualEl) {
-    actualCropB64 = await extractCropBase64(
-      ctx.actualImagePath, actualEl.box, ctx.imageWidth, ctx.imageHeight
+    const result = await extractCrop(
+      ctx.actualImagePath, actualEl.box, ctx.imageWidth, ctx.imageHeight,
+      path.join(ctx.artifactDir, `${pairSlug}-actual-crop.png`)
     );
+    actualCropB64 = result.base64;
+    if (result.savedPath) cropArtifacts.push(result.savedPath);
   }
 
   const images: string[] = [];
@@ -161,7 +182,7 @@ export async function auditElementPair(
       location: refEl.box,
       evidence,
       measurements: auditResult.measurements ?? [],
-      artifactPaths: [],
+      artifactPaths: cropArtifacts,
       reviewerStatus: reviewDecision === "needs_escalation" ? "needs_escalation" : reviewDecision,
       model: ctx.auditorModel
     };

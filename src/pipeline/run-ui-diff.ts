@@ -48,10 +48,11 @@ export async function runUiDiff(input: RunInput): Promise<RunOutput> {
   const normalizedExpPath = path.join(runDir, "expected-normalized.png");
   const normalizedActPath = path.join(runDir, "actual-normalized.png");
 
-  const [expectedImg, actualImg] = await Promise.all([
-    loadNormalizedImage(expectedAbs, normalizedExpPath),
-    loadNormalizedImage(actualAbs, normalizedActPath)
-  ]);
+  const expectedImg = await loadNormalizedImage(expectedAbs, normalizedExpPath);
+  const actualImg = await loadNormalizedImage(actualAbs, normalizedActPath, {
+    width: expectedImg.width,
+    height: expectedImg.height
+  });
 
   const pixelDiff = computePixelDiff(normalizedExpPath, normalizedActPath);
   const edgeMask = extractEdgeMask(expectedImg.rgba, expectedImg.width, expectedImg.height);
@@ -131,7 +132,7 @@ export async function runUiDiff(input: RunInput): Promise<RunOutput> {
     }
 
     const requiredFailed = modelHealth.filter(
-      m => m.status === "fail" && (m.role === "auditor" || m.role === "reviewer")
+      m => (m.status === "fail" || m.status === "not_checked") && (m.role === "auditor" || m.role === "reviewer")
     );
 
     if (requiredFailed.length > 0) {

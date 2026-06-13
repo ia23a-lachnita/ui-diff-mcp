@@ -20,12 +20,12 @@ export const LocateAnythingElementSchema = z.object({
     width: z.number().finite().positive(),
     height: z.number().finite().positive()
   }),
-  rawBox1000: z.object({
-    x: z.number().finite(),
-    y: z.number().finite(),
-    width: z.number().finite(),
-    height: z.number().finite()
-  }),
+  rawBox1000: z.tuple([
+    z.number().finite(),
+    z.number().finite(),
+    z.number().finite(),
+    z.number().finite()
+  ]),
   confidence: z.number().finite().min(0).max(1),
   rawText: z.string().optional()
 });

@@ -14,7 +14,7 @@ function makeSidecarResponse(width: number, height: number): string {
         queryId: "text",
         label: "Welcome heading",
         box: { x: 10, y: 20, width: 180, height: 30 },
-        rawBox1000: { x: 50, y: 50, width: 900, height: 75 },
+        rawBox1000: [50, 50, 900, 75],
         confidence: 0.94,
         rawText: "Welcome"
       },
@@ -22,21 +22,21 @@ function makeSidecarResponse(width: number, height: number): string {
         queryId: "button",
         label: "Sign in button",
         box: { x: 20, y: 80, width: 160, height: 44 },
-        rawBox1000: { x: 100, y: 200, width: 800, height: 110 },
+        rawBox1000: [100, 200, 800, 110],
         confidence: 0.91
       },
       {
         queryId: "icon",
         label: "Logo icon",
         box: { x: 80, y: 140, width: 40, height: 40 },
-        rawBox1000: { x: 400, y: 350, width: 200, height: 100 },
+        rawBox1000: [400, 350, 200, 100],
         confidence: 0.88
       },
       {
         queryId: "card",
         label: "Main card",
         box: { x: 5, y: 200, width: 190, height: 120 },
-        rawBox1000: { x: 25, y: 500, width: 950, height: 300 },
+        rawBox1000: [25, 500, 950, 300],
         confidence: 0.85
       }
     ],

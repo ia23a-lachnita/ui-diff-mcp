@@ -4,14 +4,13 @@ This file is the persistent handoff state for implementation agents. Read it bef
 
 ## Current State
 
-- Status: implementation not started.
+- Status: complete — all 12 tasks implemented; post-implementation bug fixes applied.
 - Branch: `master`.
-- Latest pushed commit at status creation: `5badb60 docs: add ui diff mcp implementation plan`.
 - Approved spec: `docs/superpowers/specs/2026-06-12-ui-diff-mcp-research-design.md`.
 - Active implementation plan: `docs/superpowers/plans/2026-06-12-ui-diff-mcp-mvp-implementation.md`.
-- Current task: complete — all 12 tasks implemented.
+- Current task: none.
 - Next task: none.
-- Last verification: `git status --short --branch` showed `master...origin/master` clean before this status file was created.
+- Last verification: `npm run verify` — 65 tests passed, typecheck clean, build clean (post bug-fix commit).
 - Open blockers: none.
 
 ## Standing Implementation Rules
@@ -28,13 +27,15 @@ This file is the persistent handoff state for implementation agents. Read it bef
 | Date | Commit | Task | Verification | Notes |
 | --- | --- | --- | --- | --- |
 | 2026-06-12 | `5badb60` | Implementation plan approved | Gemini 3 Pro Preview final blocker pass: `AGREEMENT_STATUS: agree`, `MUST_FIX: none` | Ready to start Task 1. |
+| 2026-06-13 | `656e112` | All 12 tasks implemented | `npm run verify` — 65 tests passed, typecheck clean, build clean | All tasks complete. |
+| 2026-06-13 | TBD | Post-implementation bug fixes | `npm run verify` — 65 tests passed, typecheck clean, build clean | Fixed P1: rawBox1000 schema (array not object), not_checked models falsely marked available, image size mismatch crash, read_ui_diff_report path traversal. Fixed P2: crop artifacts saved to disk, plan checkboxes synced. |
 
 ## Handoff Checklist
 
-- Current task: all complete
-- Last completed step: Task 12 docs committed, all tasks 1-12 pushed
+- Current task: all complete (including post-implementation bug fixes)
+- Last completed step: Bug fixes committed and pushed
 - Next step: none
 - Verification command and result: `npm run verify` — 65 tests passed, typecheck clean, build clean
-- Commit pushed: 656e112
+- Commit pushed: TBD (see git log)
 - Files intentionally left modified: none
 - Blockers: none

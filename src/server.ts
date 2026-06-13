@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import path from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { CompareUiImagesInputSchema } from "./schemas/tool-schemas.js";
@@ -93,7 +94,12 @@ export function createServer(): McpServer {
       if (!input.reportPath.endsWith(".json")) {
         throw new Error("reportPath must be a .json file");
       }
-      const raw = await fs.readFile(input.reportPath, "utf8");
+      const resolved = path.resolve(input.reportPath);
+      const allowedDir = path.join(process.cwd(), ".ui-diff", "runs");
+      if (!resolved.startsWith(allowedDir + path.sep) && resolved !== allowedDir) {
+        throw new Error("reportPath must be within the .ui-diff/runs/ directory");
+      }
+      const raw = await fs.readFile(resolved, "utf8");
       const parsed = UiDiffReportSchema.parse(JSON.parse(raw));
       return {
         content: [{ type: "text" as const, text: `Report loaded: run ${parsed.runId}, ${parsed.diffs.length} diffs.` }],
