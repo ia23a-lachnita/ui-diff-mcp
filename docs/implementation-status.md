@@ -31,6 +31,7 @@ This file is the persistent handoff state for implementation agents. Read it bef
 | 2026-06-13 | `5bee6f9` | Post-implementation bug fixes | `npm run verify` — 65 tests passed, typecheck clean, build clean | Fixed P1: rawBox1000 schema (array not object), not_checked models falsely marked available, image size mismatch crash, read_ui_diff_report path traversal. Fixed P2: crop artifacts saved to disk, plan checkboxes synced. |
 | 2026-06-13 | `81b6201` | Remaining P2 fixes | `npm run verify` — 65 tests passed, typecheck clean, build clean | Fixed: read_ui_diff_report accepts any projectRoot .ui-diff/runs/ path; pixel-diff.png written and referenced by unclassified diffs; diff-overlay.png written via writeOverlay; status TBD placeholders resolved. |
 | 2026-06-13 | `448d5a8` | Overlay discoverability + status sync | `npm run verify` — 65 tests passed, typecheck clean, build clean | Added runArtifacts field to UiDiffReport schema; overlay and pixel-diff paths included in report and index.json; status commit SHA updated. |
+| 2026-06-13 | `8576473` | Status SHA catch-up | docs only | Updated handoff checklist to reflect current HEAD after status-only commit. |
 
 ## Handoff Checklist
 
@@ -38,6 +39,6 @@ This file is the persistent handoff state for implementation agents. Read it bef
 - Last completed step: Bug fixes committed and pushed
 - Next step: none
 - Verification command and result: `npm run verify` — 65 tests passed, typecheck clean, build clean
-- Commit pushed: `448d5a8`
+- Commit pushed: `8576473`
 - Files intentionally left modified: none
 - Blockers: none
