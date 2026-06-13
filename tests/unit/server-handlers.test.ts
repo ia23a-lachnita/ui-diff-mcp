@@ -112,6 +112,41 @@ describe("server tool handlers", () => {
     expect(result.structuredContent).toMatchObject({ report: { runId: "run-test" } });
   });
 
+  it("compare handler omits projectRoot and forwards runLabel when given", async () => {
+    const d = deps();
+    await handleCompareUiImages({
+      expectedImagePath: "expected.png",
+      actualImagePath: "actual.png",
+      runLabel: "smoke"
+    }, d);
+    expect(d.runUiDiff).toHaveBeenCalledWith({
+      expectedImagePath: "expected.png",
+      actualImagePath: "actual.png",
+      mode: "full",
+      runLabel: "smoke"
+    });
+  });
+
+  it("read report handler rejects non-json paths", async () => {
+    await expect(
+      handleReadUiDiffReport({ reportPath: "C:/project/.ui-diff/runs/run-test/report.txt" }, deps())
+    ).rejects.toThrow(/must be a .json file/);
+  });
+
+  it("model health handler counts passing models without detail", async () => {
+    const d = deps({
+      probeRequiredModels: vi.fn().mockResolvedValue([
+        { role: "auditor", provider: "openrouter", model: "qwen/qwen3-vl-30b-a3b-instruct", status: "pass", checkedAt: new Date().toISOString() },
+        { role: "reviewer", provider: "openrouter", model: "google/gemini-2.5-flash-lite", status: "pass", checkedAt: new Date().toISOString() }
+      ])
+    });
+    const result = await handleModelHealth(d);
+    const structured = result.structuredContent as { results: Array<{ status: string; detail?: string }> };
+    expect(structured.results.every(r => r.status === "pass")).toBe(true);
+    expect(structured.results.every(r => r.detail === undefined)).toBe(true);
+    expect(result.content[0]?.text).toContain("2/2 passing");
+  });
+
   it("capture handler returns structured image path", async () => {
     const d = deps();
     const result = await handleCaptureMobileScreen({ target: "adb" }, d);
