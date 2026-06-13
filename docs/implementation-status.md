@@ -12,7 +12,8 @@ This file is the persistent handoff state for implementation agents. Read it bef
 - Current task: none.
 - Next task: run live gates with real OpenRouter key, real LocateAnything sidecar, and Calorix image pair before production sign-off.
 - Last verification: `npm run verify` and `npm run test:coverage` — passed after production-readiness tests.
-- Open blockers: live release gates require configured external services before final production sign-off. Gemini 3 Pro Preview code review of these test gates is pending OpenRouter/Gemini quota reset (quota exhausted at implementation time; entire Gemini quota, ~4h reset).
+- Code review: Gemini 3 Pro Preview reviewed the production-readiness test gates on 2026-06-13 — `AGREEMENT_STATUS: agree`, no MUST_FIX issues.
+- Open blockers: live release gates require configured external services before final production sign-off (deterministic gates and code review are green).
 
 ## Standing Implementation Rules
 
@@ -40,8 +41,8 @@ This file is the persistent handoff state for implementation agents. Read it bef
 
 - Current task: none — production-readiness test plan fully implemented (Tasks 1-8)
 - Last completed step: Raised coverage thresholds (85/68/85/85) and synced this status file
-- Next step: when Gemini quota resets, run Gemini 3 Pro Preview review of the new test gates; separately run the live gates (`npm run verify:live`, `npm run verify:calorix-live`) with real credentials/sidecar before production sign-off
+- Next step: run the live gates (`npm run verify:live`, `npm run verify:calorix-live`) with real credentials/sidecar before production sign-off (Gemini 3 Pro Preview review of the test gates is complete — `AGREEMENT_STATUS: agree`)
 - Verification command and result: `npm run verify` passed (90 unit + 6 integration); `npm run test:coverage` passed raised thresholds (87.02 stmts / 68.64 branches / 87.5 funcs / 89.13 lines)
 - Commit pushed: see latest commit on `master`
 - Files intentionally left modified: none
-- Blockers: live gates not yet executed (require external services); Gemini 3 Pro Preview review pending quota reset
+- Blockers: live gates not yet executed (require external services); Gemini 3 Pro Preview review complete (`AGREEMENT_STATUS: agree`)
