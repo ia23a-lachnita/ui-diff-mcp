@@ -39,6 +39,8 @@ Required result:
 
 ```powershell
 $env:RUN_CALORIX_UI_DIFF_LIVE="1"
+$env:OPENROUTER_API_KEY="<real-openrouter-key>"
+$env:LOCATEANYTHING_SIDECAR_URL="http://127.0.0.1:39731"
 $env:UI_DIFF_LIVE_EXPECTED_IMAGE="C:\absolute\path\to\mockup.png"
 $env:UI_DIFF_LIVE_ACTUAL_IMAGE="C:\absolute\path\to\screenshot.png"
 npm run verify:calorix-live

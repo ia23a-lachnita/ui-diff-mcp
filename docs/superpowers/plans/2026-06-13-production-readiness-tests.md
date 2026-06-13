@@ -1,6 +1,6 @@
 # UI Diff MCP Production Readiness Test Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Add the missing production-readiness test gates for the MCP tool surface, mobile capture wrapper, and real model/locator integrations so `ui-diff-mcp` can graduate from Calorix dogfooding to production use.
 
@@ -93,7 +93,7 @@ UI_DIFF_LIVE_ACTUAL_IMAGE=C:/absolute/path/to/screenshot.png
 - Create: `tests/helpers/mcp-client.ts`
 - Test: used by later tasks
 
-- [ ] **Step 1: Write helper file**
+- [x] **Step 1: Write helper file**
 
 Create `tests/helpers/mcp-client.ts`:
 
@@ -132,7 +132,7 @@ export async function startUiDiffMcpClient(
 }
 ```
 
-- [ ] **Step 2: Build before using helper**
+- [x] **Step 2: Build before using helper**
 
 Run:
 
@@ -142,7 +142,7 @@ npm run build
 
 Expected: exit code 0 and `dist/src/index.js` exists.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 Run:
 
@@ -158,7 +158,7 @@ git push
 - Modify: `src/server.ts`
 - Create: `tests/unit/server-handlers.test.ts`
 
-- [ ] **Step 1: Export injectable server dependencies**
+- [x] **Step 1: Export injectable server dependencies**
 
 Modify `src/server.ts` to export dependency types and defaults above `createServer()`:
 
@@ -184,7 +184,7 @@ export const defaultServerDeps: ServerDeps = {
 };
 ```
 
-- [ ] **Step 2: Export testable handler functions**
+- [x] **Step 2: Export testable handler functions**
 
 Move the current inline tool callback bodies into these exported functions in `src/server.ts`:
 
@@ -259,7 +259,7 @@ export async function handleCaptureMobileScreen(
 }
 ```
 
-- [ ] **Step 3: Wire `createServer` to handlers**
+- [x] **Step 3: Wire `createServer` to handlers**
 
 Change `createServer` to accept dependencies and call the exported handlers:
 
@@ -323,7 +323,7 @@ export function createServer(deps: ServerDeps = defaultServerDeps): McpServer {
 }
 ```
 
-- [ ] **Step 4: Add handler unit tests**
+- [x] **Step 4: Add handler unit tests**
 
 Create `tests/unit/server-handlers.test.ts`:
 
@@ -451,7 +451,7 @@ describe("server tool handlers", () => {
 });
 ```
 
-- [ ] **Step 5: Verify and commit**
+- [x] **Step 5: Verify and commit**
 
 Run:
 
@@ -477,7 +477,7 @@ git push
 - Modify: `package.json`
 - Modify: `vitest.config.ts`
 
-- [ ] **Step 1: Add npm scripts**
+- [x] **Step 1: Add npm scripts**
 
 Modify `package.json` scripts. Keep integration tests outside plain `npm test` because they spawn the built production artifact:
 
@@ -498,7 +498,7 @@ Modify `package.json` scripts. Keep integration tests outside plain `npm test` b
 }
 ```
 
-- [ ] **Step 2: Keep live and child-process integration tests out of coverage**
+- [x] **Step 2: Keep live and child-process integration tests out of coverage**
 
 Modify `vitest.config.ts` coverage section:
 
@@ -517,7 +517,7 @@ coverage: {
 }
 ```
 
-- [ ] **Step 3: Write MCP integration tests**
+- [x] **Step 3: Write MCP integration tests**
 
 Create `tests/integration/mcp-tools.integration.test.ts`:
 
@@ -657,7 +657,7 @@ describe("MCP stdio tool surface", () => {
 });
 ```
 
-- [ ] **Step 4: Run the integration tests**
+- [x] **Step 4: Run the integration tests**
 
 Run:
 
@@ -667,7 +667,7 @@ npm run test:integration
 
 Expected: all MCP integration tests pass.
 
-- [ ] **Step 5: Run verification and coverage**
+- [x] **Step 5: Run verification and coverage**
 
 Run:
 
@@ -678,7 +678,7 @@ npm run test:coverage
 
 Expected: all tests pass and coverage thresholds still pass. The `src/server.ts` coverage target is owned by Task 2 because child-process stdio tests do not contribute V8 coverage to the parent Vitest process.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 Run:
 
@@ -695,7 +695,7 @@ git push
 - Create: `tests/unit/mobile-capture.test.ts`
 - Modify: `tests/unit/tools.test.ts`
 
-- [ ] **Step 1: Refactor capture to inject command runner**
+- [x] **Step 1: Refactor capture to inject command runner**
 
 Replace `src/capture/mobile-capture.ts` with:
 
@@ -759,7 +759,7 @@ export async function captureMobileScreen(
 }
 ```
 
-- [ ] **Step 2: Add capture tests**
+- [x] **Step 2: Add capture tests**
 
 Create `tests/unit/mobile-capture.test.ts`:
 
@@ -832,7 +832,7 @@ describe("captureMobileScreen", () => {
 });
 ```
 
-- [ ] **Step 3: Remove duplicate weak capture test**
+- [x] **Step 3: Remove duplicate weak capture test**
 
 Modify `tests/unit/tools.test.ts` so it only contains the server construction test:
 
@@ -848,7 +848,7 @@ describe("MCP Tool Surface", () => {
 });
 ```
 
-- [ ] **Step 4: Run unit tests and coverage**
+- [x] **Step 4: Run unit tests and coverage**
 
 Run:
 
@@ -859,7 +859,7 @@ npm run test:coverage
 
 Expected: tests pass and `src/capture/mobile-capture.ts` coverage is at least 90% statements.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 Run:
 
@@ -876,7 +876,7 @@ git push
 - Create: `tests/live/locateanything.live.test.ts`
 - Modify: `README.md`
 
-- [ ] **Step 1: Add live OpenRouter probe test**
+- [x] **Step 1: Add live OpenRouter probe test**
 
 Create `tests/live/openrouter.live.test.ts`:
 
@@ -901,7 +901,7 @@ describe.skipIf(!liveEnabled)("live OpenRouter model probes", () => {
 });
 ```
 
-- [ ] **Step 2: Add live LocateAnything sidecar contract test**
+- [x] **Step 2: Add live LocateAnything sidecar contract test**
 
 Create `tests/live/locateanything.live.test.ts`:
 
@@ -961,7 +961,7 @@ describe.skipIf(!liveEnabled)("live LocateAnything sidecar", () => {
 });
 ```
 
-- [ ] **Step 3: Document live gate variables**
+- [x] **Step 3: Document live gate variables**
 
 Add this section to `README.md`:
 
@@ -981,7 +981,7 @@ npm run verify:live
 `verify:live` must pass before declaring the MCP production-ready. It calls OpenRouter and the LocateAnything sidecar directly; rate limits, missing keys, and unavailable sidecars are release blockers for that run.
 ````
 
-- [ ] **Step 4: Run default verification**
+- [x] **Step 4: Run default verification**
 
 Run:
 
@@ -992,7 +992,7 @@ npm run test:coverage
 
 Expected: live tests are skipped by default and coverage thresholds pass.
 
-- [ ] **Step 5: Run live verification if credentials are available**
+- [x] **Step 5: Run live verification if credentials are available**
 
 If `OPENROUTER_API_KEY` and `LOCATEANYTHING_SIDECAR_URL` are available, run:
 
@@ -1004,7 +1004,7 @@ Expected when env vars are set and services are healthy: live tests pass.
 
 Expected when env vars are not set: do not run this command; record "not run: missing live env" in `docs/implementation-status.md`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 Run:
 
@@ -1020,7 +1020,7 @@ git push
 - Create: `tests/live/mcp-full.live.test.ts`
 - Modify: `docs/release/production-readiness-checklist.md`
 
-- [ ] **Step 1: Add live full MCP test**
+- [x] **Step 1: Add live full MCP test**
 
 Create `tests/live/mcp-full.live.test.ts`:
 
@@ -1091,7 +1091,7 @@ describe.skipIf(!liveEnabled)("live full MCP discover_ui_diffs", () => {
 });
 ```
 
-- [ ] **Step 2: Create release checklist**
+- [x] **Step 2: Create release checklist**
 
 Create `docs/release/production-readiness-checklist.md`:
 
@@ -1160,7 +1160,7 @@ Append a dated note to `docs/implementation-status.md` with:
 - Any remaining P2 risks.
 ````
 
-- [ ] **Step 3: Run default verification**
+- [x] **Step 3: Run default verification**
 
 Run:
 
@@ -1171,7 +1171,7 @@ npm run test:coverage
 
 Expected: all deterministic gates pass.
 
-- [ ] **Step 4: Run live full gate if env is available**
+- [x] **Step 4: Run live full gate if env is available**
 
 Run only when live env is configured:
 
@@ -1181,7 +1181,7 @@ npm run verify:live
 
 Expected: full live MCP test passes. If it fails due rate limit or provider outage, record exact provider status in `docs/implementation-status.md`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 Run:
 
@@ -1198,7 +1198,7 @@ git push
 - Modify: `package.json`
 - Modify: `README.md`
 
-- [ ] **Step 1: Add Calorix live script**
+- [x] **Step 1: Add Calorix live script**
 
 Modify `package.json` scripts:
 
@@ -1212,7 +1212,7 @@ Modify `package.json` scripts:
 
 Keep all existing scripts unchanged.
 
-- [ ] **Step 2: Add Calorix live test**
+- [x] **Step 2: Add Calorix live test**
 
 Create `tests/live/calorix-smoke.live.test.ts`:
 
@@ -1265,7 +1265,7 @@ describe.skipIf(!calorixLive)("Calorix live UI diff smoke", () => {
 });
 ```
 
-- [ ] **Step 3: Document Calorix live smoke**
+- [x] **Step 3: Document Calorix live smoke**
 
 Add this to the README live gate section:
 
@@ -1284,7 +1284,7 @@ npm run verify:calorix-live
 ```
 ````
 
-- [ ] **Step 4: Run default verification**
+- [x] **Step 4: Run default verification**
 
 Run:
 
@@ -1295,7 +1295,7 @@ npm run test:coverage
 
 Expected: deterministic tests pass; Calorix live test is skipped unless enabled.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 Run:
 
@@ -1311,7 +1311,7 @@ git push
 - Modify: `vitest.config.ts`
 - Modify: `docs/implementation-status.md`
 
-- [ ] **Step 1: Raise coverage thresholds after new tests pass**
+- [x] **Step 1: Raise coverage thresholds after new tests pass**
 
 Modify `vitest.config.ts` thresholds:
 
@@ -1326,7 +1326,7 @@ thresholds: {
 
 Only apply these exact values after `npm run test:coverage` reports at least these percentages.
 
-- [ ] **Step 2: Update implementation status**
+- [x] **Step 2: Update implementation status**
 
 Modify `docs/implementation-status.md` Current State:
 
@@ -1352,7 +1352,7 @@ Append a progress-log row using the exact hash printed by that command:
 
 Do not leave the literal string `actual-hash-from-git-rev-parse` in the status file.
 
-- [ ] **Step 3: Run final deterministic gates**
+- [x] **Step 3: Run final deterministic gates**
 
 Run:
 
@@ -1370,7 +1370,7 @@ Expected:
 - `git diff --check` is clean.
 - Only intended docs/config changes are unstaged before commit.
 
-- [ ] **Step 4: Commit and push**
+- [x] **Step 4: Commit and push**
 
 Run:
 
