@@ -121,6 +121,7 @@ export const UiDiffReportSchema = z.object({
     checkedAt: z.string().datetime(),
     detail: z.string().optional()
   })),
+  runArtifacts: z.array(z.string()).default([]),
   warnings: z.array(z.string()).default([])
 });
 export type UiDiffReport = z.infer<typeof UiDiffReportSchema>;

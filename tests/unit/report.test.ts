@@ -68,6 +68,7 @@ describe("writeUiDiffReport", () => {
       pairs: [],
       diffs: [],
       modelHealth: [],
+      runArtifacts: [],
       warnings: []
     };
 
@@ -104,6 +105,7 @@ describe("writeUiDiffReport", () => {
         reviewerStatus: "accepted" as const
       }],
       modelHealth: [],
+      runArtifacts: [],
       warnings: []
     };
 

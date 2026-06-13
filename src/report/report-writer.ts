@@ -21,13 +21,14 @@ export async function writeUiDiffReport(
   const reportPath = path.join(reportDir, "report.json");
   await fs.writeFile(reportPath, JSON.stringify(report, null, 2), "utf8");
 
-  const artifactPaths = report.diffs.flatMap(d => d.artifactPaths);
+  const diffArtifactPaths = report.diffs.flatMap(d => d.artifactPaths);
   const indexPath = path.join(reportDir, "index.json");
   await fs.writeFile(indexPath, JSON.stringify({
     runId: report.runId,
     createdAt: report.createdAt,
     reportPath,
-    artifacts: artifactPaths
+    runArtifacts: report.runArtifacts ?? [],
+    artifacts: diffArtifactPaths
   }, null, 2), "utf8");
 
   const diffCount = report.diffs.length;

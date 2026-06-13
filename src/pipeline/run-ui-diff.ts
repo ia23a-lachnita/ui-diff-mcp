@@ -232,6 +232,7 @@ export async function runUiDiff(input: RunInput): Promise<RunOutput> {
     pairs,
     diffs: finalDiffs,
     modelHealth,
+    runArtifacts: [pixelDiffPngPath, overlayPath],
     warnings
   };
 
