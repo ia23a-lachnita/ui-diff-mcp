@@ -9,10 +9,10 @@ import {
   ReadUiDiffReportOutputSchema,
   CaptureScreenOutputSchema
 } from "./schemas/tool-schemas.js";
-import { runUiDiff } from "./pipeline/run-ui-diff.js";
+import { runUiDiff, type RunInput, type RunOutput } from "./pipeline/run-ui-diff.js";
 import { captureMobileScreen } from "./capture/mobile-capture.js";
-import { probeRequiredModels } from "./models/probes.js";
-import { getRequiredModels } from "./models/model-registry.js";
+import { probeRequiredModels, type ProbeResult } from "./models/probes.js";
+import { getRequiredModels, type ModelEntry } from "./models/model-registry.js";
 import { UiDiffReportSchema } from "./schemas/core.js";
 
 function toRecord(v: unknown): Record<string, unknown> {
@@ -35,7 +35,92 @@ function buildRunInput(input: {
   };
 }
 
-export function createServer(): McpServer {
+export interface ServerDeps {
+  runUiDiff: (input: RunInput) => Promise<RunOutput>;
+  captureMobileScreen: (target: "adb" | "ios-simctl") => Promise<string>;
+  probeRequiredModels: (entries: ModelEntry[], openRouterApiKey: string) => Promise<ProbeResult[]>;
+  getRequiredModels: () => ModelEntry[];
+  readFile: typeof fs.readFile;
+}
+
+export const defaultServerDeps: ServerDeps = {
+  runUiDiff,
+  captureMobileScreen,
+  probeRequiredModels,
+  getRequiredModels,
+  readFile: fs.readFile
+};
+
+export async function handleCompareUiImages(
+  input: {
+    expectedImagePath: string;
+    actualImagePath: string;
+    projectRoot?: string | undefined;
+    runLabel?: string | undefined;
+    mode?: "full" | "deterministic_only" | "free_only" | undefined;
+  },
+  deps: ServerDeps,
+  forcedMode?: "deterministic_only"
+) {
+  const runInput = forcedMode === "deterministic_only"
+    ? buildRunInput({ ...input, mode: "deterministic_only" })
+    : buildRunInput(input);
+  const result = await deps.runUiDiff(runInput);
+  return {
+    content: [{ type: "text" as const, text: result.summary }],
+    structuredContent: toRecord(result)
+  };
+}
+
+export async function handleModelHealth(deps: ServerDeps) {
+  const apiKey = process.env["OPENROUTER_API_KEY"] ?? "";
+  const results = await deps.probeRequiredModels(deps.getRequiredModels(), apiKey);
+  const output = {
+    checkedAt: new Date().toISOString(),
+    results: results.map(r => ({
+      role: r.role,
+      provider: r.provider,
+      model: r.model,
+      status: r.status,
+      ...(r.detail !== undefined ? { detail: r.detail } : {})
+    }))
+  };
+  const passing = results.filter(r => r.status === "pass").length;
+  return {
+    content: [{ type: "text" as const, text: `Model health checked: ${passing}/${results.length} passing.` }],
+    structuredContent: toRecord(output)
+  };
+}
+
+export async function handleReadUiDiffReport(input: { reportPath: string }, deps: ServerDeps) {
+  if (!input.reportPath.endsWith(".json")) {
+    throw new Error("reportPath must be a .json file");
+  }
+  const resolved = path.resolve(input.reportPath);
+  const needle = path.sep + ".ui-diff" + path.sep + "runs" + path.sep;
+  if (!resolved.includes(needle)) {
+    throw new Error("reportPath must be within a .ui-diff/runs/ directory");
+  }
+  const raw = await deps.readFile(resolved, "utf8");
+  const parsed = UiDiffReportSchema.parse(JSON.parse(raw));
+  return {
+    content: [{ type: "text" as const, text: `Report loaded: run ${parsed.runId}, ${parsed.diffs.length} diffs.` }],
+    structuredContent: toRecord({ report: parsed })
+  };
+}
+
+export async function handleCaptureMobileScreen(
+  input: { target: "adb" | "ios-simctl" },
+  deps: ServerDeps
+) {
+  const imagePath = await deps.captureMobileScreen(input.target);
+  return {
+    content: [{ type: "text" as const, text: `Screenshot captured to ${imagePath}` }],
+    structuredContent: toRecord({ imagePath })
+  };
+}
+
+export function createServer(deps: ServerDeps = defaultServerDeps): McpServer {
   const server = new McpServer({
     name: "ui-diff-mcp",
     version: "0.1.0"
@@ -48,13 +133,7 @@ export function createServer(): McpServer {
       inputSchema: CompareUiImagesInputSchema,
       outputSchema: CompareUiImagesOutputSchema
     },
-    async (input) => {
-      const result = await runUiDiff(buildRunInput({ ...input, mode: "deterministic_only" }));
-      return {
-        content: [{ type: "text" as const, text: result.summary }],
-        structuredContent: toRecord(result)
-      };
-    }
+    async (input) => handleCompareUiImages(input, deps, "deterministic_only")
   );
 
   server.registerTool(
@@ -64,13 +143,7 @@ export function createServer(): McpServer {
       inputSchema: CompareUiImagesInputSchema,
       outputSchema: CompareUiImagesOutputSchema
     },
-    async (input) => {
-      const result = await runUiDiff(buildRunInput(input));
-      return {
-        content: [{ type: "text" as const, text: result.summary }],
-        structuredContent: toRecord(result)
-      };
-    }
+    async (input) => handleCompareUiImages(input, deps)
   );
 
   server.registerTool(
@@ -79,25 +152,7 @@ export function createServer(): McpServer {
       description: "Checks health of all visual models used by the diff pipeline.",
       outputSchema: ModelHealthOutputSchema
     },
-    async () => {
-      const apiKey = process.env["OPENROUTER_API_KEY"] ?? "";
-      const results = await probeRequiredModels(getRequiredModels(), apiKey);
-      const output = {
-        checkedAt: new Date().toISOString(),
-        results: results.map(r => ({
-          role: r.role,
-          provider: r.provider,
-          model: r.model,
-          status: r.status,
-          ...(r.detail !== undefined ? { detail: r.detail } : {})
-        }))
-      };
-      const passing = results.filter(r => r.status === "pass").length;
-      return {
-        content: [{ type: "text" as const, text: `Model health checked: ${passing}/${results.length} passing.` }],
-        structuredContent: toRecord(output)
-      };
-    }
+    async () => handleModelHealth(deps)
   );
 
   server.registerTool(
@@ -107,22 +162,7 @@ export function createServer(): McpServer {
       inputSchema: { reportPath: z.string().min(1) },
       outputSchema: ReadUiDiffReportOutputSchema
     },
-    async (input) => {
-      if (!input.reportPath.endsWith(".json")) {
-        throw new Error("reportPath must be a .json file");
-      }
-      const resolved = path.resolve(input.reportPath);
-      const needle = path.sep + ".ui-diff" + path.sep + "runs" + path.sep;
-      if (!resolved.includes(needle)) {
-        throw new Error("reportPath must be within a .ui-diff/runs/ directory");
-      }
-      const raw = await fs.readFile(resolved, "utf8");
-      const parsed = UiDiffReportSchema.parse(JSON.parse(raw));
-      return {
-        content: [{ type: "text" as const, text: `Report loaded: run ${parsed.runId}, ${parsed.diffs.length} diffs.` }],
-        structuredContent: toRecord({ report: parsed })
-      };
-    }
+    async (input) => handleReadUiDiffReport(input, deps)
   );
 
   server.registerTool(
@@ -132,13 +172,7 @@ export function createServer(): McpServer {
       inputSchema: { target: z.enum(["adb", "ios-simctl"]) },
       outputSchema: CaptureScreenOutputSchema
     },
-    async (input) => {
-      const imagePath = await captureMobileScreen(input.target);
-      return {
-        content: [{ type: "text" as const, text: `Screenshot captured to ${imagePath}` }],
-        structuredContent: toRecord({ imagePath })
-      };
-    }
+    async (input) => handleCaptureMobileScreen(input, deps)
   );
 
   return server;
