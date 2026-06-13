@@ -79,3 +79,17 @@ enabled = true
 ```
 
 Set `OPENROUTER_API_KEY` in your shell environment or a `.env` file before starting Codex.
+
+## Live Release Gates
+
+The default `npm run verify` command is deterministic and does not call external APIs.
+Before production use, run the live gates with real credentials and a real LocateAnything sidecar:
+
+```powershell
+$env:RUN_UI_DIFF_LIVE="1"
+$env:OPENROUTER_API_KEY="<real-openrouter-key>"
+$env:LOCATEANYTHING_SIDECAR_URL="http://127.0.0.1:39731"
+npm run verify:live
+```
+
+`verify:live` must pass before declaring the MCP production-ready. It calls OpenRouter and the LocateAnything sidecar directly; rate limits, missing keys, and unavailable sidecars are release blockers for that run.
