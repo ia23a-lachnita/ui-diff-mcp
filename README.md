@@ -93,3 +93,16 @@ npm run verify:live
 ```
 
 `verify:live` must pass before declaring the MCP production-ready. It calls OpenRouter and the LocateAnything sidecar directly; rate limits, missing keys, and unavailable sidecars are release blockers for that run.
+
+### Optional Calorix Live Smoke
+
+Use a real Calorix mockup/screenshot pair when available:
+
+```powershell
+$env:RUN_CALORIX_UI_DIFF_LIVE="1"
+$env:UI_DIFF_LIVE_EXPECTED_IMAGE="C:\absolute\path\to\mockup.png"
+$env:UI_DIFF_LIVE_ACTUAL_IMAGE="C:\absolute\path\to\screenshot.png"
+$env:OPENROUTER_API_KEY="<real-openrouter-key>"
+$env:LOCATEANYTHING_SIDECAR_URL="http://127.0.0.1:39731"
+npm run verify:calorix-live
+```

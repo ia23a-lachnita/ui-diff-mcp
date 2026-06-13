@@ -16,6 +16,7 @@
     "test:live": "vitest run tests/live/ --testTimeout 180000",
     "verify": "npm run typecheck && npm test && npm run build && npm run test:integration",
     "verify:live": "npm run build && npm run test:live",
+    "verify:calorix-live": "npm run build && vitest run tests/live/calorix-smoke.live.test.ts --testTimeout 240000",
     "start": "node dist/src/index.js"
   },
   "dependencies": {
