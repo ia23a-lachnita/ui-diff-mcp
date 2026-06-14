@@ -52,8 +52,8 @@ This file is the persistent handoff state for implementation agents. Read it bef
 
 - Current task: Provider-explicit model-section correction — complete
 - Last completed step: Updated the spec, MVP plan, free-first hardening plan, and NVIDIA research doc to separate provider routes and cost class in model sections
-- Next step: commit and push this docs correction; then request Gemini 3 Pro Preview review of the provider-route model sections once quota resets
+- Next step: request Gemini 3 Pro Preview review of the provider-route model sections once quota resets
 - Verification command and result: `git diff --check` exited 0, with CRLF warnings only. Previous code gates remain as recorded above.
-- Commit pushed: pending until this commit is pushed
+- Commit pushed: `d70c73f` for the provider-route docs correction; this status-only follow-up records that push.
 - Files intentionally left modified: none
 - Blockers: Gemini 3 Pro Preview review of the NVIDIA-specific correction is pending due quota exhaustion; Claude Sonnet 4.6 review could not be performed with available tools; implementation is not free-first/product-hardened until the new plan is executed
