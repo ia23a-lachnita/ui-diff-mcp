@@ -17,7 +17,36 @@ Required result:
 - Coverage thresholds pass.
 - `npm audit` reports no critical vulnerability.
 
-## Live Gates
+## Free OpenRouter Live Gate
+
+```powershell
+$env:RUN_FREE_LIVE="1"
+$env:OPENROUTER_API_KEY="<real-openrouter-key>"
+npm run verify:free-live
+```
+
+Required result:
+
+- OpenRouter quota is available and recorded.
+- At least one `:free` auditor and reviewer pass probes.
+- Probe results (model, provider, status) are logged.
+
+## NVIDIA Endpoint Live Gate
+
+```powershell
+$env:RUN_NVIDIA_LIVE="1"
+$env:NVIDIA_API_KEY="<real-nvidia-key>"
+# $env:NVIDIA_VLM_BASE_URL="https://integrate.api.nvidia.com/v1"  # default
+npm run verify:nvidia-live
+```
+
+Required result:
+
+- At least one native NVIDIA free VLM passes auditor probe.
+- At least one native NVIDIA free VLM passes reviewer probe.
+- `modelSelection.provider` is `nvidia` in the probe summary.
+
+## Full OpenRouter Live Gate
 
 ```powershell
 $env:RUN_UI_DIFF_LIVE="1"
@@ -39,7 +68,7 @@ Required result:
 - Required model health entries are `pass`.
 - The report includes normalized images, pixel diff, overlay, report JSON, and artifact index.
 
-## Optional Calorix Gate
+## Bounded Calorix Smoke Gate
 
 ```powershell
 $env:RUN_CALORIX_UI_DIFF_LIVE="1"
@@ -61,6 +90,31 @@ Required result:
 - Report path is recorded in the release note.
 - Result is not `failed`.
 - If visual classification is incomplete, the release note records the exact reason, including whether `UI_DIFF_MAX_AUDIT_PAIRS` bounded the smoke run.
+- `auditLimited` is `true` and `visualClassificationStatus` is `incomplete` when pairs are limited.
+
+## Full Calorix All-Target Audit Gate
+
+```powershell
+$env:RUN_CALORIX_FULL_LIVE="1"
+$env:OPENROUTER_API_KEY="<real-openrouter-key>"
+$env:LOCATEANYTHING_SIDECAR_URL="http://127.0.0.1:39731"
+$env:LOCATEANYTHING_IN_TOKEN_LIMIT="4096"
+$env:LOCATEANYTHING_GENERATION_MODE="hybrid"
+$env:LOCATEANYTHING_MAX_NEW_TOKENS="512"
+$env:LOCATEANYTHING_TIMEOUT_MS="300000"
+# Do NOT set UI_DIFF_MAX_AUDIT_PAIRS — unbounded audit required
+$env:UI_DIFF_LIVE_EXPECTED_IMAGE="C:\Users\xursc\projects\calorix\docs\mockups\image\dark\single\Today.png"
+$env:UI_DIFF_LIVE_ACTUAL_IMAGE="C:\Users\xursc\projects\calorix\docs\screenshots\today-screen-2026-06-09-criterion-audit-validation.png"
+npm run verify:calorix-full-live
+```
+
+Required result:
+
+- Unbounded all-target Calorix audit completes.
+- `auditLimited` is `false`.
+- `visualClassificationStatus` is recorded (complete or incomplete with reason).
+- `modelSelection` is present in `report.json` with auditor and reviewer model/provider.
+- All diffs have at least one evidence string.
 
 ## Sign-Off Record
 
@@ -68,6 +122,8 @@ Append a dated note to `docs/implementation-status.md` with:
 
 - Commit SHA.
 - Deterministic gate output summary.
-- Live gate output summary.
-- Calorix gate output summary or reason it was not run.
+- Free live gate output summary.
+- NVIDIA live gate output summary or reason it was not run.
+- Bounded Calorix gate output summary or reason it was not run.
+- Full Calorix gate output summary or reason it was not run.
 - Any remaining P2 risks.

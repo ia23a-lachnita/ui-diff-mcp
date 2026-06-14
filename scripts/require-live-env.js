@@ -13,10 +13,24 @@ if (process.env[varName] !== "1") {
     console.error(
       "Also set OPENROUTER_API_KEY and LOCATEANYTHING_SIDECAR_URL before running verify:live."
     );
+  } else if (varName === "RUN_FREE_LIVE") {
+    console.error(
+      "Also set OPENROUTER_API_KEY before running verify:free-live."
+    );
+  } else if (varName === "RUN_NVIDIA_LIVE") {
+    console.error(
+      "Also set NVIDIA_API_KEY (and optionally NVIDIA_VLM_BASE_URL) before running verify:nvidia-live."
+    );
   } else if (varName === "RUN_CALORIX_UI_DIFF_LIVE") {
     console.error(
       "Also set OPENROUTER_API_KEY, LOCATEANYTHING_SIDECAR_URL, " +
       "UI_DIFF_LIVE_EXPECTED_IMAGE, and UI_DIFF_LIVE_ACTUAL_IMAGE before running verify:calorix-live."
+    );
+  } else if (varName === "RUN_CALORIX_FULL_LIVE") {
+    console.error(
+      "Also set OPENROUTER_API_KEY, LOCATEANYTHING_SIDECAR_URL, " +
+      "UI_DIFF_LIVE_EXPECTED_IMAGE, and UI_DIFF_LIVE_ACTUAL_IMAGE before running verify:calorix-full-live. " +
+      "Do NOT set UI_DIFF_MAX_AUDIT_PAIRS — this gate requires an unbounded audit."
     );
   }
   process.exit(1);

@@ -17,7 +17,10 @@
     "test:live": "vitest run tests/live/ --testTimeout 900000",
     "verify": "npm run typecheck && npm test && npm run test:sidecar && npm run build && npm run test:integration",
     "verify:live": "node scripts/require-live-env.js RUN_UI_DIFF_LIVE && npm run build && npm run test:live",
+    "verify:free-live": "node scripts/require-live-env.js RUN_FREE_LIVE && npm run build && vitest run tests/live/openrouter.live.test.ts --testTimeout 300000",
+    "verify:nvidia-live": "node scripts/require-live-env.js RUN_NVIDIA_LIVE && npm run build && vitest run tests/live/nvidia-live.test.ts --testTimeout 300000",
     "verify:calorix-live": "node scripts/require-live-env.js RUN_CALORIX_UI_DIFF_LIVE && npm run build && vitest run tests/live/calorix-smoke.live.test.ts --testTimeout 900000",
+    "verify:calorix-full-live": "node scripts/require-live-env.js RUN_CALORIX_FULL_LIVE && npm run build && vitest run tests/live/calorix-smoke.live.test.ts --testTimeout 2400000",
     "start": "node dist/src/index.js",
     "benchmark:models": "tsx scripts/benchmark-free-models.ts"
   },
