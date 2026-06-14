@@ -79,14 +79,16 @@ NVIDIA must become a first-class provider candidate:
 
 Native NVIDIA candidate conclusions from the dedicated research:
 
+This table is not a measured quality leaderboard. It records provider/API evidence. The runtime selector must distinguish a performance-oriented probe lane from an API/schema-readiness probe lane.
+
 | Model | Planned role | Current decision |
 | --- | --- | --- |
-| `qwen/qwen3.6-35b-a3b` | Auditor/reviewer candidate | Probe first if available from the configured endpoint or self-hosted NIM; NVIDIA docs explicitly show image input and `json_schema` structured output. |
-| `qwen/qwen3.5-397b-a17b` | High-quality auditor/reviewer candidate | Probe early if hosted free endpoint is available; strong multimodal foundation model, but throughput must be measured. |
-| `moonshotai/kimi-k2.6` | High-quality auditor/reviewer and target-recovery candidate | NVIDIA Build lists a free endpoint and NVIDIA docs describe a 1T/32B-active multimodal agentic model with image/video input. Probe early, but constrain prompts tightly so it only reports visible diffs. |
+| `moonshotai/kimi-k2.6` | Top performance-oriented auditor/reviewer and target-recovery candidate | OpenRouter and NVIDIA describe a strong multimodal agentic model with image/video input and UI/UX relevance. Probe first in quality mode, but constrain prompts tightly so it only reports visible diffs. |
+| `minimaxai/minimax-m3` | Top performance-oriented auditor/reviewer and target-recovery probe candidate | Strong multimodal VLM with text/image/video input and design/creative workflow relevance. Gate behind pricing/licensing because NVIDIA's model card says non-commercial use. |
+| `qwen/qwen3.5-397b-a17b` | High-quality auditor/reviewer candidate | Probe early; strong multimodal foundation model with GUI-interaction relevance, but throughput must be measured. |
+| `qwen/qwen3.6-35b-a3b` | Schema-ready auditor/reviewer candidate | Probe early for native NVIDIA/NIM because NVIDIA docs explicitly show image input and `json_schema` structured output. |
 | `nvidia/nemotron-nano-12b-v2-vl` | Lightweight default candidate | Strong initial default if it passes UI-diff probes; multi-image/document/VQA fit is relevant to UI screenshots. |
 | `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning` | Target-recovery and GUI/OCR reasoning candidate | Strong candidate for missed-target and unassigned-region recovery because NVIDIA's model card names GUI, OCR, document intelligence, and GUI automation workflows; use as auditor only after schema/speed probes. |
-| `minimaxai/minimax-m3` | Auditor/reviewer and target-recovery probe candidate | Multimodal VLM with text/image/video input and design/creative workflow relevance. Gate behind licensing because NVIDIA's model card says non-commercial use. |
 | `meta/llama-3.2-90b-vision-instruct` | High-quality reviewer/escalation candidate | Probe for quality; likely slower than smaller models. |
 | `meta/llama-3.2-11b-vision-instruct` | Lightweight reviewer/auditor candidate | Probe for crop/local-overlay tasks; Build catalog availability can differ from model-page availability by geography/account. |
 | `nvidia/llama-3.1-nemotron-nano-vl-8b-v1` | Fast crop-level fallback | Probe as older/light candidate. |
@@ -108,6 +110,9 @@ Native NVIDIA candidate conclusions from the dedicated research:
 - NVIDIA Qwen3.6 VLM docs: https://docs.nvidia.com/nim/vision-language-models/1.7.0/examples/qwen3.6/api.html
 - NVIDIA-hosted Kimi K2.6: https://build.nvidia.com/moonshotai/kimi-k2.6
 - NVIDIA-hosted MiniMax M3: https://build.nvidia.com/minimaxai/minimax-m3/modelcard
+- OpenRouter Kimi K2.6: https://openrouter.ai/moonshotai/kimi-k2.6-20260420
+- OpenRouter Kimi K2.6 free: https://openrouter.ai/moonshotai/kimi-k2.6:free
+- OpenRouter MiniMax M3: https://openrouter.ai/minimax/minimax-m3
 - NVIDIA-hosted DeepSeek V4 Pro: https://build.nvidia.com/deepseek-ai/deepseek-v4-pro
 - NVIDIA DeepSeek V4 Pro API docs: https://docs.api.nvidia.com/nim/reference/deepseek-ai-deepseek-v4-pro
 - NVIDIA Nemotron 3 Ultra 550B: https://build.nvidia.com/nvidia/nemotron-3-ultra-550b-a55b
@@ -168,10 +173,12 @@ flowchart TD
 
 Default free candidate order:
 
-1. Native NVIDIA discovered free VLM candidates, if configured and schema/UI-diff probes pass. Auditor/reviewer probes use this order when available: `qwen/qwen3.6-35b-a3b`, `qwen/qwen3.5-397b-a17b`, `moonshotai/kimi-k2.6`, `nvidia/nemotron-nano-12b-v2-vl`, `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`, `minimaxai/minimax-m3` when licensing is acceptable, `meta/llama-3.2-90b-vision-instruct`, `meta/llama-3.2-11b-vision-instruct`, `nvidia/llama-3.1-nemotron-nano-vl-8b-v1`, then `google/google-paligemma`. Target-recovery probes prioritize `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`, then `moonshotai/kimi-k2.6`, then `nvidia/cosmos3-nano-reasoner`, then the Qwen/Nemotron auditor candidates.
-2. OpenRouter `nex-agi/nex-n2-pro:free`.
-3. OpenRouter `google/gemma-4-31b-it:free`.
-4. OpenRouter `google/gemma-4-26b-a4b-it:free`.
+1. OpenRouter `moonshotai/kimi-k2.6:free`, if it passes the UI-diff probe suite and daily quota is available.
+2. Native NVIDIA discovered free VLM candidates, if configured and schema/UI-diff probes pass. Performance-oriented auditor/reviewer probes use this order when available: `moonshotai/kimi-k2.6`, `minimaxai/minimax-m3` when pricing/licensing is acceptable, `qwen/qwen3.5-397b-a17b`, `qwen/qwen3.6-35b-a3b`, `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`, `nvidia/nemotron-nano-12b-v2-vl`, `meta/llama-3.2-90b-vision-instruct`, `meta/llama-3.2-11b-vision-instruct`, `nvidia/llama-3.1-nemotron-nano-vl-8b-v1`, then `google/google-paligemma`.
+3. For strict native NVIDIA schema-readiness mode, prefer candidates with documented `json_schema` support first, then use the performance-oriented lane after probes prove schema compliance.
+4. OpenRouter `nex-agi/nex-n2-pro:free`.
+5. OpenRouter `google/gemma-4-31b-it:free`.
+6. OpenRouter `google/gemma-4-26b-a4b-it:free`.
 5. OpenRouter `nvidia/nemotron-nano-12b-v2-vl:free`.
 6. OpenRouter `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free`.
 

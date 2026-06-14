@@ -32,7 +32,13 @@ Sources:
 - https://docs.nvidia.com/nim/vision-language-models/1.2.0/structured-generation.html
 - https://docs.nvidia.com/nim/vision-language-models/1.5.0/examples/nemotron-nano-12b-v2-vl/api.html
 
-## Recommended Candidate Ranking
+## Candidate Evidence Notes
+
+This section is not a measured UI-diff performance ranking. It records provider/API suitability evidence found in NVIDIA and OpenRouter docs: image capability, free/hosted availability, structured-output hints, licensing, and role fit.
+
+Static provider pages are not enough to distinguish real UI-diff performance. Exact ranking must come from the live probe suite in this document, especially two-image order, directional overlay comprehension, strict JSON, crop-level diff classification, target recovery, latency, and rate-limit behavior.
+
+OpenRouter currently presents Kimi K2.6 and MiniMax M3 as stronger general multimodal/agentic models than Nemotron Nano and likely stronger than some Qwen/Nemotron candidates for broad UI/UX and visual reasoning use. They should therefore be prioritized in the performance probe lane, while NVIDIA-native schema-readiness and licensing still affect automatic selection.
 
 ### 1. `qwen/qwen3.5-397b-a17b`
 
@@ -304,9 +310,30 @@ Sources:
 | `google/diffusiongemma-26b-a4b-it` | Exclude by default | Diffusion LLM/text generation focus, not proven visual UI audit fit. |
 | Text-only Nemotron/Qwen/Llama models | Exclude | No image input. |
 
-## Revised Native NVIDIA Candidate Order
+## Revised Candidate Orders
 
-Use this order for probing, not unconditional selection:
+Use these orders for probing, not unconditional selection.
+
+### Performance-Oriented VLM Probe Order
+
+Use this when provider cost/licensing allows using the strongest visible candidates first:
+
+1. `moonshotai/kimi-k2.6`.
+2. `minimaxai/minimax-m3` only when non-commercial/evaluation licensing is acceptable or the configured provider terms explicitly permit the run.
+3. `qwen/qwen3.5-397b-a17b`.
+4. `qwen/qwen3.6-35b-a3b` if available to the configured endpoint or self-hosted NIM.
+5. `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`.
+6. `nvidia/nemotron-nano-12b-v2-vl`.
+7. `meta/llama-3.2-90b-vision-instruct` if available to the configured key/geography.
+8. `meta/llama-3.2-11b-vision-instruct` if available to the configured key/geography.
+9. `nvidia/llama-3.1-nemotron-nano-vl-8b-v1`.
+10. `google/google-paligemma` only as a last fallback probe.
+
+This is still a provisional order. OpenRouter/general benchmark strength can predict candidate quality, but it is not a substitute for this MCP's UI-diff probes.
+
+### NVIDIA-Native Schema-Readiness Probe Order
+
+Use this when selecting specifically through native NVIDIA/NIM APIs and prioritizing documented structured-output/API evidence:
 
 Auditor/reviewer probe order:
 
@@ -375,7 +402,8 @@ Each candidate must run the same probe set before it can be used:
 Do not state “use NVIDIA models” generically. State:
 
 - Native NVIDIA is first priority only when a specific NVIDIA candidate passes the UI-diff probe suite.
-- Best initial native NVIDIA candidate set is Qwen3.6/Qwen3.5, Kimi K2.6, Nemotron Nano 12B v2 VL, Nemotron 3 Nano Omni, MiniMax M3 when licensing is acceptable, Llama 3.2 Vision, and Nemotron/Llama-Nemotron Nano VL.
+- Best performance-oriented candidate set starts with Kimi K2.6 and MiniMax M3, then Qwen3.5/Qwen3.6, Nemotron 3 Nano Omni, Nemotron Nano 12B v2 VL, Llama 3.2 Vision, and Llama-Nemotron Nano VL.
+- Best NVIDIA-native schema-readiness candidate set can still start with Qwen3.6/Qwen3.5 because NVIDIA's Qwen3.6 docs explicitly show `json_schema`; this must not be confused with measured model quality.
 - DeepSeek V4 Pro is intentionally excluded from visual audit despite NVIDIA free-endpoint availability because the NVIDIA docs present it as a text/code/reasoning LLM, not an image-capable VLM.
 - Cosmos is promising for spatial target recovery but not a default auditor without evidence.
 - PaliGemma is a fallback, not a serious default, unless live probes prove otherwise.
