@@ -19,8 +19,31 @@ const NVIDIA_ENTRY: import("../../src/models/model-registry.js").ModelEntry = {
   required: false
 };
 
+function makeSseStream(contentJson: string, model = "qwen/test"): ReadableStream<Uint8Array> {
+  const contentEscaped = JSON.stringify(contentJson); // wraps in quotes and escapes
+  const chunk1 = `data: {"choices":[{"delta":{"content":${contentEscaped}}}],"model":"${model}"}\n\n`;
+  const chunk2 = `data: {"usage":{"prompt_tokens":10,"completion_tokens":5}}\n\n`;
+  const chunk3 = `data: [DONE]\n\n`;
+  const encoded = new TextEncoder().encode(chunk1 + chunk2 + chunk3);
+  return new ReadableStream({
+    start(controller) {
+      controller.enqueue(encoded);
+      controller.close();
+    }
+  });
+}
+
+function makeStreamFetch(contentJson: string): typeof fetch {
+  return vi.fn().mockResolvedValue({
+    ok: true,
+    status: 200,
+    body: makeSseStream(contentJson)
+  }) as unknown as typeof fetch;
+}
+
 afterEach(() => {
   vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
 });
 
 describe("probeOpenRouterModel", () => {
@@ -31,10 +54,9 @@ describe("probeOpenRouterModel", () => {
     expect(result.provider).toBe("openrouter");
     expect(result.model).toBe(AUDITOR.model);
     expect(result.detail).toContain("No API key");
-    expect(result.checkedAt).toBeTruthy();
   });
 
-  it("returns fail when callOpenRouterVisionJson throws", async () => {
+  it("returns fail when fetch throws", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network down")));
     const result = await probeOpenRouterModel(AUDITOR, "sk-test");
     expect(result.status).toBe("fail");
@@ -42,27 +64,13 @@ describe("probeOpenRouterModel", () => {
   });
 
   it("returns fail when model returns wrong probe result", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: () => Promise.resolve({
-        model: "qwen/test",
-        choices: [{ message: { content: '{"dominantColor":"red","hasRedRect":false}' } }]
-      })
-    }));
+    vi.stubGlobal("fetch", makeStreamFetch('{"dominantColor":"red","hasRedRect":false}'));
     const result = await probeOpenRouterModel(AUDITOR, "sk-test");
     expect(result.status).toBe("fail");
   });
 
   it("returns pass when model correctly identifies blue and red rect", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: () => Promise.resolve({
-        model: "qwen/test",
-        choices: [{ message: { content: '{"dominantColor":"blue","hasRedRect":true}' } }]
-      })
-    }));
+    vi.stubGlobal("fetch", makeStreamFetch('{"dominantColor":"blue","hasRedRect":true}'));
     const result = await probeOpenRouterModel(AUDITOR, "sk-test");
     expect(result.status).toBe("pass");
   });

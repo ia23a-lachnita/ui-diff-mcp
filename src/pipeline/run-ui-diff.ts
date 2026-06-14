@@ -222,7 +222,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
         provider: p.provider,
         model: p.model,
         status: p.status,
-        checkedAt: p.checkedAt,
+        checkedAt: p.checkedAt ?? new Date().toISOString(),
         ...(p.detail !== undefined ? { detail: p.detail } : {})
       });
     }

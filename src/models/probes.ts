@@ -1,15 +1,17 @@
 import sharp from "sharp";
 import { makeOpenRouterVisionCaller, makeNvidiaVisionCaller } from "./vision-json.js";
 import type { ModelEntry } from "./model-registry.js";
-
 export interface ProbeResult {
   role: string;
   provider: string;
   model: string;
   status: "pass" | "fail" | "not_checked";
-  checkedAt: string;
+  checkedAt?: string;
   detail?: string;
   jsonSchemaMode?: "json_schema" | "json_object" | "parser_only";
+  ttftMs?: number | null;
+  schemaValid?: boolean | null;
+  contentAccurate?: boolean | null;
 }
 
 async function makeBluePng64(): Promise<string> {
@@ -50,9 +52,23 @@ const PROBE_PROMPT =
   "The first image is a solid color. The second image has a colored rectangle on a white background. " +
   "Return JSON: dominantColor (color name of first image) and hasRedRect (true if second image has a red rectangle).";
 
-function isProbePass(parsed: unknown): boolean {
+function checkContentAccuracy(parsed: unknown): boolean {
   const p = parsed as { dominantColor?: string; hasRedRect?: boolean };
   return typeof p.dominantColor === "string" && /blue/i.test(p.dominantColor) && p.hasRedRect === true;
+}
+
+function checkSchemaValidity(parsed: unknown): boolean {
+  if (typeof parsed !== 'object' || parsed === null) return false;
+  const p = parsed as { dominantColor?: string; hasRedRect?: boolean };
+  // Manually check for required properties for simplicity, could use a validator library for complex schemas
+  return 'dominantColor' in p && 'hasRedRect' in p;
+}
+
+function evaluateProbeResult(parsed: unknown): { schemaValid: boolean; contentAccurate: boolean } {
+  const schemaValid = checkSchemaValidity(parsed);
+  // Only check content accuracy if the schema is at least valid enough to parse
+  const contentAccurate = schemaValid && checkContentAccuracy(parsed);
+  return { schemaValid, contentAccurate };
 }
 
 export async function probeOpenRouterModel(entry: ModelEntry, apiKey: string): Promise<ProbeResult> {
@@ -62,8 +78,9 @@ export async function probeOpenRouterModel(entry: ModelEntry, apiKey: string): P
       provider: entry.provider,
       model: entry.model,
       status: "not_checked",
-      checkedAt: new Date().toISOString(),
-      detail: "No API key provided"
+      detail: "No API key provided",
+      schemaValid: null,
+      contentAccurate: null
     };
   }
 
@@ -79,14 +96,18 @@ export async function probeOpenRouterModel(entry: ModelEntry, apiKey: string): P
       timeoutMs: 30000
     });
 
-    if (isProbePass(result.parsed)) {
+    const { schemaValid, contentAccurate } = evaluateProbeResult(result.parsed);
+
+    if (schemaValid && contentAccurate) {
       return {
         role: entry.role,
         provider: entry.provider,
         model: entry.model,
         status: "pass",
-        checkedAt: new Date().toISOString(),
-        jsonSchemaMode: "json_schema"
+        jsonSchemaMode: "json_schema",
+        ttftMs: result.ttftMs ?? null,
+        schemaValid,
+        contentAccurate
       };
     }
 
@@ -95,8 +116,11 @@ export async function probeOpenRouterModel(entry: ModelEntry, apiKey: string): P
       provider: entry.provider,
       model: entry.model,
       status: "fail",
-      checkedAt: new Date().toISOString(),
-      detail: `Unexpected probe result: ${JSON.stringify(result.parsed)}`
+      detail: `Probe evaluation failed. Schema valid: ${schemaValid}, Content accurate: ${contentAccurate}. Parsed: ${JSON.stringify(result.parsed)}`,
+      jsonSchemaMode: "json_schema",
+      ttftMs: result.ttftMs ?? null,
+      schemaValid,
+      contentAccurate
     };
   } catch (err) {
     return {
@@ -104,8 +128,10 @@ export async function probeOpenRouterModel(entry: ModelEntry, apiKey: string): P
       provider: entry.provider,
       model: entry.model,
       status: "fail",
-      checkedAt: new Date().toISOString(),
-      detail: err instanceof Error ? err.message : String(err)
+      detail: err instanceof Error ? err.message : String(err),
+      ttftMs: null,
+      schemaValid: false, // Assume schema is not valid if error occurs before evaluation
+      contentAccurate: false
     };
   }
 }
@@ -122,8 +148,9 @@ export async function probeNvidiaModel(
       provider: entry.provider,
       model: entry.model,
       status: "not_checked",
-      checkedAt: new Date().toISOString(),
-      detail: "NVIDIA_API_KEY not set"
+      detail: "NVIDIA_API_KEY not set",
+      schemaValid: null,
+      contentAccurate: null
     };
   }
 
@@ -139,14 +166,18 @@ export async function probeNvidiaModel(
       timeoutMs: 30000
     });
 
-    if (isProbePass(result.parsed)) {
+    const { schemaValid, contentAccurate } = evaluateProbeResult(result.parsed);
+
+    if (schemaValid && contentAccurate) {
       return {
         role: entry.role,
         provider: entry.provider,
         model: entry.model,
         status: "pass",
-        checkedAt: new Date().toISOString(),
-        jsonSchemaMode: "json_schema"
+        jsonSchemaMode: "json_schema",
+        ttftMs: result.ttftMs ?? null,
+        schemaValid,
+        contentAccurate
       };
     }
 
@@ -155,9 +186,11 @@ export async function probeNvidiaModel(
       provider: entry.provider,
       model: entry.model,
       status: "fail",
-      checkedAt: new Date().toISOString(),
-      detail: `Unexpected probe result: ${JSON.stringify(result.parsed)}`,
-      jsonSchemaMode: "json_schema"
+      detail: `Probe evaluation failed. Schema valid: ${schemaValid}, Content accurate: ${contentAccurate}. Parsed: ${JSON.stringify(result.parsed)}`,
+      jsonSchemaMode: "json_schema",
+      ttftMs: result.ttftMs ?? null,
+      schemaValid,
+      contentAccurate
     };
   } catch (err) {
     return {
@@ -165,8 +198,10 @@ export async function probeNvidiaModel(
       provider: entry.provider,
       model: entry.model,
       status: "fail",
-      checkedAt: new Date().toISOString(),
-      detail: err instanceof Error ? err.message : String(err)
+      detail: err instanceof Error ? err.message : String(err),
+      ttftMs: null,
+      schemaValid: false, // Assume schema is not valid if error occurs before evaluation
+      contentAccurate: false
     };
   }
 }

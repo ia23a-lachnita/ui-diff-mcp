@@ -26,16 +26,17 @@ interface BenchmarkEntry {
   ttftMs: number | null;
   detail?: string;
   benchmarkedAt: string;
+  schemaValid?: boolean | null;
+  contentAccurate?: boolean | null;
 }
 
-async function runBenchmark(): Promise<void> {
+export async function runBenchmark(): Promise<void> {
   const openRouterApiKey = process.env["OPENROUTER_API_KEY"] ?? "";
   const nvidiaApiKey = process.env["NVIDIA_API_KEY"] ?? "";
   const nvidiaBaseUrl = process.env["NVIDIA_VLM_BASE_URL"] ?? "https://integrate.api.nvidia.com/v1";
 
   if (!openRouterApiKey && !nvidiaApiKey) {
-    console.error("ERROR: Set OPENROUTER_API_KEY and/or NVIDIA_API_KEY to run benchmarks.");
-    process.exit(1);
+    throw new Error("ERROR: Set OPENROUTER_API_KEY and/or NVIDIA_API_KEY to run benchmarks.");
   }
 
   const throttler = new FreeCallThrottler(18);
@@ -52,8 +53,6 @@ async function runBenchmark(): Promise<void> {
         required: false
       };
 
-      const t0 = Date.now();
-
       let probeResult: Awaited<ReturnType<typeof probeOpenRouterModel>>;
       if (route.provider === "openrouter") {
         if (!openRouterApiKey) {
@@ -65,7 +64,9 @@ async function runBenchmark(): Promise<void> {
             probeStatus: "not_checked",
             ttftMs: null,
             detail: "No OPENROUTER_API_KEY",
-            benchmarkedAt: new Date().toISOString()
+            benchmarkedAt: new Date().toISOString(),
+            schemaValid: null, // No schema check if not checked
+            contentAccurate: null // No content accuracy check if not checked
           });
           continue;
         }
@@ -81,14 +82,14 @@ async function runBenchmark(): Promise<void> {
             probeStatus: "not_checked",
             ttftMs: null,
             detail: "No NVIDIA_API_KEY",
-            benchmarkedAt: new Date().toISOString()
+            benchmarkedAt: new Date().toISOString(),
+            schemaValid: null, // No schema check if not checked
+            contentAccurate: null // No content accuracy check if not checked
           });
           continue;
         }
         probeResult = await probeNvidiaModel(entry, nvidiaApiKey, nvidiaBaseUrl);
       }
-
-      const ttftMs = Date.now() - t0;
 
       const benchEntry: BenchmarkEntry = {
         role: candidate.role,
@@ -96,15 +97,18 @@ async function runBenchmark(): Promise<void> {
         model: route.model,
         costClass: candidate.costClass,
         probeStatus: probeResult.status,
-        ttftMs: probeResult.status === "not_checked" ? null : ttftMs,
-        benchmarkedAt: new Date().toISOString()
+        ttftMs: probeResult.ttftMs ?? null,
+        benchmarkedAt: new Date().toISOString(),
+        schemaValid: probeResult.schemaValid ?? null,
+        contentAccurate: probeResult.contentAccurate ?? null
       };
       if (probeResult.detail) benchEntry.detail = probeResult.detail;
 
       results.push(benchEntry);
 
       const statusMark = probeResult.status === "pass" ? "✓" : probeResult.status === "fail" ? "✗" : "–";
-      console.log(`${statusMark} [${route.provider}] ${route.model} (${ttftMs}ms)`);
+      const ttftDisplay = probeResult.ttftMs !== null ? `${probeResult.ttftMs}ms` : 'N/A';
+      console.log(`${statusMark} [${route.provider}] ${route.model} (${ttftDisplay})`);
     }
   }
 
@@ -119,7 +123,3 @@ async function runBenchmark(): Promise<void> {
   }
 }
 
-runBenchmark().catch(err => {
-  console.error(err);
-  process.exit(1);
-});
