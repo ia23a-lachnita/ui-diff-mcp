@@ -27,7 +27,7 @@ describe.skipIf(!calorixLive)("Calorix live UI diff smoke", () => {
           expectedImagePath: expectedImagePath!,
           actualImagePath: actualImagePath!,
           projectRoot,
-          mode: "full"
+          mode: "free"
         }
       }, undefined, { timeout: 600000, maxTotalTimeout: 900000 });
 

@@ -191,8 +191,16 @@ export function getModelByRole(role: ModelRole): ModelEntry | undefined {
 }
 
 export function getRequiredModels(): ModelEntry[] {
-  // This function needs to be re-evaluated if models are selected dynamically.
-  return [];
+  return CANONICAL_MODEL_RANKING.flatMap(c =>
+    c.eligibleFreeProviderRoutes.map(r => ({
+      role: c.role,
+      provider: r.provider,
+      model: r.model,
+      costClass: c.costClass,
+      probeTtlMs: 15 * 60 * 1000,
+      required: false
+    }))
+  );
 }
 
 export function selectModelForMode(

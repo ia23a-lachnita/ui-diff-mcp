@@ -104,7 +104,7 @@ describe("MCP stdio tool surface", () => {
     expect(result.isError).toBe(true);
   });
 
-  it("ui_diff_model_health reports not_checked without API key", async () => {
+  it("ui_diff_model_health returns structured results for all free candidates", async () => {
     const result = await started!.client.callTool({
       name: "ui_diff_model_health",
       arguments: {}
@@ -112,12 +112,17 @@ describe("MCP stdio tool surface", () => {
 
     expect(result.isError).not.toBe(true);
     const structured = result.structuredContent as {
-      results: Array<{ role: string; status: string; detail?: string }>;
+      checkedAt: string;
+      results: Array<{ role: string; provider: string; model: string; status: string; detail?: string }>;
     };
-    const required = structured.results.filter(r => r.role === "auditor" || r.role === "reviewer");
-    expect(required.every(r => r.status === "not_checked")).toBe(true);
-    expect(required.every(r => /No API key/i.test(r.detail ?? ""))).toBe(true);
-  });
+    expect(structured.checkedAt).toBeTruthy();
+    expect(Array.isArray(structured.results)).toBe(true);
+    expect(structured.results.length).toBeGreaterThan(0);
+    for (const r of structured.results) {
+      expect(["auditor", "reviewer", "target_recovery", "locator", "fast_auditor", "escalation"]).toContain(r.role);
+      expect(["pass", "fail", "not_checked"]).toContain(r.status);
+    }
+  }, 60000);
 
   it("returns a validation error for invalid compare_ui_images arguments", async () => {
     const result = await started!.client.callTool({

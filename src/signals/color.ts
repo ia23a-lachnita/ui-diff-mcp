@@ -127,11 +127,12 @@ export function computeColorEvidence(
   expectedRgba: Uint8Array,
   actualRgba: Uint8Array,
   imageWidth: number,
-  box: Box,
+  expectedBox: Box,
+  actualBox: Box,
   elementType: string
 ): ColorEvidence {
-  const expStats = sampleColorStats(expectedRgba, imageWidth, box);
-  const actStats = sampleColorStats(actualRgba, imageWidth, box);
+  const expStats = sampleColorStats(expectedRgba, imageWidth, expectedBox);
+  const actStats = sampleColorStats(actualRgba, imageWidth, actualBox);
 
   const oklabDistance = computeOklabDistance(
     expStats.avgR, expStats.avgG, expStats.avgB,
@@ -155,7 +156,7 @@ export function computeColorEvidence(
     actualAvg: { r: actStats.avgR, g: actStats.avgG, b: actStats.avgB, a: actStats.avgA },
     dominantExpected: expStats.dominantPalette,
     dominantActual: actStats.dominantPalette,
-    sampledRegion: box,
+    sampledRegion: expectedBox,
     elementType
   };
 }

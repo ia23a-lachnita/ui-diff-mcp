@@ -223,16 +223,27 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
 
   if (mode !== "deterministic_only" && status !== "insufficient_free_quota") {
     const probe = opts?.probeOverride ?? probeRequiredModels;
-    const probeEntries: ModelEntry[] = CANONICAL_MODEL_RANKING.flatMap(c =>
-      c.eligibleFreeProviderRoutes.map(r => ({
+    const probeEntries: ModelEntry[] = CANONICAL_MODEL_RANKING.flatMap(c => {
+      const freeEntries = c.eligibleFreeProviderRoutes.map(r => ({
         role: c.role,
         provider: r.provider,
         model: r.model,
         costClass: c.costClass,
         probeTtlMs: 15 * 60 * 1000,
         required: false
-      }))
-    );
+      }));
+      const paidEntries = (mode === "paid" && c.paidRoutes)
+        ? c.paidRoutes.map(r => ({
+            role: c.role,
+            provider: r.provider,
+            model: r.model,
+            costClass: "paid" as const,
+            probeTtlMs: 24 * 60 * 60 * 1000,
+            required: false
+          }))
+        : [];
+      return [...freeEntries, ...paidEntries];
+    });
 
     const probeResults = await probe(probeEntries, openRouterApiKey, nvidiaApiKey, nvidiaBaseUrl);
     for (const p of probeResults) {
@@ -283,7 +294,8 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
             expectedImg.rgba,
             actualImg.rgba,
             expectedImg.width,
-            refEl.box,
+            expEl?.box ?? refEl.box,
+            actEl?.box ?? refEl.box,
             refEl.type
           ) : null;
           const colorDelta = colorEvidence?.hasDiff ?? false;

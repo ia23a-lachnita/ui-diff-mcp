@@ -40,8 +40,12 @@ describe("getModelByRole / getRequiredModels", () => {
     expect(getModelByRole("auditor")).toBeUndefined();
   });
 
-  it("getRequiredModels returns empty array (placeholder)", () => {
-    expect(getRequiredModels()).toEqual([]);
+  it("getRequiredModels returns all free candidate entries from CANONICAL_MODEL_RANKING", () => {
+    const models = getRequiredModels();
+    expect(models.length).toBeGreaterThan(0);
+    expect(models.every(m => m.costClass === "free")).toBe(true);
+    expect(models.some(m => m.role === "auditor")).toBe(true);
+    expect(models.some(m => m.role === "reviewer")).toBe(true);
   });
 });
 

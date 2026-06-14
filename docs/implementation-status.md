@@ -52,14 +52,16 @@ This file is the persistent handoff state for implementation agents. Read it bef
 | 2026-06-14 | `06c1bd1` | Task 9 palette fix | Gemini 2.5 Flash MUST_FIX: dominant palette not in measurements | Added color_dominant_expected/actual_palette as JSON measurements. |
 | 2026-06-14 | `8284bb4` | Task 10 (report contract hardening) | `npm run verify` — 192 tests passed, typecheck clean | Added visualClassificationStatus + auditLimited to CompactOutput/RunOutput/CompareUiImagesOutputSchema. Added ModelSelectionSchema to UiDiffReport. Gemini 2.5 Flash: no issues. |
 | 2026-06-14 | `0238301` | Task 11 (live gates) | `npm run verify` — 192 tests passed, typecheck clean | Added verify:free-live (OpenRouter free probes + quota), verify:nvidia-live (NVIDIA VLM probes), verify:calorix-full-live (unbounded all-target audit). Updated require-live-env.js and checklist. Gemini 2.5 Flash: no issues. |
+| 2026-06-14 | `423e799` | Task 12 (Documentation) | `npm run verify` — 192 tests passed, typecheck clean | Restructured README with free-first defaults and modes table. Expanded .env.example with inline documentation. Updated implementation-status.md through Task 11. Expanded free-model-benchmark.md with ranked candidates and methodology. Gemini 2.5 Flash: no issues. |
+| 2026-06-14 | pending | Post-Task-12 bug fixes | pending | P1: paid mode probe entries missing paidRoutes (run-ui-diff.ts). P1: calorix smoke test used invalid mode "full" → "free". P1: getRequiredModels() returned [] → now returns all free candidates. P1: pixel diff crashes on size-mismatched element crops → pad smaller to expected dims. P2: color evidence sampled same box in both images → pass expEl.box/actEl.box separately. P2: audit.test.ts new artifact-naming test added (uncommitted). |
 
 ## Handoff Checklist
 
-- Current task: Task 12 (Documentation) — in progress
+- Current task: Post-Task-12 bug fixes — pending commit
 - Active plan: `docs/superpowers/plans/2026-06-14-free-first-ui-diff-hardening.md`
-- Last completed step: Task 11 committed and pushed (`0238301`); Task 12 README/.env.example/status updates in progress
-- Next step: Commit Task 12 docs changes and run `npm run verify`
-- Verification command and result: `npm run verify` — 192 tests passed, typecheck clean, build clean (as of Task 11 commit)
-- Commit pushed: `0238301`
+- Last completed step: All 6 bug fixes applied; running `npm run verify` to confirm
+- Next step: Commit and push after verify passes
+- Verification command and result: `npm run verify` — pending
+- Commit pushed: `423e799`
 - Files intentionally left modified: none
-- Blockers: none — all 12 tasks implemented; Gemini 2.5 Flash reviews used (Pro quota exhausted for ~4h); live gates require real credentials to execute
+- Blockers: none

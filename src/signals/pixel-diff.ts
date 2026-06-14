@@ -65,10 +65,24 @@ export function computePixelDiff(
   const actual = PNG.sync.read(fs.readFileSync(actualPngPath));
 
   const { width, height } = expected;
+
+  let actualData = actual.data as unknown as Uint8Array;
+  if (actual.width !== width || actual.height !== height) {
+    const canvas = new Uint8Array(width * height * 4);
+    const copyW = Math.min(actual.width, width);
+    const copyH = Math.min(actual.height, height);
+    for (let row = 0; row < copyH; row++) {
+      const src = row * actual.width * 4;
+      const dst = row * width * 4;
+      canvas.set((actual.data as unknown as Uint8Array).subarray(src, src + copyW * 4), dst);
+    }
+    actualData = canvas;
+  }
+
   const diffData = new Uint8Array(width * height * 4);
   const changed = pixelmatch(
     expected.data as unknown as Uint8Array,
-    actual.data as unknown as Uint8Array,
+    actualData,
     diffData,
     width,
     height,

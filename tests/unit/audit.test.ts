@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import sharp from "sharp";
 import { rubrics, selectTriggeredCriteria } from "../../src/audit/criteria.js";
 import { buildAuditorPrompt, buildReviewerPrompt } from "../../src/audit/prompts.js";
 import { auditElementPair } from "../../src/audit/audit-target.js";
@@ -268,6 +269,86 @@ describe("auditElementPair", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(result.accepted.length).toBeGreaterThanOrEqual(1);
     expect(result.accepted[0]?.model).toBe("moonshotai/kimi-k2.6");
+  });
+
+  it("creates artifact files with correct naming and includes paths in DiffRecord", async () => {
+    const auditorCaller: VisionJsonCaller = vi.fn().mockResolvedValue({
+      parsed: { hasDiff: true, severity: "high", title: "Button shifted down", evidence: ["actual y=65px, expected y=50px"] },
+      rawContent: "",
+      model: "test-auditor",
+      provider: "openrouter"
+    });
+    const reviewerCaller: VisionJsonCaller = vi.fn().mockResolvedValue({
+      parsed: { decision: "accepted", reason: "Visual shift confirmed in both images" },
+      rawContent: "",
+      model: "test-reviewer",
+      provider: "openrouter"
+    });
+
+    const auditIndex = 5;
+    const auditTotal = 10;
+    const elementSlug = "submit-button";
+
+    const result = await auditElementPair(pair, {
+      expectedImagePath: grayPng,
+      actualImagePath: grayPng,
+      expectedElements: [expectedEl],
+      actualElements: [{ ...expectedEl, id: "a1", box: { x: 10, y: 65, width: 80, height: 40 } }],
+      artifactDir: tmpDir,
+      auditorCaller,
+      reviewerCaller,
+      expectedRgba: { data: new Uint8Array(200 * 400 * 4), width: 200, height: 400 },
+      actualRgba: { data: new Uint8Array(200 * 400 * 4), width: 200, height: 400 },
+      measurements: [],
+      auditIndex,
+      auditTotal,
+      elementSlug,
+      triggerCtx: {
+        pairingStatus: "matched",
+        boxDeltaPx: 15,
+        textDelta: false,
+        colorDelta: false,
+        edgeMismatch: false,
+        overlapDetected: false,
+        stateWordsDiffer: false,
+        elementType: "button",
+        measurements: []
+      }
+    });
+
+    expect(result.accepted.length).toBeGreaterThanOrEqual(1);
+    const diffRecord = result.accepted[0];
+    expect(diffRecord?.artifactPaths).toBeDefined();
+    expect(diffRecord?.artifactPaths.length).toBeGreaterThanOrEqual(5); // At least expected, actual, local_pixel_diff_mask, local_directional_overlay, context crop
+
+    const artifactFiles = await fs.readdir(tmpDir);
+    const shortId = pair.id.slice(0, 12);
+    const expectedBaseName = `audit-${String(auditIndex).padStart(3, "0")}-of-${String(auditTotal).padStart(3, "0")}-pair-${shortId}-${elementSlug}`;
+
+    const expectedCropPath = path.join(tmpDir, `${expectedBaseName}-expected-crop.png`);
+    const actualCropPath = path.join(tmpDir, `${expectedBaseName}-actual-crop.png`);
+    const localPixelDiffMaskPath = path.join(tmpDir, `${expectedBaseName}-local-pixel-diff-mask.png`);
+    const localDirectionalOverlayPath = path.join(tmpDir, `${expectedBaseName}-local-directional-overlay.png`);
+    const contextCropPath = path.join(tmpDir, `${expectedBaseName}-context-crop.png`);
+
+    // Verify files exist on disk
+    await expect(fs.access(expectedCropPath)).resolves.toBeUndefined();
+    await expect(fs.access(actualCropPath)).resolves.toBeUndefined();
+    await expect(fs.access(localPixelDiffMaskPath)).resolves.toBeUndefined();
+    await expect(fs.access(localDirectionalOverlayPath)).resolves.toBeUndefined();
+    await expect(fs.access(contextCropPath)).resolves.toBeUndefined();
+
+    // Verify paths are in artifactPaths with correct roles
+    expect(diffRecord?.artifactPaths).toContainEqual(expect.objectContaining({ role: "expected_crop", path: expectedCropPath, pairId: pair.id }));
+    expect(diffRecord?.artifactPaths).toContainEqual(expect.objectContaining({ role: "actual_crop", path: actualCropPath, pairId: pair.id }));
+    expect(diffRecord?.artifactPaths).toContainEqual(expect.objectContaining({ role: "local_pixel_diff_mask", path: localPixelDiffMaskPath, pairId: pair.id }));
+    expect(diffRecord?.artifactPaths).toContainEqual(expect.objectContaining({ role: "local_directional_overlay", path: localDirectionalOverlayPath, pairId: pair.id }));
+    expect(diffRecord?.artifactPaths).toContainEqual(expect.objectContaining({ role: "context_crop", path: contextCropPath, pairId: pair.id }));
+
+    // Optional: Verify dimensions of one crop
+    const metadata = await sharp(expectedCropPath).metadata();
+    expect(metadata.width).toBe(expectedEl.box.width);
+    expect(metadata.height).toBe(expectedEl.box.height);
   });
 
   it("sends directional overlay and context crop as evidence images to auditor", async () => {
