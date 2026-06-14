@@ -32,15 +32,64 @@ Sources:
 - https://docs.nvidia.com/nim/vision-language-models/1.2.0/structured-generation.html
 - https://docs.nvidia.com/nim/vision-language-models/1.5.0/examples/nemotron-nano-12b-v2-vl/api.html
 
-## Candidate Evidence Notes
+## Canonical NVIDIA-Hosted Candidate Ranking
 
-This section is not a measured UI-diff performance ranking. It records provider/API suitability evidence found in NVIDIA and OpenRouter docs: image capability, free/hosted availability, structured-output hints, licensing, and role fit.
+This is the only ranked list in this document. It ranks NVIDIA-hosted image-capable candidates for UI-diff use based on current provider evidence, likely model strength, role fit, licensing, and expected need for live probes.
 
-Static provider pages are not enough to distinguish real UI-diff performance. Exact ranking must come from the live probe suite in this document, especially two-image order, directional overlay comprehension, strict JSON, crop-level diff classification, target recovery, latency, and rate-limit behavior.
+This is not a final measured benchmark. Exact runtime selection still requires the live probe suite: two-image order, directional overlay comprehension, strict JSON, crop-level diff classification, target recovery, latency, throughput, quota, and rate-limit behavior. NVIDIA does not expose enough public per-key speed/usage data to make a reliable static speed ranking, so speed is a measured gate.
 
-OpenRouter currently presents Kimi K2.6 and MiniMax M3 as stronger general multimodal/agentic models than Nemotron Nano and likely stronger than some Qwen/Nemotron candidates for broad UI/UX and visual reasoning use. They should therefore be prioritized in the performance probe lane, while NVIDIA-native schema-readiness and licensing still affect automatic selection.
+OpenRouter and NVIDIA currently present Kimi K2.6 and MiniMax M3 as stronger broad multimodal/agentic candidates than Nemotron Nano and likely stronger than several older Qwen/Nemotron candidates for UI/UX and visual reasoning. Therefore they are ranked first for quality probing. Schema-readiness, licensing, and speed do not create alternate rankings; they are gates that can disqualify or demote a candidate at runtime.
 
-### 1. `qwen/qwen3.5-397b-a17b`
+### 1. `moonshotai/kimi-k2.6`
+
+**Recommended role:** top NVIDIA-hosted auditor/reviewer and target-recovery candidate.
+
+**Why it is strong:**
+
+- NVIDIA Build says Free Endpoint, Partner Endpoint, and Download are available.
+- NVIDIA's API docs describe Kimi-K2.6 as an open-source native multimodal agentic model with 1T total parameters and 32B active parameters.
+- It accepts text, image, and video inputs through a MoonViT vision encoder.
+- It is designed for long-horizon agentic workflows and OpenRouter describes it as suitable for coding-driven UI/UX generation and visual inputs.
+- It is marked ready for commercial/non-commercial use in NVIDIA's API docs.
+
+**Risks/gates:**
+
+- It is agentic/general multimodal, not specifically a UI-diff or UI-grounding model.
+- It may over-focus on task planning/coding if prompts are not tightly bounded to visible UI diffs only.
+- Strict JSON, expected/actual ordering, directional overlay comprehension, and speed must be live-probed.
+
+**Sources:**
+
+- https://build.nvidia.com/moonshotai/kimi-k2.6
+- https://docs.api.nvidia.com/nim/reference/moonshotai-kimi-k2-6
+- https://openrouter.ai/moonshotai/kimi-k2.6-20260420
+- https://openrouter.ai/moonshotai/kimi-k2.6:free
+
+### 2. `minimaxai/minimax-m3`
+
+**Recommended role:** top auditor/reviewer and target-recovery candidate when licensing/provider terms allow the run.
+
+**Why it is strong:**
+
+- NVIDIA Build describes MiniMax-M3 as a multimodal VLM.
+- It processes text, image, and video inputs and produces text output.
+- Model card lists 428B total parameters, about 22B active parameters, a ViT vision encoder, dynamic image/video input, and 1M input context.
+- Intended use includes multimodal understanding, agentic workflows, design, and creative tasks.
+- OpenRouter describes it as a multimodal foundation model suited for long-horizon agentic work, coding, and tool use.
+
+**Risks/gates:**
+
+- NVIDIA's model card says the model is ready for non-commercial use; the MCP must not select it automatically for commercial production runs unless the configured provider terms explicitly allow that run.
+- The Build page calls it "Preview" in search/catalog text, so availability and behavior may change.
+- Exact UI diff, directional overlays, strict JSON, and throughput are unproven until live probes run.
+
+**Sources:**
+
+- https://build.nvidia.com/minimaxai/minimax-m3
+- https://build.nvidia.com/minimaxai/minimax-m3/modelcard
+- https://openrouter.ai/minimax/minimax-m3
+
+### 3. `qwen/qwen3.5-397b-a17b`
 
 **Recommended role:** high-quality native NVIDIA auditor/reviewer candidate, if the free endpoint is available to the configured key and latency is acceptable.
 
@@ -62,7 +111,7 @@ OpenRouter currently presents Kimi K2.6 and MiniMax M3 as stronger general multi
 - https://build.nvidia.com/qwen/qwen3.5-397b-a17b
 - https://docs.api.nvidia.com/nim/reference/qwen-qwen3-5-397b-a17b
 
-### 2. `qwen/qwen3.6-35b-a3b`
+### 4. `qwen/qwen3.6-35b-a3b`
 
 **Recommended role:** primary native NVIDIA probe candidate for structured UI-diff audits if available in the configured endpoint.
 
@@ -82,57 +131,9 @@ OpenRouter currently presents Kimi K2.6 and MiniMax M3 as stronger general multi
 
 - https://docs.nvidia.com/nim/vision-language-models/1.7.0/examples/qwen3.6/api.html
 
-### 3. `moonshotai/kimi-k2.6`
-
-**Recommended role:** high-quality native NVIDIA auditor/reviewer and target-recovery probe candidate.
-
-**Why it is strong:**
-
-- NVIDIA Build says Free Endpoint, Partner Endpoint, and Download are available.
-- NVIDIA's API docs describe Kimi-K2.6 as an open-source native multimodal agentic model with 1T total parameters and 32B active parameters.
-- It accepts text, image, and video inputs through a MoonViT vision encoder.
-- The model is designed for long-horizon agentic workflows, so it may handle multi-artifact UI-diff evidence well.
-- It is marked ready for commercial/non-commercial use in NVIDIA's API docs.
-
-**Risks:**
-
-- It is agentic/general multimodal, not specifically a UI-diff or UI-grounding model.
-- It may over-focus on task planning/coding if prompts are not tightly bounded to visible UI diffs only.
-- Structured JSON support and expected/actual ordering must be live-probed.
-- It may be slower or quota-constrained because of the 1T total-parameter MoE scale.
-
-**Sources:**
-
-- https://build.nvidia.com/moonshotai/kimi-k2.6
-- https://docs.api.nvidia.com/nim/reference/moonshotai-kimi-k2-6
-
-### 4. `nvidia/nemotron-nano-12b-v2-vl`
-
-**Recommended role:** default lightweight native NVIDIA free candidate for auditor/reviewer/target recovery.
-
-**Why it is strong:**
-
-- Build page says Free Endpoint is available and reports high recent API usage.
-- Model card says it supports text, image, video, and multi-image inputs.
-- It supports up to five input images, 128K input+output tokens, and image dimensions relevant to mobile screenshots.
-- It is designed for document intelligence, visual Q&A, summarization, and multi-image reasoning. UI screenshots are closer to document/layout understanding than natural-scene-only tasks.
-- Reasoning is off by default and can be explicitly disabled with `/no_think`.
-
-**Risks:**
-
-- It is document/VQA oriented, not explicitly UI-diff or UI-grounding oriented.
-- Model card does not by itself prove strict JSON schema support, so strict-schema live probing is mandatory.
-- Alpha channel is not supported, so transparent overlays must be flattened before sending.
-
-**Sources:**
-
-- https://build.nvidia.com/nvidia/nemotron-nano-12b-v2-vl
-- https://build.nvidia.com/nvidia/nemotron-nano-12b-v2-vl/modelcard
-- https://docs.nvidia.com/nim/vision-language-models/1.5.0/examples/nemotron-nano-12b-v2-vl/api.html
-
 ### 5. `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`
 
-**Recommended role:** primary native NVIDIA target-recovery and GUI/OCR reasoning probe; secondary auditor/reviewer candidate only after schema and speed probes pass.
+**Recommended role:** primary NVIDIA-owned target-recovery and GUI/OCR reasoning candidate; secondary auditor/reviewer candidate only after schema and speed probes pass.
 
 **Why it is plausible:**
 
@@ -155,27 +156,29 @@ OpenRouter currently presents Kimi K2.6 and MiniMax M3 as stronger general multi
 - https://build.nvidia.com/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning/modelcard
 - https://docs.nvidia.com/nim/vision-language-models/1.7.0/examples/nemotron-3-nano-omni-30b-a3b-reasoning/api.html
 
-### 6. `minimaxai/minimax-m3`
+### 6. `nvidia/nemotron-nano-12b-v2-vl`
 
-**Recommended role:** auditor/reviewer and target-recovery probe candidate only when its license is acceptable for the run.
+**Recommended role:** lightweight native NVIDIA free candidate for auditor/reviewer/target recovery.
 
-**Why it is plausible:**
+**Why it is strong:**
 
-- NVIDIA Build describes MiniMax-M3 as a multimodal VLM.
-- It processes text, image, and video inputs and produces text output.
-- Model card lists 428B total parameters, about 22B active parameters, a ViT vision encoder, dynamic image/video input, and 1M input context.
-- Intended use includes multimodal understanding, agentic workflows, design, and creative tasks, which may make it useful for visual UI evidence.
+- Build page says Free Endpoint is available and reports high recent API usage.
+- Model card says it supports text, image, video, and multi-image inputs.
+- It supports up to five input images, 128K input+output tokens, and image dimensions relevant to mobile screenshots.
+- It is designed for document intelligence, visual Q&A, summarization, and multi-image reasoning. UI screenshots are closer to document/layout understanding than natural-scene-only tasks.
+- Reasoning is off by default and can be explicitly disabled with `/no_think`.
 
 **Risks:**
 
-- NVIDIA's model card says the model is ready for non-commercial use; the MCP must not select it automatically for commercial production runs unless licensing is explicitly acceptable.
-- The Build page calls it "Preview" in search/catalog text, so availability and behavior may change.
-- Exact UI diff, directional overlays, strict JSON, and throughput are unproven.
+- It is document/VQA oriented, not explicitly UI-diff or UI-grounding oriented.
+- Model card does not by itself prove strict JSON schema support, so strict-schema live probing is mandatory.
+- Alpha channel is not supported, so transparent overlays must be flattened before sending.
 
 **Sources:**
 
-- https://build.nvidia.com/minimaxai/minimax-m3
-- https://build.nvidia.com/minimaxai/minimax-m3/modelcard
+- https://build.nvidia.com/nvidia/nemotron-nano-12b-v2-vl
+- https://build.nvidia.com/nvidia/nemotron-nano-12b-v2-vl/modelcard
+- https://docs.nvidia.com/nim/vision-language-models/1.5.0/examples/nemotron-nano-12b-v2-vl/api.html
 
 ### 7. `meta/llama-3.2-90b-vision-instruct`
 
@@ -310,55 +313,9 @@ OpenRouter currently presents Kimi K2.6 and MiniMax M3 as stronger general multi
 | `google/diffusiongemma-26b-a4b-it` | Exclude by default | Diffusion LLM/text generation focus, not proven visual UI audit fit. |
 | Text-only Nemotron/Qwen/Llama models | Exclude | No image input. |
 
-## Revised Candidate Orders
+## Runtime Selection Gates
 
-Use these orders for probing, not unconditional selection.
-
-### Performance-Oriented VLM Probe Order
-
-Use this when provider cost/licensing allows using the strongest visible candidates first:
-
-1. `moonshotai/kimi-k2.6`.
-2. `minimaxai/minimax-m3` only when non-commercial/evaluation licensing is acceptable or the configured provider terms explicitly permit the run.
-3. `qwen/qwen3.5-397b-a17b`.
-4. `qwen/qwen3.6-35b-a3b` if available to the configured endpoint or self-hosted NIM.
-5. `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`.
-6. `nvidia/nemotron-nano-12b-v2-vl`.
-7. `meta/llama-3.2-90b-vision-instruct` if available to the configured key/geography.
-8. `meta/llama-3.2-11b-vision-instruct` if available to the configured key/geography.
-9. `nvidia/llama-3.1-nemotron-nano-vl-8b-v1`.
-10. `google/google-paligemma` only as a last fallback probe.
-
-This is still a provisional order. OpenRouter/general benchmark strength can predict candidate quality, but it is not a substitute for this MCP's UI-diff probes.
-
-### NVIDIA-Native Schema-Readiness Probe Order
-
-Use this when selecting specifically through native NVIDIA/NIM APIs and prioritizing documented structured-output/API evidence:
-
-Auditor/reviewer probe order:
-
-1. `qwen/qwen3.6-35b-a3b` if available to the configured endpoint or self-hosted NIM.
-2. `qwen/qwen3.5-397b-a17b` if hosted free endpoint is available and throughput is acceptable.
-3. `moonshotai/kimi-k2.6`.
-4. `nvidia/nemotron-nano-12b-v2-vl`.
-5. `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`.
-6. `minimaxai/minimax-m3` only when non-commercial/evaluation licensing is acceptable.
-7. `meta/llama-3.2-90b-vision-instruct` if available to the configured key/geography.
-8. `meta/llama-3.2-11b-vision-instruct` if available to the configured key/geography.
-9. `nvidia/llama-3.1-nemotron-nano-vl-8b-v1`.
-10. `google/google-paligemma` only as a last fallback probe.
-
-Target-recovery/spatial probe order:
-
-1. `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`.
-2. `moonshotai/kimi-k2.6`.
-3. `nvidia/cosmos3-nano-reasoner`.
-4. `qwen/qwen3.6-35b-a3b`.
-5. `qwen/qwen3.5-397b-a17b`.
-6. `minimaxai/minimax-m3` only when non-commercial/evaluation licensing is acceptable.
-7. `nvidia/nemotron-nano-12b-v2-vl`.
-
-The default runtime selector must not hardcode this as truth. It must probe each configured/available candidate by role and choose the first model that passes:
+The canonical ranking above is the starting order. The runtime selector must not hardcode it as truth. It must test each configured/available candidate in ranked order and choose the first model that passes:
 
 - image input
 - two-image expected/actual order
@@ -401,9 +358,9 @@ Each candidate must run the same probe set before it can be used:
 
 Do not state “use NVIDIA models” generically. State:
 
-- Native NVIDIA is first priority only when a specific NVIDIA candidate passes the UI-diff probe suite.
-- Best performance-oriented candidate set starts with Kimi K2.6 and MiniMax M3, then Qwen3.5/Qwen3.6, Nemotron 3 Nano Omni, Nemotron Nano 12B v2 VL, Llama 3.2 Vision, and Llama-Nemotron Nano VL.
-- Best NVIDIA-native schema-readiness candidate set can still start with Qwen3.6/Qwen3.5 because NVIDIA's Qwen3.6 docs explicitly show `json_schema`; this must not be confused with measured model quality.
+- Native NVIDIA is first priority only when a specific NVIDIA-hosted candidate passes the UI-diff probe suite.
+- Use the canonical ranking above as the only initial NVIDIA-hosted order.
+- Schema-readiness, licensing, quota, and speed are runtime gates, not separate rankings.
 - DeepSeek V4 Pro is intentionally excluded from visual audit despite NVIDIA free-endpoint availability because the NVIDIA docs present it as a text/code/reasoning LLM, not an image-capable VLM.
 - Cosmos is promising for spatial target recovery but not a default auditor without evidence.
 - PaliGemma is a fallback, not a serious default, unless live probes prove otherwise.

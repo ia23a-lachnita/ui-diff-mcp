@@ -9,7 +9,7 @@ This file is the persistent handoff state for implementation agents. Read it bef
 - Approved spec: `docs/superpowers/specs/2026-06-12-ui-diff-mcp-research-design.md`.
 - Active implementation plan: `docs/superpowers/plans/2026-06-12-ui-diff-mcp-mvp-implementation.md`.
 - Production-readiness test plan: `docs/superpowers/plans/2026-06-13-production-readiness-tests.md`.
-- Current task: model-ranking clarification for Kimi K2.6 and MiniMax M3 — complete.
+- Current task: canonical model-ranking cleanup — complete.
 - Next task: have Gemini review the updated NVIDIA research once `gemini-3-pro-preview` quota resets, then implement Task 1 from `docs/superpowers/plans/2026-06-14-free-first-ui-diff-hardening.md`.
 - Last verification: `git diff --check` exited 0 for the NVIDIA docs correction, with CRLF warnings only; previous code verification remains `npm run verify`, `npm run test:coverage`, `npm run verify:live`, and bounded `npm run verify:calorix-live` — passed before these docs-only changes.
 - Code review: Gemini 3 Pro Preview review for the NVIDIA correction could not run because quota was exhausted for about 8 hours; the MCP wrapper was also blocked by workspace trust until the direct CLI was run with `GEMINI_CLI_TRUST_WORKSPACE=true`. The NVIDIA research is based on official NVIDIA Build/API/NIM documentation and must be Gemini-reviewed later.
@@ -44,11 +44,12 @@ This file is the persistent handoff state for implementation agents. Read it bef
 | 2026-06-14 | this commit | NVIDIA model follow-up: Kimi, MiniMax, Nemotron Ultra | Official NVIDIA Build/API docs reviewed; `git diff --check` before commit | Added `moonshotai/kimi-k2.6` and `minimaxai/minimax-m3` to native NVIDIA VLM probe candidates. Explicitly excluded Nemotron Ultra text-only/reasoning models from visual audit roles. |
 | 2026-06-14 | this commit | NVIDIA model follow-up: DeepSeek V4 Pro | Official NVIDIA Build/API docs reviewed; `git diff --check` before commit | Explicitly excluded `deepseek-ai/deepseek-v4-pro` and `deepseek-ai/deepseek-v4-flash` from visual audit roles because current NVIDIA docs present them as text/code/reasoning LLMs, not image-capable VLMs. |
 | 2026-06-14 | this commit | Model-ranking clarification: Kimi K2.6 and MiniMax M3 | OpenRouter/NVIDIA docs reviewed; `git diff --check` before commit | Clarified that the previous NVIDIA list was not a measured performance ranking. Added a performance-oriented probe lane that ranks Kimi K2.6 and MiniMax M3 ahead of Qwen/Nemotron, while keeping schema-readiness and licensing gates explicit. |
+| 2026-06-14 | this commit | Canonical model-ranking cleanup | OpenRouter/NVIDIA speed-routing docs reviewed; `git diff --check` before commit | Removed ambiguous duplicate model-ranking lanes. The NVIDIA research doc now has one NVIDIA-hosted ranking. The implementation plan now has one provider-agnostic model ranking where OpenRouter, native NVIDIA, and self-hosted NIM are delivery routes, not separate rankings. Speed is a measured runtime gate, not a static NVIDIA ranking. |
 
 ## Handoff Checklist
 
-- Current task: model-ranking clarification for Kimi K2.6 and MiniMax M3 — complete
-- Last completed step: Clarified that Kimi K2.6 and MiniMax M3 should lead the performance-oriented probe lane, while UI-diff performance still requires live probes
+- Current task: canonical model-ranking cleanup — complete
+- Last completed step: Collapsed duplicate model-ranking lanes into one canonical ranking per document and made speed a measured runtime gate
 - Next step: request Gemini 3 Pro Preview review of the updated NVIDIA research once quota resets, then implement Task 1 from the free-first hardening plan
 - Verification command and result: `git diff --check` exited 0, with CRLF warnings only. Previous code gates remain as recorded above.
 - Commit pushed: this commit after push
