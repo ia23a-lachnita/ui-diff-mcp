@@ -260,6 +260,58 @@ describe("auditElementPair", () => {
     expect(result.accepted.length).toBeGreaterThanOrEqual(1);
     expect(result.accepted[0]?.model).toBe("moonshotai/kimi-k2.6");
   });
+
+  it("sends directional overlay and context crop as evidence images to auditor", async () => {
+    const capturedRequests: import("../../src/models/vision-json.js").VisionJsonRequest[] = [];
+    const auditorCaller: VisionJsonCaller = vi.fn().mockImplementation(async (req) => {
+      capturedRequests.push(req);
+      return {
+        parsed: { hasDiff: true, severity: "medium", title: "Evidence test", evidence: ["diff present"] },
+        rawContent: "",
+        model: "test-model",
+        provider: "openrouter"
+      };
+    });
+    const reviewerCaller: VisionJsonCaller = vi.fn().mockResolvedValue({
+      parsed: { decision: "accepted", reason: "confirmed" },
+      rawContent: "",
+      model: "test-reviewer",
+      provider: "openrouter"
+    });
+
+    await auditElementPair(pair, {
+      expectedImagePath: grayPng,
+      actualImagePath: grayPng,
+      expectedElements: [expectedEl],
+      actualElements: [{ ...expectedEl, id: "a1", box: { x: 10, y: 65, width: 80, height: 40 } }],
+      artifactDir: tmpDir,
+      auditorCaller,
+      reviewerCaller,
+      expectedRgba: { data: new Uint8Array(200 * 400 * 4), width: 200, height: 400 },
+      actualRgba: { data: new Uint8Array(200 * 400 * 4), width: 200, height: 400 },
+      measurements: [],
+      triggerCtx: {
+        pairingStatus: "matched",
+        boxDeltaPx: 15,
+        textDelta: false,
+        colorDelta: false,
+        edgeMismatch: false,
+        overlapDetected: false,
+        stateWordsDiffer: false,
+        elementType: "button",
+        measurements: []
+      }
+    });
+
+    expect(capturedRequests.length).toBeGreaterThanOrEqual(1);
+    const firstRequest = capturedRequests[0];
+    // Expect: expected crop, actual crop, directional overlay, pixel-diff mask, context crop
+    expect(firstRequest?.images.length).toBeGreaterThanOrEqual(3);
+    // All images should be data URIs
+    for (const img of firstRequest?.images ?? []) {
+      expect(img).toMatch(/^data:image\/png;base64,/);
+    }
+  });
 });
 
 describe("reviewAndMergeFindings", () => {

@@ -78,6 +78,16 @@ async function writeCropArtifact(
   return outPath;
 }
 
+function expandBox(box: Box, paddingFactor: number, imageWidth: number, imageHeight: number): Box {
+  const padW = box.width * paddingFactor;
+  const padH = box.height * paddingFactor;
+  const x = Math.max(0, box.x - padW);
+  const y = Math.max(0, box.y - padH);
+  const x2 = Math.min(imageWidth, box.x + box.width + padW);
+  const y2 = Math.min(imageHeight, box.y + box.height + padH);
+  return { x, y, width: x2 - x, height: y2 - y };
+}
+
 async function extractCropAndEncode(
   imageData: Uint8Array,
   imageWidth: number,
@@ -181,10 +191,24 @@ export async function auditElementPair(
   }
 
 
+  // Extract context crop: 50% padding around the reference element box
+  let contextCropB64: string | null = null;
+  if (refEl) {
+    const contextBox = expandBox(refEl.box, 0.5, ctx.expectedRgba.width, ctx.expectedRgba.height);
+    const { base64, artifact } = await extractCropAndEncode(
+      ctx.expectedRgba.data, ctx.expectedRgba.width, ctx.expectedRgba.height, contextBox,
+      "context_crop", baseFileName("context-crop"), pairId
+    );
+    contextCropB64 = base64;
+    auditArtifacts.push(artifact);
+  }
+
+  // Evidence image order: expected crop, actual crop, local directional overlay, local pixel-diff mask, context crop
   if (expectedCropB64) images.push(`data:image/png;base64,${expectedCropB64}`);
   if (actualCropB64) images.push(`data:image/png;base64,${actualCropB64}`);
   if (localDirectionalOverlayB64) images.push(`data:image/png;base64,${localDirectionalOverlayB64}`);
   if (localPixelDiffMaskB64) images.push(`data:image/png;base64,${localPixelDiffMaskB64}`);
+  if (contextCropB64) images.push(`data:image/png;base64,${contextCropB64}`);
 
   for (const criterion of criteria) {
     const rubric = rubrics[criterion];
