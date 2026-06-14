@@ -264,23 +264,34 @@ export async function runTargetRecovery(
       continue;
     }
 
-    if (!vlmResponse.classified || !vlmResponse.criterion || !vlmResponse.label || !vlmResponse.box || !vlmResponse.evidence) {
+    if (
+      !vlmResponse.classified ||
+      !vlmResponse.criterion ||
+      !vlmResponse.label ||
+      !vlmResponse.box ||
+      !vlmResponse.evidence ||
+      !vlmResponse.coordinateFrame
+    ) {
       unclassifiedCount++;
       continue;
     }
 
     // Validate box
-    const recoveredBox = vlmResponse.box;
-    if (!isBoxInBounds(recoveredBox, imageWidth, imageHeight)) {
+    const rawBox = vlmResponse.box;
+    if (!isBoxInBounds(rawBox, imageWidth, imageHeight)) {
       console.warn(`Recovery: box out of bounds for component ${evidenceId}, skipping`);
       unclassifiedCount++;
       continue;
     }
-    if (!boxOverlapsComponent(recoveredBox, component)) {
+    if (!boxOverlapsComponent(rawBox, component)) {
       console.warn(`Recovery: box does not overlap component ${evidenceId}, skipping`);
       unclassifiedCount++;
       continue;
     }
+
+    // Snap recovered box to the deterministic pixel-component bounds.
+    // The VLM provides label/criterion; the pixel analysis provides the ground-truth region.
+    const recoveredBox = component.box;
 
     // Review with standard reviewer
     const reviewerPrompt = buildReviewerPrompt(
@@ -322,6 +333,11 @@ export async function runTargetRecovery(
     }
 
     const diffId = crypto.randomBytes(6).toString("hex");
+    const baseMeasurements = (vlmResponse.measurements ?? []).map(m => ({
+      name: m.name,
+      value: m.value as string | number | boolean,
+      ...(m.unit !== undefined ? { unit: m.unit } : {})
+    }));
     const record: DiffRecord = {
       id: diffId,
       criterion: vlmResponse.criterion,
@@ -329,11 +345,10 @@ export async function runTargetRecovery(
       title: `${vlmResponse.criterion} in recovered region: ${vlmResponse.label}`,
       location: recoveredBox,
       evidence: vlmResponse.evidence,
-      measurements: (vlmResponse.measurements ?? []).map(m => ({
-        name: m.name,
-        value: m.value as string | number | boolean,
-        ...(m.unit !== undefined ? { unit: m.unit } : {})
-      })),
+      measurements: [
+        ...baseMeasurements,
+        { name: "coordinateFrame", value: vlmResponse.coordinateFrame }
+      ],
       artifactPaths: artifacts,
       reviewerStatus: reviewDecision === "needs_escalation" ? "needs_escalation" : "accepted",
       model: recoveryModel

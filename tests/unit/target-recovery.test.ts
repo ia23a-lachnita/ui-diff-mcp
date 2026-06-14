@@ -110,6 +110,33 @@ describe("runTargetRecovery", () => {
     expect(recovered[0]?.reviewerStatus).toBe("accepted");
     expect(recovered[0]?.model).toBe("test-model");
     expect(unclassifiedCount).toBe(0);
+    // coordinateFrame preserved in measurements
+    const cfMeasurement = recovered[0]?.measurements.find(m => m.name === "coordinateFrame");
+    expect(cfMeasurement?.value).toBe("expected");
+    // location snapped to pixel-component's deterministic bounds
+    expect(recovered[0]?.location).toEqual(component.box);
+  });
+
+  it("marks component unclassified when coordinateFrame is missing", async () => {
+    const recoveryCaller: VisionJsonCaller = vi.fn().mockResolvedValue({
+      parsed: {
+        classified: true,
+        criterion: "geometry",
+        severity: "medium",
+        label: "Button",
+        // coordinateFrame intentionally omitted
+        box: { x: 10, y: 10, width: 80, height: 60 },
+        evidence: ["shifted"]
+      },
+      rawContent: "",
+      model: "test-model",
+      provider: "openrouter"
+    });
+    const ctx = makeCtx({ recoveryCaller });
+
+    const { recovered, unclassifiedCount } = await runTargetRecovery([component], ctx);
+    expect(recovered).toHaveLength(0);
+    expect(unclassifiedCount).toBe(1);
   });
 
   it("marks component unclassified when reviewer rejects", async () => {
