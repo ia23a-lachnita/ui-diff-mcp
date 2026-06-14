@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { UiDiffReport, UiArtifact } from "../schemas/core.js";
+import type { UiDiffReport, UiArtifact, AuditScope } from "../schemas/core.js";
 
 export interface CompactOutput {
   runId: string;
@@ -12,6 +12,7 @@ export interface CompactOutput {
   summary: string;
   warnings: string[];
   locatorCoverageStatus: string;
+  auditScope?: AuditScope;
 }
 
 export async function writeUiDiffReport(
@@ -49,6 +50,7 @@ export async function writeUiDiffReport(
     runArtifacts: report.runArtifacts ?? [],
     summary,
     warnings: report.warnings ?? [],
-    locatorCoverageStatus: report.locatorCoverageStatus
+    locatorCoverageStatus: report.locatorCoverageStatus,
+    ...(report.auditScope !== undefined ? { auditScope: report.auditScope } : {})
   };
 }

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { assignDiffComponentsToRecords } from "../../src/report/coverage.js";
 import { writeUiDiffReport } from "../../src/report/report-writer.js";
 import { UiDiffReportSchema, type DiffRecord } from "../../src/schemas/core.js";
+import { makeElementSlug } from "../../src/audit/audit-target.js";
 
 let tmpDir: string;
 
@@ -115,5 +116,79 @@ describe("writeUiDiffReport", () => {
     expect(output.diffCount).toBe(1);
     expect(output.summary).toContain("1 visual difference");
     expect(output.summary).toContain("1 high severity");
+  });
+
+  it("includes auditScope in compact output when provided", async () => {
+    const artifactRoot = path.join(tmpDir, "artifacts3");
+    const report = {
+      schemaVersion: "0.1" as const,
+      runId: "run-3",
+      createdAt: new Date().toISOString(),
+      status: "complete" as const,
+      visualClassificationStatus: "complete" as const,
+      locatorCoverageStatus: "not_run" as const,
+      expectedImagePath: "e.png",
+      actualImagePath: "a.png",
+      artifactRoot,
+      elements: { expected: [], actual: [] },
+      pairs: [],
+      diffs: [],
+      modelHealth: [],
+      runArtifacts: [],
+      warnings: [],
+      auditScope: { auditedPairs: 3, totalPairs: 5, auditLimited: true, limitReason: "max pairs limit" }
+    };
+
+    const output = await writeUiDiffReport(report);
+    expect(output.auditScope).toBeDefined();
+    expect(output.auditScope?.auditedPairs).toBe(3);
+    expect(output.auditScope?.totalPairs).toBe(5);
+    expect(output.auditScope?.auditLimited).toBe(true);
+    expect(output.auditScope?.limitReason).toBe("max pairs limit");
+    // auditScope persisted in report.json
+    const written = JSON.parse(await fs.readFile(output.reportPath, "utf8")) as { auditScope?: unknown };
+    expect(written.auditScope).toBeDefined();
+  });
+
+  it("auditScope is absent from compact output when not provided", async () => {
+    const artifactRoot = path.join(tmpDir, "artifacts4");
+    const report = {
+      schemaVersion: "0.1" as const,
+      runId: "run-4",
+      createdAt: new Date().toISOString(),
+      status: "complete" as const,
+      visualClassificationStatus: "not_run" as const,
+      locatorCoverageStatus: "not_run" as const,
+      expectedImagePath: "e.png",
+      actualImagePath: "a.png",
+      artifactRoot,
+      elements: { expected: [], actual: [] },
+      pairs: [],
+      diffs: [],
+      modelHealth: [],
+      runArtifacts: [],
+      warnings: []
+    };
+
+    const output = await writeUiDiffReport(report);
+    expect(output.auditScope).toBeUndefined();
+  });
+});
+
+describe("makeElementSlug", () => {
+  it("converts label to kebab-case", () => {
+    expect(makeElementSlug("Submit Button")).toBe("submit-button");
+  });
+
+  it("replaces multiple special chars with a single dash", () => {
+    expect(makeElementSlug("Kcal / Value!")).toBe("kcal-value");
+  });
+
+  it("truncates to 20 characters", () => {
+    expect(makeElementSlug("A Very Long Label Name That Exceeds Limit")).toHaveLength(20);
+  });
+
+  it("strips leading and trailing dashes", () => {
+    expect(makeElementSlug("  Leading Trailing  ")).not.toMatch(/^-|-$/);
   });
 });

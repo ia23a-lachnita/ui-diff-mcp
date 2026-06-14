@@ -156,6 +156,9 @@ describe("auditElementPair", () => {
       expectedRgba: { data: new Uint8Array(200 * 400 * 4), width: 200, height: 400 },
       actualRgba: { data: new Uint8Array(200 * 400 * 4), width: 200, height: 400 },
       measurements: [],
+      auditIndex: 1,
+      auditTotal: 1,
+      elementSlug: "submit-button",
       triggerCtx: {
         pairingStatus: "matched",
         boxDeltaPx: 15,
@@ -199,6 +202,9 @@ describe("auditElementPair", () => {
       expectedRgba: { data: new Uint8Array(200 * 400 * 4), width: 200, height: 400 },
       actualRgba: { data: new Uint8Array(200 * 400 * 4), width: 200, height: 400 },
       measurements: [],
+      auditIndex: 1,
+      auditTotal: 1,
+      elementSlug: "submit-button",
       triggerCtx: {
         pairingStatus: "matched",
         boxDeltaPx: 2,
@@ -242,6 +248,9 @@ describe("auditElementPair", () => {
       expectedRgba: { data: new Uint8Array(200 * 400 * 4), width: 200, height: 400 },
       actualRgba: { data: new Uint8Array(200 * 400 * 4), width: 200, height: 400 },
       measurements: [],
+      auditIndex: 1,
+      auditTotal: 1,
+      elementSlug: "submit-button",
       triggerCtx: {
         pairingStatus: "matched",
         boxDeltaPx: 0,
@@ -290,6 +299,9 @@ describe("auditElementPair", () => {
       expectedRgba: { data: new Uint8Array(200 * 400 * 4), width: 200, height: 400 },
       actualRgba: { data: new Uint8Array(200 * 400 * 4), width: 200, height: 400 },
       measurements: [],
+      auditIndex: 1,
+      auditTotal: 1,
+      elementSlug: "submit-button",
       triggerCtx: {
         pairingStatus: "matched",
         boxDeltaPx: 15,

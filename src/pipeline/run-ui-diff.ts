@@ -14,12 +14,12 @@ import { selectModelForMode, resolveMode, CANONICAL_MODEL_RANKING, type ModelEnt
 import { probeRequiredModels, type ProbeResult } from "../models/probes.js";
 import { estimateFreeRunBudget, lookupOpenRouterQuota, checkFreeQuotaSufficiency } from "../models/free-quota.js";
 import { makeOpenRouterVisionCaller, makeNvidiaVisionCaller, type VisionMode } from "../models/vision-json.js";
-import { auditElementPair, type AuditContext } from "../audit/audit-target.js";
+import { auditElementPair, makeElementSlug, type AuditContext } from "../audit/audit-target.js";
 import { reviewAndMergeFindings } from "../audit/review-findings.js";
 import { assignDiffComponentsToRecords, findUncoveredComponents } from "../report/coverage.js";
 import { runTargetRecovery } from "../recovery/target-recovery.js";
 import { writeUiDiffReport } from "../report/report-writer.js";
-import type { UiDiffReport, RunStatus, VisualClassificationStatus, LocatorCoverageStatus, DiffRecord, ElementPair, UiArtifact } from "../schemas/core.js";
+import type { UiDiffReport, RunStatus, VisualClassificationStatus, LocatorCoverageStatus, DiffRecord, ElementPair, UiArtifact, AuditScope } from "../schemas/core.js";
 import { sampleColorStats } from "../signals/color.js";
 
 export interface RunInput {
@@ -40,6 +40,7 @@ export interface RunOutput {
   summary: string;
   warnings: string[];
   locatorCoverageStatus: string;
+  auditScope?: AuditScope;
 }
 
 type ProbeOverride = (entries: ModelEntry[], openRouterApiKey: string, nvidiaApiKey?: string, nvidiaBaseUrl?: string) => Promise<ProbeResult[]>;
@@ -122,6 +123,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
   let status: RunStatus = "complete";
   let visualClassificationStatus: VisualClassificationStatus = "not_run";
   let locatorCoverageStatus: LocatorCoverageStatus = "not_run";
+  let auditScope: AuditScope | undefined = undefined;
   const allDiffs: DiffRecord[] = [];
 
   const openRouterApiKey = process.env["OPENROUTER_API_KEY"] ?? "";
@@ -262,7 +264,9 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
           warnings.push(auditSelection.warning);
         }
 
-        for (const pair of auditSelection.pairs) {
+        const auditTotal = auditSelection.pairs.length;
+        for (let auditIdx = 0; auditIdx < auditSelection.pairs.length; auditIdx++) {
+          const pair = auditSelection.pairs[auditIdx]!;
           const expEl = expectedElements.find(e => e.id === pair.expectedId);
           const actEl = actualElements.find(e => e.id === pair.actualId);
           const refEl = expEl ?? actEl;
@@ -296,12 +300,22 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
               stateWordsDiffer: false,
               elementType: refEl.type,
               measurements: []
-            }
+            },
+            auditIndex: auditIdx + 1,
+            auditTotal,
+            elementSlug: makeElementSlug(refEl.label)
           };
 
           const { accepted } = await auditElementPair(pair, ctx);
           auditedDiffs.push(...accepted);
         }
+
+        auditScope = {
+          auditedPairs: auditTotal,
+          totalPairs: pairs.length,
+          auditLimited: auditSelection.limited,
+          ...(auditSelection.warning ? { limitReason: auditSelection.warning } : {})
+        };
 
         const merged = reviewAndMergeFindings(auditedDiffs);
         allDiffs.push(...merged);
@@ -359,6 +373,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     visualClassificationStatus,
     locatorCoverageStatus,
     ...(locatorMetadata !== undefined ? { locatorMetadata } : {}),
+    ...(auditScope !== undefined ? { auditScope } : {}),
     expectedImagePath: expectedAbs,
     actualImagePath: actualAbs,
     artifactRoot,

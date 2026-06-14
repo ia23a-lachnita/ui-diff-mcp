@@ -145,6 +145,14 @@ export const LocatorMetadataSchema = z.object({
   queryCounts: z.record(z.string(), z.number().int().nonnegative())
 });
 
+export const AuditScopeSchema = z.object({
+  auditedPairs: z.number().int().nonnegative(),
+  totalPairs: z.number().int().nonnegative(),
+  auditLimited: z.boolean(),
+  limitReason: z.string().optional()
+});
+export type AuditScope = z.infer<typeof AuditScopeSchema>;
+
 export const UiDiffReportSchema = z.object({
   schemaVersion: z.literal("0.1"),
   runId: z.string().min(1),
@@ -153,6 +161,7 @@ export const UiDiffReportSchema = z.object({
   visualClassificationStatus: VisualClassificationStatusSchema,
   locatorCoverageStatus: LocatorCoverageStatusSchema.default("not_run"),
   locatorMetadata: LocatorMetadataSchema.optional(),
+  auditScope: AuditScopeSchema.optional(),
   expectedImagePath: z.string().min(1),
   actualImagePath: z.string().min(1),
   artifactRoot: z.string().min(1),

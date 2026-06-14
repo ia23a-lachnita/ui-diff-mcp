@@ -27,6 +27,17 @@ export interface AuditContext {
   actualRgba: { data: Uint8Array; width: number; height: number };
   measurements: DeterministicMeasurement[];
   triggerCtx: TriggerContext;
+  auditIndex: number;
+  auditTotal: number;
+  elementSlug: string;
+}
+
+export function makeElementSlug(label: string): string {
+  return label
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 20);
 }
 
 function extractImageCrop(
@@ -140,8 +151,11 @@ export async function auditElementPair(
 
   const pairId = pair.id; // Use pair.id for artifact naming and linking
 
+  const idxStr = String(ctx.auditIndex).padStart(3, "0");
+  const totalStr = String(ctx.auditTotal).padStart(3, "0");
+  const shortId = pairId.slice(0, 12);
   const baseFileName = (role: string) =>
-    path.join(ctx.artifactDir, `audit-${pairId}-${role}.png`);
+    path.join(ctx.artifactDir, `audit-${idxStr}-of-${totalStr}-pair-${shortId}-${ctx.elementSlug}-${role}.png`);
 
   // Extract Expected Crop
   if (expectedEl) {
@@ -273,7 +287,7 @@ export async function auditElementPair(
       reviewDecision = parsed.decision;
     } catch (err) {
       console.error(`Reviewer call failed for criterion ${criterion}:`, err);
-      reviewDecision = "accepted";
+      reviewDecision = "needs_escalation";
     }
 
     const record: DiffRecord = {
