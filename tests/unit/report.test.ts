@@ -81,6 +81,8 @@ describe("writeUiDiffReport", () => {
     expect(output.reportPath).toContain("report.json");
     expect(output.artifactRoot).toBe(artifactRoot);
     expect(output.summary).toMatch(/No visual differences/);
+    expect(output.visualClassificationStatus).toBe("complete");
+    expect(output.auditLimited).toBe(false);
 
     const written = await fs.readFile(output.reportPath, "utf8");
     const parsed = JSON.parse(written);

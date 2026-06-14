@@ -1,5 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { DiffRecordSchema, UiDiffReportSchema } from "../../src/schemas/core.js";
+import { DiffRecordSchema, UiDiffReportSchema, ModelSelectionSchema } from "../../src/schemas/core.js";
+
+function makeMinimalReport(overrides: Record<string, unknown> = {}) {
+  return {
+    schemaVersion: "0.1",
+    runId: "run-1",
+    createdAt: new Date().toISOString(),
+    status: "complete",
+    visualClassificationStatus: "complete",
+    expectedImagePath: "expected.png",
+    actualImagePath: "actual.png",
+    artifactRoot: ".ui-diff/runs/run-1/artifacts",
+    elements: { expected: [], actual: [] },
+    pairs: [],
+    diffs: [],
+    modelHealth: [],
+    ...overrides
+  };
+}
 
 describe("core schemas", () => {
   it("accepts a visible diff record with evidence", () => {
@@ -16,17 +34,7 @@ describe("core schemas", () => {
   });
 
   it("rejects a report without evidence-backed diffs", () => {
-    expect(() => UiDiffReportSchema.parse({
-      schemaVersion: "0.1",
-      runId: "run-1",
-      createdAt: new Date().toISOString(),
-      status: "complete",
-      visualClassificationStatus: "complete",
-      expectedImagePath: "expected.png",
-      actualImagePath: "actual.png",
-      artifactRoot: ".ui-diff/runs/run-1/artifacts",
-      elements: { expected: [], actual: [] },
-      pairs: [],
+    expect(() => UiDiffReportSchema.parse(makeMinimalReport({
       diffs: [{
         id: "bad",
         criterion: "presence",
@@ -35,8 +43,42 @@ describe("core schemas", () => {
         location: { x: 0, y: 0, width: 1, height: 1 },
         evidence: [],
         reviewerStatus: "accepted"
-      }],
-      modelHealth: []
+      }]
+    }))).toThrow();
+  });
+
+  it("accepts modelSelection with auditor and reviewer", () => {
+    const parsed = UiDiffReportSchema.parse(makeMinimalReport({
+      modelSelection: {
+        auditor: { model: "qwen/qwen3-vl-30b:free", provider: "openrouter" },
+        reviewer: { model: "nvidia/nemotron-nano-12b-v2-vl", provider: "nvidia" }
+      }
+    }));
+    expect(parsed.modelSelection?.auditor?.provider).toBe("openrouter");
+    expect(parsed.modelSelection?.reviewer?.provider).toBe("nvidia");
+  });
+
+  it("accepts report without modelSelection (optional)", () => {
+    const parsed = UiDiffReportSchema.parse(makeMinimalReport());
+    expect(parsed.modelSelection).toBeUndefined();
+  });
+
+  it("ModelSelectionSchema rejects empty model string", () => {
+    expect(() => ModelSelectionSchema.parse({
+      auditor: { model: "", provider: "openrouter" }
     })).toThrow();
+  });
+
+  it("bounded smoke run exposes visualClassificationStatus and auditLimited to distinguish from full run", () => {
+    const parsed = UiDiffReportSchema.parse(makeMinimalReport({
+      status: "incomplete",
+      visualClassificationStatus: "incomplete",
+      auditScope: { auditedPairs: 3, totalPairs: 10, auditLimited: true, limitReason: "max pairs limit" }
+    }));
+    // Both fields must be present so callers cannot confuse a bounded smoke with a full classification
+    expect(parsed.visualClassificationStatus).toBe("incomplete");
+    expect(parsed.auditScope?.auditLimited).toBe(true);
+    expect(parsed.auditScope?.auditedPairs).toBe(3);
+    expect(parsed.auditScope?.totalPairs).toBe(10);
   });
 });

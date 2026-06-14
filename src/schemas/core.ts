@@ -153,6 +153,12 @@ export const AuditScopeSchema = z.object({
 });
 export type AuditScope = z.infer<typeof AuditScopeSchema>;
 
+export const ModelSelectionSchema = z.object({
+  auditor: z.object({ model: z.string().min(1), provider: z.string().min(1) }).optional(),
+  reviewer: z.object({ model: z.string().min(1), provider: z.string().min(1) }).optional()
+});
+export type ModelSelection = z.infer<typeof ModelSelectionSchema>;
+
 export const UiDiffReportSchema = z.object({
   schemaVersion: z.literal("0.1"),
   runId: z.string().min(1),
@@ -162,6 +168,7 @@ export const UiDiffReportSchema = z.object({
   locatorCoverageStatus: LocatorCoverageStatusSchema.default("not_run"),
   locatorMetadata: LocatorMetadataSchema.optional(),
   auditScope: AuditScopeSchema.optional(),
+  modelSelection: ModelSelectionSchema.optional(),
   expectedImagePath: z.string().min(1),
   actualImagePath: z.string().min(1),
   artifactRoot: z.string().min(1),

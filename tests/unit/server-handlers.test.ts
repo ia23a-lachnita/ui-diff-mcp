@@ -23,7 +23,9 @@ function runOutput(overrides: Partial<RunOutput> = {}): RunOutput {
     ],
     summary: "Found 1 visual difference.",
     warnings: [],
+    visualClassificationStatus: "not_run",
     locatorCoverageStatus: "not_run",
+    auditLimited: false,
     ...overrides
   };
 }

@@ -19,7 +19,7 @@ import { reviewAndMergeFindings } from "../audit/review-findings.js";
 import { assignDiffComponentsToRecords, findUncoveredComponents } from "../report/coverage.js";
 import { runTargetRecovery } from "../recovery/target-recovery.js";
 import { writeUiDiffReport } from "../report/report-writer.js";
-import type { UiDiffReport, RunStatus, VisualClassificationStatus, LocatorCoverageStatus, DiffRecord, ElementPair, UiArtifact, AuditScope } from "../schemas/core.js";
+import type { UiDiffReport, RunStatus, VisualClassificationStatus, LocatorCoverageStatus, DiffRecord, ElementPair, UiArtifact, AuditScope, ModelSelection } from "../schemas/core.js";
 import { computeColorEvidence } from "../signals/color.js";
 
 export interface RunInput {
@@ -39,7 +39,9 @@ export interface RunOutput {
   runArtifacts: UiArtifact[];
   summary: string;
   warnings: string[];
+  visualClassificationStatus: string;
   locatorCoverageStatus: string;
+  auditLimited: boolean;
   auditScope?: AuditScope;
 }
 
@@ -124,6 +126,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
   let visualClassificationStatus: VisualClassificationStatus = "not_run";
   let locatorCoverageStatus: LocatorCoverageStatus = "not_run";
   let auditScope: AuditScope | undefined = undefined;
+  let modelSelection: ModelSelection | undefined = undefined;
   const allDiffs: DiffRecord[] = [];
 
   const openRouterApiKey = process.env["OPENROUTER_API_KEY"] ?? "";
@@ -254,6 +257,10 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
       }
     } else {
       {
+        modelSelection = {
+          auditor: { model: auditorEntry.model, provider: auditorEntry.provider },
+          reviewer: { model: reviewerEntry.model, provider: reviewerEntry.provider }
+        };
         const auditorCaller = makeVisionCaller(auditorEntry, openRouterApiKey, nvidiaApiKey, nvidiaBaseUrl);
         const reviewerCaller = makeVisionCaller(reviewerEntry, openRouterApiKey, nvidiaApiKey, nvidiaBaseUrl);
 
@@ -390,6 +397,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     locatorCoverageStatus,
     ...(locatorMetadata !== undefined ? { locatorMetadata } : {}),
     ...(auditScope !== undefined ? { auditScope } : {}),
+    ...(modelSelection !== undefined ? { modelSelection } : {}),
     expectedImagePath: expectedAbs,
     actualImagePath: actualAbs,
     artifactRoot,

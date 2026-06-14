@@ -11,7 +11,9 @@ export interface CompactOutput {
   runArtifacts: UiArtifact[];
   summary: string;
   warnings: string[];
+  visualClassificationStatus: string;
   locatorCoverageStatus: string;
+  auditLimited: boolean;
   auditScope?: AuditScope;
 }
 
@@ -50,7 +52,9 @@ export async function writeUiDiffReport(
     runArtifacts: report.runArtifacts ?? [],
     summary,
     warnings: report.warnings ?? [],
+    visualClassificationStatus: report.visualClassificationStatus,
     locatorCoverageStatus: report.locatorCoverageStatus,
+    auditLimited: report.auditScope?.auditLimited ?? false,
     ...(report.auditScope !== undefined ? { auditScope: report.auditScope } : {})
   };
 }
