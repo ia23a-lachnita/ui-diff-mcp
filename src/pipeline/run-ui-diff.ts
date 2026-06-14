@@ -12,6 +12,7 @@ import { buildElementMap } from "../locator/element-map.js";
 import { pairElements } from "../pairing/pair-elements.js";
 import { selectModelForMode, resolveMode, CANONICAL_MODEL_RANKING, type ModelEntry } from "../models/model-registry.js";
 import { probeRequiredModels, type ProbeResult } from "../models/probes.js";
+import { estimateFreeRunBudget, lookupOpenRouterQuota, checkFreeQuotaSufficiency } from "../models/free-quota.js";
 import { makeOpenRouterVisionCaller, makeNvidiaVisionCaller, type VisionMode } from "../models/vision-json.js";
 import { auditElementPair, type AuditContext } from "../audit/audit-target.js";
 import { reviewAndMergeFindings } from "../audit/review-findings.js";
@@ -135,7 +136,33 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
   const actualElements: ReturnType<typeof buildElementMap> = [];
   let locatorFailed = false;
 
-  if (mode !== "deterministic_only") {
+  // Free quota preflight: estimate calls and check sufficiency before spending quota.
+  // Only applies when an OpenRouter key is configured — without a key, the probe will
+  // mark all OpenRouter routes not_checked and model selection will fall back or skip.
+  if ((mode === "free" || mode === "free_openrouter") && openRouterApiKey) {
+    const openRouterRouteCount = CANONICAL_MODEL_RANKING
+      .flatMap(c => c.eligibleFreeProviderRoutes)
+      .filter(r => r.provider === "openrouter").length;
+    const budget = estimateFreeRunBudget({
+      modelCount: openRouterRouteCount,
+      pairCount: 20, // conservative upper bound before pairs are known
+      criteriaPerPair: 3,
+      recoveryRegionCount: 5,
+      reviewerPolicy: "every_diff"
+    });
+    const keyInfo = await lookupOpenRouterQuota(openRouterApiKey);
+    const quotaCheck = checkFreeQuotaSufficiency(budget, keyInfo);
+    if (!quotaCheck.available) {
+      status = "insufficient_free_quota";
+      visualClassificationStatus = "incomplete";
+      warnings.push(
+        `Insufficient free quota: ${quotaCheck.detail} (estimated ${quotaCheck.estimatedCalls} calls, ` +
+        `${quotaCheck.limitRemaining ?? "unknown"} remaining)`
+      );
+    }
+  }
+
+  if (mode !== "deterministic_only" && status !== "insufficient_free_quota") {
     try {
       const expResp = await locateUiElements({
         endpoint: locatorUrl,
@@ -175,7 +202,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
 
   const modelHealth: UiDiffReport["modelHealth"] = [];
 
-  if (mode !== "deterministic_only") {
+  if (mode !== "deterministic_only" && status !== "insufficient_free_quota") {
     const probe = opts?.probeOverride ?? probeRequiredModels;
     const probeEntries: ModelEntry[] = CANONICAL_MODEL_RANKING.flatMap(c =>
       c.eligibleFreeProviderRoutes.map(r => ({

@@ -171,6 +171,43 @@ describe("callNvidiaVisionJson", () => {
     expect(callArgs[0]).toContain("http://nvidia.test");
   });
 
+  it("sends jsonSchema in the response_format", async () => {
+    const testSchema = {
+      type: "object",
+      properties: {
+        item: { type: "string" },
+        quantity: { type: "number" }
+      },
+      required: ["item"]
+    };
+    const mockFetch = makeFetchMock(200, {
+      model: "nvidia/test-model",
+      choices: [{ message: { content: '{"item":"apple", "quantity": 5}' } }]
+    });
+    vi.stubGlobal("fetch", mockFetch);
+
+    await callNvidiaVisionJson({
+      apiKey: "nvidia-test-key",
+      model: "nvidia/test-model",
+      prompt: "Order 5 apples.",
+      images: [],
+      jsonSchema: { name: "order_schema", schema: testSchema },
+      timeoutMs: 5000
+    });
+
+    const callArgs = mockFetch.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(callArgs[1].body as string) as any;
+
+    expect(body.response_format).toEqual({
+      type: "json_schema",
+      json_schema: {
+        name: "order_schema",
+        strict: true,
+        schema: testSchema
+      }
+    });
+  });
+
   it("throws when NVIDIA env vars are missing", async () => {
     vi.stubEnv("NVIDIA_API_KEY", "");
     await expect(callNvidiaVisionJson({

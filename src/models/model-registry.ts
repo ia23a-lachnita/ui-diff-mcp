@@ -213,12 +213,13 @@ export function selectModelForMode(
     }
 
     if (mode === "paid") {
-      if (candidate.costClass === "paid" && candidate.paidRoutes && candidate.paidRoutes.length > 0) {
-        const paidRoute = candidate.paidRoutes[0];
-        if (!paidRoute) continue;
-        const probe = probeResults.find(p => p.model === paidRoute.model && p.provider === paidRoute.provider);
-        if (probe?.status === "pass") {
-          return { ...candidate, provider: paidRoute.provider, model: paidRoute.model, required: true, probeTtlMs: 24 * 60 * 60 * 1000 };
+      if (candidate.paidRoutes && candidate.paidRoutes.length > 0) {
+        for (const paidRoute of candidate.paidRoutes) {
+          const probe = probeResults.find(p => p.model === paidRoute.model && p.provider === paidRoute.provider);
+          if (probe?.status === "pass") {
+            // Paid models have a longer TTL
+            return { ...candidate, provider: paidRoute.provider, model: paidRoute.model, costClass: "paid", required: true, probeTtlMs: 24 * 60 * 60 * 1000 };
+          }
         }
       }
     } else { // Free modes

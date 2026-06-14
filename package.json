@@ -18,7 +18,8 @@
     "verify": "npm run typecheck && npm test && npm run test:sidecar && npm run build && npm run test:integration",
     "verify:live": "node scripts/require-live-env.js RUN_UI_DIFF_LIVE && npm run build && npm run test:live",
     "verify:calorix-live": "node scripts/require-live-env.js RUN_CALORIX_UI_DIFF_LIVE && npm run build && vitest run tests/live/calorix-smoke.live.test.ts --testTimeout 900000",
-    "start": "node dist/src/index.js"
+    "start": "node dist/src/index.js",
+    "benchmark:models": "tsx scripts/benchmark-free-models.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",

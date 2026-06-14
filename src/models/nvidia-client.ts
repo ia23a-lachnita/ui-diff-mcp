@@ -40,7 +40,12 @@ export async function callNvidiaVisionJson(
     model: req.model,
     messages: [{ role: "user" as const, content }],
     response_format: {
-      type: "json_object"
+      type: "json_schema",
+      json_schema: {
+        name: req.jsonSchema.name,
+        strict: true,
+        schema: req.jsonSchema.schema
+      }
     }
   };
 
