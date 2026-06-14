@@ -50,7 +50,7 @@ describe("MCP stdio tool surface", () => {
         expectedImagePath: expected,
         actualImagePath: actual,
         projectRoot: tmpDir,
-        mode: "full"
+        mode: "deterministic_only"
       }
     });
 

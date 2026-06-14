@@ -92,7 +92,7 @@ export const DiffRecordSchema = z.object({
 });
 export type DiffRecord = z.infer<typeof DiffRecordSchema>;
 
-export const RunStatusSchema = z.enum(["complete", "incomplete", "model_unavailable", "failed"]);
+export const RunStatusSchema = z.enum(["complete", "incomplete", "model_unavailable", "insufficient_free_quota", "failed"]);
 export type RunStatus = z.infer<typeof RunStatusSchema>;
 
 export const VisualClassificationStatusSchema = z.enum(["complete", "incomplete", "not_run"]);

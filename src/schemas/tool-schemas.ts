@@ -6,7 +6,7 @@ export const CompareUiImagesInputSchema = {
   actualImagePath: z.string().min(1),
   projectRoot: z.string().min(1).optional(),
   runLabel: z.string().min(1).max(80).optional(),
-  mode: z.enum(["full", "deterministic_only", "free_only"]).default("full")
+  mode: z.enum(["free", "free_openrouter", "free_nvidia", "paid", "deterministic_only"]).default("free")
 };
 
 export const CompareUiImagesOutputSchema = {

@@ -24,12 +24,12 @@ function buildRunInput(input: {
   actualImagePath: string;
   projectRoot?: string | undefined;
   runLabel?: string | undefined;
-  mode?: "full" | "deterministic_only" | "free_only" | undefined;
+  mode?: string | undefined;
 }) {
   return {
     expectedImagePath: input.expectedImagePath,
     actualImagePath: input.actualImagePath,
-    mode: input.mode ?? "full",
+    mode: input.mode ?? "free",
     ...(input.projectRoot !== undefined ? { projectRoot: input.projectRoot } : {}),
     ...(input.runLabel !== undefined ? { runLabel: input.runLabel } : {})
   };
@@ -57,7 +57,7 @@ export async function handleCompareUiImages(
     actualImagePath: string;
     projectRoot?: string | undefined;
     runLabel?: string | undefined;
-    mode?: "full" | "deterministic_only" | "free_only" | undefined;
+    mode?: string | undefined;
   },
   deps: ServerDeps,
   forcedMode?: "deterministic_only"

@@ -1,13 +1,29 @@
-import type { VisionJsonRequest, VisionJsonResponse } from "./openrouter-client.js";
+const NVIDIA_DEFAULT_BASE_URL = "https://integrate.api.nvidia.com/v1";
+
+interface NvidiaCallRequest {
+  apiKey: string;
+  model: string;
+  prompt: string;
+  images: string[];
+  jsonSchema: { name: string; schema: Record<string, unknown> };
+  timeoutMs: number;
+}
+
+interface NvidiaCallResponse {
+  parsed: unknown;
+  rawContent: string;
+  model: string;
+  usage?: { prompt_tokens?: number; completion_tokens?: number };
+}
 
 export async function callNvidiaVisionJson(
-  req: VisionJsonRequest
-): Promise<VisionJsonResponse> {
-  const baseUrl = process.env["NVIDIA_VLM_BASE_URL"];
+  req: NvidiaCallRequest
+): Promise<NvidiaCallResponse> {
+  const baseUrl = (process.env["NVIDIA_VLM_BASE_URL"] ?? NVIDIA_DEFAULT_BASE_URL).replace(/\/$/, "");
   const apiKey = process.env["NVIDIA_API_KEY"] ?? req.apiKey;
 
-  if (!baseUrl || !apiKey) {
-    throw new Error("NVIDIA_VLM_BASE_URL and NVIDIA_API_KEY must be set for NVIDIA adapter");
+  if (!apiKey) {
+    throw new Error("NVIDIA_API_KEY must be set for NVIDIA adapter");
   }
 
   const content: Array<
@@ -30,7 +46,7 @@ export async function callNvidiaVisionJson(
 
   let response: Response;
   try {
-    response = await fetch(`${baseUrl}/v1/chat/completions`, {
+    response = await fetch(`${baseUrl}/chat/completions`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

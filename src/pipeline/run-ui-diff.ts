@@ -9,21 +9,23 @@ import { extractEdgeMask } from "../signals/edge.js";
 import { locateUiElements, LocatorUnavailableError } from "../locator/locateanything-client.js";
 import { buildElementMap } from "../locator/element-map.js";
 import { pairElements } from "../pairing/pair-elements.js";
-import { getModelByRole, getRequiredModels } from "../models/model-registry.js";
+import { selectModelForMode, resolveMode } from "../models/model-registry.js";
 import { probeRequiredModels, type ProbeResult } from "../models/probes.js";
+import { makeOpenRouterVisionCaller, makeNvidiaVisionCaller, type VisionMode } from "../models/vision-json.js";
 import { auditElementPair, type AuditContext } from "../audit/audit-target.js";
 import { reviewAndMergeFindings } from "../audit/review-findings.js";
 import { assignDiffComponentsToRecords } from "../report/coverage.js";
 import { writeUiDiffReport } from "../report/report-writer.js";
 import type { UiDiffReport, RunStatus, VisualClassificationStatus, DiffRecord, ElementPair } from "../schemas/core.js";
 import { sampleColorStats } from "../signals/color.js";
+import type { ModelEntry } from "../models/model-registry.js";
 
 export interface RunInput {
   expectedImagePath: string;
   actualImagePath: string;
   projectRoot?: string;
   runLabel?: string;
-  mode?: "full" | "deterministic_only" | "free_only";
+  mode?: string;
 }
 
 export interface RunOutput {
@@ -37,7 +39,7 @@ export interface RunOutput {
   warnings: string[];
 }
 
-type ProbeOverride = (entries: import("../models/model-registry.js").ModelEntry[], apiKey: string) => Promise<ProbeResult[]>;
+type ProbeOverride = (entries: ModelEntry[], apiKey: string) => Promise<ProbeResult[]>;
 
 export function selectAuditPairsForRun(
   pairs: ElementPair[],
@@ -60,10 +62,22 @@ export function selectAuditPairsForRun(
   };
 }
 
+function makeVisionCaller(
+  entry: ModelEntry,
+  openRouterApiKey: string,
+  nvidiaApiKey: string,
+  nvidiaBaseUrl: string
+) {
+  if (entry.provider === "nvidia") {
+    return makeNvidiaVisionCaller(nvidiaApiKey, entry.model, nvidiaBaseUrl);
+  }
+  return makeOpenRouterVisionCaller(openRouterApiKey, entry.model);
+}
+
 export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeOverride }): Promise<RunOutput> {
   const runId = `run-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`;
   const warnings: string[] = [];
-  const mode = input.mode ?? "full";
+  const mode: VisionMode = resolveMode(input.mode);
 
   const projectRoot = input.projectRoot ?? process.cwd();
   const expectedAbs = resolveInputImagePath(input.expectedImagePath, projectRoot);
@@ -94,6 +108,8 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
   const allDiffs: DiffRecord[] = [];
 
   const openRouterApiKey = process.env["OPENROUTER_API_KEY"] ?? "";
+  const nvidiaApiKey = process.env["NVIDIA_API_KEY"] ?? "";
+  const nvidiaBaseUrl = process.env["NVIDIA_VLM_BASE_URL"] ?? "https://integrate.api.nvidia.com/v1";
   const locatorUrl = process.env["LOCATEANYTHING_SIDECAR_URL"] ?? "http://127.0.0.1:39731";
   const locatorTimeoutMs = Number.parseInt(process.env["LOCATEANYTHING_TIMEOUT_MS"] ?? "300000", 10);
   const locatorQueries = [
@@ -147,94 +163,107 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
 
   const modelHealth: UiDiffReport["modelHealth"] = [];
 
-  if (mode === "full" || mode === "free_only") {
-    const probe = opts?.probeOverride ?? probeRequiredModels;
-    const probeResults = await probe(getRequiredModels(), openRouterApiKey);
-    for (const p of probeResults) {
-      modelHealth.push({
-        role: p.role,
-        provider: p.provider,
-        model: p.model,
-        status: p.status,
-        checkedAt: p.checkedAt,
-        ...(p.detail !== undefined ? { detail: p.detail } : {})
-      });
-    }
+  if (mode !== "deterministic_only") {
+    const auditorEntry = selectModelForMode("auditor", mode);
+    const reviewerEntry = selectModelForMode("reviewer", mode);
 
-    const requiredFailed = modelHealth.filter(
-      m => (m.status === "fail" || m.status === "not_checked") && (m.role === "auditor" || m.role === "reviewer")
-    );
-    if (requiredFailed.length > 0) {
-      status = "model_unavailable";
-      visualClassificationStatus = "incomplete";
-      warnings.push(`Required models unavailable: ${requiredFailed.map(m => m.model).join(", ")}`);
+    if (!auditorEntry || !reviewerEntry) {
+      if (!locatorFailed) {
+        status = "model_unavailable";
+        visualClassificationStatus = "incomplete";
+        warnings.push(`No model available for mode "${mode}". Set NVIDIA_API_KEY or use a mode with OpenRouter free models.`);
+      }
     } else {
-      visualClassificationStatus = "incomplete";
-      const auditorModel = getModelByRole("auditor")?.model ?? "qwen/qwen3-vl-30b-a3b-instruct";
-      const reviewerModel = getModelByRole("reviewer")?.model ?? "google/gemini-2.5-flash-lite";
-
-      const auditedDiffs: DiffRecord[] = [];
-      const auditSelection = selectAuditPairsForRun(pairs, process.env);
-      if (auditSelection.warning) {
-        warnings.push(auditSelection.warning);
+      const probe = opts?.probeOverride ?? probeRequiredModels;
+      const probeEntries = [auditorEntry, reviewerEntry];
+      const probeResults = await probe(probeEntries, openRouterApiKey);
+      for (const p of probeResults) {
+        modelHealth.push({
+          role: p.role,
+          provider: p.provider,
+          model: p.model,
+          status: p.status,
+          checkedAt: p.checkedAt,
+          ...(p.detail !== undefined ? { detail: p.detail } : {})
+        });
       }
 
-      for (const pair of auditSelection.pairs) {
-        const expEl = expectedElements.find(e => e.id === pair.expectedId);
-        const actEl = actualElements.find(e => e.id === pair.actualId);
-        const refEl = expEl ?? actEl;
-        if (!refEl) continue;
+      const requiredFailed = modelHealth.filter(
+        m => (m.status === "fail" || m.status === "not_checked") && (m.role === "free_auditor" || m.role === "auditor" || m.role === "free_reviewer" || m.role === "reviewer")
+      );
+      if (requiredFailed.length > 0) {
+        if (!locatorFailed) {
+          status = "model_unavailable";
+          visualClassificationStatus = "incomplete";
+          warnings.push(`Required models unavailable: ${requiredFailed.map(m => m.model).join(", ")}`);
+        }
+      } else {
+        const auditorCaller = makeVisionCaller(auditorEntry, openRouterApiKey, nvidiaApiKey, nvidiaBaseUrl);
+        const reviewerCaller = makeVisionCaller(reviewerEntry, openRouterApiKey, nvidiaApiKey, nvidiaBaseUrl);
 
-        const expStats = expEl
-          ? sampleColorStats(expectedImg.rgba, expectedImg.width, expEl.box)
-          : null;
-        const actStats = actEl
-          ? sampleColorStats(actualImg.rgba, actualImg.width, actEl.box)
-          : null;
+        visualClassificationStatus = "incomplete";
+        const auditedDiffs: DiffRecord[] = [];
+        const auditSelection = selectAuditPairsForRun(pairs, process.env);
+        if (auditSelection.warning) {
+          warnings.push(auditSelection.warning);
+        }
 
-        const colorDelta = expStats && actStats
-          ? Math.abs(expStats.avgR - actStats.avgR) +
-            Math.abs(expStats.avgG - actStats.avgG) +
-            Math.abs(expStats.avgB - actStats.avgB) > 30
-          : false;
+        for (const pair of auditSelection.pairs) {
+          const expEl = expectedElements.find(e => e.id === pair.expectedId);
+          const actEl = actualElements.find(e => e.id === pair.actualId);
+          const refEl = expEl ?? actEl;
+          if (!refEl) continue;
 
-        const boxDeltaPx = expEl && actEl
-          ? Math.abs(expEl.box.x - actEl.box.x) + Math.abs(expEl.box.y - actEl.box.y)
-          : 0;
+          const expStats = expEl
+            ? sampleColorStats(expectedImg.rgba, expectedImg.width, expEl.box)
+            : null;
+          const actStats = actEl
+            ? sampleColorStats(actualImg.rgba, actualImg.width, actEl.box)
+            : null;
 
-        const ctx: AuditContext = {
-          expectedImagePath: normalizedExpPath,
-          actualImagePath: normalizedActPath,
-          expectedElements,
-          actualElements,
-          artifactDir: artifactRoot,
-          openRouterApiKey,
-          auditorModel,
-          reviewerModel,
-          imageWidth: expectedImg.width,
-          imageHeight: expectedImg.height,
-          measurements: [],
-          triggerCtx: {
-            pairingStatus: pair.status,
-            boxDeltaPx,
-            textDelta: (expEl?.text ?? "") !== (actEl?.text ?? ""),
-            colorDelta,
-            edgeMismatch: edgeMask.components.length > 0,
-            overlapDetected: false,
-            stateWordsDiffer: false,
-            elementType: refEl.type,
-            measurements: []
-          }
-        };
+          const colorDelta = expStats && actStats
+            ? Math.abs(expStats.avgR - actStats.avgR) +
+              Math.abs(expStats.avgG - actStats.avgG) +
+              Math.abs(expStats.avgB - actStats.avgB) > 30
+            : false;
 
-        const { accepted } = await auditElementPair(pair, ctx);
-        auditedDiffs.push(...accepted);
-      }
+          const boxDeltaPx = expEl && actEl
+            ? Math.abs(expEl.box.x - actEl.box.x) + Math.abs(expEl.box.y - actEl.box.y)
+            : 0;
 
-      const merged = reviewAndMergeFindings(auditedDiffs);
-      allDiffs.push(...merged);
-      if (!locatorFailed && !auditSelection.limited) {
-        visualClassificationStatus = "complete";
+          const ctx: AuditContext = {
+            expectedImagePath: normalizedExpPath,
+            actualImagePath: normalizedActPath,
+            expectedElements,
+            actualElements,
+            artifactDir: artifactRoot,
+            auditorCaller,
+            reviewerCaller,
+            imageWidth: expectedImg.width,
+            imageHeight: expectedImg.height,
+            measurements: [],
+            triggerCtx: {
+              pairingStatus: pair.status,
+              boxDeltaPx,
+              textDelta: (expEl?.text ?? "") !== (actEl?.text ?? ""),
+              colorDelta,
+              edgeMismatch: edgeMask.components.length > 0,
+              overlapDetected: false,
+              stateWordsDiffer: false,
+              elementType: refEl.type,
+              measurements: []
+            }
+          };
+
+          const { accepted } = await auditElementPair(pair, ctx);
+          auditedDiffs.push(...accepted);
+        }
+
+        const merged = reviewAndMergeFindings(auditedDiffs);
+        allDiffs.push(...merged);
+        if (!locatorFailed && !auditSelection.limited) {
+          visualClassificationStatus = "complete";
+        }
       }
     }
   }

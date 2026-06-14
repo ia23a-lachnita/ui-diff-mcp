@@ -6,7 +6,7 @@ import { z } from "zod";
 import type { ElementPair, UiElement, DiffRecord, DeterministicMeasurement } from "../schemas/core.js";
 import { rubrics, selectTriggeredCriteria, AuditResultSchema, type TriggerContext } from "./criteria.js";
 import { buildAuditorPrompt, buildReviewerPrompt } from "./prompts.js";
-import { callOpenRouterVisionJson } from "../models/openrouter-client.js";
+import type { VisionJsonCaller } from "../models/vision-json.js";
 
 const ReviewDecisionSchema = z.object({
   decision: z.enum(["accepted", "rejected", "needs_escalation"]),
@@ -19,9 +19,8 @@ export interface AuditContext {
   expectedElements: UiElement[];
   actualElements: UiElement[];
   artifactDir: string;
-  openRouterApiKey: string;
-  auditorModel: string;
-  reviewerModel: string;
+  auditorCaller: VisionJsonCaller;
+  reviewerCaller: VisionJsonCaller;
   imageWidth: number;
   imageHeight: number;
   measurements: DeterministicMeasurement[];
@@ -120,15 +119,15 @@ export async function auditElementPair(
     });
 
     let auditResult: z.infer<typeof AuditResultSchema>;
+    let auditModel = "unknown";
     try {
-      const response = await callOpenRouterVisionJson({
-        apiKey: ctx.openRouterApiKey,
-        model: ctx.auditorModel,
+      const response = await ctx.auditorCaller({
         prompt: auditorPrompt,
         images,
         jsonSchema: { name: `audit_${criterion}`, schema: rubric.jsonSchema },
         timeoutMs: 60000
       });
+      auditModel = response.model;
       auditResult = AuditResultSchema.parse(response.parsed);
     } catch {
       continue;
@@ -148,9 +147,7 @@ export async function auditElementPair(
 
     let reviewDecision: "accepted" | "rejected" | "needs_escalation" = "accepted";
     try {
-      const reviewResponse = await callOpenRouterVisionJson({
-        apiKey: ctx.openRouterApiKey,
-        model: ctx.reviewerModel,
+      const reviewResponse = await ctx.reviewerCaller({
         prompt: reviewerPrompt,
         images,
         jsonSchema: {
@@ -184,7 +181,7 @@ export async function auditElementPair(
       measurements: auditResult.measurements ?? [],
       artifactPaths: cropArtifacts,
       reviewerStatus: reviewDecision === "needs_escalation" ? "needs_escalation" : reviewDecision,
-      model: ctx.auditorModel
+      model: auditModel
     };
 
     if (reviewDecision === "rejected") {

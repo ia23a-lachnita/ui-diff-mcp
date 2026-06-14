@@ -122,7 +122,7 @@ describe("server tool handlers", () => {
     expect(d.runUiDiff).toHaveBeenCalledWith({
       expectedImagePath: "expected.png",
       actualImagePath: "actual.png",
-      mode: "full",
+      mode: "free",
       runLabel: "smoke"
     });
   });

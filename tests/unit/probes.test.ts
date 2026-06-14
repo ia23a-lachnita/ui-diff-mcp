@@ -5,6 +5,7 @@ const AUDITOR: import("../../src/models/model-registry.js").ModelEntry = {
   role: "auditor",
   provider: "openrouter",
   model: "qwen/qwen3-vl-30b-a3b-instruct",
+  costClass: "paid",
   probeTtlMs: 60000,
   required: true
 };
@@ -13,6 +14,7 @@ const NVIDIA_ENTRY: import("../../src/models/model-registry.js").ModelEntry = {
   role: "auditor",
   provider: "nvidia",
   model: "nvidia/llama-3.2-90b-vision-instruct",
+  costClass: "free",
   probeTtlMs: 60000,
   required: false
 };
@@ -67,12 +69,11 @@ describe("probeOpenRouterModel", () => {
 });
 
 describe("probeNvidiaModel", () => {
-  it("returns not_checked when env vars are missing", async () => {
-    vi.stubEnv("NVIDIA_VLM_BASE_URL", "");
+  it("returns not_checked when NVIDIA_API_KEY is missing", async () => {
     vi.stubEnv("NVIDIA_API_KEY", "");
     const result = await probeNvidiaModel(NVIDIA_ENTRY);
     expect(result.status).toBe("not_checked");
-    expect(result.detail).toContain("NVIDIA_VLM_BASE_URL");
+    expect(result.detail).toContain("NVIDIA_API_KEY");
   });
 });
 
@@ -82,6 +83,7 @@ describe("probeRequiredModels", () => {
       role: "reviewer",
       provider: "openrouter",
       model: "google/gemini-2.5-flash-lite",
+      costClass: "paid",
       probeTtlMs: 60000,
       required: true
     };
@@ -91,10 +93,9 @@ describe("probeRequiredModels", () => {
   });
 
   it("dispatches nvidia entries to probeNvidiaModel", async () => {
-    vi.stubEnv("NVIDIA_VLM_BASE_URL", "");
     vi.stubEnv("NVIDIA_API_KEY", "");
     const results = await probeRequiredModels([NVIDIA_ENTRY], "sk-test");
     expect(results[0]?.status).toBe("not_checked");
-    expect(results[0]?.detail).toContain("NVIDIA_VLM_BASE_URL");
+    expect(results[0]?.detail).toContain("NVIDIA_API_KEY");
   });
 });

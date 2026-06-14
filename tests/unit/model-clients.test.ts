@@ -172,7 +172,7 @@ describe("callNvidiaVisionJson", () => {
   });
 
   it("throws when NVIDIA env vars are missing", async () => {
-    vi.unstubAllEnvs();
+    vi.stubEnv("NVIDIA_API_KEY", "");
     await expect(callNvidiaVisionJson({
       apiKey: "",
       model: "nvidia/test-model",
@@ -180,7 +180,7 @@ describe("callNvidiaVisionJson", () => {
       images: [],
       jsonSchema: { name: "s", schema: {} },
       timeoutMs: 5000
-    })).rejects.toThrow(/NVIDIA_VLM_BASE_URL/);
+    })).rejects.toThrow(/NVIDIA_API_KEY/);
   });
 
   it("throws on HTTP 500 from NVIDIA endpoint", async () => {

@@ -8,6 +8,7 @@ import { auditElementPair } from "../../src/audit/audit-target.js";
 import { reviewAndMergeFindings } from "../../src/audit/review-findings.js";
 import { UiCriterionSchema } from "../../src/schemas/core.js";
 import type { ElementPair, UiElement, DiffRecord } from "../../src/schemas/core.js";
+import type { VisionJsonCaller } from "../../src/models/vision-json.js";
 import { writeSolidPng } from "../../src/testing/fixture-images.js";
 
 describe("criteria rubrics", () => {
@@ -131,32 +132,18 @@ describe("auditElementPair", () => {
   });
 
   it("returns accepted diff when auditor and reviewer agree", async () => {
-    vi.stubGlobal("fetch", vi.fn()
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: () => Promise.resolve({
-          model: "test-model",
-          choices: [{ message: { content: JSON.stringify({
-            hasDiff: true,
-            severity: "high",
-            title: "Button shifted down",
-            evidence: ["actual y=65px, expected y=50px"]
-          }) } }]
-        })
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: () => Promise.resolve({
-          model: "reviewer-model",
-          choices: [{ message: { content: JSON.stringify({
-            decision: "accepted",
-            reason: "Visual shift confirmed in both images"
-          }) } }]
-        })
-      })
-    );
+    const auditorCaller: VisionJsonCaller = vi.fn().mockResolvedValue({
+      parsed: { hasDiff: true, severity: "high", title: "Button shifted down", evidence: ["actual y=65px, expected y=50px"] },
+      rawContent: "",
+      model: "test-auditor",
+      provider: "openrouter"
+    });
+    const reviewerCaller: VisionJsonCaller = vi.fn().mockResolvedValue({
+      parsed: { decision: "accepted", reason: "Visual shift confirmed in both images" },
+      rawContent: "",
+      model: "test-reviewer",
+      provider: "openrouter"
+    });
 
     const result = await auditElementPair(pair, {
       expectedImagePath: grayPng,
@@ -164,9 +151,8 @@ describe("auditElementPair", () => {
       expectedElements: [expectedEl],
       actualElements: [{ ...expectedEl, id: "a1", box: { x: 10, y: 65, width: 80, height: 40 } }],
       artifactDir: tmpDir,
-      openRouterApiKey: "sk-test",
-      auditorModel: "qwen/test",
-      reviewerModel: "google/test",
+      auditorCaller,
+      reviewerCaller,
       imageWidth: 200,
       imageHeight: 400,
       measurements: [],
@@ -185,35 +171,22 @@ describe("auditElementPair", () => {
 
     expect(result.accepted.length).toBeGreaterThanOrEqual(1);
     expect(result.accepted[0]?.criterion).toBe("geometry");
+    expect(vi.mocked(auditorCaller)).toHaveBeenCalled();
   });
 
   it("removes diff when reviewer rejects it", async () => {
-    vi.stubGlobal("fetch", vi.fn()
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: () => Promise.resolve({
-          model: "test-model",
-          choices: [{ message: { content: JSON.stringify({
-            hasDiff: true,
-            severity: "low",
-            title: "Minor shift",
-            evidence: ["actual y=52px, expected y=50px"]
-          }) } }]
-        })
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: () => Promise.resolve({
-          model: "reviewer-model",
-          choices: [{ message: { content: JSON.stringify({
-            decision: "rejected",
-            reason: "Shift is within acceptable tolerance"
-          }) } }]
-        })
-      })
-    );
+    const auditorCaller: VisionJsonCaller = vi.fn().mockResolvedValue({
+      parsed: { hasDiff: true, severity: "low", title: "Minor shift", evidence: ["actual y=52px, expected y=50px"] },
+      rawContent: "",
+      model: "test-auditor",
+      provider: "openrouter"
+    });
+    const reviewerCaller: VisionJsonCaller = vi.fn().mockResolvedValue({
+      parsed: { decision: "rejected", reason: "Shift is within acceptable tolerance" },
+      rawContent: "",
+      model: "test-reviewer",
+      provider: "openrouter"
+    });
 
     const result = await auditElementPair(pair, {
       expectedImagePath: grayPng,
@@ -221,9 +194,8 @@ describe("auditElementPair", () => {
       expectedElements: [expectedEl],
       actualElements: [{ ...expectedEl, id: "a1" }],
       artifactDir: tmpDir,
-      openRouterApiKey: "sk-test",
-      auditorModel: "qwen/test",
-      reviewerModel: "google/test",
+      auditorCaller,
+      reviewerCaller,
       imageWidth: 200,
       imageHeight: 400,
       measurements: [],
@@ -242,6 +214,51 @@ describe("auditElementPair", () => {
 
     expect(result.accepted.length).toBe(0);
     expect(result.rejected.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("calls auditor via provider-agnostic caller without touching OpenRouter fetch directly", async () => {
+    const nvidiaCaller: VisionJsonCaller = vi.fn().mockResolvedValue({
+      parsed: { hasDiff: true, severity: "medium", title: "Color diff", evidence: ["background changed"] },
+      rawContent: "",
+      model: "moonshotai/kimi-k2.6",
+      provider: "nvidia"
+    });
+    const reviewerCaller: VisionJsonCaller = vi.fn().mockResolvedValue({
+      parsed: { decision: "accepted", reason: "confirmed" },
+      rawContent: "",
+      model: "nvidia/nemotron-nano-12b-v2-vl",
+      provider: "nvidia"
+    });
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    const result = await auditElementPair(pair, {
+      expectedImagePath: grayPng,
+      actualImagePath: grayPng,
+      expectedElements: [expectedEl],
+      actualElements: [{ ...expectedEl, id: "a1" }],
+      artifactDir: tmpDir,
+      auditorCaller: nvidiaCaller,
+      reviewerCaller,
+      imageWidth: 200,
+      imageHeight: 400,
+      measurements: [],
+      triggerCtx: {
+        pairingStatus: "matched",
+        boxDeltaPx: 0,
+        textDelta: false,
+        colorDelta: true,
+        edgeMismatch: false,
+        overlapDetected: false,
+        stateWordsDiffer: false,
+        elementType: "button",
+        measurements: []
+      }
+    });
+
+    expect(vi.mocked(nvidiaCaller)).toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(result.accepted.length).toBeGreaterThanOrEqual(1);
+    expect(result.accepted[0]?.model).toBe("moonshotai/kimi-k2.6");
   });
 });
 

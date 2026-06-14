@@ -105,17 +105,16 @@ export async function probeOpenRouterModel(entry: ModelEntry, apiKey: string): P
 }
 
 export async function probeNvidiaModel(entry: ModelEntry): Promise<ProbeResult> {
-  const baseUrl = process.env["NVIDIA_VLM_BASE_URL"];
   const apiKey = process.env["NVIDIA_API_KEY"];
 
-  if (!baseUrl || !apiKey) {
+  if (!apiKey) {
     return {
       role: entry.role,
       provider: entry.provider,
       model: entry.model,
       status: "not_checked",
       checkedAt: new Date().toISOString(),
-      detail: "NVIDIA_VLM_BASE_URL or NVIDIA_API_KEY not set"
+      detail: "NVIDIA_API_KEY not set"
     };
   }
 
