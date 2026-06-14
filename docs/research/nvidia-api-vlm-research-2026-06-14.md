@@ -38,11 +38,25 @@ This is the only ranked list in this document. It ranks NVIDIA-hosted image-capa
 
 This is not a final measured benchmark. Exact runtime selection still requires the live probe suite: two-image order, directional overlay comprehension, strict JSON, crop-level diff classification, target recovery, latency, throughput, quota, and rate-limit behavior. NVIDIA does not expose enough public per-key speed/usage data to make a reliable static speed ranking, so speed is a measured gate.
 
-OpenRouter and NVIDIA currently present Kimi K2.6 and MiniMax M3 as stronger broad multimodal/agentic candidates than Nemotron Nano and likely stronger than several older Qwen/Nemotron candidates for UI/UX and visual reasoning. Therefore they are ranked first for quality probing. Schema-readiness, licensing, and speed do not create alternate rankings; they are gates that can disqualify or demote a candidate at runtime.
+This document is NVIDIA-hosted research. OpenRouter links are used only as supporting model-family evidence or to document that an OpenRouter route has a different cost class. Do not infer that a model being free on NVIDIA means the OpenRouter route is also free.
+
+Provider-route distinction for the top native NVIDIA candidates:
+
+| Candidate family | Native NVIDIA route | Native NVIDIA cost class | Known OpenRouter route difference |
+| --- | --- | --- | --- |
+| Kimi K2.6 | `moonshotai/kimi-k2.6` | Free endpoint | OpenRouter currently exposes `moonshotai/kimi-k2.6:free`, but it is still an OpenRouter free route with OpenRouter quota/uptime/routing behavior; paid Kimi routes may also exist. |
+| MiniMax M3 | `minimaxai/minimax-m3` | Free endpoint | Verified OpenRouter route `minimax/minimax-m3` is paid, so it is not eligible for default free mode. |
+| Mistral Large 3 2512 | `mistralai/mistral-large-3-675b-instruct-2512` | Free endpoint | Verified OpenRouter route `mistralai/mistral-large-2512` is paid, so it is not eligible for default free mode. |
+
+NVIDIA and OpenRouter currently present Kimi K2.6 and MiniMax M3 as stronger broad multimodal/agentic candidates than Nemotron Nano and likely stronger than several older Qwen/Nemotron candidates for UI/UX and visual reasoning. Therefore they are ranked first for quality probing. Schema-readiness, licensing, route cost, provider availability, and speed do not create alternate rankings; they are gates that can disqualify or demote a candidate at runtime.
 
 ### 1. `moonshotai/kimi-k2.6`
 
 **Recommended role:** top NVIDIA-hosted auditor/reviewer and target-recovery candidate.
+
+**Native NVIDIA route:** `moonshotai/kimi-k2.6`, Free Endpoint.
+
+**OpenRouter route note:** `moonshotai/kimi-k2.6:free` currently exists as a separate OpenRouter free route, while paid Kimi routes may also exist. The selector must treat these as separate provider routes.
 
 **Why it is strong:**
 
@@ -69,6 +83,10 @@ OpenRouter and NVIDIA currently present Kimi K2.6 and MiniMax M3 as stronger bro
 
 **Recommended role:** top auditor/reviewer and target-recovery candidate when licensing/provider terms allow the run.
 
+**Native NVIDIA route:** `minimaxai/minimax-m3`, Free Endpoint.
+
+**OpenRouter route note:** verified OpenRouter route `minimax/minimax-m3` is paid, so it is paid-mode only.
+
 **Why it is strong:**
 
 - NVIDIA Build describes MiniMax-M3 as a multimodal VLM.
@@ -92,6 +110,10 @@ OpenRouter and NVIDIA currently present Kimi K2.6 and MiniMax M3 as stronger bro
 ### 3. `mistralai/mistral-large-3-675b-instruct-2512`
 
 **Recommended role:** high-quality auditor/reviewer candidate and possible target-recovery candidate.
+
+**Native NVIDIA route:** `mistralai/mistral-large-3-675b-instruct-2512`, Free Endpoint.
+
+**OpenRouter route note:** verified OpenRouter route `mistralai/mistral-large-2512` is paid, so it is paid-mode only.
 
 **Why it is strong:**
 

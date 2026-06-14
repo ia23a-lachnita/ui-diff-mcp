@@ -43,17 +43,20 @@ Native NVIDIA model research is tracked in:
 
 OpenRouter's Models API exposes model metadata including `architecture.input_modalities`, `pricing`, `supported_parameters`, and top-provider limits. The API can sort by throughput, and provider routing can prefer throughput or latency. OpenRouter's free model variants have free usage limits of 20 requests/minute, 50 requests/day for accounts with less than $10 purchased credits, and 1000 requests/day with at least $10 purchased credits.
 
-Current free image-capable OpenRouter candidates from live metadata/research on 2026-06-14. This table is not a ranking; the only ranking in this plan is under "Canonical Model Candidate Ranking."
+Current OpenRouter candidates from live metadata/research on 2026-06-14. This table is not a ranking; the only ranking in this plan is under "Canonical Model Candidate Ranking." It exists to prevent mixing OpenRouter routes with native NVIDIA routes.
 
-| Model | Keep? | Reason |
-| --- | --- | --- |
-| `moonshotai/kimi-k2.6:free` | Yes, top free OpenRouter candidate | Image input, free route available, and strongest current OpenRouter quality signal among the free multimodal candidates; still must pass UI-diff probes and quota checks. |
-| `nex-agi/nex-n2-pro:free` | Yes, OpenRouter free auditor candidate | Image input, free pricing, metadata lists `response_format` and `structured_outputs`; still must pass UI-diff probes. |
-| `google/gemma-4-31b-it:free` | Yes, probe candidate | Image input, free pricing, `response_format`; no explicit `structured_outputs` in metadata. |
-| `google/gemma-4-26b-a4b-it:free` | Yes, probe candidate | Image input, free pricing, `response_format`; likely useful as alternate reviewer/auditor if probes pass. |
-| `nvidia/nemotron-nano-12b-v2-vl:free` | Yes, probe candidate | NVIDIA VL model via OpenRouter, image input, free pricing; metadata does not list `response_format`, so JSON must be prompt+parser+probe validated. |
-| `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free` | Yes, probe candidate | Free omni-modal reasoning model with image input; metadata lacks structured-output flags, so strict schema use is unproven until probed. |
-| `nvidia/nemotron-3.5-content-safety:free` | No | Content-safety model for unsafe/toxic content detection, not a UI-diff auditor or reviewer. |
+| OpenRouter route | Cost class on OpenRouter | Keep? | Provider-specific note |
+| --- | --- | --- | --- |
+| `moonshotai/kimi-k2.6:free` | Free route | Yes | Separate from native NVIDIA `moonshotai/kimi-k2.6`. OpenRouter currently exposes a free route, but it must obey OpenRouter free quota, uptime, routing, and provider availability. |
+| `moonshotai/kimi-k2.6-20260420` or paid Kimi route returned by Models API | Paid route | Paid-mode only | Same model family can be charged on OpenRouter depending on slug/provider. Never use in default `free` mode. |
+| `minimax/minimax-m3` | Paid route | Paid-mode only | OpenRouter lists image/video input and 1M context, but the verified route is paid. Native NVIDIA `minimaxai/minimax-m3` is the free route to probe first. |
+| `mistralai/mistral-large-2512` | Paid route | Paid-mode only | OpenRouter lists image input and paid pricing. Native NVIDIA `mistralai/mistral-large-3-675b-instruct-2512` is the free route to probe first. |
+| `nex-agi/nex-n2-pro:free` | Free route | Yes | OpenRouter free auditor/reviewer candidate. Must pass UI-diff probes and quota checks. |
+| `google/gemma-4-31b-it:free` | Free route | Yes | Probe candidate. Image input and free pricing observed; schema behavior must be probed. |
+| `google/gemma-4-26b-a4b-it:free` | Free route | Yes | Probe candidate. Likely useful as alternate reviewer/auditor if probes pass. |
+| `nvidia/nemotron-nano-12b-v2-vl:free` | Free route | Yes | NVIDIA VL model through OpenRouter, not the native NVIDIA endpoint. Metadata does not prove strict schema support, so JSON must be prompt+parser+probe validated. |
+| `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free` | Free route | Yes | OpenRouter free route for an NVIDIA omni model. Strict schema behavior is unproven until probed. |
+| `nvidia/nemotron-3.5-content-safety:free` | Free route | No | Content-safety model for unsafe/toxic content detection, not a UI-diff auditor or reviewer. |
 
 Observed project OpenRouter activity from `C:\Users\xursc\Downloads\openrouter_activity_2026-06-14.csv`:
 
@@ -71,14 +74,24 @@ This proves provider speed varies enough that the MCP must measure and record pr
 
 NVIDIA Build/NIM exposes free serverless APIs for development and self-hostable NIM containers. NVIDIA hosted chat completions use the OpenAI-compatible base URL `https://integrate.api.nvidia.com/v1`, and VLM NIM examples use `image_url` message parts, including base64 data URLs for local images. NVIDIA's VLM structured-generation docs recommend `response_format: { type: "json_schema" }` rather than `json_object`, because `json_object` only guarantees valid JSON, not schema adherence.
 
-NVIDIA must become a first-class provider candidate:
+Current native NVIDIA routes from research on 2026-06-14. This table is not a second ranking; it records provider route and free-endpoint status for the canonical ranking below.
 
-- Native NVIDIA free endpoint: selected when `NVIDIA_API_KEY` is configured. If `NVIDIA_VLM_BASE_URL` is absent, default to NVIDIA's hosted OpenAI-compatible base URL `https://integrate.api.nvidia.com/v1`.
-- OpenRouter NVIDIA free models: selected through OpenRouter when native NVIDIA is unavailable.
-- Local/self-hosted NIM: same adapter contract as native NVIDIA endpoint.
-- NVIDIA candidate discovery must not be hardcoded only to Nemotron. Current NVIDIA Build/NIM vision candidates to probe include Qwen3.6, Qwen3.5, Kimi K2.6, Nemotron Nano 12B v2 VL, MiniMax M3, Llama 3.2 Vision, Nemotron 3 Nano Omni, Llama 3.1 Nemotron Nano VL, Cosmos3 Nano Reasoner, and PaliGemma when those endpoints are available to the configured key.
+| Native NVIDIA route | Native NVIDIA cost class | Keep? | Provider-specific note |
+| --- | --- | --- | --- |
+| `moonshotai/kimi-k2.6` | Free endpoint | Yes | Top native NVIDIA free route to probe. Separate from OpenRouter `moonshotai/kimi-k2.6:free` and paid OpenRouter Kimi routes. |
+| `minimaxai/minimax-m3` | Free endpoint | Yes | Native NVIDIA free route. Licensing is non-commercial in NVIDIA's model card, so production/commercial use must be gated. |
+| `mistralai/mistral-large-3-675b-instruct-2512` | Free endpoint | Yes | Native NVIDIA free route. OpenRouter route for the same model family is paid. |
+| `qwen/qwen3.5-397b-a17b` | Free endpoint in NVIDIA docs | Yes | High-quality candidate, but expected to be slower/heavier; speed is measured at probe time. |
+| `qwen/qwen3.6-35b-a3b` | NIM/self-host or configured endpoint candidate | Yes | NVIDIA docs show VLM image input and schema examples, but hosted free availability must be discovered for the configured key. |
+| `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning` | Free endpoint | Yes | Strong GUI/OCR target-recovery candidate; constrain reasoning output. |
+| `nvidia/nemotron-nano-12b-v2-vl` | Free endpoint | Yes | Lightweight native NVIDIA VL candidate. |
+| `meta/llama-3.2-90b-vision-instruct` | Free endpoint when available | Yes | Probe as visual reviewer/escalation; availability may vary. |
+| `meta/llama-3.2-11b-vision-instruct` | Free endpoint when available | Yes | Probe as lighter crop-level auditor/reviewer. |
+| `nvidia/llama-3.1-nemotron-nano-vl-8b-v1` | Free endpoint when available | Yes, lower priority | Older/lightweight VL route. |
+| `nvidia/cosmos3-nano-reasoner` | Free endpoint | Yes, lower priority | Spatial/target-recovery probe candidate, not default auditor. |
+| `google/google-paligemma` | Free endpoint | Yes, fallback only | Low-priority simple visual-QA fallback. |
 
-Native NVIDIA candidate details are recorded in `docs/research/nvidia-api-vlm-research-2026-06-14.md`. The implementation plan below contains one provider-agnostic candidate ranking; do not maintain a second ranking in this research snapshot.
+NVIDIA candidate discovery must not be hardcoded only to Nemotron. Native NVIDIA candidate details are recorded in `docs/research/nvidia-api-vlm-research-2026-06-14.md`. The implementation plan below contains one canonical selection ranking with provider routes; do not maintain a second quality ranking in this research snapshot.
 
 ## Sources
 
@@ -151,31 +164,33 @@ flowchart TD
 
 | Mode | Behavior |
 | --- | --- |
-| `free` | Default. Use native NVIDIA free endpoint if configured and probes pass; otherwise use pinned OpenRouter `:free` candidates that pass probes. |
-| `free_openrouter` | Only OpenRouter free candidates. |
-| `free_nvidia` | Only native NVIDIA/API/NIM candidates. |
-| `paid` | Use paid pinned models only when the user explicitly selects this mode. |
+| `free` | Default. Use native NVIDIA free endpoint routes first when `NVIDIA_API_KEY` is configured and probes pass; otherwise use pinned OpenRouter `:free` routes that pass probes. Never use paid OpenRouter routes in this mode. |
+| `free_openrouter` | Only OpenRouter `:free` routes. A base model without `:free` is not eligible even if the same model is free on NVIDIA. |
+| `free_nvidia` | Only native NVIDIA free endpoint/API/NIM routes. An OpenRouter `:free` route is not eligible in this mode. |
+| `paid` | Use paid pinned models only when the user explicitly selects this mode. Provider and estimated cost must be recorded in the report. |
 | `deterministic_only` | No VLM audit; reports deterministic evidence and `visualClassificationStatus: "not_run"`. |
 
 ### Canonical Model Candidate Ranking
 
-This is the only model ranking in this implementation plan. It is provider-agnostic: OpenRouter, native NVIDIA, or self-hosted NIM are delivery routes for the same candidate, not separate rankings. The selector walks this list and uses the first candidate whose configured provider route passes all gates.
+This is the only model ranking in this implementation plan. It is a quality/probe order, but every row names provider routes and cost class so the selector never treats native NVIDIA, OpenRouter free, and OpenRouter paid as interchangeable.
 
-1. `moonshotai/kimi-k2.6`
-2. `minimaxai/minimax-m3`
-3. `mistralai/mistral-large-3-675b-instruct-2512`
-4. `qwen/qwen3.5-397b-a17b`
-5. `qwen/qwen3.6-35b-a3b`
-6. `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`
-7. `nvidia/nemotron-nano-12b-v2-vl`
-8. `meta/llama-3.2-90b-vision-instruct`
-9. `meta/llama-3.2-11b-vision-instruct`
-10. `nex-agi/nex-n2-pro:free`
-11. `google/gemma-4-31b-it:free`
-12. `google/gemma-4-26b-a4b-it:free`
-13. `nvidia/llama-3.1-nemotron-nano-vl-8b-v1`
-14. `nvidia/cosmos3-nano-reasoner`
-15. `google/google-paligemma`
+| Rank | Candidate family | Eligible free provider routes | Paid/other routes | Default free-mode handling |
+| ---: | --- | --- | --- | --- |
+| 1 | Kimi K2.6 | Native NVIDIA `moonshotai/kimi-k2.6`; OpenRouter `moonshotai/kimi-k2.6:free` when currently available | OpenRouter paid Kimi route, such as `moonshotai/kimi-k2.6-20260420` if returned by Models API | Probe native NVIDIA first; use OpenRouter `:free` only if NVIDIA is unavailable or fails gates. |
+| 2 | MiniMax M3 | Native NVIDIA `minimaxai/minimax-m3` | OpenRouter `minimax/minimax-m3` is paid in verified docs | Probe native NVIDIA only in default free mode; block when licensing terms do not permit the run. |
+| 3 | Mistral Large 3 2512 | Native NVIDIA `mistralai/mistral-large-3-675b-instruct-2512` | OpenRouter `mistralai/mistral-large-2512` is paid in verified docs | Probe native NVIDIA only in default free mode. |
+| 4 | Qwen3.5 397B A17B | Native NVIDIA `qwen/qwen3.5-397b-a17b` | Any paid route discovered later is paid-mode only | Probe native NVIDIA; expect speed/quota risk. |
+| 5 | Qwen3.6 35B A3B | Native NVIDIA/NIM `qwen/qwen3.6-35b-a3b` when configured/discovered | Any paid route discovered later is paid-mode only | Probe native NVIDIA or self-hosted NIM only. |
+| 6 | Nemotron 3 Nano Omni 30B A3B Reasoning | Native NVIDIA `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`; OpenRouter `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free` when available | Any non-free route is paid-mode only | Prefer native NVIDIA; use OpenRouter free only if native route unavailable. |
+| 7 | Nemotron Nano 12B v2 VL | Native NVIDIA `nvidia/nemotron-nano-12b-v2-vl`; OpenRouter `nvidia/nemotron-nano-12b-v2-vl:free` | Any non-free route is paid-mode only | Prefer native NVIDIA; use OpenRouter free only if native route unavailable. |
+| 8 | Llama 3.2 90B Vision Instruct | Native NVIDIA `meta/llama-3.2-90b-vision-instruct` when available | Any paid route discovered later is paid-mode only | Probe native NVIDIA as reviewer/escalation candidate. |
+| 9 | Llama 3.2 11B Vision Instruct | Native NVIDIA `meta/llama-3.2-11b-vision-instruct` when available | Any paid route discovered later is paid-mode only | Probe native NVIDIA as lighter crop-level candidate. |
+| 10 | Nex N2 Pro | OpenRouter `nex-agi/nex-n2-pro:free` | Any non-free route is paid-mode only | OpenRouter free fallback when native NVIDIA candidates fail or are unavailable. |
+| 11 | Gemma 4 31B IT | OpenRouter `google/gemma-4-31b-it:free` | Any non-free route is paid-mode only | OpenRouter free fallback; schema must be probed. |
+| 12 | Gemma 4 26B A4B IT | OpenRouter `google/gemma-4-26b-a4b-it:free` | Any non-free route is paid-mode only | OpenRouter free fallback; schema must be probed. |
+| 13 | Llama 3.1 Nemotron Nano VL 8B | Native NVIDIA `nvidia/llama-3.1-nemotron-nano-vl-8b-v1` when available | Any paid route discovered later is paid-mode only | Native NVIDIA lower-priority crop-level candidate. |
+| 14 | Cosmos3 Nano Reasoner | Native NVIDIA `nvidia/cosmos3-nano-reasoner` | Any paid route discovered later is paid-mode only | Native NVIDIA lower-priority target-recovery candidate. |
+| 15 | PaliGemma | Native NVIDIA `google/google-paligemma` | Any paid route discovered later is paid-mode only | Native NVIDIA fallback only if it surprisingly passes UI-diff probes. |
 
 Selection gates, evaluated in order:
 

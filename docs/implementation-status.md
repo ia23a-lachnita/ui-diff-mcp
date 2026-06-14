@@ -9,9 +9,9 @@ This file is the persistent handoff state for implementation agents. Read it bef
 - Approved spec: `docs/superpowers/specs/2026-06-12-ui-diff-mcp-research-design.md`.
 - Active implementation plan: `docs/superpowers/plans/2026-06-12-ui-diff-mcp-mvp-implementation.md`.
 - Production-readiness test plan: `docs/superpowers/plans/2026-06-13-production-readiness-tests.md`.
-- Current task: Mistral Large 3 candidate classification — complete.
-- Next task: have Gemini review the updated NVIDIA research once `gemini-3-pro-preview` quota resets, then implement Task 1 from `docs/superpowers/plans/2026-06-14-free-first-ui-diff-hardening.md`.
-- Last verification: `git diff --check` exited 0 for the NVIDIA docs correction, with CRLF warnings only; previous code verification remains `npm run verify`, `npm run test:coverage`, `npm run verify:live`, and bounded `npm run verify:calorix-live` — passed before these docs-only changes.
+- Current task: Provider-explicit model-section correction — complete.
+- Next task: have Gemini review the updated NVIDIA/provider-route research once `gemini-3-pro-preview` quota resets, then implement Task 1 from `docs/superpowers/plans/2026-06-14-free-first-ui-diff-hardening.md`.
+- Last verification: `git diff --check` exited 0 for the provider-explicit docs correction, with CRLF warnings only; previous code verification remains `npm run verify`, `npm run test:coverage`, `npm run verify:live`, and bounded `npm run verify:calorix-live` — passed before these docs-only changes.
 - Code review: Gemini 3 Pro Preview review for the NVIDIA correction could not run because quota was exhausted for about 8 hours; the MCP wrapper was also blocked by workspace trust until the direct CLI was run with `GEMINI_CLI_TRUST_WORKSPACE=true`. The NVIDIA research is based on official NVIDIA Build/API/NIM documentation and must be Gemini-reviewed later.
 - Open blockers: the implemented MCP is not aligned with the final free-first/product-hardening requirements until the new plan is executed. Calorix full all-target visual audit remains unsigned. Gemini review of the NVIDIA-specific research remains pending due quota/tool failure.
 
@@ -46,13 +46,14 @@ This file is the persistent handoff state for implementation agents. Read it bef
 | 2026-06-14 | this commit | Model-ranking clarification: Kimi K2.6 and MiniMax M3 | OpenRouter/NVIDIA docs reviewed; `git diff --check` before commit | Clarified that the previous NVIDIA list was not a measured performance ranking. Added a performance-oriented probe lane that ranks Kimi K2.6 and MiniMax M3 ahead of Qwen/Nemotron, while keeping schema-readiness and licensing gates explicit. |
 | 2026-06-14 | this commit | Canonical model-ranking cleanup | OpenRouter/NVIDIA speed-routing docs reviewed; `git diff --check` before commit | Removed ambiguous duplicate model-ranking lanes. The NVIDIA research doc now has one NVIDIA-hosted ranking. The implementation plan now has one provider-agnostic model ranking where OpenRouter, native NVIDIA, and self-hosted NIM are delivery routes, not separate rankings. Speed is a measured runtime gate, not a static NVIDIA ranking. |
 | 2026-06-14 | this commit | Mistral Large 3 candidate classification | NVIDIA/OpenRouter/Mistral docs reviewed; `git diff --check` before commit | Added `mistralai/mistral-large-3-675b-instruct-2512` to the canonical VLM rankings as a high-quality candidate after Kimi K2.6 and MiniMax M3. |
+| 2026-06-14 | this commit | Provider-explicit model-section correction | `git diff --check` exited 0, with CRLF warnings only | Corrected the spec and implementation docs so the canonical model ranking names provider routes and cost class. Native NVIDIA free endpoints, OpenRouter `:free` routes, self-hosted NIM, and paid OpenRouter routes are now separate eligibility routes instead of being mixed under model names. |
 
 ## Handoff Checklist
 
-- Current task: Mistral Large 3 candidate classification — complete
-- Last completed step: Added Mistral Large 3 675B Instruct 2512 to the canonical ranking and documented its gates
-- Next step: request Gemini 3 Pro Preview review of the updated NVIDIA research once quota resets, then implement Task 1 from the free-first hardening plan
+- Current task: Provider-explicit model-section correction — complete
+- Last completed step: Updated the spec, MVP plan, free-first hardening plan, and NVIDIA research doc to separate provider routes and cost class in model sections
+- Next step: commit and push this docs correction; then request Gemini 3 Pro Preview review of the provider-route model sections once quota resets
 - Verification command and result: `git diff --check` exited 0, with CRLF warnings only. Previous code gates remain as recorded above.
-- Commit pushed: this commit after push
+- Commit pushed: pending until this commit is pushed
 - Files intentionally left modified: none
 - Blockers: Gemini 3 Pro Preview review of the NVIDIA-specific correction is pending due quota exhaustion; Claude Sonnet 4.6 review could not be performed with available tools; implementation is not free-first/product-hardened until the new plan is executed
