@@ -286,8 +286,10 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
             { name: "color_expected_avg", value: `rgb(${colorEvidence.expectedAvg.r},${colorEvidence.expectedAvg.g},${colorEvidence.expectedAvg.b})` },
             { name: "color_actual_avg", value: `rgb(${colorEvidence.actualAvg.r},${colorEvidence.actualAvg.g},${colorEvidence.actualAvg.b})` },
             { name: "color_expected_alpha", value: colorEvidence.expectedAvg.a },
-            { name: "color_actual_alpha", value: colorEvidence.actualAvg.a }
-          ] : [];
+            { name: "color_actual_alpha", value: colorEvidence.actualAvg.a },
+            { name: "color_dominant_expected_palette", value: JSON.stringify(colorEvidence.dominantExpected) },
+            { name: "color_dominant_actual_palette", value: JSON.stringify(colorEvidence.dominantActual) }
+            ] : [];
 
           const boxDeltaPx = expEl && actEl
             ? Math.abs(expEl.box.x - actEl.box.x) + Math.abs(expEl.box.y - actEl.box.y)
