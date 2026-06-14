@@ -11,6 +11,7 @@ export interface CompactOutput {
   runArtifacts: UiArtifact[];
   summary: string;
   warnings: string[];
+  locatorCoverageStatus: string;
 }
 
 export async function writeUiDiffReport(
@@ -47,6 +48,7 @@ export async function writeUiDiffReport(
     artifactRoot: reportDir,
     runArtifacts: report.runArtifacts ?? [],
     summary,
-    warnings: report.warnings ?? []
+    warnings: report.warnings ?? [],
+    locatorCoverageStatus: report.locatorCoverageStatus
   };
 }

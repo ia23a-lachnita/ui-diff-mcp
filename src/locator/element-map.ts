@@ -23,7 +23,25 @@ function stableId(type: string, label: string, x: number, y: number, w: number, 
   return crypto.createHash("sha1").update(raw).digest("hex").slice(0, 12);
 }
 
-function guessType(label: string): UiElementType {
+const QUERY_ID_TYPE_MAP: Readonly<Record<string, UiElementType>> = {
+  text_labels: "text",
+  buttons: "button",
+  cards_panels_containers: "card",
+  icons: "icon",
+  charts_indicators: "chart",
+  tab_bar_nav_elements: "nav",
+  list_items: "list_item",
+  image_thumbnails_avatars: "image"
+};
+
+function resolveType(queryId: string | undefined, label: string): UiElementType {
+  if (queryId && queryId in QUERY_ID_TYPE_MAP) {
+    return QUERY_ID_TYPE_MAP[queryId] as UiElementType;
+  }
+  return guessTypeFromLabel(label);
+}
+
+function guessTypeFromLabel(label: string): UiElementType {
   const l = label.toLowerCase();
   if (/button|btn|submit|cancel|ok/.test(l)) return "button";
   if (/icon|logo|chevron|arrow/.test(l)) return "icon";
@@ -48,7 +66,7 @@ export function buildElementMap(
     const raw = rawElements[i];
     if (!raw) continue;
 
-    const type = guessType(raw.label);
+    const type = resolveType(raw.queryId, raw.label);
     let box = { ...raw.box };
 
     for (let j = i + 1; j < rawElements.length; j++) {
@@ -73,6 +91,7 @@ export function buildElementMap(
       id,
       label: raw.label,
       type,
+      queryId: raw.queryId,
       box,
       normalizedBox,
       text: raw.rawText,
@@ -124,6 +143,34 @@ export function buildElementMap(
   }
 
   return elements;
+}
+
+export { QUERY_ID_TYPE_MAP };
+
+export function computeLocatorMetadata(
+  elements: UiElement[],
+  promptCount: number
+): { promptCount: number; queryCounts: Record<string, number> } {
+  const queryCounts: Record<string, number> = {};
+  for (const el of elements) {
+    if (el.queryId) {
+      queryCounts[el.queryId] = (queryCounts[el.queryId] ?? 0) + 1;
+    }
+  }
+  return { promptCount, queryCounts };
+}
+
+export function computeLocatorCoverageStatus(
+  elements: UiElement[],
+  promptCount: number,
+  failed: boolean
+): "complete" | "weak" | "failed" | "not_run" {
+  if (failed) return "failed";
+  if (promptCount === 0) return "not_run";
+  const queryIds = new Set(elements.map(e => e.queryId).filter(Boolean));
+  if (queryIds.size >= promptCount * 0.75) return "complete";
+  if (elements.length > 0) return "weak";
+  return "failed";
 }
 
 export interface SnapWarning {

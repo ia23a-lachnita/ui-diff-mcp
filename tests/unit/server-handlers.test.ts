@@ -23,6 +23,7 @@ function runOutput(overrides: Partial<RunOutput> = {}): RunOutput {
     ],
     summary: "Found 1 visual difference.",
     warnings: [],
+    locatorCoverageStatus: "not_run",
     ...overrides
   };
 }
@@ -34,6 +35,7 @@ function report(): UiDiffReport {
     createdAt: new Date().toISOString(),
     status: "complete",
     visualClassificationStatus: "not_run",
+    locatorCoverageStatus: "not_run" as const,
     expectedImagePath: "C:/project/expected.png",
     actualImagePath: "C:/project/actual.png",
     artifactRoot: "C:/project/.ui-diff/runs/run-test/artifacts",

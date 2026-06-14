@@ -8,7 +8,7 @@ import { computePixelDiff } from "../signals/pixel-diff.js";
 import { extractEdgeMask } from "../signals/edge.js";
 import { createDirectionalDiffOverlay, type Rgba } from "../images/directional-diff.js";
 import { locateUiElements, LocatorUnavailableError } from "../locator/locateanything-client.js";
-import { buildElementMap } from "../locator/element-map.js";
+import { buildElementMap, computeLocatorMetadata, computeLocatorCoverageStatus } from "../locator/element-map.js";
 import { pairElements } from "../pairing/pair-elements.js";
 import { selectModelForMode, resolveMode, CANONICAL_MODEL_RANKING, type ModelEntry } from "../models/model-registry.js";
 import { probeRequiredModels, type ProbeResult } from "../models/probes.js";
@@ -18,7 +18,7 @@ import { auditElementPair, type AuditContext } from "../audit/audit-target.js";
 import { reviewAndMergeFindings } from "../audit/review-findings.js";
 import { assignDiffComponentsToRecords } from "../report/coverage.js";
 import { writeUiDiffReport } from "../report/report-writer.js";
-import type { UiDiffReport, RunStatus, VisualClassificationStatus, DiffRecord, ElementPair, UiArtifact } from "../schemas/core.js";
+import type { UiDiffReport, RunStatus, VisualClassificationStatus, LocatorCoverageStatus, DiffRecord, ElementPair, UiArtifact } from "../schemas/core.js";
 import { sampleColorStats } from "../signals/color.js";
 
 export interface RunInput {
@@ -38,6 +38,7 @@ export interface RunOutput {
   runArtifacts: UiArtifact[];
   summary: string;
   warnings: string[];
+  locatorCoverageStatus: string;
 }
 
 type ProbeOverride = (entries: ModelEntry[], openRouterApiKey: string, nvidiaApiKey?: string, nvidiaBaseUrl?: string) => Promise<ProbeResult[]>;
@@ -114,6 +115,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
 
   let status: RunStatus = "complete";
   let visualClassificationStatus: VisualClassificationStatus = "not_run";
+  let locatorCoverageStatus: LocatorCoverageStatus = "not_run";
   const allDiffs: DiffRecord[] = [];
 
   const openRouterApiKey = process.env["OPENROUTER_API_KEY"] ?? "";
@@ -186,8 +188,14 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
       });
       expectedElements.push(...buildElementMap(expResp.elements, { width: expectedImg.width, height: expectedImg.height }));
       actualElements.push(...buildElementMap(actResp.elements, { width: actualImg.width, height: actualImg.height }));
+      locatorCoverageStatus = computeLocatorCoverageStatus(
+        [...expectedElements, ...actualElements],
+        locatorQueries.length,
+        false
+      );
     } catch (err) {
       locatorFailed = true;
+      locatorCoverageStatus = "failed";
       status = "model_unavailable";
       visualClassificationStatus = "incomplete";
       if (err instanceof LocatorUnavailableError) {
@@ -312,12 +320,18 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     { role: "directional_overlay", path: directionalOverlayPath },
   ];
 
+  const locatorMetadata = locatorCoverageStatus !== "not_run"
+    ? computeLocatorMetadata([...expectedElements, ...actualElements], locatorQueries.length)
+    : undefined;
+
   const report: UiDiffReport = {
     schemaVersion: "0.1",
     runId,
     createdAt: new Date().toISOString(),
     status,
     visualClassificationStatus,
+    locatorCoverageStatus,
+    ...(locatorMetadata !== undefined ? { locatorMetadata } : {}),
     expectedImagePath: expectedAbs,
     actualImagePath: actualAbs,
     artifactRoot,

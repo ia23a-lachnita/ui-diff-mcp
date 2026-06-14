@@ -47,6 +47,7 @@ export const UiElementSchema = z.object({
   id: z.string().min(1),
   label: z.string().min(1),
   type: UiElementTypeSchema,
+  queryId: z.string().optional(),
   box: BoxSchema,
   normalizedBox: NormalizedBoxSchema,
   text: z.string().optional(),
@@ -120,12 +121,22 @@ export type RunStatus = z.infer<typeof RunStatusSchema>;
 export const VisualClassificationStatusSchema = z.enum(["complete", "incomplete", "not_run"]);
 export type VisualClassificationStatus = z.infer<typeof VisualClassificationStatusSchema>;
 
+export const LocatorCoverageStatusSchema = z.enum(["complete", "weak", "failed", "not_run"]);
+export type LocatorCoverageStatus = z.infer<typeof LocatorCoverageStatusSchema>;
+
+export const LocatorMetadataSchema = z.object({
+  promptCount: z.number().int().nonnegative(),
+  queryCounts: z.record(z.string(), z.number().int().nonnegative())
+});
+
 export const UiDiffReportSchema = z.object({
   schemaVersion: z.literal("0.1"),
   runId: z.string().min(1),
   createdAt: z.string().datetime(),
   status: RunStatusSchema,
   visualClassificationStatus: VisualClassificationStatusSchema,
+  locatorCoverageStatus: LocatorCoverageStatusSchema.default("not_run"),
+  locatorMetadata: LocatorMetadataSchema.optional(),
   expectedImagePath: z.string().min(1),
   actualImagePath: z.string().min(1),
   artifactRoot: z.string().min(1),
