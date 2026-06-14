@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { RunStatusSchema, UiDiffReportSchema } from "./core.js";
+import { RunStatusSchema, UiDiffReportSchema, UiArtifactSchema } from "./core.js";
 
 export const CompareUiImagesInputSchema = {
   expectedImagePath: z.string().min(1),
@@ -15,7 +15,7 @@ export const CompareUiImagesOutputSchema = {
   diffCount: z.number().int().min(0),
   reportPath: z.string().min(1),
   artifactRoot: z.string().min(1),
-  runArtifacts: z.array(z.string()).default([]),
+  runArtifacts: z.array(UiArtifactSchema).default([]),
   summary: z.string().min(1),
   warnings: z.array(z.string()).default([])
 };

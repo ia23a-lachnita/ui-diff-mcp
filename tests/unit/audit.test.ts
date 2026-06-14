@@ -153,8 +153,8 @@ describe("auditElementPair", () => {
       artifactDir: tmpDir,
       auditorCaller,
       reviewerCaller,
-      imageWidth: 200,
-      imageHeight: 400,
+      expectedRgba: { data: new Uint8Array(200 * 400 * 4), width: 200, height: 400 },
+      actualRgba: { data: new Uint8Array(200 * 400 * 4), width: 200, height: 400 },
       measurements: [],
       triggerCtx: {
         pairingStatus: "matched",
@@ -196,8 +196,8 @@ describe("auditElementPair", () => {
       artifactDir: tmpDir,
       auditorCaller,
       reviewerCaller,
-      imageWidth: 200,
-      imageHeight: 400,
+      expectedRgba: { data: new Uint8Array(200 * 400 * 4), width: 200, height: 400 },
+      actualRgba: { data: new Uint8Array(200 * 400 * 4), width: 200, height: 400 },
       measurements: [],
       triggerCtx: {
         pairingStatus: "matched",
@@ -239,8 +239,8 @@ describe("auditElementPair", () => {
       artifactDir: tmpDir,
       auditorCaller: nvidiaCaller,
       reviewerCaller,
-      imageWidth: 200,
-      imageHeight: 400,
+      expectedRgba: { data: new Uint8Array(200 * 400 * 4), width: 200, height: 400 },
+      actualRgba: { data: new Uint8Array(200 * 400 * 4), width: 200, height: 400 },
       measurements: [],
       triggerCtx: {
         pairingStatus: "matched",

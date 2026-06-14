@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import type { DiffRecord } from "../schemas/core.js";
+import type { DiffRecord, UiArtifact } from "../schemas/core.js";
 import type { PixelComponent } from "../signals/pixel-diff.js";
 import { intersect } from "../signals/geometry.js";
 
@@ -40,7 +40,7 @@ export function assignDiffComponentsToRecords(
         { name: "pixelCount", value: component.pixelCount },
         { name: "componentArea", value: component.box.width * component.box.height, unit: "px²" }
       ],
-      artifactPaths: pixelDiffArtifactPath ? [pixelDiffArtifactPath] : [],
+      artifactPaths: pixelDiffArtifactPath ? [{ role: "pixel_diff" as UiArtifact["role"], path: pixelDiffArtifactPath }] : [],
       reviewerStatus: "not_reviewed"
     };
 

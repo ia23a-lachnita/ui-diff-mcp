@@ -3,10 +3,12 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
 import { z } from "zod";
-import type { ElementPair, UiElement, DiffRecord, DeterministicMeasurement } from "../schemas/core.js";
+import type { ElementPair, UiElement, DiffRecord, DeterministicMeasurement, UiArtifact, Box } from "../schemas/core.js";
 import { rubrics, selectTriggeredCriteria, AuditResultSchema, type TriggerContext } from "./criteria.js";
 import { buildAuditorPrompt, buildReviewerPrompt } from "./prompts.js";
 import type { VisionJsonCaller } from "../models/vision-json.js";
+import { computePixelDiff } from "../signals/pixel-diff.js";
+import { createDirectionalDiffOverlay, type Rgba } from "../images/directional-diff.js";
 
 const ReviewDecisionSchema = z.object({
   decision: z.enum(["accepted", "rejected", "needs_escalation"]),
@@ -21,44 +23,84 @@ export interface AuditContext {
   artifactDir: string;
   auditorCaller: VisionJsonCaller;
   reviewerCaller: VisionJsonCaller;
-  imageWidth: number;
-  imageHeight: number;
+  expectedRgba: { data: Uint8Array; width: number; height: number };
+  actualRgba: { data: Uint8Array; width: number; height: number };
   measurements: DeterministicMeasurement[];
   triggerCtx: TriggerContext;
 }
 
-async function extractCrop(
-  imagePath: string,
-  box: { x: number; y: number; width: number; height: number },
+function extractImageCrop(
+  imageData: Uint8Array,
   imageWidth: number,
   imageHeight: number,
-  savePath?: string
-): Promise<{ base64: string; savedPath: string | undefined }> {
+  box: Box
+): Uint8Array {
   const x = Math.max(0, Math.round(box.x));
   const y = Math.max(0, Math.round(box.y));
   const w = Math.min(Math.round(box.width), imageWidth - x);
   const h = Math.min(Math.round(box.height), imageHeight - y);
 
-  let buf: Buffer;
   if (w <= 0 || h <= 0) {
-    buf = await sharp({
-      create: { width: 1, height: 1, channels: 3, background: { r: 128, g: 128, b: 128 } }
-    }).png().toBuffer();
+    return new Uint8Array(4);
+  }
+
+  const croppedData = new Uint8Array(w * h * 4);
+  for (let row = 0; row < h; row++) {
+    for (let col = 0; col < w; col++) {
+      const srcIdx = ((y + row) * imageWidth + (x + col)) * 4;
+      const destIdx = (row * w + col) * 4;
+      croppedData[destIdx] = imageData[srcIdx] ?? 0;
+      croppedData[destIdx + 1] = imageData[srcIdx + 1] ?? 0;
+      croppedData[destIdx + 2] = imageData[srcIdx + 2] ?? 0;
+      croppedData[destIdx + 3] = imageData[srcIdx + 3] ?? 0;
+    }
+  }
+  return croppedData;
+}
+
+async function writeCropArtifact(
+  imageData: Uint8Array,
+  width: number,
+  height: number,
+  outPath: string,
+  channels: 1 | 4 = 4
+): Promise<string> {
+  if (width <= 0 || height <= 0) {
+    await sharp({
+      create: { width: 1, height: 1, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } }
+    }).png().toFile(outPath);
   } else {
-    buf = await sharp(imagePath)
-      .extract({ left: x, top: y, width: w, height: h })
+    await fs.mkdir(path.dirname(outPath), { recursive: true });
+    await sharp(Buffer.from(imageData.buffer, imageData.byteOffset, imageData.byteLength), { raw: { width, height, channels } })
       .png()
-      .toBuffer();
+      .toFile(outPath);
   }
+  return outPath;
+}
 
-  let savedPath: string | undefined;
-  if (savePath) {
-    await fs.mkdir(path.dirname(savePath), { recursive: true });
-    await fs.writeFile(savePath, buf);
-    savedPath = savePath;
-  }
+async function extractCropAndEncode(
+  imageData: Uint8Array,
+  imageWidth: number,
+  imageHeight: number,
+  box: Box,
+  artifactRole: UiArtifact["role"],
+  outPath: string,
+  pairId?: string
+): Promise<{ base64: string; artifact: UiArtifact }> {
+  const croppedData = extractImageCrop(imageData, imageWidth, imageHeight, box);
+  const cropWidth = Math.min(Math.round(box.width), imageWidth - Math.max(0, Math.round(box.x)));
+  const cropHeight = Math.min(Math.round(box.height), imageHeight - Math.max(0, Math.round(box.y)));
 
-  return { base64: buf.toString("base64"), savedPath };
+  const buf = await sharp(Buffer.from(croppedData.buffer, croppedData.byteOffset, croppedData.byteLength), { raw: { width: cropWidth > 0 ? cropWidth : 1, height: cropHeight > 0 ? cropHeight : 1, channels: 4 } })
+    .png()
+    .toBuffer();
+
+  const savedPath = await writeCropArtifact(croppedData, cropWidth, cropHeight, outPath);
+
+  return {
+    base64: buf.toString("base64"),
+    artifact: { role: artifactRole, path: savedPath, pairId }
+  };
 }
 
 function diffId(): string {
@@ -80,31 +122,69 @@ export async function auditElementPair(
 
   const criteria = selectTriggeredCriteria(ctx.triggerCtx);
 
-  const pairSlug = pair.id.slice(0, 12);
+  const auditArtifacts: UiArtifact[] = [];
+  const images: string[] = []; // Base64 encoded images for VLM call
+
   let expectedCropB64: string | null = null;
   let actualCropB64: string | null = null;
-  const cropArtifacts: string[] = [];
 
+  const pairId = pair.id; // Use pair.id for artifact naming and linking
+
+  const baseFileName = (role: string) =>
+    path.join(ctx.artifactDir, `audit-${pairId}-${role}.png`);
+
+  // Extract Expected Crop
   if (expectedEl) {
-    const result = await extractCrop(
-      ctx.expectedImagePath, expectedEl.box, ctx.imageWidth, ctx.imageHeight,
-      path.join(ctx.artifactDir, `${pairSlug}-expected-crop.png`)
+    const { base64, artifact } = await extractCropAndEncode(
+      ctx.expectedRgba.data, ctx.expectedRgba.width, ctx.expectedRgba.height, expectedEl.box,
+      "expected_crop", baseFileName("expected-crop"), pairId
     );
-    expectedCropB64 = result.base64;
-    if (result.savedPath) cropArtifacts.push(result.savedPath);
+    expectedCropB64 = base64;
+    auditArtifacts.push(artifact);
   }
+  // Extract Actual Crop
   if (actualEl) {
-    const result = await extractCrop(
-      ctx.actualImagePath, actualEl.box, ctx.imageWidth, ctx.imageHeight,
-      path.join(ctx.artifactDir, `${pairSlug}-actual-crop.png`)
+    const { base64, artifact } = await extractCropAndEncode(
+      ctx.actualRgba.data, ctx.actualRgba.width, ctx.actualRgba.height, actualEl.box,
+      "actual_crop", baseFileName("actual-crop"), pairId
     );
-    actualCropB64 = result.base64;
-    if (result.savedPath) cropArtifacts.push(result.savedPath);
+    actualCropB64 = base64;
+    auditArtifacts.push(artifact);
   }
 
-  const images: string[] = [];
+  const localPixelDiffMaskPath = baseFileName("local-pixel-diff-mask");
+  const localDirectionalOverlayPath = baseFileName("local-directional-overlay");
+  let localDirectionalOverlayB64 = "";
+  let localPixelDiffMaskB64 = "";
+
+  if (expectedEl && actualEl && expectedCropB64 && actualCropB64) {
+    const localPixelDiff = computePixelDiff(
+      baseFileName("expected-crop"),
+      baseFileName("actual-crop")
+    );
+    await writeCropArtifact(localPixelDiff.diffMask, localPixelDiff.width, localPixelDiff.height, localPixelDiffMaskPath, 1);
+    localPixelDiffMaskB64 = (await sharp(Buffer.from(localPixelDiff.diffMask.buffer, localPixelDiff.diffMask.byteOffset, localPixelDiff.diffMask.byteLength), { raw: { width: localPixelDiff.width, height: localPixelDiff.height, channels: 1 } }).png().toBuffer()).toString("base64");
+    auditArtifacts.push({ role: "local_pixel_diff_mask", path: localPixelDiffMaskPath, pairId });
+
+    const expRaw = await sharp(Buffer.from(expectedCropB64, "base64")).ensureAlpha().raw().toBuffer();
+    const actRaw = await sharp(Buffer.from(actualCropB64, "base64")).ensureAlpha().raw().toBuffer();
+    await createDirectionalDiffOverlay(
+      { data: expRaw, width: localPixelDiff.width, height: localPixelDiff.height },
+      { data: actRaw, width: localPixelDiff.width, height: localPixelDiff.height },
+      localPixelDiff.diffMask,
+      localPixelDiff.width,
+      localPixelDiff.height,
+      localDirectionalOverlayPath
+    );
+    localDirectionalOverlayB64 = (await fs.readFile(localDirectionalOverlayPath)).toString("base64");
+    auditArtifacts.push({ role: "local_directional_overlay", path: localDirectionalOverlayPath, pairId });
+  }
+
+
   if (expectedCropB64) images.push(`data:image/png;base64,${expectedCropB64}`);
   if (actualCropB64) images.push(`data:image/png;base64,${actualCropB64}`);
+  if (localDirectionalOverlayB64) images.push(`data:image/png;base64,${localDirectionalOverlayB64}`);
+  if (localPixelDiffMaskB64) images.push(`data:image/png;base64,${localPixelDiffMaskB64}`);
 
   for (const criterion of criteria) {
     const rubric = rubrics[criterion];
@@ -129,7 +209,8 @@ export async function auditElementPair(
       });
       auditModel = response.model;
       auditResult = AuditResultSchema.parse(response.parsed);
-    } catch {
+    } catch (err) {
+      console.error(`Auditor call failed for criterion ${criterion}:`, err);
       continue;
     }
 
@@ -166,7 +247,8 @@ export async function auditElementPair(
       });
       const parsed = ReviewDecisionSchema.parse(reviewResponse.parsed);
       reviewDecision = parsed.decision;
-    } catch {
+    } catch (err) {
+      console.error(`Reviewer call failed for criterion ${criterion}:`, err);
       reviewDecision = "accepted";
     }
 
@@ -179,7 +261,7 @@ export async function auditElementPair(
       location: refEl.box,
       evidence,
       measurements: auditResult.measurements ?? [],
-      artifactPaths: cropArtifacts,
+      artifactPaths: auditArtifacts, // Use the collected UiArtifacts
       reviewerStatus: reviewDecision === "needs_escalation" ? "needs_escalation" : reviewDecision,
       model: auditModel
     };

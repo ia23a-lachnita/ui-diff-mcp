@@ -13,6 +13,7 @@ export interface PixelDiffResult {
   changedPercent: number;
   components: PixelComponent[];
   diffBuffer: Buffer;
+  diffMask: Uint8Array;
   width: number;
   height: number;
 }
@@ -88,6 +89,7 @@ export function computePixelDiff(
     changedPercent,
     components,
     diffBuffer: Buffer.from(diffData),
+    diffMask: mask,
     width,
     height
   };

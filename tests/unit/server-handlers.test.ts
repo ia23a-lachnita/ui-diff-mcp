@@ -17,7 +17,10 @@ function runOutput(overrides: Partial<RunOutput> = {}): RunOutput {
     diffCount: 1,
     reportPath: "C:/project/.ui-diff/runs/run-test/artifacts/report.json",
     artifactRoot: "C:/project/.ui-diff/runs/run-test/artifacts",
-    runArtifacts: ["pixel-diff.png", "diff-overlay.png"],
+    runArtifacts: [
+      { role: "pixel_diff" as const, path: "pixel-diff.png" },
+      { role: "directional_overlay" as const, path: "diff-overlay.png" }
+    ],
     summary: "Found 1 visual difference.",
     warnings: [],
     ...overrides

@@ -96,8 +96,8 @@ describe("runUiDiff with mock sidecar and models (full mode)", () => {
     vi.stubEnv("OPENROUTER_API_KEY", "sk-test-e2e");
 
     const probeOverride = async () => [
-      { role: "auditor", provider: "openrouter", model: "qwen/qwen3-vl-30b-a3b-instruct", status: "pass" as const, checkedAt: new Date().toISOString() },
-      { role: "reviewer", provider: "openrouter", model: "google/gemini-2.5-flash-lite", status: "pass" as const, checkedAt: new Date().toISOString() }
+      { role: "auditor", provider: "openrouter", model: "moonshotai/kimi-k2.6:free", status: "pass" as const, checkedAt: new Date().toISOString() },
+      { role: "reviewer", provider: "openrouter", model: "nvidia/nemotron-nano-12b-v2-vl:free", status: "pass" as const, checkedAt: new Date().toISOString() }
     ];
 
     const result = await runUiDiff({
@@ -124,7 +124,7 @@ describe("runUiDiff with mock sidecar and models (full mode)", () => {
     );
     expect(sidecarCalls).toHaveLength(2);
     const firstSidecarBody = JSON.parse(String(sidecarCalls[0]?.[1]?.body)) as { queries: unknown[] };
-    expect(firstSidecarBody.queries).toHaveLength(1);
+    expect(firstSidecarBody.queries).toHaveLength(8);
   });
 
   it("returns model_unavailable when required models are not_checked", async () => {

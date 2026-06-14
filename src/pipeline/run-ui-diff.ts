@@ -6,19 +6,19 @@ import { loadNormalizedImage } from "../images/normalize.js";
 import { writeOverlay } from "../images/artifacts.js";
 import { computePixelDiff } from "../signals/pixel-diff.js";
 import { extractEdgeMask } from "../signals/edge.js";
+import { createDirectionalDiffOverlay, type Rgba } from "../images/directional-diff.js";
 import { locateUiElements, LocatorUnavailableError } from "../locator/locateanything-client.js";
 import { buildElementMap } from "../locator/element-map.js";
 import { pairElements } from "../pairing/pair-elements.js";
-import { selectModelForMode, resolveMode } from "../models/model-registry.js";
+import { selectModelForMode, resolveMode, type ModelEntry } from "../models/model-registry.js";
 import { probeRequiredModels, type ProbeResult } from "../models/probes.js";
 import { makeOpenRouterVisionCaller, makeNvidiaVisionCaller, type VisionMode } from "../models/vision-json.js";
 import { auditElementPair, type AuditContext } from "../audit/audit-target.js";
 import { reviewAndMergeFindings } from "../audit/review-findings.js";
 import { assignDiffComponentsToRecords } from "../report/coverage.js";
 import { writeUiDiffReport } from "../report/report-writer.js";
-import type { UiDiffReport, RunStatus, VisualClassificationStatus, DiffRecord, ElementPair } from "../schemas/core.js";
+import type { UiDiffReport, RunStatus, VisualClassificationStatus, DiffRecord, ElementPair, UiArtifact } from "../schemas/core.js";
 import { sampleColorStats } from "../signals/color.js";
-import type { ModelEntry } from "../models/model-registry.js";
 
 export interface RunInput {
   expectedImagePath: string;
@@ -34,7 +34,7 @@ export interface RunOutput {
   diffCount: number;
   reportPath: string;
   artifactRoot: string;
-  runArtifacts: string[];
+  runArtifacts: UiArtifact[];
   summary: string;
   warnings: string[];
 }
@@ -99,8 +99,16 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
   await sharp(Buffer.from(pixelDiff.diffBuffer), {
     raw: { width: pixelDiff.width, height: pixelDiff.height, channels: 4 }
   }).png().toFile(pixelDiffPngPath);
-  const overlayPath = path.join(runDir, "diff-overlay.png");
-  await writeOverlay(normalizedExpPath, pixelDiffPngPath, overlayPath);
+
+  const directionalOverlayPath = path.join(runDir, "directional-diff-overlay.png");
+  await createDirectionalDiffOverlay(
+    { data: expectedImg.rgba, width: expectedImg.width, height: expectedImg.height },
+    { data: actualImg.rgba, width: actualImg.width, height: actualImg.height },
+    pixelDiff.diffMask,
+    expectedImg.width,
+    expectedImg.height,
+    directionalOverlayPath
+  );
   const edgeMask = extractEdgeMask(expectedImg.rgba, expectedImg.width, expectedImg.height);
 
   let status: RunStatus = "complete";
@@ -113,10 +121,14 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
   const locatorUrl = process.env["LOCATEANYTHING_SIDECAR_URL"] ?? "http://127.0.0.1:39731";
   const locatorTimeoutMs = Number.parseInt(process.env["LOCATEANYTHING_TIMEOUT_MS"] ?? "300000", 10);
   const locatorQueries = [
-    {
-      id: "ui_elements",
-      prompt: "Detect all text and visible mobile UI elements in box format."
-    }
+    { id: "text_labels", prompt: "Detect all visible text labels in box format." },
+    { id: "buttons", prompt: "Locate all buttons and tappable controls in box format." },
+    { id: "cards_panels_containers", prompt: "Locate all cards, panels, and rounded containers in box format." },
+    { id: "icons", prompt: "Locate all icons and navigation icons in box format." },
+    { id: "charts_indicators", prompt: "Locate all charts, rings, progress indicators, and bars in box format." },
+    { id: "tab_bar_nav_elements", prompt: "Locate all tab bar and navigation elements in box format." },
+    { id: "list_items", prompt: "Locate all list rows and repeated item containers in box format." },
+    { id: "image_thumbnails_avatars", prompt: "Locate all image thumbnails and avatars in box format." }
   ];
 
   const expectedElements: ReturnType<typeof buildElementMap> = [];
@@ -164,40 +176,44 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
   const modelHealth: UiDiffReport["modelHealth"] = [];
 
   if (mode !== "deterministic_only") {
-    const auditorEntry = selectModelForMode("auditor", mode);
-    const reviewerEntry = selectModelForMode("reviewer", mode);
+    const probe = opts?.probeOverride ?? probeRequiredModels;
+    const probeEntries: ModelEntry[] = [];
+    // Temporarily add dummy entries for roles that need probing, actual selection happens after probing
+    probeEntries.push({ role: "auditor", provider: "openrouter", model: "placeholder", costClass: "paid", probeTtlMs: 0, required: true });
+    probeEntries.push({ role: "reviewer", provider: "openrouter", model: "placeholder", costClass: "paid", probeTtlMs: 0, required: true });
 
-    if (!auditorEntry || !reviewerEntry) {
+    const probeResults = await probe(probeEntries, openRouterApiKey);
+    for (const p of probeResults) {
+      modelHealth.push({
+        role: p.role,
+        provider: p.provider,
+        model: p.model,
+        status: p.status,
+        checkedAt: p.checkedAt,
+        ...(p.detail !== undefined ? { detail: p.detail } : {})
+      });
+    }
+
+    const auditorEntry = selectModelForMode("auditor", mode, probeResults, process.env);
+    const reviewerEntry = selectModelForMode("reviewer", mode, probeResults, process.env);
+
+    const requiredFailed = modelHealth.filter(
+      m => (m.status === "fail" || m.status === "not_checked") && (m.role === "auditor" || m.role === "reviewer")
+    );
+    if (requiredFailed.length > 0) {
+      if (!locatorFailed) {
+        status = "model_unavailable";
+        visualClassificationStatus = "incomplete";
+        warnings.push(`Required models unavailable: ${requiredFailed.map(m => m.model).join(", ")}`);
+      }
+    } else if (!auditorEntry || !reviewerEntry) {
       if (!locatorFailed) {
         status = "model_unavailable";
         visualClassificationStatus = "incomplete";
         warnings.push(`No model available for mode "${mode}". Set NVIDIA_API_KEY or use a mode with OpenRouter free models.`);
       }
     } else {
-      const probe = opts?.probeOverride ?? probeRequiredModels;
-      const probeEntries = [auditorEntry, reviewerEntry];
-      const probeResults = await probe(probeEntries, openRouterApiKey);
-      for (const p of probeResults) {
-        modelHealth.push({
-          role: p.role,
-          provider: p.provider,
-          model: p.model,
-          status: p.status,
-          checkedAt: p.checkedAt,
-          ...(p.detail !== undefined ? { detail: p.detail } : {})
-        });
-      }
-
-      const requiredFailed = modelHealth.filter(
-        m => (m.status === "fail" || m.status === "not_checked") && (m.role === "free_auditor" || m.role === "auditor" || m.role === "free_reviewer" || m.role === "reviewer")
-      );
-      if (requiredFailed.length > 0) {
-        if (!locatorFailed) {
-          status = "model_unavailable";
-          visualClassificationStatus = "incomplete";
-          warnings.push(`Required models unavailable: ${requiredFailed.map(m => m.model).join(", ")}`);
-        }
-      } else {
+      {
         const auditorCaller = makeVisionCaller(auditorEntry, openRouterApiKey, nvidiaApiKey, nvidiaBaseUrl);
         const reviewerCaller = makeVisionCaller(reviewerEntry, openRouterApiKey, nvidiaApiKey, nvidiaBaseUrl);
 
@@ -214,18 +230,8 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
           const refEl = expEl ?? actEl;
           if (!refEl) continue;
 
-          const expStats = expEl
-            ? sampleColorStats(expectedImg.rgba, expectedImg.width, expEl.box)
-            : null;
-          const actStats = actEl
-            ? sampleColorStats(actualImg.rgba, actualImg.width, actEl.box)
-            : null;
-
-          const colorDelta = expStats && actStats
-            ? Math.abs(expStats.avgR - actStats.avgR) +
-              Math.abs(expStats.avgG - actStats.avgG) +
-              Math.abs(expStats.avgB - actStats.avgB) > 30
-            : false;
+          // Removed old color comparison logic - to be replaced by new color evidence module in Task 9
+          const colorDelta = false; // Placeholder for new color comparison logic
 
           const boxDeltaPx = expEl && actEl
             ? Math.abs(expEl.box.x - actEl.box.x) + Math.abs(expEl.box.y - actEl.box.y)
@@ -239,8 +245,8 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
             artifactDir: artifactRoot,
             auditorCaller,
             reviewerCaller,
-            imageWidth: expectedImg.width,
-            imageHeight: expectedImg.height,
+            expectedRgba: { data: expectedImg.rgba, width: expectedImg.width, height: expectedImg.height },
+            actualRgba: { data: actualImg.rgba, width: actualImg.width, height: actualImg.height },
             measurements: [],
             triggerCtx: {
               pairingStatus: pair.status,
@@ -275,6 +281,13 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     pixelDiffPngPath
   );
 
+  const runArtifacts: UiArtifact[] = [
+    { role: "expected_normalized", path: normalizedExpPath },
+    { role: "actual_normalized", path: normalizedActPath },
+    { role: "pixel_diff", path: pixelDiffPngPath },
+    { role: "directional_overlay", path: directionalOverlayPath },
+  ];
+
   const report: UiDiffReport = {
     schemaVersion: "0.1",
     runId,
@@ -288,7 +301,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     pairs,
     diffs: finalDiffs,
     modelHealth,
-    runArtifacts: [pixelDiffPngPath, overlayPath],
+    runArtifacts,
     warnings
   };
 

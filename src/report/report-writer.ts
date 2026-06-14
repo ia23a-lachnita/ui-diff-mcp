@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { UiDiffReport } from "../schemas/core.js";
+import type { UiDiffReport, UiArtifact } from "../schemas/core.js";
 
 export interface CompactOutput {
   runId: string;
@@ -8,7 +8,7 @@ export interface CompactOutput {
   diffCount: number;
   reportPath: string;
   artifactRoot: string;
-  runArtifacts: string[];
+  runArtifacts: UiArtifact[];
   summary: string;
   warnings: string[];
 }

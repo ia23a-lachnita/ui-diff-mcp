@@ -77,6 +77,28 @@ export const DeterministicMeasurementSchema = z.object({
 });
 export type DeterministicMeasurement = z.infer<typeof DeterministicMeasurementSchema>;
 
+export const UiArtifactSchema = z.object({
+  role: z.enum([
+    "expected_normalized",
+    "actual_normalized",
+    "pixel_diff",
+    "pixel_diff_mask",
+    "directional_overlay",
+    "target_map_expected",
+    "target_map_actual",
+    "expected_crop",
+    "actual_crop",
+    "local_directional_overlay",
+    "local_pixel_diff_mask",
+    "context_crop"
+  ]),
+  path: z.string().min(1),
+  pairId: z.string().optional(),
+  diffId: z.string().optional(),
+  targetLabel: z.string().optional()
+});
+export type UiArtifact = z.infer<typeof UiArtifactSchema>;
+
 export const DiffRecordSchema = z.object({
   id: z.string().min(1),
   pairId: z.string().optional(),
@@ -86,7 +108,7 @@ export const DiffRecordSchema = z.object({
   location: BoxSchema,
   evidence: z.array(z.string().min(1)).min(1),
   measurements: z.array(DeterministicMeasurementSchema).default([]),
-  artifactPaths: z.array(z.string().min(1)).default([]),
+  artifactPaths: z.array(UiArtifactSchema).default([]),
   reviewerStatus: z.enum(["accepted", "rejected", "needs_escalation", "not_reviewed"]),
   model: z.string().optional()
 });
@@ -121,7 +143,7 @@ export const UiDiffReportSchema = z.object({
     checkedAt: z.string().datetime(),
     detail: z.string().optional()
   })),
-  runArtifacts: z.array(z.string()).default([]),
+  runArtifacts: z.array(UiArtifactSchema).default([]),
   warnings: z.array(z.string()).default([])
 });
 export type UiDiffReport = z.infer<typeof UiDiffReportSchema>;

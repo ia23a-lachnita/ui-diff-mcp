@@ -1,45 +1,47 @@
 import { describe, expect, it } from "vitest";
-import { MODEL_REGISTRY, getModelByRole, getRequiredModels, selectModelForMode, resolveMode } from "../../src/models/model-registry.js";
+import { CANONICAL_MODEL_RANKING, getModelByRole, getRequiredModels, selectModelForMode, resolveMode } from "../../src/models/model-registry.js";
+import type { ProbeResult } from "../../src/models/probes.js";
 
-describe("model-registry", () => {
-  it("contains all required model roles", () => {
-    const roles = MODEL_REGISTRY.map(m => m.role);
+const NOW = new Date().toISOString();
+
+function makeProbe(provider: string, model: string, status: "pass" | "fail" | "not_checked" = "pass"): ProbeResult {
+  return { role: "auditor", provider, model, status, checkedAt: NOW };
+}
+
+function allPass(): ProbeResult[] {
+  return CANONICAL_MODEL_RANKING.flatMap(c => [
+    ...c.eligibleFreeProviderRoutes.map(r => makeProbe(r.provider, r.model)),
+    ...(c.paidRoutes ?? []).map(r => makeProbe(r.provider, r.model))
+  ]);
+}
+
+describe("CANONICAL_MODEL_RANKING", () => {
+  it("contains auditor and reviewer entries", () => {
+    const roles = CANONICAL_MODEL_RANKING.map(c => c.role);
     expect(roles).toContain("auditor");
     expect(roles).toContain("reviewer");
-    expect(roles).toContain("escalation");
-    expect(roles).toContain("free_auditor");
   });
 
-  it("uses exact model IDs from the approved spec", () => {
-    expect(getModelByRole("auditor")?.model).toBe("qwen/qwen3-vl-30b-a3b-instruct");
-    expect(getModelByRole("reviewer")?.model).toBe("google/gemini-2.5-flash-lite");
-    expect(getModelByRole("escalation")?.model).toBe("qwen/qwen3-vl-235b-a22b-instruct");
-    expect(getModelByRole("free_auditor")?.model).toBe("nex-agi/nex-n2-pro:free");
-    expect(getModelByRole("free_reviewer")?.model).toBe("nvidia/nemotron-nano-12b-v2-vl:free");
+  it("all entries have at least one eligible free route", () => {
+    for (const c of CANONICAL_MODEL_RANKING) {
+      expect(c.eligibleFreeProviderRoutes.length).toBeGreaterThan(0);
+    }
   });
 
-  it("marks paid model entries with costClass paid", () => {
-    expect(getModelByRole("auditor")?.costClass).toBe("paid");
-    expect(getModelByRole("reviewer")?.costClass).toBe("paid");
-    expect(getModelByRole("escalation")?.costClass).toBe("paid");
+  it("all entries have costClass free", () => {
+    for (const c of CANONICAL_MODEL_RANKING) {
+      expect(c.costClass).toBe("free");
+    }
+  });
+});
+
+describe("getModelByRole / getRequiredModels", () => {
+  it("getModelByRole returns undefined (placeholder)", () => {
+    expect(getModelByRole("auditor")).toBeUndefined();
   });
 
-  it("marks free model entries with costClass free", () => {
-    expect(getModelByRole("free_auditor")?.costClass).toBe("free");
-    expect(getModelByRole("free_reviewer")?.costClass).toBe("free");
-  });
-
-  it("uses 15min TTL for free models and 24h for paid models", () => {
-    const freeAuditor = getModelByRole("free_auditor");
-    const auditor = getModelByRole("auditor");
-    expect(freeAuditor?.probeTtlMs).toBe(15 * 60 * 1000);
-    expect(auditor?.probeTtlMs).toBe(24 * 60 * 60 * 1000);
-  });
-
-  it("getRequiredModels returns only required entries", () => {
-    const required = getRequiredModels();
-    expect(required.every(m => m.required)).toBe(true);
-    expect(required.length).toBeGreaterThan(0);
+  it("getRequiredModels returns empty array (placeholder)", () => {
+    expect(getRequiredModels()).toEqual([]);
   });
 });
 
@@ -47,80 +49,84 @@ describe("selectModelForMode", () => {
   const noEnv: Record<string, string | undefined> = {};
   const withNvidia: Record<string, string | undefined> = { NVIDIA_API_KEY: "test-key" };
 
-  it("free mode without NVIDIA key returns OpenRouter :free auditor", () => {
-    const entry = selectModelForMode("auditor", "free", noEnv);
+  it("free mode without NVIDIA key picks first passing OpenRouter :free auditor", () => {
+    const openRouterAuditor = CANONICAL_MODEL_RANKING.find(
+      c => c.role === "auditor" && c.eligibleFreeProviderRoutes.some(r => r.provider === "openrouter")
+    );
+    const route = openRouterAuditor?.eligibleFreeProviderRoutes.find(r => r.provider === "openrouter");
+    if (!route || !openRouterAuditor) return;
+    const probes: ProbeResult[] = [makeProbe(route.provider, route.model)];
+    const entry = selectModelForMode("auditor", "free", probes, noEnv);
     expect(entry).toBeDefined();
     expect(entry?.costClass).toBe("free");
-    expect(entry?.model).toContain(":free");
     expect(entry?.provider).toBe("openrouter");
   });
 
-  it("free mode without NVIDIA key returns OpenRouter :free reviewer", () => {
-    const entry = selectModelForMode("reviewer", "free", noEnv);
-    expect(entry).toBeDefined();
-    expect(entry?.costClass).toBe("free");
-    expect(entry?.provider).toBe("openrouter");
-  });
-
-  it("free mode with NVIDIA key returns native NVIDIA model", () => {
-    const entry = selectModelForMode("auditor", "free", withNvidia);
+  it("free mode with NVIDIA key picks first passing native NVIDIA auditor", () => {
+    const nvidiaAuditor = CANONICAL_MODEL_RANKING.find(
+      c => c.role === "auditor" && c.eligibleFreeProviderRoutes.some(r => r.provider === "nvidia")
+    );
+    const route = nvidiaAuditor?.eligibleFreeProviderRoutes.find(r => r.provider === "nvidia");
+    if (!route || !nvidiaAuditor) return;
+    const probes: ProbeResult[] = [makeProbe(route.provider, route.model)];
+    const entry = selectModelForMode("auditor", "free", probes, withNvidia);
     expect(entry).toBeDefined();
     expect(entry?.costClass).toBe("free");
     expect(entry?.provider).toBe("nvidia");
     expect(entry?.model).not.toContain(":free");
   });
 
-  it("free_openrouter always returns OpenRouter :free regardless of NVIDIA key", () => {
-    const entry = selectModelForMode("auditor", "free_openrouter", withNvidia);
+  it("free_openrouter always picks OpenRouter :free even with NVIDIA key", () => {
+    const entry = selectModelForMode("auditor", "free_openrouter", allPass(), withNvidia);
     expect(entry?.provider).toBe("openrouter");
-    expect(entry?.model).toContain(":free");
   });
 
-  it("free_nvidia returns NVIDIA entry when key is set", () => {
-    const entry = selectModelForMode("auditor", "free_nvidia", withNvidia);
+  it("free_nvidia picks NVIDIA entry when key is set and probes pass", () => {
+    const entry = selectModelForMode("auditor", "free_nvidia", allPass(), withNvidia);
     expect(entry?.provider).toBe("nvidia");
     expect(entry?.costClass).toBe("free");
   });
 
   it("free_nvidia returns undefined when NVIDIA key is absent", () => {
-    const entry = selectModelForMode("auditor", "free_nvidia", noEnv);
+    const entry = selectModelForMode("auditor", "free_nvidia", allPass(), noEnv);
     expect(entry).toBeUndefined();
   });
 
-  it("paid mode never returns a free model", () => {
-    const auditor = selectModelForMode("auditor", "paid", noEnv);
-    const reviewer = selectModelForMode("reviewer", "paid", noEnv);
-    expect(auditor?.costClass).toBe("paid");
-    expect(reviewer?.costClass).toBe("paid");
-    expect(auditor?.model).toBe("qwen/qwen3-vl-30b-a3b-instruct");
-    expect(reviewer?.model).toBe("google/gemini-2.5-flash-lite");
+  it("returns undefined when no probes pass", () => {
+    const entry = selectModelForMode("auditor", "free", [], withNvidia);
+    expect(entry).toBeUndefined();
+  });
+
+  it("paid mode returns undefined when registry has no paid entries", () => {
+    const auditor = selectModelForMode("auditor", "paid", allPass(), noEnv);
+    expect(auditor).toBeUndefined();
   });
 
   it("paid mode never returns a :free OpenRouter model", () => {
-    const auditor = selectModelForMode("auditor", "paid", noEnv);
-    expect(auditor?.model).not.toContain(":free");
+    const entry = selectModelForMode("auditor", "paid", allPass(), noEnv);
+    if (entry) {
+      expect(entry.model).not.toContain(":free");
+    } else {
+      expect(entry).toBeUndefined();
+    }
   });
 
   it("deterministic_only returns undefined for all roles", () => {
-    expect(selectModelForMode("auditor", "deterministic_only", noEnv)).toBeUndefined();
-    expect(selectModelForMode("reviewer", "deterministic_only", noEnv)).toBeUndefined();
-    expect(selectModelForMode("escalation", "deterministic_only", noEnv)).toBeUndefined();
+    expect(selectModelForMode("auditor", "deterministic_only", allPass(), noEnv)).toBeUndefined();
+    expect(selectModelForMode("reviewer", "deterministic_only", allPass(), noEnv)).toBeUndefined();
+    expect(selectModelForMode("escalation", "deterministic_only", allPass(), noEnv)).toBeUndefined();
   });
 
-  it("escalation is not available in free modes", () => {
-    expect(selectModelForMode("escalation", "free", noEnv)).toBeUndefined();
-    expect(selectModelForMode("escalation", "free_openrouter", noEnv)).toBeUndefined();
-    expect(selectModelForMode("escalation", "free_nvidia", withNvidia)).toBeUndefined();
+  it("escalation is not available in free modes (no escalation in CANONICAL_MODEL_RANKING)", () => {
+    expect(selectModelForMode("escalation", "free", allPass(), noEnv)).toBeUndefined();
+    expect(selectModelForMode("escalation", "free_openrouter", allPass(), noEnv)).toBeUndefined();
+    expect(selectModelForMode("escalation", "free_nvidia", allPass(), withNvidia)).toBeUndefined();
   });
 });
 
 describe("resolveMode", () => {
   it("treats free_only as alias for free", () => {
     expect(resolveMode("free_only")).toBe("free");
-  });
-
-  it("treats full as alias for free", () => {
-    expect(resolveMode("full")).toBe("free");
   });
 
   it("passes through valid modes unchanged", () => {

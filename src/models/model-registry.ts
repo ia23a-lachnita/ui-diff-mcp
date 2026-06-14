@@ -1,4 +1,5 @@
 import type { VisionMode } from "./vision-json.js";
+import type { ProbeResult } from "./probes.js";
 
 export type { VisionMode };
 
@@ -8,8 +9,7 @@ export type ModelRole =
   | "fast_auditor"
   | "reviewer"
   | "escalation"
-  | "free_auditor"
-  | "free_reviewer";
+  | "target_recovery";
 
 export interface ModelEntry {
   role: ModelRole;
@@ -20,113 +20,252 @@ export interface ModelEntry {
   required: boolean;
 }
 
-export const MODEL_REGISTRY: readonly ModelEntry[] = [
+// Canonical Model Candidate Ranking from docs/superpowers/plans/2026-06-14-free-first-ui-diff-hardening.md
+// This is a quality/probe order.
+export const CANONICAL_MODEL_RANKING: readonly (Omit<ModelEntry, "required" | "probeTtlMs"> & {
+  eligibleFreeProviderRoutes: Array<{ provider: ModelEntry["provider"]; model: string }>;
+  paidRoutes?: Array<{ provider: ModelEntry["provider"]; model: string }>;
+  defaultFreeModeHandling: string; // Describes the selection logic
+})[] = [
   {
-    role: "locator",
-    provider: "nvidia",
-    model: "nvidia/LocateAnything-3B",
+    role: "auditor", // Kimi K2.6 family, general purpose
+    provider: "nvidia", // Primary provider for ranking purposes
+    model: "moonshotai/kimi-k2.6",
     costClass: "free",
-    probeTtlMs: 24 * 60 * 60 * 1000,
-    required: false
+    eligibleFreeProviderRoutes: [
+      { provider: "nvidia", model: "moonshotai/kimi-k2.6" },
+      { provider: "openrouter", model: "moonshotai/kimi-k2.6:free" }
+    ],
+    defaultFreeModeHandling: "Probe native NVIDIA first; use OpenRouter :free only if NVIDIA is unavailable or fails gates."
   },
   {
-    role: "auditor",
-    provider: "openrouter",
-    model: "qwen/qwen3-vl-30b-a3b-instruct",
-    costClass: "paid",
-    probeTtlMs: 24 * 60 * 60 * 1000,
-    required: true
+    role: "auditor", // MiniMax M3 family, general purpose
+    provider: "nvidia",
+    model: "minimaxai/minimax-m3",
+    costClass: "free",
+    eligibleFreeProviderRoutes: [
+      { provider: "nvidia", model: "minimaxai/minimax-m3" }
+    ],
+    paidRoutes: [{ provider: "openrouter", model: "minimax/minimax-m3" }],
+    defaultFreeModeHandling: "Probe native NVIDIA only in default free mode; block when licensing terms do not permit the run."
   },
   {
-    role: "fast_auditor",
-    provider: "openrouter",
-    model: "qwen/qwen3-vl-8b-instruct",
-    costClass: "paid",
-    probeTtlMs: 24 * 60 * 60 * 1000,
-    required: false
+    role: "auditor", // Mistral Large 3 family, general purpose
+    provider: "nvidia",
+    model: "mistralai/mistral-large-3-675b-instruct-2512",
+    costClass: "free",
+    eligibleFreeProviderRoutes: [
+      { provider: "nvidia", model: "mistralai/mistral-large-3-675b-instruct-2512" }
+    ],
+    paidRoutes: [{ provider: "openrouter", model: "mistralai/mistral-large-2512" }],
+    defaultFreeModeHandling: "Probe native NVIDIA only in default free mode."
   },
   {
-    role: "reviewer",
-    provider: "openrouter",
-    model: "google/gemini-2.5-flash-lite",
-    costClass: "paid",
-    probeTtlMs: 24 * 60 * 60 * 1000,
-    required: true
+    role: "auditor", // Qwen3.5 397B A17B
+    provider: "nvidia",
+    model: "qwen/qwen3.5-397b-a17b",
+    costClass: "free",
+    eligibleFreeProviderRoutes: [
+      { provider: "nvidia", model: "qwen/qwen3.5-397b-a17b" }
+    ],
+    defaultFreeModeHandling: "Probe native NVIDIA; expect speed/quota risk."
   },
   {
-    role: "escalation",
-    provider: "openrouter",
-    model: "qwen/qwen3-vl-235b-a22b-instruct",
-    costClass: "paid",
-    probeTtlMs: 24 * 60 * 60 * 1000,
-    required: false
+    role: "auditor", // Qwen3.6 35B A3B
+    provider: "nvidia",
+    model: "qwen/qwen3.6-35b-a3b",
+    costClass: "free",
+    eligibleFreeProviderRoutes: [
+      { provider: "nvidia", model: "qwen/qwen3.6-35b-a3b" }
+    ],
+    defaultFreeModeHandling: "Probe native NVIDIA or self-hosted NIM only."
   },
   {
-    role: "free_auditor",
+    role: "auditor", // Nemotron 3 Nano Omni 30B A3B Reasoning
+    provider: "nvidia",
+    model: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+    costClass: "free",
+    eligibleFreeProviderRoutes: [
+      { provider: "nvidia", model: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning" },
+      { provider: "openrouter", model: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free" }
+    ],
+    defaultFreeModeHandling: "Prefer native NVIDIA; use OpenRouter free only if native route unavailable."
+  },
+  {
+    role: "reviewer", // Nemotron Nano 12B v2 VL
+    provider: "nvidia",
+    model: "nvidia/nemotron-nano-12b-v2-vl",
+    costClass: "free",
+    eligibleFreeProviderRoutes: [
+      { provider: "nvidia", model: "nvidia/nemotron-nano-12b-v2-vl" },
+      { provider: "openrouter", model: "nvidia/nemotron-nano-12b-v2-vl:free" }
+    ],
+    defaultFreeModeHandling: "Prefer native NVIDIA; use OpenRouter free only if native route unavailable."
+  },
+  {
+    role: "reviewer", // Llama 3.2 90B Vision Instruct
+    provider: "nvidia",
+    model: "meta/llama-3.2-90b-vision-instruct",
+    costClass: "free",
+    eligibleFreeProviderRoutes: [
+      { provider: "nvidia", model: "meta/llama-3.2-90b-vision-instruct" }
+    ],
+    defaultFreeModeHandling: "Probe native NVIDIA as reviewer/escalation candidate."
+  },
+  {
+    role: "reviewer", // Llama 3.2 11B Vision Instruct
+    provider: "nvidia",
+    model: "meta/llama-3.2-11b-vision-instruct",
+    costClass: "free",
+    eligibleFreeProviderRoutes: [
+      { provider: "nvidia", model: "meta/llama-3.2-11b-vision-instruct" }
+    ],
+    defaultFreeModeHandling: "Probe native NVIDIA as lighter crop-level candidate."
+  },
+  {
+    role: "auditor", // Nex N2 Pro
     provider: "openrouter",
     model: "nex-agi/nex-n2-pro:free",
     costClass: "free",
-    probeTtlMs: 15 * 60 * 1000,
-    required: false
+    eligibleFreeProviderRoutes: [
+      { provider: "openrouter", model: "nex-agi/nex-n2-pro:free" }
+    ],
+    defaultFreeModeHandling: "OpenRouter free fallback when native NVIDIA candidates fail or are unavailable."
   },
   {
-    role: "free_reviewer",
+    role: "auditor", // Gemma 4 31B IT
     provider: "openrouter",
-    model: "nvidia/nemotron-nano-12b-v2-vl:free",
+    model: "google/gemma-4-31b-it:free",
     costClass: "free",
-    probeTtlMs: 15 * 60 * 1000,
-    required: false
+    eligibleFreeProviderRoutes: [
+      { provider: "openrouter", model: "google/gemma-4-31b-it:free" }
+    ],
+    defaultFreeModeHandling: "OpenRouter free fallback; schema must be probed."
+  },
+  {
+    role: "auditor", // Gemma 4 26B A4B IT
+    provider: "openrouter",
+    model: "google/gemma-4-26b-a4b-it:free",
+    costClass: "free",
+    eligibleFreeProviderRoutes: [
+      { provider: "openrouter", model: "google/gemma-4-26b-a4b-it:free" }
+    ],
+    defaultFreeModeHandling: "OpenRouter free fallback; schema must be probed."
+  },
+  {
+    role: "reviewer", // Llama 3.1 Nemotron Nano VL 8B
+    provider: "nvidia",
+    model: "nvidia/llama-3.1-nemotron-nano-vl-8b-v1",
+    costClass: "free",
+    eligibleFreeProviderRoutes: [
+      { provider: "nvidia", model: "nvidia/llama-3.1-nemotron-nano-vl-8b-v1" }
+    ],
+    defaultFreeModeHandling: "Native NVIDIA lower-priority crop-level candidate."
+  },
+  {
+    role: "target_recovery", // Cosmos3 Nano Reasoner
+    provider: "nvidia",
+    model: "nvidia/cosmos3-nano-reasoner",
+    costClass: "free",
+    eligibleFreeProviderRoutes: [
+      { provider: "nvidia", model: "nvidia/cosmos3-nano-reasoner" }
+    ],
+    defaultFreeModeHandling: "Native NVIDIA lower-priority target-recovery candidate."
+  },
+  {
+    role: "auditor", // PaliGemma
+    provider: "nvidia",
+    model: "google/google-paligemma",
+    costClass: "free",
+    eligibleFreeProviderRoutes: [
+      { provider: "nvidia", model: "google/google-paligemma" }
+    ],
+    defaultFreeModeHandling: "Native NVIDIA fallback only if it surprisingly passes UI-diff probes."
   }
-] as const;
+];
 
 export function getModelByRole(role: ModelRole): ModelEntry | undefined {
-  return MODEL_REGISTRY.find(m => m.role === role);
+  // This function currently returns the first entry; needs to be updated for model selection logic.
+  // Will be refactored or removed as part of model selection implementation.
+  return undefined;
 }
 
 export function getRequiredModels(): ModelEntry[] {
-  return MODEL_REGISTRY.filter(m => m.required);
+  // This function needs to be re-evaluated if models are selected dynamically.
+  return [];
 }
 
-const FREE_NVIDIA_AUDITOR_MODEL = "moonshotai/kimi-k2.6";
-const FREE_NVIDIA_REVIEWER_MODEL = "nvidia/nemotron-nano-12b-v2-vl";
-
 export function selectModelForMode(
-  logicalRole: "auditor" | "reviewer" | "escalation",
+  logicalRole: "auditor" | "reviewer" | "escalation" | "target_recovery",
   mode: VisionMode,
+  probeResults: ProbeResult[],
   env: Record<string, string | undefined> = process.env as Record<string, string | undefined>
 ): ModelEntry | undefined {
-  if (mode === "deterministic_only") return undefined;
-
-  if (mode === "paid") {
-    return MODEL_REGISTRY.find(m => m.role === logicalRole && m.costClass === "paid");
+  if (mode === "deterministic_only") {
+    return undefined;
   }
 
-  if (logicalRole === "escalation") return undefined;
+  const isNvidiaApiKeyConfigured = !!env["NVIDIA_API_KEY"];
 
-  const freeRole: ModelRole = logicalRole === "auditor" ? "free_auditor" : "free_reviewer";
+  for (const candidate of CANONICAL_MODEL_RANKING) {
+    if (candidate.role !== logicalRole) {
+      continue;
+    }
 
-  if (mode === "free_openrouter") {
-    return MODEL_REGISTRY.find(m => m.role === freeRole && m.provider === "openrouter");
+    if (mode === "paid") {
+      if (candidate.costClass === "paid" && candidate.paidRoutes && candidate.paidRoutes.length > 0) {
+        const paidRoute = candidate.paidRoutes[0];
+        if (!paidRoute) continue;
+        const probe = probeResults.find(p => p.model === paidRoute.model && p.provider === paidRoute.provider);
+        if (probe?.status === "pass") {
+          return { ...candidate, provider: paidRoute.provider, model: paidRoute.model, required: true, probeTtlMs: 24 * 60 * 60 * 1000 };
+        }
+      }
+    } else { // Free modes
+      if (candidate.costClass !== "free") {
+        continue; // Skip paid models in free modes
+      }
+
+      const eligibleRoutes = candidate.eligibleFreeProviderRoutes;
+
+      // Prioritize native NVIDIA for "free" and "free_nvidia" modes
+      if (mode === "free" || mode === "free_nvidia") {
+        if (isNvidiaApiKeyConfigured) {
+          const nvidiaRoute = eligibleRoutes.find(r => r.provider === "nvidia");
+          if (nvidiaRoute) {
+            const probe = probeResults.find(p => p.model === nvidiaRoute.model && p.provider === nvidiaRoute.provider);
+            if (probe?.status === "pass") {
+              return { ...candidate, provider: nvidiaRoute.provider, model: nvidiaRoute.model, required: true, probeTtlMs: 15 * 60 * 1000 };
+            }
+          }
+        }
+      }
+
+      // Fallback to OpenRouter for "free" and primary for "free_openrouter"
+      if (mode === "free" || mode === "free_openrouter") {
+        const openRouterRoute = eligibleRoutes.find(r => r.provider === "openrouter");
+        if (openRouterRoute) {
+          const probe = probeResults.find(p => p.model === openRouterRoute.model && p.provider === openRouterRoute.provider);
+          if (probe?.status === "pass") {
+            return { ...candidate, provider: openRouterRoute.provider, model: openRouterRoute.model, required: true, probeTtlMs: 15 * 60 * 1000 };
+          }
+        }
+      }
+    }
   }
 
-  const nvidiaModel = logicalRole === "auditor" ? FREE_NVIDIA_AUDITOR_MODEL : FREE_NVIDIA_REVIEWER_MODEL;
-  const nvidiaApiKey = env["NVIDIA_API_KEY"];
-
-  if (mode === "free_nvidia") {
-    if (!nvidiaApiKey) return undefined;
-    return { role: freeRole, provider: "nvidia", model: nvidiaModel, costClass: "free", probeTtlMs: 15 * 60 * 1000, required: false };
-  }
-
-  // free mode: prefer native NVIDIA when key is configured, else OpenRouter :free
-  if (nvidiaApiKey) {
-    return { role: freeRole, provider: "nvidia", model: nvidiaModel, costClass: "free", probeTtlMs: 15 * 60 * 1000, required: false };
-  }
-  return MODEL_REGISTRY.find(m => m.role === freeRole && m.provider === "openrouter");
+  return undefined;
 }
 
 export function resolveMode(rawMode: string | undefined): VisionMode {
-  if (rawMode === "free_only" || rawMode === "full") return "free";
+  // 'free_only' is deprecated and now treated as 'free'
+  if (rawMode === "free_only") {
+    console.warn("Deprecation Warning: 'free_only' mode is deprecated and will be treated as 'free'. Please update your configuration.");
+    return "free";
+  }
   const valid: VisionMode[] = ["free", "free_openrouter", "free_nvidia", "paid", "deterministic_only"];
-  if (valid.includes(rawMode as VisionMode)) return rawMode as VisionMode;
+  if (valid.includes(rawMode as VisionMode)) {
+    return rawMode as VisionMode;
+  }
   return "free";
 }
