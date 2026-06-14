@@ -291,6 +291,8 @@ Sources:
 | Model | Decision | Reason |
 | --- | --- | --- |
 | `nvidia/nemotron-parse` | Exclude from auditor/reviewer; possible future OCR/structure helper only | It is a document text-extraction model returning encoded text, boxes, and semantic document classes. It is not a general UI-diff auditor. |
+| `deepseek-ai/deepseek-v4-pro` | Exclude from visual audit | NVIDIA Build lists a free endpoint, but describes it as a 1M-context coding/reasoning MoE. NVIDIA API docs place it under Large Language Models and show text-only chat message usage, not image input. It can only be considered later for text-only report consolidation, not visual diff classification. |
+| `deepseek-ai/deepseek-v4-flash` | Exclude from visual audit | Same DeepSeek V4 family; NVIDIA describes it as a coding/agent/reasoning MoE, not a VLM. |
 | `nvidia/nemotron-3-ultra-550b-a55b` | Exclude from visual audit | Strong free-endpoint reasoning/coding/planning LLM, but the NVIDIA page shows text chat content and does not document image input. It can be useful for text-only report summarization later, not visual diff classification. |
 | `nvidia/llama-3.1-nemotron-ultra-253b-v1` | Exclude | Text/reasoning model; NVIDIA page marks Free Endpoint deprecated and does not document image input. |
 | `nvidia/vila` | Exclude | Deprecated endpoint. |
@@ -374,6 +376,7 @@ Do not state “use NVIDIA models” generically. State:
 
 - Native NVIDIA is first priority only when a specific NVIDIA candidate passes the UI-diff probe suite.
 - Best initial native NVIDIA candidate set is Qwen3.6/Qwen3.5, Kimi K2.6, Nemotron Nano 12B v2 VL, Nemotron 3 Nano Omni, MiniMax M3 when licensing is acceptable, Llama 3.2 Vision, and Nemotron/Llama-Nemotron Nano VL.
+- DeepSeek V4 Pro is intentionally excluded from visual audit despite NVIDIA free-endpoint availability because the NVIDIA docs present it as a text/code/reasoning LLM, not an image-capable VLM.
 - Cosmos is promising for spatial target recovery but not a default auditor without evidence.
 - PaliGemma is a fallback, not a serious default, unless live probes prove otherwise.
 - Content-safety, deprecated, text-only, image-generation, and narrow domain-specific models must be filtered out before probing.

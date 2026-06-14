@@ -9,7 +9,7 @@ This file is the persistent handoff state for implementation agents. Read it bef
 - Approved spec: `docs/superpowers/specs/2026-06-12-ui-diff-mcp-research-design.md`.
 - Active implementation plan: `docs/superpowers/plans/2026-06-12-ui-diff-mcp-mvp-implementation.md`.
 - Production-readiness test plan: `docs/superpowers/plans/2026-06-13-production-readiness-tests.md`.
-- Current task: NVIDIA API VLM research correction follow-up — complete.
+- Current task: NVIDIA API model research follow-up for DeepSeek V4 Pro — complete.
 - Next task: have Gemini review the updated NVIDIA research once `gemini-3-pro-preview` quota resets, then implement Task 1 from `docs/superpowers/plans/2026-06-14-free-first-ui-diff-hardening.md`.
 - Last verification: `git diff --check` exited 0 for the NVIDIA docs correction, with CRLF warnings only; previous code verification remains `npm run verify`, `npm run test:coverage`, `npm run verify:live`, and bounded `npm run verify:calorix-live` — passed before these docs-only changes.
 - Code review: Gemini 3 Pro Preview review for the NVIDIA correction could not run because quota was exhausted for about 8 hours; the MCP wrapper was also blocked by workspace trust until the direct CLI was run with `GEMINI_CLI_TRUST_WORKSPACE=true`. The NVIDIA research is based on official NVIDIA Build/API/NIM documentation and must be Gemini-reviewed later.
@@ -42,11 +42,12 @@ This file is the persistent handoff state for implementation agents. Read it bef
 | 2026-06-14 | this commit | Free-first hardening plan | Gemini 3 Pro Preview final blocker pass: no implementation-critical gaps remain; non-Claude independent review findings incorporated; Claude Sonnet 4.6 unavailable in this tool session | Added `docs/superpowers/plans/2026-06-14-free-first-ui-diff-hardening.md` covering free-first defaults, native NVIDIA API, OpenRouter free model research/rate limits, quota budget gate, provider-agnostic model calls, LocateAnything category prompts, directional overlays, target recovery, typed artifacts, crop naming, Lab/OKLab color evidence, and live gates. |
 | 2026-06-14 | this commit | NVIDIA API model research correction | Official NVIDIA Build/API/NIM docs reviewed; Gemini 3 Pro Preview quota exhausted for about 8 hours | Added `docs/research/nvidia-api-vlm-research-2026-06-14.md` with model-by-model NVIDIA native API suitability, role-specific candidate order, exclusions, and live probe requirements. Updated hardening plan to reference the dedicated research and stop treating NVIDIA as a generic provider. |
 | 2026-06-14 | this commit | NVIDIA model follow-up: Kimi, MiniMax, Nemotron Ultra | Official NVIDIA Build/API docs reviewed; `git diff --check` before commit | Added `moonshotai/kimi-k2.6` and `minimaxai/minimax-m3` to native NVIDIA VLM probe candidates. Explicitly excluded Nemotron Ultra text-only/reasoning models from visual audit roles. |
+| 2026-06-14 | this commit | NVIDIA model follow-up: DeepSeek V4 Pro | Official NVIDIA Build/API docs reviewed; `git diff --check` before commit | Explicitly excluded `deepseek-ai/deepseek-v4-pro` and `deepseek-ai/deepseek-v4-flash` from visual audit roles because current NVIDIA docs present them as text/code/reasoning LLMs, not image-capable VLMs. |
 
 ## Handoff Checklist
 
-- Current task: NVIDIA API model research correction follow-up — complete
-- Last completed step: Added Kimi K2.6 and MiniMax M3 to the NVIDIA VLM research, and excluded Nemotron Ultra from visual audit roles
+- Current task: NVIDIA API model research follow-up for DeepSeek V4 Pro — complete
+- Last completed step: Added DeepSeek V4 Pro and Flash to the explicit visual-audit exclusion list
 - Next step: request Gemini 3 Pro Preview review of the updated NVIDIA research once quota resets, then implement Task 1 from the free-first hardening plan
 - Verification command and result: `git diff --check` exited 0, with CRLF warnings only. Previous code gates remain as recorded above.
 - Commit pushed: this commit after push

@@ -108,6 +108,8 @@ Native NVIDIA candidate conclusions from the dedicated research:
 - NVIDIA Qwen3.6 VLM docs: https://docs.nvidia.com/nim/vision-language-models/1.7.0/examples/qwen3.6/api.html
 - NVIDIA-hosted Kimi K2.6: https://build.nvidia.com/moonshotai/kimi-k2.6
 - NVIDIA-hosted MiniMax M3: https://build.nvidia.com/minimaxai/minimax-m3/modelcard
+- NVIDIA-hosted DeepSeek V4 Pro: https://build.nvidia.com/deepseek-ai/deepseek-v4-pro
+- NVIDIA DeepSeek V4 Pro API docs: https://docs.api.nvidia.com/nim/reference/deepseek-ai-deepseek-v4-pro
 - NVIDIA Nemotron 3 Ultra 550B: https://build.nvidia.com/nvidia/nemotron-3-ultra-550b-a55b
 - NVIDIA Cosmos 3 Nano Reasoner: https://build.nvidia.com/nvidia/cosmos3-nano-reasoner
 - NVIDIA-hosted Meta Llama 3.2 11B Vision Instruct: https://build.nvidia.com/meta/llama-3.2-11b-vision-instruct
@@ -178,6 +180,7 @@ Explicitly excluded:
 - `nvidia/nemotron-3.5-content-safety:free`
 - Native NVIDIA / NVIDIA-hosted safety models such as Llama Guard or NemoGuard.
 - Text-only Nemotron Ultra/Super/Nano LLMs, including `nvidia/nemotron-3-ultra-550b-a55b` and deprecated `nvidia/llama-3.1-nemotron-ultra-253b-v1`, from visual audit roles.
+- Text-only DeepSeek V4 models, including `deepseek-ai/deepseek-v4-pro` and `deepseek-ai/deepseek-v4-flash`, from visual audit roles unless a future NVIDIA/OpenRouter endpoint explicitly advertises image input and passes the UI-diff image probes.
 - Deprecated models such as VILA and NeVA.
 - Specialized extraction/domain models as default auditors, including `nvidia/nemotron-parse` and `nvidia/ising-calibration-1-35b-a3b`.
 - Any safety/moderation-only, embedding-only, image-generation-only, text-only, or narrow domain-specific model unless explicitly assigned to a non-audit helper role and proven by probes.
