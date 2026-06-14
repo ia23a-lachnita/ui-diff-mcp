@@ -75,7 +75,7 @@ NVIDIA must become a first-class provider candidate:
 - Native NVIDIA free endpoint: selected when `NVIDIA_API_KEY` is configured. If `NVIDIA_VLM_BASE_URL` is absent, default to NVIDIA's hosted OpenAI-compatible base URL `https://integrate.api.nvidia.com/v1`.
 - OpenRouter NVIDIA free models: selected through OpenRouter when native NVIDIA is unavailable.
 - Local/self-hosted NIM: same adapter contract as native NVIDIA endpoint.
-- NVIDIA candidate discovery must not be hardcoded only to Nemotron. Current NVIDIA Build/NIM vision candidates to probe include Qwen3.6, Qwen3.5, Nemotron Nano 12B v2 VL, Llama 3.2 Vision, Nemotron 3 Nano Omni, Llama 3.1 Nemotron Nano VL, Cosmos3 Nano Reasoner, and PaliGemma when those endpoints are available to the configured key.
+- NVIDIA candidate discovery must not be hardcoded only to Nemotron. Current NVIDIA Build/NIM vision candidates to probe include Qwen3.6, Qwen3.5, Kimi K2.6, Nemotron Nano 12B v2 VL, MiniMax M3, Llama 3.2 Vision, Nemotron 3 Nano Omni, Llama 3.1 Nemotron Nano VL, Cosmos3 Nano Reasoner, and PaliGemma when those endpoints are available to the configured key.
 
 Native NVIDIA candidate conclusions from the dedicated research:
 
@@ -83,8 +83,10 @@ Native NVIDIA candidate conclusions from the dedicated research:
 | --- | --- | --- |
 | `qwen/qwen3.6-35b-a3b` | Auditor/reviewer candidate | Probe first if available from the configured endpoint or self-hosted NIM; NVIDIA docs explicitly show image input and `json_schema` structured output. |
 | `qwen/qwen3.5-397b-a17b` | High-quality auditor/reviewer candidate | Probe early if hosted free endpoint is available; strong multimodal foundation model, but throughput must be measured. |
+| `moonshotai/kimi-k2.6` | High-quality auditor/reviewer and target-recovery candidate | NVIDIA Build lists a free endpoint and NVIDIA docs describe a 1T/32B-active multimodal agentic model with image/video input. Probe early, but constrain prompts tightly so it only reports visible diffs. |
 | `nvidia/nemotron-nano-12b-v2-vl` | Lightweight default candidate | Strong initial default if it passes UI-diff probes; multi-image/document/VQA fit is relevant to UI screenshots. |
 | `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning` | Target-recovery and GUI/OCR reasoning candidate | Strong candidate for missed-target and unassigned-region recovery because NVIDIA's model card names GUI, OCR, document intelligence, and GUI automation workflows; use as auditor only after schema/speed probes. |
+| `minimaxai/minimax-m3` | Auditor/reviewer and target-recovery probe candidate | Multimodal VLM with text/image/video input and design/creative workflow relevance. Gate behind licensing because NVIDIA's model card says non-commercial use. |
 | `meta/llama-3.2-90b-vision-instruct` | High-quality reviewer/escalation candidate | Probe for quality; likely slower than smaller models. |
 | `meta/llama-3.2-11b-vision-instruct` | Lightweight reviewer/auditor candidate | Probe for crop/local-overlay tasks; Build catalog availability can differ from model-page availability by geography/account. |
 | `nvidia/llama-3.1-nemotron-nano-vl-8b-v1` | Fast crop-level fallback | Probe as older/light candidate. |
@@ -104,6 +106,9 @@ Native NVIDIA candidate conclusions from the dedicated research:
 - NVIDIA Vision models catalog: https://build.nvidia.com/explore/vision
 - NVIDIA Qwen3.5 397B A17B: https://build.nvidia.com/qwen/qwen3.5-397b-a17b
 - NVIDIA Qwen3.6 VLM docs: https://docs.nvidia.com/nim/vision-language-models/1.7.0/examples/qwen3.6/api.html
+- NVIDIA-hosted Kimi K2.6: https://build.nvidia.com/moonshotai/kimi-k2.6
+- NVIDIA-hosted MiniMax M3: https://build.nvidia.com/minimaxai/minimax-m3/modelcard
+- NVIDIA Nemotron 3 Ultra 550B: https://build.nvidia.com/nvidia/nemotron-3-ultra-550b-a55b
 - NVIDIA Cosmos 3 Nano Reasoner: https://build.nvidia.com/nvidia/cosmos3-nano-reasoner
 - NVIDIA-hosted Meta Llama 3.2 11B Vision Instruct: https://build.nvidia.com/meta/llama-3.2-11b-vision-instruct
 - NVIDIA-hosted PaliGemma: https://build.nvidia.com/google/google-paligemma
@@ -161,7 +166,7 @@ flowchart TD
 
 Default free candidate order:
 
-1. Native NVIDIA discovered free VLM candidates, if configured and schema/UI-diff probes pass. Auditor/reviewer probes use this order when available: `qwen/qwen3.6-35b-a3b`, `qwen/qwen3.5-397b-a17b`, `nvidia/nemotron-nano-12b-v2-vl`, `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`, `meta/llama-3.2-90b-vision-instruct`, `meta/llama-3.2-11b-vision-instruct`, `nvidia/llama-3.1-nemotron-nano-vl-8b-v1`, then `google/google-paligemma`. Target-recovery probes prioritize `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`, then `nvidia/cosmos3-nano-reasoner`, then the Qwen/Nemotron auditor candidates.
+1. Native NVIDIA discovered free VLM candidates, if configured and schema/UI-diff probes pass. Auditor/reviewer probes use this order when available: `qwen/qwen3.6-35b-a3b`, `qwen/qwen3.5-397b-a17b`, `moonshotai/kimi-k2.6`, `nvidia/nemotron-nano-12b-v2-vl`, `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`, `minimaxai/minimax-m3` when licensing is acceptable, `meta/llama-3.2-90b-vision-instruct`, `meta/llama-3.2-11b-vision-instruct`, `nvidia/llama-3.1-nemotron-nano-vl-8b-v1`, then `google/google-paligemma`. Target-recovery probes prioritize `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`, then `moonshotai/kimi-k2.6`, then `nvidia/cosmos3-nano-reasoner`, then the Qwen/Nemotron auditor candidates.
 2. OpenRouter `nex-agi/nex-n2-pro:free`.
 3. OpenRouter `google/gemma-4-31b-it:free`.
 4. OpenRouter `google/gemma-4-26b-a4b-it:free`.
@@ -172,6 +177,7 @@ Explicitly excluded:
 
 - `nvidia/nemotron-3.5-content-safety:free`
 - Native NVIDIA / NVIDIA-hosted safety models such as Llama Guard or NemoGuard.
+- Text-only Nemotron Ultra/Super/Nano LLMs, including `nvidia/nemotron-3-ultra-550b-a55b` and deprecated `nvidia/llama-3.1-nemotron-ultra-253b-v1`, from visual audit roles.
 - Deprecated models such as VILA and NeVA.
 - Specialized extraction/domain models as default auditors, including `nvidia/nemotron-parse` and `nvidia/ising-calibration-1-35b-a3b`.
 - Any safety/moderation-only, embedding-only, image-generation-only, text-only, or narrow domain-specific model unless explicitly assigned to a non-audit helper role and proven by probes.

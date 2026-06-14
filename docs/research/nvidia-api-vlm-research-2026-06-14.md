@@ -76,7 +76,31 @@ Sources:
 
 - https://docs.nvidia.com/nim/vision-language-models/1.7.0/examples/qwen3.6/api.html
 
-### 3. `nvidia/nemotron-nano-12b-v2-vl`
+### 3. `moonshotai/kimi-k2.6`
+
+**Recommended role:** high-quality native NVIDIA auditor/reviewer and target-recovery probe candidate.
+
+**Why it is strong:**
+
+- NVIDIA Build says Free Endpoint, Partner Endpoint, and Download are available.
+- NVIDIA's API docs describe Kimi-K2.6 as an open-source native multimodal agentic model with 1T total parameters and 32B active parameters.
+- It accepts text, image, and video inputs through a MoonViT vision encoder.
+- The model is designed for long-horizon agentic workflows, so it may handle multi-artifact UI-diff evidence well.
+- It is marked ready for commercial/non-commercial use in NVIDIA's API docs.
+
+**Risks:**
+
+- It is agentic/general multimodal, not specifically a UI-diff or UI-grounding model.
+- It may over-focus on task planning/coding if prompts are not tightly bounded to visible UI diffs only.
+- Structured JSON support and expected/actual ordering must be live-probed.
+- It may be slower or quota-constrained because of the 1T total-parameter MoE scale.
+
+**Sources:**
+
+- https://build.nvidia.com/moonshotai/kimi-k2.6
+- https://docs.api.nvidia.com/nim/reference/moonshotai-kimi-k2-6
+
+### 4. `nvidia/nemotron-nano-12b-v2-vl`
 
 **Recommended role:** default lightweight native NVIDIA free candidate for auditor/reviewer/target recovery.
 
@@ -100,7 +124,7 @@ Sources:
 - https://build.nvidia.com/nvidia/nemotron-nano-12b-v2-vl/modelcard
 - https://docs.nvidia.com/nim/vision-language-models/1.5.0/examples/nemotron-nano-12b-v2-vl/api.html
 
-### 4. `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`
+### 5. `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`
 
 **Recommended role:** primary native NVIDIA target-recovery and GUI/OCR reasoning probe; secondary auditor/reviewer candidate only after schema and speed probes pass.
 
@@ -125,7 +149,29 @@ Sources:
 - https://build.nvidia.com/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning/modelcard
 - https://docs.nvidia.com/nim/vision-language-models/1.7.0/examples/nemotron-3-nano-omni-30b-a3b-reasoning/api.html
 
-### 5. `meta/llama-3.2-90b-vision-instruct`
+### 6. `minimaxai/minimax-m3`
+
+**Recommended role:** auditor/reviewer and target-recovery probe candidate only when its license is acceptable for the run.
+
+**Why it is plausible:**
+
+- NVIDIA Build describes MiniMax-M3 as a multimodal VLM.
+- It processes text, image, and video inputs and produces text output.
+- Model card lists 428B total parameters, about 22B active parameters, a ViT vision encoder, dynamic image/video input, and 1M input context.
+- Intended use includes multimodal understanding, agentic workflows, design, and creative tasks, which may make it useful for visual UI evidence.
+
+**Risks:**
+
+- NVIDIA's model card says the model is ready for non-commercial use; the MCP must not select it automatically for commercial production runs unless licensing is explicitly acceptable.
+- The Build page calls it "Preview" in search/catalog text, so availability and behavior may change.
+- Exact UI diff, directional overlays, strict JSON, and throughput are unproven.
+
+**Sources:**
+
+- https://build.nvidia.com/minimaxai/minimax-m3
+- https://build.nvidia.com/minimaxai/minimax-m3/modelcard
+
+### 7. `meta/llama-3.2-90b-vision-instruct`
 
 **Recommended role:** high-quality native NVIDIA visual reviewer/escalation candidate if free endpoint quota and latency are acceptable.
 
@@ -148,7 +194,7 @@ Sources:
 - https://build.nvidia.com/meta/llama-3.2-11b-vision-instruct/modelcard
 - https://docs.nvidia.com/nim/vision-language-models/1.2.0/examples/llama3-2/api.html
 
-### 6. `meta/llama-3.2-11b-vision-instruct`
+### 8. `meta/llama-3.2-11b-vision-instruct`
 
 **Recommended role:** lightweight native NVIDIA reviewer/auditor candidate, especially for crops and local overlays.
 
@@ -172,7 +218,7 @@ Sources:
 - https://build.nvidia.com/meta/llama-3.2-11b-vision-instruct/modelcard
 - https://docs.nvidia.com/nim/vision-language-models/1.2.0/examples/llama3-2/api.html
 
-### 7. `nvidia/cosmos3-nano-reasoner`
+### 9. `nvidia/cosmos3-nano-reasoner`
 
 **Recommended role:** target-recovery and spatial-reasoning probe candidate; not a default auditor.
 
@@ -195,7 +241,7 @@ Sources:
 - https://build.nvidia.com/nvidia/cosmos3-nano-reasoner
 - https://build.nvidia.com/nvidia/cosmos3-nano-reasoner/modelcard
 
-### 8. `nvidia/llama-3.1-nemotron-nano-vl-8b-v1`
+### 10. `nvidia/llama-3.1-nemotron-nano-vl-8b-v1`
 
 **Recommended role:** fast/light candidate for crop-level review if still available; not a top default.
 
@@ -218,7 +264,7 @@ Sources:
 - https://build.nvidia.com/nvidia/llama-3.1-nemotron-nano-vl-8b-v1/modelcard
 - https://docs.nvidia.com/nim/vision-language-models/1.3.0/examples/llama-nemotron-nano/api.html
 
-### 9. `google/paligemma` / `google/google-paligemma`
+### 11. `google/paligemma` / `google/google-paligemma`
 
 **Recommended role:** low-priority fallback probe for simple visual Q&A only.
 
@@ -245,6 +291,8 @@ Sources:
 | Model | Decision | Reason |
 | --- | --- | --- |
 | `nvidia/nemotron-parse` | Exclude from auditor/reviewer; possible future OCR/structure helper only | It is a document text-extraction model returning encoded text, boxes, and semantic document classes. It is not a general UI-diff auditor. |
+| `nvidia/nemotron-3-ultra-550b-a55b` | Exclude from visual audit | Strong free-endpoint reasoning/coding/planning LLM, but the NVIDIA page shows text chat content and does not document image input. It can be useful for text-only report summarization later, not visual diff classification. |
+| `nvidia/llama-3.1-nemotron-ultra-253b-v1` | Exclude | Text/reasoning model; NVIDIA page marks Free Endpoint deprecated and does not document image input. |
 | `nvidia/vila` | Exclude | Deprecated endpoint. |
 | `nvidia/neva-22b` | Exclude | Deprecated endpoint. |
 | `nvidia/llama-3.1-nemoguard-8b-content-safety` and other content-safety models | Exclude | Safety classifiers, not visual diff models. |
@@ -262,20 +310,24 @@ Auditor/reviewer probe order:
 
 1. `qwen/qwen3.6-35b-a3b` if available to the configured endpoint or self-hosted NIM.
 2. `qwen/qwen3.5-397b-a17b` if hosted free endpoint is available and throughput is acceptable.
-3. `nvidia/nemotron-nano-12b-v2-vl`.
-4. `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`.
-5. `meta/llama-3.2-90b-vision-instruct` if available to the configured key/geography.
-6. `meta/llama-3.2-11b-vision-instruct` if available to the configured key/geography.
-7. `nvidia/llama-3.1-nemotron-nano-vl-8b-v1`.
-8. `google/google-paligemma` only as a last fallback probe.
+3. `moonshotai/kimi-k2.6`.
+4. `nvidia/nemotron-nano-12b-v2-vl`.
+5. `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`.
+6. `minimaxai/minimax-m3` only when non-commercial/evaluation licensing is acceptable.
+7. `meta/llama-3.2-90b-vision-instruct` if available to the configured key/geography.
+8. `meta/llama-3.2-11b-vision-instruct` if available to the configured key/geography.
+9. `nvidia/llama-3.1-nemotron-nano-vl-8b-v1`.
+10. `google/google-paligemma` only as a last fallback probe.
 
 Target-recovery/spatial probe order:
 
 1. `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`.
-2. `nvidia/cosmos3-nano-reasoner`.
-3. `qwen/qwen3.6-35b-a3b`.
-4. `qwen/qwen3.5-397b-a17b`.
-5. `nvidia/nemotron-nano-12b-v2-vl`.
+2. `moonshotai/kimi-k2.6`.
+3. `nvidia/cosmos3-nano-reasoner`.
+4. `qwen/qwen3.6-35b-a3b`.
+5. `qwen/qwen3.5-397b-a17b`.
+6. `minimaxai/minimax-m3` only when non-commercial/evaluation licensing is acceptable.
+7. `nvidia/nemotron-nano-12b-v2-vl`.
 
 The default runtime selector must not hardcode this as truth. It must probe each configured/available candidate by role and choose the first model that passes:
 
@@ -321,7 +373,7 @@ Each candidate must run the same probe set before it can be used:
 Do not state “use NVIDIA models” generically. State:
 
 - Native NVIDIA is first priority only when a specific NVIDIA candidate passes the UI-diff probe suite.
-- Best initial native NVIDIA candidate set is Qwen3.6/Qwen3.5, Nemotron Nano 12B v2 VL, Llama 3.2 Vision, and Nemotron/Llama-Nemotron Nano VL.
+- Best initial native NVIDIA candidate set is Qwen3.6/Qwen3.5, Kimi K2.6, Nemotron Nano 12B v2 VL, Nemotron 3 Nano Omni, MiniMax M3 when licensing is acceptable, Llama 3.2 Vision, and Nemotron/Llama-Nemotron Nano VL.
 - Cosmos is promising for spatial target recovery but not a default auditor without evidence.
 - PaliGemma is a fallback, not a serious default, unless live probes prove otherwise.
 - Content-safety, deprecated, text-only, image-generation, and narrow domain-specific models must be filtered out before probing.
