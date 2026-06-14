@@ -104,6 +104,9 @@ describe("pixelDiff", () => {
     const result = computePixelDiff(expectedPath, actualPath);
     expect(result.changedPixels).toBeGreaterThan(0);
     expect(result.components.length).toBeGreaterThanOrEqual(1);
+    const maskPixels = result.diffMask.reduce((sum, v) => sum + v, 0);
+    expect(maskPixels).toBe(result.changedPixels);
+    expect(maskPixels).toBeLessThan(2000);
 
     const boxA = { x: 10, y: 10, width: 30, height: 30 };
     const boxB = { x: 20, y: 20, width: 30, height: 30 };

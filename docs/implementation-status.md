@@ -9,11 +9,11 @@ This file is the persistent handoff state for implementation agents. Read it bef
 - Approved spec: `docs/superpowers/specs/2026-06-12-ui-diff-mcp-research-design.md`.
 - Active implementation plan: `docs/superpowers/plans/2026-06-12-ui-diff-mcp-mvp-implementation.md`.
 - Production-readiness test plan: `docs/superpowers/plans/2026-06-13-production-readiness-tests.md`.
-- Current task: Model-routing correction for stale OpenRouter Kimi free route, stronger reviewer selection, explicit paid-mode opt-in, and report model-selection clarity — complete.
-- Next task: none — repository will be clean after this status update is committed and pushed.
-- Last verification: `npm run verify` passed (196 unit/e2e tests, 10 sidecar parser tests, build, 19 integration tests). `git diff --check` exited 0 with CRLF warnings only.
+- Current task: Live gate execution after model-routing correction — complete, with production blockers found.
+- Next task: fix generic live visual classification incompleteness and Calorix recovery/runtime timeouts before production sign-off.
+- Last verification: `npm run verify` passed (196 unit/e2e tests, 10 sidecar parser tests, build, 19 integration tests). `npm run verify:free-live` passed. `npm run verify:nvidia-live` passed. `npm run verify:live` failed because the synthetic live report ended with `visualClassificationStatus: "incomplete"`. `npm run verify:calorix-live` timed out after about 10 minutes. `npm run verify:calorix-full-live` timed out after about 30 minutes.
 - Code review: Gemini CLI using `gemini-3.1-pro-preview` returned `AGREEMENT_STATUS: agree`, `MUST_FIX: none`, `SHOULD_FIX: none`. It also confirmed OpenRouter Kimi free is not listed by Models API and paid mode is sufficiently hard to enable.
-- Open blockers: none for implementation. Calorix full all-target visual audit remains unsigned.
+- Open blockers: production sign-off is blocked by incomplete generic live classification and Calorix bounded/full live timeouts.
 
 ## Standing Implementation Rules
 
@@ -54,15 +54,17 @@ This file is the persistent handoff state for implementation agents. Read it bef
 | 2026-06-14 | `0238301` | Task 11 (live gates) | `npm run verify` — 192 tests passed, typecheck clean | Added verify:free-live (OpenRouter free probes + quota), verify:nvidia-live (NVIDIA VLM probes), verify:calorix-full-live (unbounded all-target audit). Updated require-live-env.js and checklist. Gemini 2.5 Flash: no issues. |
 | 2026-06-14 | `423e799` | Task 12 (Documentation) | `npm run verify` — 192 tests passed, typecheck clean | Restructured README with free-first defaults and modes table. Expanded .env.example with inline documentation. Updated implementation-status.md through Task 11. Expanded free-model-benchmark.md with ranked candidates and methodology. Gemini 2.5 Flash: no issues. |
 | 2026-06-14 | `f56f04a` | Post-Task-12 bug fixes | `npm run verify` — 192 unit + 19 integration tests passed, typecheck clean | P1: paid mode now probes paidRoutes. P1: calorix smoke mode "full"→"free". P1: getRequiredModels() returns all free candidates. P1: pixel diff pads mismatched crop sizes. P2: color evidence uses per-image element box. P2: audit.test.ts artifact-naming test committed. |
-| 2026-06-14 | this commit | Model-routing correction | `npm run verify` — 196 unit/e2e tests, 10 sidecar parser tests, build, 19 integration tests; `git diff --check` exited 0 with CRLF warnings only | Removed stale OpenRouter `moonshotai/kimi-k2.6:free` runtime route; kept native NVIDIA Kimi as free candidate and OpenRouter Kimi as paid-only. Promoted reviewer selection to strong model families before nano VL routes, avoids auditor's exact route when another strong route passes, requires `UI_DIFF_ENABLE_PAID_MODE=1` for paid selection, and records model `costClass` in report `modelSelection`. Gemini 3.1 Pro Preview: no findings. |
+| 2026-06-14 | `84a9eb3` | Model-routing correction | `npm run verify` — 196 unit/e2e tests, 10 sidecar parser tests, build, 19 integration tests; `git diff --check` exited 0 with CRLF warnings only | Removed stale OpenRouter `moonshotai/kimi-k2.6:free` runtime route; kept native NVIDIA Kimi as free candidate and OpenRouter Kimi as paid-only. Promoted reviewer selection to strong model families before nano VL routes, avoids auditor's exact route when another strong route passes, requires `UI_DIFF_ENABLE_PAID_MODE=1` for paid selection, and records model `costClass` in report `modelSelection`. Gemini 3.1 Pro Preview: no findings. |
+| 2026-06-14 | `612a9ab` | Calorix agent launch scripts | Not recorded in this status file before this update | Added `launch-calorix-claude.bat` and `launch-calorix-claude.ps1`. |
+| 2026-06-14 | this commit | Live gate execution and pixel-mask fix | `npm run verify` — 196 unit/e2e tests, 10 sidecar parser tests, build, 19 integration tests. Live gates: `verify:free-live` passed; `verify:nvidia-live` passed; `verify:live` failed with incomplete visual classification; `verify:calorix-live` timed out after about 10 minutes; `verify:calorix-full-live` timed out after about 30 minutes. | Fixed `computePixelDiff` binary mask extraction so unchanged pixels are not counted as diff mass. Updated generic live MCP test to use valid `free_openrouter` mode and structured artifact/model-selection assertions. Generic live diagnostic selected auditor `openrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free` and reviewer `openrouter/nex-agi/nex-n2-pro:free`, but did not classify the simple shifted rectangle; Calorix runs produced recovery artifacts then hit MCP request timeouts. |
 
 ## Handoff Checklist
 
-- Current task: none — model-routing correction complete
+- Current task: none — live gate execution complete, blockers recorded
 - Active plan: `docs/superpowers/plans/2026-06-14-free-first-ui-diff-hardening.md`
-- Last completed step: Post-Task-12 bug fixes committed and pushed (`f56f04a`)
-- Next step: none — all code/docs changes for this task are ready to commit and push
-- Verification command and result: `npm run verify` passed; `git diff --check` exited 0 with CRLF warnings only
+- Last completed step: live gates run; pixel-mask fix verified locally; failed live outcomes recorded
+- Next step: investigate and fix recovery/runtime behavior causing Calorix live timeouts and the incomplete synthetic live classification
+- Verification command and result: `npm run verify` passed. `verify:free-live` and `verify:nvidia-live` passed. `verify:live` failed with incomplete visual classification. `verify:calorix-live` and `verify:calorix-full-live` timed out.
 - Commit pushed: pending for this task
 - Files intentionally left modified: none after commit
-- Blockers: none
+- Blockers: generic live classification incomplete; Calorix bounded/full live gates timeout

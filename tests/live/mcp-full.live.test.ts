@@ -35,7 +35,7 @@ describe.skipIf(!liveEnabled)("live full MCP discover_ui_diffs", () => {
         expectedImagePath: expected,
         actualImagePath: actual,
         projectRoot: tmpDir,
-        mode: "full"
+        mode: "free_openrouter"
       }
     }, undefined, { timeout: 600000, maxTotalTimeout: 900000 });
 
@@ -44,15 +44,35 @@ describe.skipIf(!liveEnabled)("live full MCP discover_ui_diffs", () => {
       status: string;
       diffCount: number;
       reportPath: string;
-      runArtifacts: string[];
+      runArtifacts: Array<{ role: string; path: string }>;
     };
     expect(structured.status).toBe("complete");
     expect(structured.diffCount).toBeGreaterThanOrEqual(1);
-    expect(structured.runArtifacts).toHaveLength(2);
+    expect(structured.runArtifacts.map(a => a.role)).toEqual(expect.arrayContaining([
+      "expected_normalized",
+      "actual_normalized",
+      "pixel_diff",
+      "pixel_diff_mask",
+      "directional_overlay"
+    ]));
 
     const report = UiDiffReportSchema.parse(JSON.parse(await fs.readFile(structured.reportPath, "utf8")));
     expect(report.visualClassificationStatus).toBe("complete");
-    expect(report.modelHealth.filter(m => m.role === "auditor" || m.role === "reviewer").every(m => m.status === "pass")).toBe(true);
+    expect(report.modelSelection?.auditor?.provider).toBe("openrouter");
+    expect(report.modelSelection?.reviewer?.provider).toBe("openrouter");
+    const selectedRoutes = [
+      report.modelSelection?.auditor,
+      report.modelSelection?.reviewer
+    ].filter((route): route is NonNullable<typeof route> => Boolean(route));
+    for (const route of selectedRoutes) {
+      expect(report.modelHealth).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          provider: route.provider,
+          model: route.model,
+          status: "pass"
+        })
+      ]));
+    }
     expect(report.elements.expected.length).toBeGreaterThan(0);
     expect(report.elements.actual.length).toBeGreaterThan(0);
 

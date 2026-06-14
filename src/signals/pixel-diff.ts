@@ -86,13 +86,23 @@ export function computePixelDiff(
     diffData,
     width,
     height,
-    { threshold: 0.1, includeAA: false }
+    {
+      threshold: 0.1,
+      includeAA: false,
+      diffColor: [255, 0, 0],
+      diffColorAlt: [0, 0, 255],
+      aaColor: [255, 255, 0]
+    }
   );
 
   const mask = new Uint8Array(width * height);
   for (let i = 0; i < width * height; i++) {
     const r = diffData[i * 4];
-    mask[i] = r !== undefined && r > 128 ? 1 : 0;
+    const g = diffData[i * 4 + 1];
+    const b = diffData[i * 4 + 2];
+    const isDiffRed = r !== undefined && g !== undefined && b !== undefined && r > 200 && g < 80 && b < 80;
+    const isDiffBlue = r !== undefined && g !== undefined && b !== undefined && b > 200 && r < 80 && g < 80;
+    mask[i] = isDiffRed || isDiffBlue ? 1 : 0;
   }
 
   const components = labelComponents(mask, width, height);
