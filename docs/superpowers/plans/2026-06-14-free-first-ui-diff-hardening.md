@@ -35,6 +35,10 @@ Live Calorix runs exposed these product gaps:
 
 ## Research Snapshot: Free Model Providers
 
+Native NVIDIA model research is tracked in:
+
+- `docs/research/nvidia-api-vlm-research-2026-06-14.md`
+
 ### OpenRouter
 
 OpenRouter's Models API exposes model metadata including `architecture.input_modalities`, `pricing`, `supported_parameters`, and top-provider limits. The API can sort by throughput, and provider routing can prefer throughput or latency. OpenRouter's free model variants have free usage limits of 20 requests/minute, 50 requests/day for accounts with less than $10 purchased credits, and 1000 requests/day with at least $10 purchased credits.
@@ -64,14 +68,28 @@ This proves provider speed varies enough that the MCP must measure and record pr
 
 ### NVIDIA API
 
-NVIDIA Build/NIM exposes free serverless APIs for development and self-hostable NIM containers. `nvidia/nemotron-nano-12b-v2-vl` supports OpenAI-compatible `/v1/chat/completions`, image input through `image_url`, base64 image data URLs, and multi-image prompts. NVIDIA's VLM structured-generation docs recommend `response_format: { type: "json_schema" }` rather than `json_object`, because `json_object` only guarantees valid JSON, not schema adherence.
+NVIDIA Build/NIM exposes free serverless APIs for development and self-hostable NIM containers. NVIDIA hosted chat completions use the OpenAI-compatible base URL `https://integrate.api.nvidia.com/v1`, and VLM NIM examples use `image_url` message parts, including base64 data URLs for local images. NVIDIA's VLM structured-generation docs recommend `response_format: { type: "json_schema" }` rather than `json_object`, because `json_object` only guarantees valid JSON, not schema adherence.
 
 NVIDIA must become a first-class provider candidate:
 
 - Native NVIDIA free endpoint: selected when `NVIDIA_API_KEY` is configured. If `NVIDIA_VLM_BASE_URL` is absent, default to NVIDIA's hosted OpenAI-compatible base URL `https://integrate.api.nvidia.com/v1`.
 - OpenRouter NVIDIA free models: selected through OpenRouter when native NVIDIA is unavailable.
 - Local/self-hosted NIM: same adapter contract as native NVIDIA endpoint.
-- NVIDIA candidate discovery must not be hardcoded only to Nemotron. Current NVIDIA Build/NIM vision candidates to probe include `nvidia/nemotron-nano-12b-v2-vl`, `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`, `nvidia/cosmos3-nano-reasoner`, and `meta/llama-3.2-11b-vision-instruct` when those endpoints are available to the configured key.
+- NVIDIA candidate discovery must not be hardcoded only to Nemotron. Current NVIDIA Build/NIM vision candidates to probe include Qwen3.6, Qwen3.5, Nemotron Nano 12B v2 VL, Llama 3.2 Vision, Nemotron 3 Nano Omni, Llama 3.1 Nemotron Nano VL, Cosmos3 Nano Reasoner, and PaliGemma when those endpoints are available to the configured key.
+
+Native NVIDIA candidate conclusions from the dedicated research:
+
+| Model | Planned role | Current decision |
+| --- | --- | --- |
+| `qwen/qwen3.6-35b-a3b` | Auditor/reviewer candidate | Probe first if available from the configured endpoint or self-hosted NIM; NVIDIA docs explicitly show image input and `json_schema` structured output. |
+| `qwen/qwen3.5-397b-a17b` | High-quality auditor/reviewer candidate | Probe early if hosted free endpoint is available; strong multimodal foundation model, but throughput must be measured. |
+| `nvidia/nemotron-nano-12b-v2-vl` | Lightweight default candidate | Strong initial default if it passes UI-diff probes; multi-image/document/VQA fit is relevant to UI screenshots. |
+| `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning` | Target-recovery and GUI/OCR reasoning candidate | Strong candidate for missed-target and unassigned-region recovery because NVIDIA's model card names GUI, OCR, document intelligence, and GUI automation workflows; use as auditor only after schema/speed probes. |
+| `meta/llama-3.2-90b-vision-instruct` | High-quality reviewer/escalation candidate | Probe for quality; likely slower than smaller models. |
+| `meta/llama-3.2-11b-vision-instruct` | Lightweight reviewer/auditor candidate | Probe for crop/local-overlay tasks; Build catalog availability can differ from model-page availability by geography/account. |
+| `nvidia/llama-3.1-nemotron-nano-vl-8b-v1` | Fast crop-level fallback | Probe as older/light candidate. |
+| `nvidia/cosmos3-nano-reasoner` | Target recovery/spatial reasoning | Probe for unassigned visual evidence; not a default auditor. |
+| `google/google-paligemma` | Last fallback | Probe only as simple visual-QA fallback; likely too weak for exact UI diff. |
 
 ## Sources
 
@@ -84,8 +102,11 @@ NVIDIA must become a first-class provider candidate:
 - NVIDIA VLM structured generation: https://docs.nvidia.com/nim/vision-language-models/1.0.0/structured-generation.html
 - NVIDIA Build model card: https://build.nvidia.com/nvidia/nemotron-nano-12b-v2-vl
 - NVIDIA Vision models catalog: https://build.nvidia.com/explore/vision
+- NVIDIA Qwen3.5 397B A17B: https://build.nvidia.com/qwen/qwen3.5-397b-a17b
+- NVIDIA Qwen3.6 VLM docs: https://docs.nvidia.com/nim/vision-language-models/1.7.0/examples/qwen3.6/api.html
 - NVIDIA Cosmos 3 Nano Reasoner: https://build.nvidia.com/nvidia/cosmos3-nano-reasoner
 - NVIDIA-hosted Meta Llama 3.2 11B Vision Instruct: https://build.nvidia.com/meta/llama-3.2-11b-vision-instruct
+- NVIDIA-hosted PaliGemma: https://build.nvidia.com/google/google-paligemma
 
 ## Non-Negotiable Product Rules
 
@@ -140,7 +161,7 @@ flowchart TD
 
 Default free candidate order:
 
-1. Native NVIDIA discovered free VLM candidates, if configured and schema/UI-diff probes pass. Probe at least `nvidia/nemotron-nano-12b-v2-vl`, `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`, `nvidia/cosmos3-nano-reasoner`, and `meta/llama-3.2-11b-vision-instruct` when the configured endpoint exposes them.
+1. Native NVIDIA discovered free VLM candidates, if configured and schema/UI-diff probes pass. Auditor/reviewer probes use this order when available: `qwen/qwen3.6-35b-a3b`, `qwen/qwen3.5-397b-a17b`, `nvidia/nemotron-nano-12b-v2-vl`, `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`, `meta/llama-3.2-90b-vision-instruct`, `meta/llama-3.2-11b-vision-instruct`, `nvidia/llama-3.1-nemotron-nano-vl-8b-v1`, then `google/google-paligemma`. Target-recovery probes prioritize `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`, then `nvidia/cosmos3-nano-reasoner`, then the Qwen/Nemotron auditor candidates.
 2. OpenRouter `nex-agi/nex-n2-pro:free`.
 3. OpenRouter `google/gemma-4-31b-it:free`.
 4. OpenRouter `google/gemma-4-26b-a4b-it:free`.
@@ -150,7 +171,10 @@ Default free candidate order:
 Explicitly excluded:
 
 - `nvidia/nemotron-3.5-content-safety:free`
-- Any safety/moderation-only, embedding-only, image-generation-only, or text-only model.
+- Native NVIDIA / NVIDIA-hosted safety models such as Llama Guard or NemoGuard.
+- Deprecated models such as VILA and NeVA.
+- Specialized extraction/domain models as default auditors, including `nvidia/nemotron-parse` and `nvidia/ising-calibration-1-35b-a3b`.
+- Any safety/moderation-only, embedding-only, image-generation-only, text-only, or narrow domain-specific model unless explicitly assigned to a non-audit helper role and proven by probes.
 
 ### Required Probes
 
@@ -350,6 +374,7 @@ The threshold still exists to avoid anti-aliasing and rendering-noise false posi
 
 - [ ] Add native NVIDIA candidate entries with provider `nvidia`.
 - [ ] Add NVIDIA model discovery for configured endpoints when available; otherwise use the known candidate list in this plan.
+- [ ] Use `docs/research/nvidia-api-vlm-research-2026-06-14.md` as the source of truth for initial native NVIDIA candidates and exclusions.
 - [ ] Use `https://integrate.api.nvidia.com/v1` as the native NVIDIA default base URL when `NVIDIA_API_KEY` is set and `NVIDIA_VLM_BASE_URL` is unset.
 - [ ] Support NVIDIA `response_format: { type: "json_schema" }` for strict schema requests.
 - [ ] Record if an NVIDIA endpoint only supports `json_object` or parser-only JSON.

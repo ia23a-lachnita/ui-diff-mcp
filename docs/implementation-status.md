@@ -4,16 +4,16 @@ This file is the persistent handoff state for implementation agents. Read it bef
 
 ## Current State
 
-- Status: production-readiness gates executed, then free-first/product-hardening gaps were identified from live runs and captured in a new implementation plan.
+- Status: production-readiness gates executed, then free-first/product-hardening gaps were identified from live runs and captured in a new implementation plan. The first version of that plan was rejected for insufficient NVIDIA API model research; a dedicated NVIDIA model research document has now been added.
 - Branch: `master`.
 - Approved spec: `docs/superpowers/specs/2026-06-12-ui-diff-mcp-research-design.md`.
 - Active implementation plan: `docs/superpowers/plans/2026-06-12-ui-diff-mcp-mvp-implementation.md`.
 - Production-readiness test plan: `docs/superpowers/plans/2026-06-13-production-readiness-tests.md`.
-- Current task: free-first UI diff hardening plan — complete.
-- Next task: implement Task 1 from `docs/superpowers/plans/2026-06-14-free-first-ui-diff-hardening.md` (model registry, modes, and provider-agnostic vision JSON caller).
-- Last verification: docs/research review only for the new plan; previous code verification remains `npm run verify`, `npm run test:coverage`, `npm run verify:live`, and bounded `npm run verify:calorix-live` — passed before this docs-only plan.
-- Code review: Gemini 3 Pro Preview reviewed the free-first hardening plan on 2026-06-14 — no blockers after revisions. A non-Claude independent reviewer found implementation gaps; those were incorporated. Claude Sonnet 4.6 review was requested by the user but not completed because no callable Claude Sonnet tool is exposed in this Codex session.
-- Open blockers: the implemented MCP is not aligned with the final free-first/product-hardening requirements until the new plan is executed. Calorix full all-target visual audit remains unsigned.
+- Current task: NVIDIA API VLM research correction — complete.
+- Next task: have Gemini review the NVIDIA research once `gemini-3-pro-preview` quota resets, then implement Task 1 from `docs/superpowers/plans/2026-06-14-free-first-ui-diff-hardening.md`.
+- Last verification: `git diff --check` exited 0 for the NVIDIA docs correction, with CRLF warnings only; previous code verification remains `npm run verify`, `npm run test:coverage`, `npm run verify:live`, and bounded `npm run verify:calorix-live` — passed before these docs-only changes.
+- Code review: Gemini 3 Pro Preview review for the NVIDIA correction could not run because quota was exhausted for about 8 hours; the MCP wrapper was also blocked by workspace trust until the direct CLI was run with `GEMINI_CLI_TRUST_WORKSPACE=true`. The NVIDIA research is based on official NVIDIA Build/API/NIM documentation and must be Gemini-reviewed later.
+- Open blockers: the implemented MCP is not aligned with the final free-first/product-hardening requirements until the new plan is executed. Calorix full all-target visual audit remains unsigned. Gemini review of the NVIDIA-specific research remains pending due quota/tool failure.
 
 ## Standing Implementation Rules
 
@@ -40,13 +40,14 @@ This file is the persistent handoff state for implementation agents. Read it bef
 | 2026-06-13 | `4fa9631` | Live release gate execution started | Intended verification: `npm run verify:live`; `npm run verify:calorix-live`; Gemini 3 Pro Preview release-readiness review | Calorix images are known; LocateAnything sidecar setup/run is the active external dependency. |
 | 2026-06-14 | this commit | Real live gates executed | `npm run verify` passed (97 unit + 6 integration); `npm run test:coverage` passed (87.28 stmts / 69.85 branches / 87.85 funcs / 89.25 lines); `npm run verify:live` passed (3 live, 1 skipped); `npm run verify:calorix-live` passed with `UI_DIFF_MAX_AUDIT_PAIRS=3`; Gemini 3 Pro Preview blocker review found no blockers; `git diff --check` exited 0 with CRLF warnings only | Installed local Eagle/LocateAnything sidecar, fixed sidecar runtime controls for 8 GB GPU, avoided LocateAnything `top_k=0` crash, made locator calls sequential, added explicit bounded Calorix smoke behavior. Generic MCP live path is production-ready; Calorix bounded smoke is green, but unbounded all-target Calorix audit remains unsigned. |
 | 2026-06-14 | this commit | Free-first hardening plan | Gemini 3 Pro Preview final blocker pass: no implementation-critical gaps remain; non-Claude independent review findings incorporated; Claude Sonnet 4.6 unavailable in this tool session | Added `docs/superpowers/plans/2026-06-14-free-first-ui-diff-hardening.md` covering free-first defaults, native NVIDIA API, OpenRouter free model research/rate limits, quota budget gate, provider-agnostic model calls, LocateAnything category prompts, directional overlays, target recovery, typed artifacts, crop naming, Lab/OKLab color evidence, and live gates. |
+| 2026-06-14 | this commit | NVIDIA API model research correction | Official NVIDIA Build/API/NIM docs reviewed; Gemini 3 Pro Preview quota exhausted for about 8 hours | Added `docs/research/nvidia-api-vlm-research-2026-06-14.md` with model-by-model NVIDIA native API suitability, role-specific candidate order, exclusions, and live probe requirements. Updated hardening plan to reference the dedicated research and stop treating NVIDIA as a generic provider. |
 
 ## Handoff Checklist
 
-- Current task: Free-first hardening plan — complete
-- Last completed step: Wrote and reviewed `docs/superpowers/plans/2026-06-14-free-first-ui-diff-hardening.md`
-- Next step: implement Task 1 from the free-first hardening plan
-- Verification command and result: plan review only for docs; run `git diff --check` before commit. Previous code gates remain as recorded above.
+- Current task: NVIDIA API model research correction — complete
+- Last completed step: Added dedicated NVIDIA model research and patched the free-first hardening plan
+- Next step: request Gemini 3 Pro Preview review of the NVIDIA research once quota resets, then implement Task 1 from the free-first hardening plan
+- Verification command and result: `git diff --check` exited 0, with CRLF warnings only. Previous code gates remain as recorded above.
 - Commit pushed: this commit after push
 - Files intentionally left modified: none
-- Blockers: Claude Sonnet 4.6 review could not be performed with available tools; implementation is not free-first/product-hardened until the new plan is executed
+- Blockers: Gemini 3 Pro Preview review of the NVIDIA-specific correction is pending due quota exhaustion; Claude Sonnet 4.6 review could not be performed with available tools; implementation is not free-first/product-hardened until the new plan is executed
