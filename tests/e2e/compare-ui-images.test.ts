@@ -151,7 +151,7 @@ describe("runUiDiff with mock sidecar and models (full mode)", () => {
     expect(result.status).toBe("model_unavailable");
     expect(result.warnings).toEqual(
       expect.arrayContaining([
-        expect.stringContaining("Required models unavailable")
+        expect.stringContaining("No model available for mode")
       ])
     );
   });

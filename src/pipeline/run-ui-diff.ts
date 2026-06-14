@@ -10,7 +10,7 @@ import { createDirectionalDiffOverlay, type Rgba } from "../images/directional-d
 import { locateUiElements, LocatorUnavailableError } from "../locator/locateanything-client.js";
 import { buildElementMap } from "../locator/element-map.js";
 import { pairElements } from "../pairing/pair-elements.js";
-import { selectModelForMode, resolveMode, type ModelEntry } from "../models/model-registry.js";
+import { selectModelForMode, resolveMode, CANONICAL_MODEL_RANKING, type ModelEntry } from "../models/model-registry.js";
 import { probeRequiredModels, type ProbeResult } from "../models/probes.js";
 import { makeOpenRouterVisionCaller, makeNvidiaVisionCaller, type VisionMode } from "../models/vision-json.js";
 import { auditElementPair, type AuditContext } from "../audit/audit-target.js";
@@ -39,7 +39,7 @@ export interface RunOutput {
   warnings: string[];
 }
 
-type ProbeOverride = (entries: ModelEntry[], apiKey: string) => Promise<ProbeResult[]>;
+type ProbeOverride = (entries: ModelEntry[], openRouterApiKey: string, nvidiaApiKey?: string, nvidiaBaseUrl?: string) => Promise<ProbeResult[]>;
 
 export function selectAuditPairsForRun(
   pairs: ElementPair[],
@@ -177,12 +177,18 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
 
   if (mode !== "deterministic_only") {
     const probe = opts?.probeOverride ?? probeRequiredModels;
-    const probeEntries: ModelEntry[] = [];
-    // Temporarily add dummy entries for roles that need probing, actual selection happens after probing
-    probeEntries.push({ role: "auditor", provider: "openrouter", model: "placeholder", costClass: "paid", probeTtlMs: 0, required: true });
-    probeEntries.push({ role: "reviewer", provider: "openrouter", model: "placeholder", costClass: "paid", probeTtlMs: 0, required: true });
+    const probeEntries: ModelEntry[] = CANONICAL_MODEL_RANKING.flatMap(c =>
+      c.eligibleFreeProviderRoutes.map(r => ({
+        role: c.role,
+        provider: r.provider,
+        model: r.model,
+        costClass: c.costClass,
+        probeTtlMs: 15 * 60 * 1000,
+        required: false
+      }))
+    );
 
-    const probeResults = await probe(probeEntries, openRouterApiKey);
+    const probeResults = await probe(probeEntries, openRouterApiKey, nvidiaApiKey, nvidiaBaseUrl);
     for (const p of probeResults) {
       modelHealth.push({
         role: p.role,
@@ -197,20 +203,11 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     const auditorEntry = selectModelForMode("auditor", mode, probeResults, process.env);
     const reviewerEntry = selectModelForMode("reviewer", mode, probeResults, process.env);
 
-    const requiredFailed = modelHealth.filter(
-      m => (m.status === "fail" || m.status === "not_checked") && (m.role === "auditor" || m.role === "reviewer")
-    );
-    if (requiredFailed.length > 0) {
+    if (!auditorEntry || !reviewerEntry) {
       if (!locatorFailed) {
         status = "model_unavailable";
         visualClassificationStatus = "incomplete";
-        warnings.push(`Required models unavailable: ${requiredFailed.map(m => m.model).join(", ")}`);
-      }
-    } else if (!auditorEntry || !reviewerEntry) {
-      if (!locatorFailed) {
-        status = "model_unavailable";
-        visualClassificationStatus = "incomplete";
-        warnings.push(`No model available for mode "${mode}". Set NVIDIA_API_KEY or use a mode with OpenRouter free models.`);
+        warnings.push(`No model available for mode "${mode}". Set NVIDIA_API_KEY or OPENROUTER_API_KEY with passing probes.`);
       }
     } else {
       {

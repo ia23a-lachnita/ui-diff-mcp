@@ -69,11 +69,16 @@ describe("probeOpenRouterModel", () => {
 });
 
 describe("probeNvidiaModel", () => {
-  it("returns not_checked when NVIDIA_API_KEY is missing", async () => {
+  it("returns not_checked when no API key is provided", async () => {
+    const result = await probeNvidiaModel(NVIDIA_ENTRY, "");
+    expect(result.status).toBe("not_checked");
+    expect(result.detail).toContain("NVIDIA_API_KEY");
+  });
+
+  it("returns not_checked when NVIDIA_API_KEY env var is missing and no arg given", async () => {
     vi.stubEnv("NVIDIA_API_KEY", "");
     const result = await probeNvidiaModel(NVIDIA_ENTRY);
     expect(result.status).toBe("not_checked");
-    expect(result.detail).toContain("NVIDIA_API_KEY");
   });
 });
 
@@ -92,9 +97,8 @@ describe("probeRequiredModels", () => {
     expect(results.every(r => r.status === "not_checked")).toBe(true);
   });
 
-  it("dispatches nvidia entries to probeNvidiaModel", async () => {
-    vi.stubEnv("NVIDIA_API_KEY", "");
-    const results = await probeRequiredModels([NVIDIA_ENTRY], "sk-test");
+  it("dispatches nvidia entries to probeNvidiaModel (no key returns not_checked)", async () => {
+    const results = await probeRequiredModels([NVIDIA_ENTRY], "sk-test", "");
     expect(results[0]?.status).toBe("not_checked");
     expect(results[0]?.detail).toContain("NVIDIA_API_KEY");
   });
