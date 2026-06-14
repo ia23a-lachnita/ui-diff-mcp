@@ -4,16 +4,16 @@ This file is the persistent handoff state for implementation agents. Read it bef
 
 ## Current State
 
-- Status: production-readiness gates executed with real OpenRouter and real local LocateAnything sidecar.
+- Status: production-readiness gates executed, then free-first/product-hardening gaps were identified from live runs and captured in a new implementation plan.
 - Branch: `master`.
 - Approved spec: `docs/superpowers/specs/2026-06-12-ui-diff-mcp-research-design.md`.
 - Active implementation plan: `docs/superpowers/plans/2026-06-12-ui-diff-mcp-mvp-implementation.md`.
 - Production-readiness test plan: `docs/superpowers/plans/2026-06-13-production-readiness-tests.md`.
-- Current task: live release gate execution — complete.
-- Next task: decide whether to require an unbounded Calorix all-target audit as a release blocker or accept bounded Calorix smoke for first production use.
-- Last verification: `npm run verify`, `npm run test:coverage`, `npm run verify:live`, and bounded `npm run verify:calorix-live` — passed.
-- Code review: Gemini 3 Pro Preview reviewed the live-gate changes on 2026-06-14 — no blockers found.
-- Open blockers: none for the generic MCP live path. Calorix full all-target visual audit was not signed off; the passing Calorix gate used `UI_DIFF_MAX_AUDIT_PAIRS=3` and correctly leaves visual classification incomplete.
+- Current task: free-first UI diff hardening plan — complete.
+- Next task: implement Task 1 from `docs/superpowers/plans/2026-06-14-free-first-ui-diff-hardening.md` (model registry, modes, and provider-agnostic vision JSON caller).
+- Last verification: docs/research review only for the new plan; previous code verification remains `npm run verify`, `npm run test:coverage`, `npm run verify:live`, and bounded `npm run verify:calorix-live` — passed before this docs-only plan.
+- Code review: Gemini 3 Pro Preview reviewed the free-first hardening plan on 2026-06-14 — no blockers after revisions. A non-Claude independent reviewer found implementation gaps; those were incorporated. Claude Sonnet 4.6 review was requested by the user but not completed because no callable Claude Sonnet tool is exposed in this Codex session.
+- Open blockers: the implemented MCP is not aligned with the final free-first/product-hardening requirements until the new plan is executed. Calorix full all-target visual audit remains unsigned.
 
 ## Standing Implementation Rules
 
@@ -39,13 +39,14 @@ This file is the persistent handoff state for implementation agents. Read it bef
 | 2026-06-13 | `697571e` | LocateAnything sidecar wrapper | `npm run verify`; `npm run test:coverage`; `python -m unittest sidecars.locateanything.test_parser`; `git diff --check` | Gemini 3 Pro Preview reviewed the sidecar design; image-path filesystem coupling was resolved by adding `imageBase64`/`imageMimeType` to locator requests. |
 | 2026-06-13 | `4fa9631` | Live release gate execution started | Intended verification: `npm run verify:live`; `npm run verify:calorix-live`; Gemini 3 Pro Preview release-readiness review | Calorix images are known; LocateAnything sidecar setup/run is the active external dependency. |
 | 2026-06-14 | this commit | Real live gates executed | `npm run verify` passed (97 unit + 6 integration); `npm run test:coverage` passed (87.28 stmts / 69.85 branches / 87.85 funcs / 89.25 lines); `npm run verify:live` passed (3 live, 1 skipped); `npm run verify:calorix-live` passed with `UI_DIFF_MAX_AUDIT_PAIRS=3`; Gemini 3 Pro Preview blocker review found no blockers; `git diff --check` exited 0 with CRLF warnings only | Installed local Eagle/LocateAnything sidecar, fixed sidecar runtime controls for 8 GB GPU, avoided LocateAnything `top_k=0` crash, made locator calls sequential, added explicit bounded Calorix smoke behavior. Generic MCP live path is production-ready; Calorix bounded smoke is green, but unbounded all-target Calorix audit remains unsigned. |
+| 2026-06-14 | this commit | Free-first hardening plan | Gemini 3 Pro Preview final blocker pass: no implementation-critical gaps remain; non-Claude independent review findings incorporated; Claude Sonnet 4.6 unavailable in this tool session | Added `docs/superpowers/plans/2026-06-14-free-first-ui-diff-hardening.md` covering free-first defaults, native NVIDIA API, OpenRouter free model research/rate limits, quota budget gate, provider-agnostic model calls, LocateAnything category prompts, directional overlays, target recovery, typed artifacts, crop naming, Lab/OKLab color evidence, and live gates. |
 
 ## Handoff Checklist
 
-- Current task: Live release gate execution — complete
-- Last completed step: Ran real OpenRouter + real LocateAnything live gates, including bounded Calorix smoke with provided images
-- Next step: choose release wording/policy for unbounded Calorix all-target audit
-- Verification command and result: `npm run verify` passed (97 unit + 6 integration); `npm run test:coverage` passed (87.28 stmts / 69.85 branches / 87.85 funcs / 89.25 lines); `npm run verify:live` passed (3 live, 1 skipped); `npm run verify:calorix-live` passed with `UI_DIFF_MAX_AUDIT_PAIRS=3`; `git diff --check` exited 0 with CRLF warnings only
+- Current task: Free-first hardening plan — complete
+- Last completed step: Wrote and reviewed `docs/superpowers/plans/2026-06-14-free-first-ui-diff-hardening.md`
+- Next step: implement Task 1 from the free-first hardening plan
+- Verification command and result: plan review only for docs; run `git diff --check` before commit. Previous code gates remain as recorded above.
 - Commit pushed: this commit after push
 - Files intentionally left modified: none
-- Blockers: none for generic MCP live readiness; unbounded Calorix all-target audit still needs a separate long-running sign-off if it is required for Calorix-specific production readiness
+- Blockers: Claude Sonnet 4.6 review could not be performed with available tools; implementation is not free-first/product-hardened until the new plan is executed
