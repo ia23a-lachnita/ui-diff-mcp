@@ -298,7 +298,7 @@ export async function auditElementPair(
       title: auditResult.title ?? `${criterion} difference in ${refEl.label}`,
       location: refEl.box,
       evidence,
-      measurements: auditResult.measurements ?? [],
+      measurements: [...(auditResult.measurements ?? []), ...ctx.measurements],
       artifactPaths: auditArtifacts, // Use the collected UiArtifacts
       reviewerStatus: reviewDecision === "needs_escalation" ? "needs_escalation" : reviewDecision,
       model: auditModel

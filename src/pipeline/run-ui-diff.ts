@@ -20,7 +20,7 @@ import { assignDiffComponentsToRecords, findUncoveredComponents } from "../repor
 import { runTargetRecovery } from "../recovery/target-recovery.js";
 import { writeUiDiffReport } from "../report/report-writer.js";
 import type { UiDiffReport, RunStatus, VisualClassificationStatus, LocatorCoverageStatus, DiffRecord, ElementPair, UiArtifact, AuditScope } from "../schemas/core.js";
-import { sampleColorStats } from "../signals/color.js";
+import { computeColorEvidence } from "../signals/color.js";
 
 export interface RunInput {
   expectedImagePath: string;
@@ -272,8 +272,22 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
           const refEl = expEl ?? actEl;
           if (!refEl) continue;
 
-          // Removed old color comparison logic - to be replaced by new color evidence module in Task 9
-          const colorDelta = false; // Placeholder for new color comparison logic
+          const colorEvidence = (expEl || actEl) ? computeColorEvidence(
+            expectedImg.rgba,
+            actualImg.rgba,
+            expectedImg.width,
+            refEl.box,
+            refEl.type
+          ) : null;
+          const colorDelta = colorEvidence?.hasDiff ?? false;
+          const colorMeasurements = colorEvidence ? [
+            { name: "color_oklab_distance", value: colorEvidence.oklabDistance },
+            { name: "color_threshold", value: colorEvidence.threshold },
+            { name: "color_expected_avg", value: `rgb(${colorEvidence.expectedAvg.r},${colorEvidence.expectedAvg.g},${colorEvidence.expectedAvg.b})` },
+            { name: "color_actual_avg", value: `rgb(${colorEvidence.actualAvg.r},${colorEvidence.actualAvg.g},${colorEvidence.actualAvg.b})` },
+            { name: "color_expected_alpha", value: colorEvidence.expectedAvg.a },
+            { name: "color_actual_alpha", value: colorEvidence.actualAvg.a }
+          ] : [];
 
           const boxDeltaPx = expEl && actEl
             ? Math.abs(expEl.box.x - actEl.box.x) + Math.abs(expEl.box.y - actEl.box.y)
@@ -289,7 +303,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
             reviewerCaller,
             expectedRgba: { data: expectedImg.rgba, width: expectedImg.width, height: expectedImg.height },
             actualRgba: { data: actualImg.rgba, width: actualImg.width, height: actualImg.height },
-            measurements: [],
+            measurements: colorMeasurements,
             triggerCtx: {
               pairingStatus: pair.status,
               boxDeltaPx,
