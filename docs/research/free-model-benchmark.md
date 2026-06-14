@@ -8,13 +8,52 @@ No benchmark has been run yet. After running, paste a summary here (without secr
 
 ## Columns
 
-| Provider | Model | Role | Probe | TTFT (ms) | Notes |
-|----------|-------|------|-------|-----------|-------|
+| Provider | Model | Role | Probe | TTFT (ms) | tok/s | Schema | Notes |
+|----------|-------|------|-------|-----------|-------|--------|-------|
+
+## Candidate Sources
+
+Candidates come from `CANONICAL_MODEL_RANKING` in `src/models/model-registry.ts`. Each entry lists eligible free provider routes and cost class. The ranking is a quality/probe order, not a static speed ranking — speed is measured at probe time.
+
+### Native NVIDIA Free Endpoints
+
+Probed when `NVIDIA_API_KEY` is set. Default base URL: `https://integrate.api.nvidia.com/v1`.
+
+| Rank | Model | Notes |
+|-----:|-------|-------|
+| 1 | `moonshotai/kimi-k2.6` | Top native NVIDIA free route. |
+| 2 | `minimaxai/minimax-m3` | Non-commercial license — blocked in commercial contexts. |
+| 3 | `mistralai/mistral-large-3-675b-instruct-2512` | Native NVIDIA only; paid on OpenRouter. |
+| 4 | `qwen/qwen3.5-397b-a17b` | Heavy; speed measured at probe time. |
+| 5 | `qwen/qwen3.6-35b-a3b` | NIM/self-host or configured endpoint candidate. |
+| 6 | `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning` | Strong recovery candidate. |
+| 7 | `nvidia/nemotron-nano-12b-v2-vl` | Lightweight VL candidate. |
+| 8 | `meta/llama-3.2-90b-vision-instruct` | Probe as reviewer/escalation. |
+| 9 | `meta/llama-3.2-11b-vision-instruct` | Lighter crop-level candidate. |
+| 13 | `nvidia/llama-3.1-nemotron-nano-vl-8b-v1` | Lower-priority crop-level. |
+| 14 | `nvidia/cosmos3-nano-reasoner` | Lower-priority target-recovery. |
+| 15 | `google/google-paligemma` | Fallback only. |
+
+### OpenRouter Free Routes
+
+Probed when `OPENROUTER_API_KEY` is set. Only `:free` slugs are eligible in `free` and `free_openrouter` modes.
+
+| Rank | Model | Notes |
+|-----:|-------|-------|
+| 1 | `moonshotai/kimi-k2.6:free` | Used only if NVIDIA route unavailable. |
+| 6 | `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free` | OpenRouter free if NVIDIA route unavailable. |
+| 7 | `nvidia/nemotron-nano-12b-v2-vl:free` | OpenRouter free if NVIDIA route unavailable. |
+| 10 | `nex-agi/nex-n2-pro:free` | OpenRouter-only free fallback. |
+| 11 | `google/gemma-4-31b-it:free` | OpenRouter-only free fallback. |
+| 12 | `google/gemma-4-26b-a4b-it:free` | OpenRouter-only free fallback. |
 
 ## Methodology
 
 - Each eligible free route in `CANONICAL_MODEL_RANKING` is probed once.
-- TTFT is measured from request start to first response byte via `Date.now()` diff around the probe call.
-- Schema success and UI-diff fixture accuracy are recorded by the probe result (`pass`/`fail`/`not_checked`).
-- OpenRouter free calls are throttled to 18 RPM.
+- TTFT is measured from request start to first token via `Date.now()` around the probe call.
+- Schema success: `pass` = strict JSON schema response valid; `fail` = malformed or schema-violating response.
+- UI-diff fixture accuracy: auditor correctly identifies expected vs actual order and crop-level change.
+- OpenRouter free calls are throttled to 18 RPM (below the 20 RPM hard limit).
+- NVIDIA free endpoint limits are measured from live responses and key-specific headers.
 - Results are written to `.ui-diff/generated/model-benchmark.json` (excluded from git).
+- A `minimaxai/minimax-m3` pass result is marked `commercial_blocked: true` when only non-commercial NVIDIA terms apply.

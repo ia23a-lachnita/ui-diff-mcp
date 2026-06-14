@@ -48,12 +48,18 @@ This file is the persistent handoff state for implementation agents. Read it bef
 | 2026-06-14 | this commit | Mistral Large 3 candidate classification | NVIDIA/OpenRouter/Mistral docs reviewed; `git diff --check` before commit | Added `mistralai/mistral-large-3-675b-instruct-2512` to the canonical VLM rankings as a high-quality candidate after Kimi K2.6 and MiniMax M3. |
 | 2026-06-14 | this commit | Provider-explicit model-section correction | `git diff --check` exited 0, with CRLF warnings only | Corrected the spec and implementation docs so the canonical model ranking names provider routes and cost class. Native NVIDIA free endpoints, OpenRouter `:free` routes, self-hosted NIM, and paid OpenRouter routes are now separate eligibility routes instead of being mixed under model names. |
 
+| 2026-06-14 | `a75599b`–`9aa3d1f` | Tasks 1–9 (free-first hardening plan) | `npm run verify` — 184 tests passed, typecheck clean, build clean; Gemini 2.5 Flash reviewed each task | Tasks 1 (model registry/modes), 2 (NVIDIA provider), 3 (free quota/benchmark), 4 (locator category prompts), 5 (directional diff artifacts), 6 (auditor evidence payload), 7 (target recovery), 8 (crop naming), 9 (color evidence/OKLab). |
+| 2026-06-14 | `06c1bd1` | Task 9 palette fix | Gemini 2.5 Flash MUST_FIX: dominant palette not in measurements | Added color_dominant_expected/actual_palette as JSON measurements. |
+| 2026-06-14 | `8284bb4` | Task 10 (report contract hardening) | `npm run verify` — 192 tests passed, typecheck clean | Added visualClassificationStatus + auditLimited to CompactOutput/RunOutput/CompareUiImagesOutputSchema. Added ModelSelectionSchema to UiDiffReport. Gemini 2.5 Flash: no issues. |
+| 2026-06-14 | `0238301` | Task 11 (live gates) | `npm run verify` — 192 tests passed, typecheck clean | Added verify:free-live (OpenRouter free probes + quota), verify:nvidia-live (NVIDIA VLM probes), verify:calorix-full-live (unbounded all-target audit). Updated require-live-env.js and checklist. Gemini 2.5 Flash: no issues. |
+
 ## Handoff Checklist
 
-- Current task: Provider-explicit model-section correction — complete
-- Last completed step: Updated the spec, MVP plan, free-first hardening plan, and NVIDIA research doc to separate provider routes and cost class in model sections
-- Next step: request Gemini 3 Pro Preview review of the provider-route model sections once quota resets
-- Verification command and result: `git diff --check` exited 0, with CRLF warnings only. Previous code gates remain as recorded above.
-- Commit pushed: `d70c73f` for the provider-route docs correction; this status-only follow-up records that push.
+- Current task: Task 12 (Documentation) — in progress
+- Active plan: `docs/superpowers/plans/2026-06-14-free-first-ui-diff-hardening.md`
+- Last completed step: Task 11 committed and pushed (`0238301`); Task 12 README/.env.example/status updates in progress
+- Next step: Commit Task 12 docs changes and run `npm run verify`
+- Verification command and result: `npm run verify` — 192 tests passed, typecheck clean, build clean (as of Task 11 commit)
+- Commit pushed: `0238301`
 - Files intentionally left modified: none
-- Blockers: Gemini 3 Pro Preview review of the NVIDIA-specific correction is pending due quota exhaustion; Claude Sonnet 4.6 review could not be performed with available tools; implementation is not free-first/product-hardened until the new plan is executed
+- Blockers: none — all 12 tasks implemented; Gemini 2.5 Flash reviews used (Pro quota exhausted for ~4h); live gates require real credentials to execute
