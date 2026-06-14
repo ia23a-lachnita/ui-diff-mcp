@@ -34,10 +34,10 @@ async function readPixel(pngPath: string, x: number, y: number): Promise<[number
 }
 
 describe("createDirectionalDiffOverlay", () => {
-  it("produces cyan for expected-only pixels (expected brighter)", async () => {
-    const width = 4;
-    const height = 4;
-    // Expected: bright white; Actual: black — expected is brighter, so cyan
+  it("produces cyan for expected-only interior pixels (expected brighter)", async () => {
+    // Use 6x6 grid so interior pixels (2,2) have all-diff neighbors and won't be yellow outlines
+    const width = 6;
+    const height = 6;
     const expected = solidRgba(width, height, 255, 255, 255);
     const actual = solidRgba(width, height, 0, 0, 0);
     const diffMask = new Uint8Array(width * height).fill(1);
@@ -45,16 +45,16 @@ describe("createDirectionalDiffOverlay", () => {
     const outPath = path.join(tmpDir, "overlay-cyan.png");
     await createDirectionalDiffOverlay(expected, actual, diffMask, width, height, outPath);
 
-    const [r, g, b] = await readPixel(outPath, 0, 0);
+    // Read center pixel — not an outline since all neighbors are also diff
+    const [r, g, b] = await readPixel(outPath, 2, 2);
     expect(r).toBe(0);
     expect(g).toBe(255);
     expect(b).toBe(255);
   });
 
-  it("produces magenta for actual-only pixels (actual brighter)", async () => {
-    const width = 4;
-    const height = 4;
-    // Actual: bright white; Expected: black — actual is brighter, so magenta
+  it("produces magenta for actual-only interior pixels (actual brighter)", async () => {
+    const width = 6;
+    const height = 6;
     const expected = solidRgba(width, height, 0, 0, 0);
     const actual = solidRgba(width, height, 255, 255, 255);
     const diffMask = new Uint8Array(width * height).fill(1);
@@ -62,10 +62,32 @@ describe("createDirectionalDiffOverlay", () => {
     const outPath = path.join(tmpDir, "overlay-magenta.png");
     await createDirectionalDiffOverlay(expected, actual, diffMask, width, height, outPath);
 
-    const [r, g, b] = await readPixel(outPath, 0, 0);
+    const [r, g, b] = await readPixel(outPath, 2, 2);
     expect(r).toBe(255);
     expect(g).toBe(0);
     expect(b).toBe(255);
+  });
+
+  it("produces yellow outline at diff region border", async () => {
+    const width = 6;
+    const height = 6;
+    const expected = solidRgba(width, height, 255, 255, 255);
+    const actual = solidRgba(width, height, 0, 0, 0);
+    // Only center 2x2 is diff — border pixels of the diff region are outlines
+    const diffMask = new Uint8Array(width * height).fill(0);
+    diffMask[2 * width + 2] = 1;
+    diffMask[2 * width + 3] = 1;
+    diffMask[3 * width + 2] = 1;
+    diffMask[3 * width + 3] = 1;
+
+    const outPath = path.join(tmpDir, "overlay-yellow.png");
+    await createDirectionalDiffOverlay(expected, actual, diffMask, width, height, outPath);
+
+    // (2,2) is a diff pixel adjacent to non-diff neighbors → yellow outline
+    const [r, g, b] = await readPixel(outPath, 2, 2);
+    expect(r).toBe(255);
+    expect(g).toBe(255);
+    expect(b).toBe(0);
   });
 
   it("produces neutral gray for unchanged pixels (diffMask=0)", async () => {
@@ -73,7 +95,7 @@ describe("createDirectionalDiffOverlay", () => {
     const height = 4;
     const expected = solidRgba(width, height, 255, 0, 0);
     const actual = solidRgba(width, height, 0, 0, 255);
-    const diffMask = new Uint8Array(width * height).fill(0); // no diff
+    const diffMask = new Uint8Array(width * height).fill(0);
 
     const outPath = path.join(tmpDir, "overlay-neutral.png");
     await createDirectionalDiffOverlay(expected, actual, diffMask, width, height, outPath);
