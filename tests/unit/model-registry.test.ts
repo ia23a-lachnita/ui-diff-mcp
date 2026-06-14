@@ -97,9 +97,34 @@ describe("selectModelForMode", () => {
     expect(entry).toBeUndefined();
   });
 
-  it("paid mode returns undefined when registry has no paid entries", () => {
-    const auditor = selectModelForMode("auditor", "paid", allPass(), noEnv);
-    expect(auditor).toBeUndefined();
+  it("paid mode selects a paid route when available and probes pass", () => {
+    const paidAuditorCandidate = CANONICAL_MODEL_RANKING.find(
+      c => c.role === "auditor" && c.paidRoutes && c.paidRoutes.length > 0
+    );
+    if (!paidAuditorCandidate || !paidAuditorCandidate.paidRoutes) {
+      throw new Error("No paid auditor candidate found in CANONICAL_MODEL_RANKING for testing.");
+    }
+    const paidRoute = paidAuditorCandidate.paidRoutes[0];
+    if (!paidRoute) throw new Error("paidRoutes[0] is undefined");
+    const probes: ProbeResult[] = [makeProbe(paidRoute.provider, paidRoute.model)];
+    const entry = selectModelForMode("auditor", "paid", probes, noEnv);
+    expect(entry).toBeDefined();
+    expect(entry?.costClass).toBe("paid");
+    expect(entry?.provider).toBe(paidRoute.provider);
+    expect(entry?.model).toBe(paidRoute.model);
+  });
+
+  it("paid mode returns undefined when no paid routes pass probes", () => {
+    const paidAuditorCandidate = CANONICAL_MODEL_RANKING.find(
+      c => c.role === "auditor" && c.paidRoutes && c.paidRoutes.length > 0
+    );
+    if (!paidAuditorCandidate || !paidAuditorCandidate.paidRoutes) {
+      throw new Error("No paid auditor candidate found in CANONICAL_MODEL_RANKING for testing.");
+    }
+    // No probes passing for the paid route
+    const probes: ProbeResult[] = [];
+    const entry = selectModelForMode("auditor", "paid", probes, noEnv);
+    expect(entry).toBeUndefined();
   });
 
   it("paid mode never returns a :free OpenRouter model", () => {
