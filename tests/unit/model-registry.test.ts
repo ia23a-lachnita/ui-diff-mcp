@@ -33,6 +33,14 @@ describe("CANONICAL_MODEL_RANKING", () => {
       expect(c.costClass).toBe("free");
     }
   });
+
+  it("does not include the stale OpenRouter Kimi K2.6 free route", () => {
+    const routes = CANONICAL_MODEL_RANKING.flatMap(c => c.eligibleFreeProviderRoutes);
+    expect(routes).not.toContainEqual({
+      provider: "openrouter",
+      model: "moonshotai/kimi-k2.6:free"
+    });
+  });
 });
 
 describe("getModelByRole / getRequiredModels", () => {
@@ -91,6 +99,21 @@ describe("selectModelForMode", () => {
     expect(entry?.costClass).toBe("free");
   });
 
+  it("free_nvidia reviewer selects a strong top-ranked model before nano VL routes", () => {
+    const entry = selectModelForMode("reviewer", "free_nvidia", allPass(), withNvidia);
+    expect(entry?.provider).toBe("nvidia");
+    expect(entry?.model).toBe("moonshotai/kimi-k2.6");
+    expect(entry?.model).not.toMatch(/nano|11b|8b/i);
+  });
+
+  it("can avoid the auditor route when selecting a reviewer if another strong route passes", () => {
+    const entry = selectModelForMode("reviewer", "free_nvidia", allPass(), withNvidia, [
+      { provider: "nvidia", model: "moonshotai/kimi-k2.6" }
+    ]);
+    expect(entry?.provider).toBe("nvidia");
+    expect(entry?.model).toBe("minimaxai/minimax-m3");
+  });
+
   it("free_nvidia returns undefined when NVIDIA key is absent", () => {
     const entry = selectModelForMode("auditor", "free_nvidia", allPass(), noEnv);
     expect(entry).toBeUndefined();
@@ -101,7 +124,7 @@ describe("selectModelForMode", () => {
     expect(entry).toBeUndefined();
   });
 
-  it("paid mode selects a paid route when available and probes pass", () => {
+  it("paid mode is disabled unless UI_DIFF_ENABLE_PAID_MODE is explicitly set", () => {
     const paidAuditorCandidate = CANONICAL_MODEL_RANKING.find(
       c => c.role === "auditor" && c.paidRoutes && c.paidRoutes.length > 0
     );
@@ -112,6 +135,22 @@ describe("selectModelForMode", () => {
     if (!paidRoute) throw new Error("paidRoutes[0] is undefined");
     const probes: ProbeResult[] = [makeProbe(paidRoute.provider, paidRoute.model)];
     const entry = selectModelForMode("auditor", "paid", probes, noEnv);
+    expect(entry).toBeUndefined();
+  });
+
+  it("paid mode selects a paid route only after explicit environment enablement", () => {
+    const paidAuditorCandidate = CANONICAL_MODEL_RANKING.find(
+      c => c.role === "auditor" && c.paidRoutes && c.paidRoutes.length > 0
+    );
+    if (!paidAuditorCandidate || !paidAuditorCandidate.paidRoutes) {
+      throw new Error("No paid auditor candidate found in CANONICAL_MODEL_RANKING for testing.");
+    }
+    const paidRoute = paidAuditorCandidate.paidRoutes[0];
+    if (!paidRoute) throw new Error("paidRoutes[0] is undefined");
+    const probes: ProbeResult[] = [makeProbe(paidRoute.provider, paidRoute.model)];
+    const entry = selectModelForMode("auditor", "paid", probes, {
+      UI_DIFF_ENABLE_PAID_MODE: "1"
+    });
     expect(entry).toBeDefined();
     expect(entry?.costClass).toBe("paid");
     expect(entry?.provider).toBe(paidRoute.provider);

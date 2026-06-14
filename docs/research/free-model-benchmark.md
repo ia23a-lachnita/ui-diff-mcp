@@ -27,12 +27,12 @@ Probed when `NVIDIA_API_KEY` is set. Default base URL: `https://integrate.api.nv
 | 4 | `qwen/qwen3.5-397b-a17b` | Heavy; speed measured at probe time. |
 | 5 | `qwen/qwen3.6-35b-a3b` | NIM/self-host or configured endpoint candidate. |
 | 6 | `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning` | Strong recovery candidate. |
-| 7 | `nvidia/nemotron-nano-12b-v2-vl` | Lightweight VL candidate. |
-| 8 | `meta/llama-3.2-90b-vision-instruct` | Probe as reviewer/escalation. |
-| 9 | `meta/llama-3.2-11b-vision-instruct` | Lighter crop-level candidate. |
-| 13 | `nvidia/llama-3.1-nemotron-nano-vl-8b-v1` | Lower-priority crop-level. |
-| 14 | `nvidia/cosmos3-nano-reasoner` | Lower-priority target-recovery. |
-| 15 | `google/google-paligemma` | Fallback only. |
+| 7 | `meta/llama-3.2-90b-vision-instruct` | Reviewer candidate after stronger general multimodal routes. |
+| 8 | `meta/llama-3.2-11b-vision-instruct` | Crop-level candidate after stronger routes. |
+| 9 | `nvidia/nemotron-nano-12b-v2-vl` | Lightweight VL candidate after stronger routes. |
+| 10 | `nvidia/llama-3.1-nemotron-nano-vl-8b-v1` | Crop-level candidate after stronger routes. |
+| 11 | `nvidia/cosmos3-nano-reasoner` | Target-recovery candidate. |
+| 12 | `google/google-paligemma` | Last NVIDIA candidate if it passes UI-diff probes. |
 
 ### OpenRouter Free Routes
 
@@ -40,12 +40,13 @@ Probed when `OPENROUTER_API_KEY` is set. Only `:free` slugs are eligible in `fre
 
 | Rank | Model | Notes |
 |-----:|-------|-------|
-| 1 | `moonshotai/kimi-k2.6:free` | Used only if NVIDIA route unavailable. |
-| 6 | `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free` | OpenRouter free if NVIDIA route unavailable. |
-| 7 | `nvidia/nemotron-nano-12b-v2-vl:free` | OpenRouter free if NVIDIA route unavailable. |
-| 10 | `nex-agi/nex-n2-pro:free` | OpenRouter-only free fallback. |
-| 11 | `google/gemma-4-31b-it:free` | OpenRouter-only free fallback. |
-| 12 | `google/gemma-4-26b-a4b-it:free` | OpenRouter-only free fallback. |
+| 1 | `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free` | Free image-capable route from OpenRouter Models API. |
+| 2 | `nex-agi/nex-n2-pro:free` | Free image-capable route from OpenRouter Models API. |
+| 3 | `google/gemma-4-31b-it:free` | Free image-capable route from OpenRouter Models API. |
+| 4 | `google/gemma-4-26b-a4b-it:free` | Free image-capable route from OpenRouter Models API. |
+| 5 | `nvidia/nemotron-nano-12b-v2-vl:free` | Lightweight free image-capable route after stronger routes. |
+
+OpenRouter Models API check on 2026-06-14 did not list `moonshotai/kimi-k2.6:free`. It listed `moonshotai/kimi-k2.6` as a paid image-capable route, so Kimi is only a free route through native NVIDIA in this project.
 
 ## Methodology
 

@@ -19,8 +19,8 @@
 - **Locator deployment decision:** use a `LocateAnythingSidecar` adapter, not the public Hugging Face Space. The public Space API was probed on 2026-06-12 and connected, but failed with a GPU-duration runtime error. The sidecar can be local Docker/Python or a managed endpoint; the TypeScript MCP talks to it over HTTP.
 - **Historical paid-probe result:** `qwen/qwen3-vl-30b-a3b-instruct`, `qwen/qwen3-vl-8b-instruct`, `google/gemini-2.5-flash-lite`, and `qwen/qwen3-vl-235b-a22b-instruct` passed useful OpenRouter probes on 2026-06-12, but they are not default free-first choices.
 - **Current model-selection source of truth:** use the provider-explicit ranking and route policy in `docs/superpowers/plans/2026-06-14-free-first-ui-diff-hardening.md`. That plan separates model family from provider route and cost class: native NVIDIA free endpoint, OpenRouter `:free`, self-hosted NIM, and paid OpenRouter routes are different routes with different eligibility.
-- **Free-first mode:** default runs must prefer native NVIDIA free endpoint routes when configured and probed, then OpenRouter `:free` routes when native NVIDIA is unavailable. Paid OpenRouter routes are allowed only in explicit `paid` mode.
-- **Free-route warning:** the same model family can be free on one provider and paid on another. For example, Kimi K2.6 has a native NVIDIA free endpoint route and currently also an OpenRouter `:free` route, while MiniMax M3 and Mistral Large 3 are free through native NVIDIA but paid through the verified OpenRouter routes.
+- **Free-first mode:** default runs must prefer native NVIDIA free endpoint routes when configured and probed, then OpenRouter `:free` routes that are present in the OpenRouter Models API and pass probes. Paid OpenRouter routes are allowed only in explicit `paid` mode with `UI_DIFF_ENABLE_PAID_MODE=1`.
+- **Free-route warning:** the same model family can be free on one provider and paid on another. For example, Kimi K2.6 has a native NVIDIA free endpoint route; the OpenRouter Models API check on 2026-06-14 listed OpenRouter Kimi as paid and did not list `moonshotai/kimi-k2.6:free`. MiniMax M3 and Mistral Large 3 are also free through native NVIDIA but paid through the verified OpenRouter routes.
 - Free-tier model APIs are not stable infrastructure. Rate limits, endpoint churn, and model capability changes must be expected and reported as `model_unavailable`, not hidden behind degraded reports.
 - LangGraph.js is useful for durable state, streaming, interrupts, and resumed graph execution. For the first version, a typed DAG/pipeline is faster to build and easier to test; keep the design LangGraph-compatible, but do not make LangGraph a required dependency until runs need resumability or human review.
 
@@ -383,16 +383,16 @@ Use the provider-explicit policy in `docs/superpowers/plans/2026-06-14-free-firs
 | Role | Selection rule | Provider/cost rule |
 | --- | --- | --- |
 | Locator | `nvidia/LocateAnything-3B` through the sidecar remains the locator. | Separate sidecar route; not selected from OpenRouter/NVIDIA auditor candidates. |
-| Criterion auditor | Choose the highest-ranked candidate whose route passes probes for the requested mode. | In `free`, native NVIDIA free endpoints are tried before OpenRouter `:free`; paid OpenRouter routes require explicit `paid` mode. |
-| Reviewer | Use the same provider-agnostic candidate selector, optionally selecting a different model family for independence when a free route passes probes. | Reviewer route and cost class must be recorded in `report.json`. |
+| Criterion auditor | Choose the highest-ranked candidate whose route passes probes for the requested mode. | In `free`, native NVIDIA free endpoints are tried before OpenRouter `:free`; paid OpenRouter routes require explicit `paid` mode plus `UI_DIFF_ENABLE_PAID_MODE=1`. |
+| Reviewer | Use the same quality-ranked selector as the auditor. When another passing strong route exists, avoid the auditor's exact provider/model route for independence. | Reviewer route and cost class must be recorded in `report.json`. |
 | Target recovery | Use a VLM that passes unassigned-region classification and directional-overlay probes. | Prefer native NVIDIA candidates with GUI/OCR/spatial evidence, then OpenRouter `:free` fallbacks. |
-| Paid escalation | Disabled unless the user selects `paid`. | Paid routes must never be used in default `free` mode. |
+| Paid escalation | Disabled unless the user selects `paid` and sets `UI_DIFF_ENABLE_PAID_MODE=1`. | Paid routes must never be used in default `free` mode. |
 
 Provider routes are not interchangeable:
 
 | Candidate family | Free native NVIDIA route | Free OpenRouter route | Paid OpenRouter route |
 | --- | --- | --- | --- |
-| Kimi K2.6 | `moonshotai/kimi-k2.6` | `moonshotai/kimi-k2.6:free` when available | Paid Kimi route if returned by OpenRouter Models API. |
+| Kimi K2.6 | `moonshotai/kimi-k2.6` | None verified on 2026-06-14 Models API check | `moonshotai/kimi-k2.6` when returned by OpenRouter Models API. |
 | MiniMax M3 | `minimaxai/minimax-m3` | None verified in current research | `minimax/minimax-m3`. |
 | Mistral Large 3 2512 | `mistralai/mistral-large-3-675b-instruct-2512` | None verified in current research | `mistralai/mistral-large-2512`. |
 | Nemotron Nano 12B v2 VL | `nvidia/nemotron-nano-12b-v2-vl` | `nvidia/nemotron-nano-12b-v2-vl:free` | Any non-free route is paid-mode only. |

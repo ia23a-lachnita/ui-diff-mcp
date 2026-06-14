@@ -47,8 +47,7 @@ Current OpenRouter candidates from live metadata/research on 2026-06-14. This ta
 
 | OpenRouter route | Cost class on OpenRouter | Keep? | Provider-specific note |
 | --- | --- | --- | --- |
-| `moonshotai/kimi-k2.6:free` | Free route | Yes | Separate from native NVIDIA `moonshotai/kimi-k2.6`. OpenRouter currently exposes a free route, but it must obey OpenRouter free quota, uptime, routing, and provider availability. |
-| `moonshotai/kimi-k2.6-20260420` or paid Kimi route returned by Models API | Paid route | Paid-mode only | Same model family can be charged on OpenRouter depending on slug/provider. Never use in default `free` mode. |
+| `moonshotai/kimi-k2.6` | Paid route | Paid-mode only | OpenRouter Models API check on 2026-06-14 listed Kimi K2.6 as an image-capable paid route and did not list `moonshotai/kimi-k2.6:free`. Native NVIDIA `moonshotai/kimi-k2.6` is the free route. Never use OpenRouter Kimi in default `free` mode. |
 | `minimax/minimax-m3` | Paid route | Paid-mode only | OpenRouter lists image/video input and 1M context, but the verified route is paid. Native NVIDIA `minimaxai/minimax-m3` is the free route to probe first. |
 | `mistralai/mistral-large-2512` | Paid route | Paid-mode only | OpenRouter lists image input and paid pricing. Native NVIDIA `mistralai/mistral-large-3-675b-instruct-2512` is the free route to probe first. |
 | `nex-agi/nex-n2-pro:free` | Free route | Yes | OpenRouter free auditor/reviewer candidate. Must pass UI-diff probes and quota checks. |
@@ -78,7 +77,7 @@ Current native NVIDIA routes from research on 2026-06-14. This table is not a se
 
 | Native NVIDIA route | Native NVIDIA cost class | Keep? | Provider-specific note |
 | --- | --- | --- | --- |
-| `moonshotai/kimi-k2.6` | Free endpoint | Yes | Top native NVIDIA free route to probe. Separate from OpenRouter `moonshotai/kimi-k2.6:free` and paid OpenRouter Kimi routes. |
+| `moonshotai/kimi-k2.6` | Free endpoint | Yes | Top native NVIDIA free route to probe. Separate from paid OpenRouter Kimi routes. |
 | `minimaxai/minimax-m3` | Free endpoint | Yes | Native NVIDIA free route. Licensing is non-commercial in NVIDIA's model card, so production/commercial use must be gated. |
 | `mistralai/mistral-large-3-675b-instruct-2512` | Free endpoint | Yes | Native NVIDIA free route. OpenRouter route for the same model family is paid. |
 | `qwen/qwen3.5-397b-a17b` | Free endpoint in NVIDIA docs | Yes | High-quality candidate, but expected to be slower/heavier; speed is measured at probe time. |
@@ -110,8 +109,8 @@ NVIDIA candidate discovery must not be hardcoded only to Nemotron. Native NVIDIA
 - NVIDIA-hosted MiniMax M3: https://build.nvidia.com/minimaxai/minimax-m3/modelcard
 - NVIDIA-hosted Mistral Large 3 675B Instruct 2512: https://build.nvidia.com/mistralai/mistral-large-3-675b-instruct-2512
 - NVIDIA Mistral Large 3 API docs: https://docs.api.nvidia.com/nim/reference/mistralai-mistral-large-3-675b-instruct-2512-infer
-- OpenRouter Kimi K2.6: https://openrouter.ai/moonshotai/kimi-k2.6-20260420
-- OpenRouter Kimi K2.6 free: https://openrouter.ai/moonshotai/kimi-k2.6:free
+- OpenRouter Models API: https://openrouter.ai/api/v1/models
+- OpenRouter Kimi K2.6: https://openrouter.ai/moonshotai/kimi-k2.6
 - OpenRouter MiniMax M3: https://openrouter.ai/minimax/minimax-m3
 - OpenRouter Mistral Large 3 2512: https://openrouter.ai/mistralai/mistral-large-2512
 - NVIDIA-hosted DeepSeek V4 Pro: https://build.nvidia.com/deepseek-ai/deepseek-v4-pro
@@ -129,7 +128,7 @@ NVIDIA candidate discovery must not be hardcoded only to Nemotron. Native NVIDIA
 - No app-code, design-code, or MCP-config recommendations in reports.
 - No false complete reports: a bounded smoke run must expose `visualClassificationStatus: "incomplete"` and structured audit-limit metadata.
 - No deterministic blob-only target source. Pixel/edge/color regions can raise unassigned visual evidence, but VLM/locator validation must classify them before they become target-level findings.
-- Paid models are disabled by default unless the user explicitly selects paid mode.
+- Paid models are disabled by default unless the user explicitly selects paid mode and sets `UI_DIFF_ENABLE_PAID_MODE=1`.
 
 ## Target Architecture
 
@@ -164,10 +163,10 @@ flowchart TD
 
 | Mode | Behavior |
 | --- | --- |
-| `free` | Default. Use native NVIDIA free endpoint routes first when `NVIDIA_API_KEY` is configured and probes pass; otherwise use pinned OpenRouter `:free` routes that pass probes. Never use paid OpenRouter routes in this mode. |
+| `free` | Default. Use native NVIDIA free endpoint routes first when `NVIDIA_API_KEY` is configured and probes pass; otherwise use OpenRouter `:free` routes that are listed by the Models API and pass probes. Never use paid OpenRouter routes in this mode. |
 | `free_openrouter` | Only OpenRouter `:free` routes. A base model without `:free` is not eligible even if the same model is free on NVIDIA. |
 | `free_nvidia` | Only native NVIDIA free endpoint/API/NIM routes. An OpenRouter `:free` route is not eligible in this mode. |
-| `paid` | Use paid pinned models only when the user explicitly selects this mode. Provider and estimated cost must be recorded in the report. |
+| `paid` | Use paid pinned models only when the user explicitly selects this mode and sets `UI_DIFF_ENABLE_PAID_MODE=1`. Provider and estimated cost must be recorded in the report. |
 | `deterministic_only` | No VLM audit; reports deterministic evidence and `visualClassificationStatus: "not_run"`. |
 
 ### Canonical Model Candidate Ranking
@@ -176,7 +175,7 @@ This is the only model ranking in this implementation plan. It is a quality/prob
 
 | Rank | Candidate family | Eligible free provider routes | Paid/other routes | Default free-mode handling |
 | ---: | --- | --- | --- | --- |
-| 1 | Kimi K2.6 | Native NVIDIA `moonshotai/kimi-k2.6`; OpenRouter `moonshotai/kimi-k2.6:free` when currently available | OpenRouter paid Kimi route, such as `moonshotai/kimi-k2.6-20260420` if returned by Models API | Probe native NVIDIA first; use OpenRouter `:free` only if NVIDIA is unavailable or fails gates. |
+| 1 | Kimi K2.6 | Native NVIDIA `moonshotai/kimi-k2.6` | OpenRouter `moonshotai/kimi-k2.6` when returned by Models API | Probe native NVIDIA in free modes. OpenRouter Kimi requires `paid` mode and `UI_DIFF_ENABLE_PAID_MODE=1`. |
 | 2 | MiniMax M3 | Native NVIDIA `minimaxai/minimax-m3` | OpenRouter `minimax/minimax-m3` is paid in verified docs | Probe native NVIDIA only in default free mode; block when licensing terms do not permit the run. |
 | 3 | Mistral Large 3 2512 | Native NVIDIA `mistralai/mistral-large-3-675b-instruct-2512` | OpenRouter `mistralai/mistral-large-2512` is paid in verified docs | Probe native NVIDIA only in default free mode. |
 | 4 | Qwen3.5 397B A17B | Native NVIDIA `qwen/qwen3.5-397b-a17b` | Any paid route discovered later is paid-mode only | Probe native NVIDIA; expect speed/quota risk. |
@@ -392,14 +391,14 @@ The threshold still exists to avoid anti-aliasing and rendering-noise false posi
 - [ ] Add modes `free`, `free_openrouter`, `free_nvidia`, `paid`, and `deterministic_only`.
 - [ ] Make `free` the default mode.
 - [ ] Ensure `free_only` is removed or treated as a deprecated alias for `free`.
-- [ ] Make paid models unavailable unless mode is `paid`.
+- [ ] Make paid models unavailable unless mode is `paid` and `UI_DIFF_ENABLE_PAID_MODE=1`.
 - [ ] Exclude safety/moderation-only models from audit/review roles.
 - [ ] Add `insufficient_free_quota` to run status schemas and compact MCP output.
 - [ ] Create `SelectedVisionModel` and `callVisionJson` abstractions in `src/models/vision-json.ts`.
 - [ ] Refactor `auditElementPair` so it receives provider-agnostic caller functions instead of importing `callOpenRouterVisionJson` directly.
 - [ ] Refactor reviewer calls to use the same provider-agnostic caller.
 - [ ] Add tests that `free` never selects paid Qwen/Gemini models.
-- [ ] Add tests that `paid` selects paid models only when requested.
+- [ ] Add tests that `paid` selects paid models only when requested and explicitly enabled by environment.
 - [ ] Add tests that audit code can call an NVIDIA-selected model without importing the OpenRouter client.
 - [ ] Run `npm run verify`.
 - [ ] Commit and push.
@@ -617,7 +616,7 @@ The threshold still exists to avoid anti-aliasing and rendering-noise false posi
 
 - [ ] Document free-first default behavior.
 - [ ] Document how to configure native NVIDIA and OpenRouter free models.
-- [ ] Document paid mode as explicit opt-in.
+- [ ] Document paid mode as explicit opt-in requiring `UI_DIFF_ENABLE_PAID_MODE=1`.
 - [ ] Document that artifacts are automated evidence, not a manual inspection workflow.
 - [ ] Document Calorix readiness distinction: bounded smoke vs full all-target audit.
 - [ ] Run `npm run verify`.
@@ -629,7 +628,7 @@ The threshold still exists to avoid anti-aliasing and rendering-noise false posi
 - Free mode estimates required requests and exits with `insufficient_free_quota` before starting when quota is insufficient.
 - `free` mode selects native NVIDIA first when configured and probes pass.
 - `free_openrouter` mode uses only OpenRouter `:free` models.
-- `paid` mode is explicit and records paid model use in `report.json`.
+- `paid` mode requires both `mode: "paid"` and `UI_DIFF_ENABLE_PAID_MODE=1`, and records paid model use in `report.json`.
 - Auditor and reviewer receive directional overlays, not only expected/actual crops.
 - Auditor, reviewer, and target recovery receive local pixel-diff mask evidence where relevant.
 - LocateAnything produces typed element maps from category prompts, or reports weak locator coverage.

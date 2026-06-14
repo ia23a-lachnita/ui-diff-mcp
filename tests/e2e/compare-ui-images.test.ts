@@ -96,8 +96,8 @@ describe("runUiDiff with mock sidecar and models (full mode)", () => {
     vi.stubEnv("OPENROUTER_API_KEY", "sk-test-e2e");
 
     const probeOverride = async () => [
-      { role: "auditor", provider: "openrouter", model: "moonshotai/kimi-k2.6:free", status: "pass" as const, checkedAt: new Date().toISOString() },
-      { role: "reviewer", provider: "openrouter", model: "nvidia/nemotron-nano-12b-v2-vl:free", status: "pass" as const, checkedAt: new Date().toISOString() }
+      { role: "auditor", provider: "openrouter", model: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free", status: "pass" as const, checkedAt: new Date().toISOString() },
+      { role: "reviewer", provider: "openrouter", model: "nex-agi/nex-n2-pro:free", status: "pass" as const, checkedAt: new Date().toISOString() }
     ];
 
     const result = await runUiDiff({

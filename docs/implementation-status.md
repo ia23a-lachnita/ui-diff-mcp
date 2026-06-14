@@ -9,11 +9,11 @@ This file is the persistent handoff state for implementation agents. Read it bef
 - Approved spec: `docs/superpowers/specs/2026-06-12-ui-diff-mcp-research-design.md`.
 - Active implementation plan: `docs/superpowers/plans/2026-06-12-ui-diff-mcp-mvp-implementation.md`.
 - Production-readiness test plan: `docs/superpowers/plans/2026-06-13-production-readiness-tests.md`.
-- Current task: Provider-explicit model-section correction — complete.
-- Next task: have Gemini review the updated NVIDIA/provider-route research once `gemini-3-pro-preview` quota resets, then implement Task 1 from `docs/superpowers/plans/2026-06-14-free-first-ui-diff-hardening.md`.
-- Last verification: `git diff --check` exited 0 for the provider-explicit docs correction, with CRLF warnings only; previous code verification remains `npm run verify`, `npm run test:coverage`, `npm run verify:live`, and bounded `npm run verify:calorix-live` — passed before these docs-only changes.
-- Code review: Gemini 3 Pro Preview review for the NVIDIA correction could not run because quota was exhausted for about 8 hours; the MCP wrapper was also blocked by workspace trust until the direct CLI was run with `GEMINI_CLI_TRUST_WORKSPACE=true`. The NVIDIA research is based on official NVIDIA Build/API/NIM documentation and must be Gemini-reviewed later.
-- Open blockers: the implemented MCP is not aligned with the final free-first/product-hardening requirements until the new plan is executed. Calorix full all-target visual audit remains unsigned. Gemini review of the NVIDIA-specific research remains pending due quota/tool failure.
+- Current task: Model-routing correction for stale OpenRouter Kimi free route, stronger reviewer selection, explicit paid-mode opt-in, and report model-selection clarity — complete.
+- Next task: none — repository will be clean after this status update is committed and pushed.
+- Last verification: `npm run verify` passed (196 unit/e2e tests, 10 sidecar parser tests, build, 19 integration tests). `git diff --check` exited 0 with CRLF warnings only.
+- Code review: Gemini CLI using `gemini-3.1-pro-preview` returned `AGREEMENT_STATUS: agree`, `MUST_FIX: none`, `SHOULD_FIX: none`. It also confirmed OpenRouter Kimi free is not listed by Models API and paid mode is sufficiently hard to enable.
+- Open blockers: none for implementation. Calorix full all-target visual audit remains unsigned.
 
 ## Standing Implementation Rules
 
@@ -54,14 +54,15 @@ This file is the persistent handoff state for implementation agents. Read it bef
 | 2026-06-14 | `0238301` | Task 11 (live gates) | `npm run verify` — 192 tests passed, typecheck clean | Added verify:free-live (OpenRouter free probes + quota), verify:nvidia-live (NVIDIA VLM probes), verify:calorix-full-live (unbounded all-target audit). Updated require-live-env.js and checklist. Gemini 2.5 Flash: no issues. |
 | 2026-06-14 | `423e799` | Task 12 (Documentation) | `npm run verify` — 192 tests passed, typecheck clean | Restructured README with free-first defaults and modes table. Expanded .env.example with inline documentation. Updated implementation-status.md through Task 11. Expanded free-model-benchmark.md with ranked candidates and methodology. Gemini 2.5 Flash: no issues. |
 | 2026-06-14 | `f56f04a` | Post-Task-12 bug fixes | `npm run verify` — 192 unit + 19 integration tests passed, typecheck clean | P1: paid mode now probes paidRoutes. P1: calorix smoke mode "full"→"free". P1: getRequiredModels() returns all free candidates. P1: pixel diff pads mismatched crop sizes. P2: color evidence uses per-image element box. P2: audit.test.ts artifact-naming test committed. |
+| 2026-06-14 | this commit | Model-routing correction | `npm run verify` — 196 unit/e2e tests, 10 sidecar parser tests, build, 19 integration tests; `git diff --check` exited 0 with CRLF warnings only | Removed stale OpenRouter `moonshotai/kimi-k2.6:free` runtime route; kept native NVIDIA Kimi as free candidate and OpenRouter Kimi as paid-only. Promoted reviewer selection to strong model families before nano VL routes, avoids auditor's exact route when another strong route passes, requires `UI_DIFF_ENABLE_PAID_MODE=1` for paid selection, and records model `costClass` in report `modelSelection`. Gemini 3.1 Pro Preview: no findings. |
 
 ## Handoff Checklist
 
-- Current task: none — repository clean and up to date
+- Current task: none — model-routing correction complete
 - Active plan: `docs/superpowers/plans/2026-06-14-free-first-ui-diff-hardening.md`
 - Last completed step: Post-Task-12 bug fixes committed and pushed (`f56f04a`)
-- Next step: none — all tasks complete; live gates require real credentials to execute
-- Verification command and result: `npm run verify` — 192 unit + 19 integration tests passed, typecheck clean, build clean
-- Commit pushed: `f56f04a`
-- Files intentionally left modified: none
+- Next step: none — all code/docs changes for this task are ready to commit and push
+- Verification command and result: `npm run verify` passed; `git diff --check` exited 0 with CRLF warnings only
+- Commit pushed: pending for this task
+- Files intentionally left modified: none after commit
 - Blockers: none

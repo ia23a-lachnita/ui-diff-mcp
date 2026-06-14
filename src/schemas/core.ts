@@ -154,8 +154,16 @@ export const AuditScopeSchema = z.object({
 export type AuditScope = z.infer<typeof AuditScopeSchema>;
 
 export const ModelSelectionSchema = z.object({
-  auditor: z.object({ model: z.string().min(1), provider: z.string().min(1) }).optional(),
-  reviewer: z.object({ model: z.string().min(1), provider: z.string().min(1) }).optional()
+  auditor: z.object({
+    model: z.string().min(1),
+    provider: z.string().min(1),
+    costClass: z.enum(["free", "paid"])
+  }).optional(),
+  reviewer: z.object({
+    model: z.string().min(1),
+    provider: z.string().min(1),
+    costClass: z.enum(["free", "paid"])
+  }).optional()
 });
 export type ModelSelection = z.infer<typeof ModelSelectionSchema>;
 

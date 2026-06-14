@@ -6,7 +6,7 @@ Design spec: `docs/superpowers/specs/2026-06-12-ui-diff-mcp-research-design.md`
 
 ## Free-First Default
 
-The default mode (`free`) never calls paid models. It selects native NVIDIA free VLM endpoints first when `NVIDIA_API_KEY` is configured and probes pass, then falls back to OpenRouter `:free` routes. Paid models are disabled unless `mode: "paid"` is explicitly passed.
+The default mode (`free`) never calls paid models. It selects native NVIDIA free VLM endpoints first when `NVIDIA_API_KEY` is configured and probes pass, then uses OpenRouter `:free` routes that are present in OpenRouter's Models API and pass probes. Paid models are disabled unless `mode: "paid"` is passed and `UI_DIFF_ENABLE_PAID_MODE=1` is set.
 
 Before starting a free-model run, the pipeline estimates the required request count and checks available quota against the OpenRouter key info endpoint. If estimated calls exceed available free quota, the run exits immediately with `status: "insufficient_free_quota"` rather than consuming quota silently.
 
@@ -17,7 +17,7 @@ Before starting a free-model run, the pipeline estimates the required request co
 | `free` | Default. NVIDIA free endpoints first, then OpenRouter `:free` routes. Never paid. |
 | `free_openrouter` | Only OpenRouter `:free` routes. |
 | `free_nvidia` | Only native NVIDIA free endpoint routes. |
-| `paid` | Explicit opt-in. Records paid model use in `report.json`. |
+| `paid` | Explicit opt-in requiring `UI_DIFF_ENABLE_PAID_MODE=1`. Records paid model use in `report.json`. |
 | `deterministic_only` | No VLM calls. Returns deterministic signal evidence only. |
 
 ## Artifacts As Machine Evidence
@@ -57,6 +57,7 @@ Copy `.env.example` and fill in the relevant keys.
 | `OPENROUTER_API_KEY` | For OpenRouter free mode | — | OpenRouter API key. Free-tier account sufficient for `:free` routes. |
 | `NVIDIA_API_KEY` | For NVIDIA free mode | — | NVIDIA Build/NIM API key for native NVIDIA free VLM endpoints. |
 | `NVIDIA_VLM_BASE_URL` | No | `https://integrate.api.nvidia.com/v1` | Override NVIDIA base URL for self-hosted NIM. |
+| `UI_DIFF_ENABLE_PAID_MODE` | For paid mode only | — | Must be exactly `1` before `mode: "paid"` can use paid routes. |
 | `LOCATEANYTHING_SIDECAR_URL` | No | `http://127.0.0.1:39731` | URL of the LocateAnything sidecar. |
 | `LOCATEANYTHING_EAGLE_EMBODIED_DIR` | For local sidecar only | — | Path to Eagle Embodied install. |
 | `LOCATEANYTHING_IN_TOKEN_LIMIT` | No | `4096` | Image token budget for local sidecar. |

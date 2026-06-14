@@ -132,6 +132,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
   const openRouterApiKey = process.env["OPENROUTER_API_KEY"] ?? "";
   const nvidiaApiKey = process.env["NVIDIA_API_KEY"] ?? "";
   const nvidiaBaseUrl = process.env["NVIDIA_VLM_BASE_URL"] ?? "https://integrate.api.nvidia.com/v1";
+  const paidModeEnabled = process.env["UI_DIFF_ENABLE_PAID_MODE"] === "1";
   const locatorUrl = process.env["LOCATEANYTHING_SIDECAR_URL"] ?? "http://127.0.0.1:39731";
   const locatorTimeoutMs = Number.parseInt(process.env["LOCATEANYTHING_TIMEOUT_MS"] ?? "300000", 10);
   const locatorQueries = [
@@ -148,6 +149,10 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
   const expectedElements: ReturnType<typeof buildElementMap> = [];
   const actualElements: ReturnType<typeof buildElementMap> = [];
   let locatorFailed = false;
+
+  if (mode === "paid" && !paidModeEnabled) {
+    warnings.push("Paid mode requested but UI_DIFF_ENABLE_PAID_MODE=1 is not set; paid routes are disabled.");
+  }
 
   // Free quota preflight: estimate calls and check sufficiency before spending quota.
   // Only applies when an OpenRouter key is configured — without a key, the probe will
@@ -232,7 +237,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
         probeTtlMs: 15 * 60 * 1000,
         required: false
       }));
-      const paidEntries = (mode === "paid" && c.paidRoutes)
+      const paidEntries = (mode === "paid" && paidModeEnabled && c.paidRoutes)
         ? c.paidRoutes.map(r => ({
             role: c.role,
             provider: r.provider,
@@ -258,7 +263,13 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     }
 
     const auditorEntry = selectModelForMode("auditor", mode, probeResults, process.env);
-    const reviewerEntry = selectModelForMode("reviewer", mode, probeResults, process.env);
+    const reviewerEntry = selectModelForMode(
+      "reviewer",
+      mode,
+      probeResults,
+      process.env,
+      auditorEntry ? [{ provider: auditorEntry.provider, model: auditorEntry.model }] : []
+    );
 
     if (!auditorEntry || !reviewerEntry) {
       if (!locatorFailed) {
@@ -269,8 +280,8 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     } else {
       {
         modelSelection = {
-          auditor: { model: auditorEntry.model, provider: auditorEntry.provider },
-          reviewer: { model: reviewerEntry.model, provider: reviewerEntry.provider }
+          auditor: { model: auditorEntry.model, provider: auditorEntry.provider, costClass: auditorEntry.costClass },
+          reviewer: { model: reviewerEntry.model, provider: reviewerEntry.provider, costClass: reviewerEntry.costClass }
         };
         const auditorCaller = makeVisionCaller(auditorEntry, openRouterApiKey, nvidiaApiKey, nvidiaBaseUrl);
         const reviewerCaller = makeVisionCaller(reviewerEntry, openRouterApiKey, nvidiaApiKey, nvidiaBaseUrl);

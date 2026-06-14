@@ -33,10 +33,21 @@ export const CANONICAL_MODEL_RANKING: readonly (Omit<ModelEntry, "required" | "p
     model: "moonshotai/kimi-k2.6",
     costClass: "free",
     eligibleFreeProviderRoutes: [
-      { provider: "nvidia", model: "moonshotai/kimi-k2.6" },
-      { provider: "openrouter", model: "moonshotai/kimi-k2.6:free" }
+      { provider: "nvidia", model: "moonshotai/kimi-k2.6" }
     ],
-    defaultFreeModeHandling: "Probe native NVIDIA first; use OpenRouter :free only if NVIDIA is unavailable or fails gates."
+    paidRoutes: [{ provider: "openrouter", model: "moonshotai/kimi-k2.6" }],
+    defaultFreeModeHandling: "Probe native NVIDIA in free modes. OpenRouter Kimi is paid and requires explicit paid mode enablement."
+  },
+  {
+    role: "reviewer", // Kimi K2.6 family, strongest reviewer candidate
+    provider: "nvidia",
+    model: "moonshotai/kimi-k2.6",
+    costClass: "free",
+    eligibleFreeProviderRoutes: [
+      { provider: "nvidia", model: "moonshotai/kimi-k2.6" }
+    ],
+    paidRoutes: [{ provider: "openrouter", model: "moonshotai/kimi-k2.6" }],
+    defaultFreeModeHandling: "Probe native NVIDIA in free modes. OpenRouter Kimi is paid and requires explicit paid mode enablement."
   },
   {
     role: "auditor", // MiniMax M3 family, general purpose
@@ -50,6 +61,17 @@ export const CANONICAL_MODEL_RANKING: readonly (Omit<ModelEntry, "required" | "p
     defaultFreeModeHandling: "Probe native NVIDIA only in default free mode; block when licensing terms do not permit the run."
   },
   {
+    role: "reviewer", // MiniMax M3 family, strong independent reviewer candidate
+    provider: "nvidia",
+    model: "minimaxai/minimax-m3",
+    costClass: "free",
+    eligibleFreeProviderRoutes: [
+      { provider: "nvidia", model: "minimaxai/minimax-m3" }
+    ],
+    paidRoutes: [{ provider: "openrouter", model: "minimax/minimax-m3" }],
+    defaultFreeModeHandling: "Probe native NVIDIA in free modes. OpenRouter MiniMax is paid and requires explicit paid mode enablement."
+  },
+  {
     role: "auditor", // Mistral Large 3 family, general purpose
     provider: "nvidia",
     model: "mistralai/mistral-large-3-675b-instruct-2512",
@@ -61,7 +83,28 @@ export const CANONICAL_MODEL_RANKING: readonly (Omit<ModelEntry, "required" | "p
     defaultFreeModeHandling: "Probe native NVIDIA only in default free mode."
   },
   {
+    role: "reviewer", // Mistral Large 3 family, high-quality reviewer candidate
+    provider: "nvidia",
+    model: "mistralai/mistral-large-3-675b-instruct-2512",
+    costClass: "free",
+    eligibleFreeProviderRoutes: [
+      { provider: "nvidia", model: "mistralai/mistral-large-3-675b-instruct-2512" }
+    ],
+    paidRoutes: [{ provider: "openrouter", model: "mistralai/mistral-large-2512" }],
+    defaultFreeModeHandling: "Probe native NVIDIA in free modes. OpenRouter Mistral Large is paid and requires explicit paid mode enablement."
+  },
+  {
     role: "auditor", // Qwen3.5 397B A17B
+    provider: "nvidia",
+    model: "qwen/qwen3.5-397b-a17b",
+    costClass: "free",
+    eligibleFreeProviderRoutes: [
+      { provider: "nvidia", model: "qwen/qwen3.5-397b-a17b" }
+    ],
+    defaultFreeModeHandling: "Probe native NVIDIA; expect speed/quota risk."
+  },
+  {
+    role: "reviewer", // Qwen3.5 397B A17B
     provider: "nvidia",
     model: "qwen/qwen3.5-397b-a17b",
     costClass: "free",
@@ -81,6 +124,16 @@ export const CANONICAL_MODEL_RANKING: readonly (Omit<ModelEntry, "required" | "p
     defaultFreeModeHandling: "Probe native NVIDIA or self-hosted NIM only."
   },
   {
+    role: "reviewer", // Qwen3.6 35B A3B
+    provider: "nvidia",
+    model: "qwen/qwen3.6-35b-a3b",
+    costClass: "free",
+    eligibleFreeProviderRoutes: [
+      { provider: "nvidia", model: "qwen/qwen3.6-35b-a3b" }
+    ],
+    defaultFreeModeHandling: "Probe native NVIDIA or self-hosted NIM only."
+  },
+  {
     role: "auditor", // Nemotron 3 Nano Omni 30B A3B Reasoning
     provider: "nvidia",
     model: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
@@ -90,6 +143,47 @@ export const CANONICAL_MODEL_RANKING: readonly (Omit<ModelEntry, "required" | "p
       { provider: "openrouter", model: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free" }
     ],
     defaultFreeModeHandling: "Prefer native NVIDIA; use OpenRouter free only if native route unavailable."
+  },
+  {
+    role: "reviewer", // Nemotron 3 Nano Omni 30B A3B Reasoning
+    provider: "nvidia",
+    model: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+    costClass: "free",
+    eligibleFreeProviderRoutes: [
+      { provider: "nvidia", model: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning" },
+      { provider: "openrouter", model: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free" }
+    ],
+    defaultFreeModeHandling: "Prefer native NVIDIA; use OpenRouter free only if native route unavailable."
+  },
+  {
+    role: "reviewer", // Nex N2 Pro
+    provider: "openrouter",
+    model: "nex-agi/nex-n2-pro:free",
+    costClass: "free",
+    eligibleFreeProviderRoutes: [
+      { provider: "openrouter", model: "nex-agi/nex-n2-pro:free" }
+    ],
+    defaultFreeModeHandling: "OpenRouter free route when native NVIDIA candidates do not pass probes."
+  },
+  {
+    role: "reviewer", // Gemma 4 31B IT
+    provider: "openrouter",
+    model: "google/gemma-4-31b-it:free",
+    costClass: "free",
+    eligibleFreeProviderRoutes: [
+      { provider: "openrouter", model: "google/gemma-4-31b-it:free" }
+    ],
+    defaultFreeModeHandling: "OpenRouter free route; schema must be probed."
+  },
+  {
+    role: "reviewer", // Gemma 4 26B A4B IT
+    provider: "openrouter",
+    model: "google/gemma-4-26b-a4b-it:free",
+    costClass: "free",
+    eligibleFreeProviderRoutes: [
+      { provider: "openrouter", model: "google/gemma-4-26b-a4b-it:free" }
+    ],
+    defaultFreeModeHandling: "OpenRouter free route; schema must be probed."
   },
   {
     role: "reviewer", // Nemotron Nano 12B v2 VL
@@ -207,13 +301,17 @@ export function selectModelForMode(
   logicalRole: "auditor" | "reviewer" | "escalation" | "target_recovery",
   mode: VisionMode,
   probeResults: ProbeResult[],
-  env: Record<string, string | undefined> = process.env as Record<string, string | undefined>
+  env: Record<string, string | undefined> = process.env as Record<string, string | undefined>,
+  excludedRoutes: Array<{ provider: ModelEntry["provider"]; model: string }> = []
 ): ModelEntry | undefined {
   if (mode === "deterministic_only") {
     return undefined;
   }
 
   const isNvidiaApiKeyConfigured = !!env["NVIDIA_API_KEY"];
+  const isPaidModeEnabled = env["UI_DIFF_ENABLE_PAID_MODE"] === "1";
+  const isExcluded = (provider: ModelEntry["provider"], model: string) =>
+    excludedRoutes.some(route => route.provider === provider && route.model === model);
 
   for (const candidate of CANONICAL_MODEL_RANKING) {
     if (candidate.role !== logicalRole) {
@@ -221,8 +319,14 @@ export function selectModelForMode(
     }
 
     if (mode === "paid") {
+      if (!isPaidModeEnabled) {
+        return undefined;
+      }
       if (candidate.paidRoutes && candidate.paidRoutes.length > 0) {
         for (const paidRoute of candidate.paidRoutes) {
+          if (isExcluded(paidRoute.provider, paidRoute.model)) {
+            continue;
+          }
           const probe = probeResults.find(p => p.model === paidRoute.model && p.provider === paidRoute.provider);
           if (probe?.status === "pass") {
             // Paid models have a longer TTL
@@ -242,6 +346,9 @@ export function selectModelForMode(
         if (isNvidiaApiKeyConfigured) {
           const nvidiaRoute = eligibleRoutes.find(r => r.provider === "nvidia");
           if (nvidiaRoute) {
+            if (isExcluded(nvidiaRoute.provider, nvidiaRoute.model)) {
+              continue;
+            }
             const probe = probeResults.find(p => p.model === nvidiaRoute.model && p.provider === nvidiaRoute.provider);
             if (probe?.status === "pass") {
               return { ...candidate, provider: nvidiaRoute.provider, model: nvidiaRoute.model, required: true, probeTtlMs: 15 * 60 * 1000 };
@@ -254,6 +361,9 @@ export function selectModelForMode(
       if (mode === "free" || mode === "free_openrouter") {
         const openRouterRoute = eligibleRoutes.find(r => r.provider === "openrouter");
         if (openRouterRoute) {
+          if (isExcluded(openRouterRoute.provider, openRouterRoute.model)) {
+            continue;
+          }
           const probe = probeResults.find(p => p.model === openRouterRoute.model && p.provider === openRouterRoute.provider);
           if (probe?.status === "pass") {
             return { ...candidate, provider: openRouterRoute.provider, model: openRouterRoute.model, required: true, probeTtlMs: 15 * 60 * 1000 };

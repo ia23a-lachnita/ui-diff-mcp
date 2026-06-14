@@ -50,12 +50,13 @@ describe("core schemas", () => {
   it("accepts modelSelection with auditor and reviewer", () => {
     const parsed = UiDiffReportSchema.parse(makeMinimalReport({
       modelSelection: {
-        auditor: { model: "qwen/qwen3-vl-30b:free", provider: "openrouter" },
-        reviewer: { model: "nvidia/nemotron-nano-12b-v2-vl", provider: "nvidia" }
+        auditor: { model: "qwen/qwen3-vl-30b:free", provider: "openrouter", costClass: "free" },
+        reviewer: { model: "moonshotai/kimi-k2.6", provider: "nvidia", costClass: "free" }
       }
     }));
     expect(parsed.modelSelection?.auditor?.provider).toBe("openrouter");
     expect(parsed.modelSelection?.reviewer?.provider).toBe("nvidia");
+    expect(parsed.modelSelection?.reviewer?.costClass).toBe("free");
   });
 
   it("accepts report without modelSelection (optional)", () => {
@@ -65,7 +66,7 @@ describe("core schemas", () => {
 
   it("ModelSelectionSchema rejects empty model string", () => {
     expect(() => ModelSelectionSchema.parse({
-      auditor: { model: "", provider: "openrouter" }
+      auditor: { model: "", provider: "openrouter", costClass: "free" }
     })).toThrow();
   });
 
