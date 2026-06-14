@@ -102,6 +102,11 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     raw: { width: pixelDiff.width, height: pixelDiff.height, channels: 4 }
   }).png().toFile(pixelDiffPngPath);
 
+  const pixelDiffMaskPath = path.join(runDir, "pixel-diff-mask.png");
+  await sharp(Buffer.from(pixelDiff.diffMask.buffer, pixelDiff.diffMask.byteOffset, pixelDiff.diffMask.byteLength), {
+    raw: { width: pixelDiff.width, height: pixelDiff.height, channels: 1 }
+  }).png().toFile(pixelDiffMaskPath);
+
   const directionalOverlayPath = path.join(runDir, "directional-diff-overlay.png");
   await createDirectionalDiffOverlay(
     { data: expectedImg.rgba, width: expectedImg.width, height: expectedImg.height },
@@ -317,6 +322,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     { role: "expected_normalized", path: normalizedExpPath },
     { role: "actual_normalized", path: normalizedActPath },
     { role: "pixel_diff", path: pixelDiffPngPath },
+    { role: "pixel_diff_mask", path: pixelDiffMaskPath },
     { role: "directional_overlay", path: directionalOverlayPath },
   ];
 
