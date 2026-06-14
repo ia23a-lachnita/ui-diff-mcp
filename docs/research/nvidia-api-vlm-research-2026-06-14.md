@@ -89,7 +89,34 @@ OpenRouter and NVIDIA currently present Kimi K2.6 and MiniMax M3 as stronger bro
 - https://build.nvidia.com/minimaxai/minimax-m3/modelcard
 - https://openrouter.ai/minimax/minimax-m3
 
-### 3. `qwen/qwen3.5-397b-a17b`
+### 3. `mistralai/mistral-large-3-675b-instruct-2512`
+
+**Recommended role:** high-quality auditor/reviewer candidate and possible target-recovery candidate.
+
+**Why it is strong:**
+
+- NVIDIA Build describes it as a state-of-the-art general-purpose MoE VLM for chat, agentic, and instruction use cases.
+- NVIDIA's Mistral AI catalog lists it as Downloadable Free Endpoint.
+- NVIDIA API docs expose image upload handling for the model.
+- OpenRouter describes Mistral Large 3 2512 as Mistral's most capable model, with 675B total parameters, about 41B active parameters, image input, 262K context, and Apache 2.0 licensing.
+- Mistral's own model material positions it as an open-weight multimodal model with a vision encoder.
+
+**Risks/gates:**
+
+- It is general-purpose multimodal rather than a dedicated UI/GUI model.
+- The Hugging Face model card notes it can lag behind vision-first models on multimodal tasks, so UI-diff fixture probes matter.
+- NVIDIA forum reports mention possible delays because of model size and shared infrastructure capacity.
+- Strict JSON, expected/actual ordering, directional overlay comprehension, and speed must be live-probed.
+
+**Sources:**
+
+- https://build.nvidia.com/mistralai/mistral-large-3-675b-instruct-2512
+- https://build.nvidia.com/mistralai/mistral-large-3-675b-instruct-2512/modelcard
+- https://docs.api.nvidia.com/nim/reference/mistralai-mistral-large-3-675b-instruct-2512-infer
+- https://openrouter.ai/mistralai/mistral-large-2512
+- https://huggingface.co/mistralai/Mistral-Large-3-675B-Instruct-2512
+
+### 4. `qwen/qwen3.5-397b-a17b`
 
 **Recommended role:** high-quality native NVIDIA auditor/reviewer candidate, if the free endpoint is available to the configured key and latency is acceptable.
 
@@ -111,7 +138,7 @@ OpenRouter and NVIDIA currently present Kimi K2.6 and MiniMax M3 as stronger bro
 - https://build.nvidia.com/qwen/qwen3.5-397b-a17b
 - https://docs.api.nvidia.com/nim/reference/qwen-qwen3-5-397b-a17b
 
-### 4. `qwen/qwen3.6-35b-a3b`
+### 5. `qwen/qwen3.6-35b-a3b`
 
 **Recommended role:** primary native NVIDIA probe candidate for structured UI-diff audits if available in the configured endpoint.
 
@@ -131,7 +158,7 @@ OpenRouter and NVIDIA currently present Kimi K2.6 and MiniMax M3 as stronger bro
 
 - https://docs.nvidia.com/nim/vision-language-models/1.7.0/examples/qwen3.6/api.html
 
-### 5. `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`
+### 6. `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`
 
 **Recommended role:** primary NVIDIA-owned target-recovery and GUI/OCR reasoning candidate; secondary auditor/reviewer candidate only after schema and speed probes pass.
 
@@ -156,7 +183,7 @@ OpenRouter and NVIDIA currently present Kimi K2.6 and MiniMax M3 as stronger bro
 - https://build.nvidia.com/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning/modelcard
 - https://docs.nvidia.com/nim/vision-language-models/1.7.0/examples/nemotron-3-nano-omni-30b-a3b-reasoning/api.html
 
-### 6. `nvidia/nemotron-nano-12b-v2-vl`
+### 7. `nvidia/nemotron-nano-12b-v2-vl`
 
 **Recommended role:** lightweight native NVIDIA free candidate for auditor/reviewer/target recovery.
 
@@ -180,7 +207,7 @@ OpenRouter and NVIDIA currently present Kimi K2.6 and MiniMax M3 as stronger bro
 - https://build.nvidia.com/nvidia/nemotron-nano-12b-v2-vl/modelcard
 - https://docs.nvidia.com/nim/vision-language-models/1.5.0/examples/nemotron-nano-12b-v2-vl/api.html
 
-### 7. `meta/llama-3.2-90b-vision-instruct`
+### 8. `meta/llama-3.2-90b-vision-instruct`
 
 **Recommended role:** high-quality native NVIDIA visual reviewer/escalation candidate if free endpoint quota and latency are acceptable.
 
@@ -203,7 +230,7 @@ OpenRouter and NVIDIA currently present Kimi K2.6 and MiniMax M3 as stronger bro
 - https://build.nvidia.com/meta/llama-3.2-11b-vision-instruct/modelcard
 - https://docs.nvidia.com/nim/vision-language-models/1.2.0/examples/llama3-2/api.html
 
-### 8. `meta/llama-3.2-11b-vision-instruct`
+### 9. `meta/llama-3.2-11b-vision-instruct`
 
 **Recommended role:** lightweight native NVIDIA reviewer/auditor candidate, especially for crops and local overlays.
 
@@ -227,7 +254,7 @@ OpenRouter and NVIDIA currently present Kimi K2.6 and MiniMax M3 as stronger bro
 - https://build.nvidia.com/meta/llama-3.2-11b-vision-instruct/modelcard
 - https://docs.nvidia.com/nim/vision-language-models/1.2.0/examples/llama3-2/api.html
 
-### 9. `nvidia/cosmos3-nano-reasoner`
+### 10. `nvidia/cosmos3-nano-reasoner`
 
 **Recommended role:** target-recovery and spatial-reasoning probe candidate; not a default auditor.
 
@@ -250,7 +277,7 @@ OpenRouter and NVIDIA currently present Kimi K2.6 and MiniMax M3 as stronger bro
 - https://build.nvidia.com/nvidia/cosmos3-nano-reasoner
 - https://build.nvidia.com/nvidia/cosmos3-nano-reasoner/modelcard
 
-### 10. `nvidia/llama-3.1-nemotron-nano-vl-8b-v1`
+### 11. `nvidia/llama-3.1-nemotron-nano-vl-8b-v1`
 
 **Recommended role:** fast/light candidate for crop-level review if still available; not a top default.
 
@@ -273,7 +300,7 @@ OpenRouter and NVIDIA currently present Kimi K2.6 and MiniMax M3 as stronger bro
 - https://build.nvidia.com/nvidia/llama-3.1-nemotron-nano-vl-8b-v1/modelcard
 - https://docs.nvidia.com/nim/vision-language-models/1.3.0/examples/llama-nemotron-nano/api.html
 
-### 11. `google/paligemma` / `google/google-paligemma`
+### 12. `google/paligemma` / `google/google-paligemma`
 
 **Recommended role:** low-priority fallback probe for simple visual Q&A only.
 
@@ -361,6 +388,7 @@ Do not state “use NVIDIA models” generically. State:
 - Native NVIDIA is first priority only when a specific NVIDIA-hosted candidate passes the UI-diff probe suite.
 - Use the canonical ranking above as the only initial NVIDIA-hosted order.
 - Schema-readiness, licensing, quota, and speed are runtime gates, not separate rankings.
+- Mistral Large 3 belongs in the high-quality probe set because it is a large Apache-2.0 multimodal VLM with NVIDIA free endpoint and OpenRouter support, but it still needs UI-diff probes because it is general-purpose rather than UI-specific.
 - DeepSeek V4 Pro is intentionally excluded from visual audit despite NVIDIA free-endpoint availability because the NVIDIA docs present it as a text/code/reasoning LLM, not an image-capable VLM.
 - Cosmos is promising for spatial target recovery but not a default auditor without evidence.
 - PaliGemma is a fallback, not a serious default, unless live probes prove otherwise.

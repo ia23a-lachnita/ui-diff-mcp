@@ -95,9 +95,12 @@ Native NVIDIA candidate details are recorded in `docs/research/nvidia-api-vlm-re
 - NVIDIA Qwen3.6 VLM docs: https://docs.nvidia.com/nim/vision-language-models/1.7.0/examples/qwen3.6/api.html
 - NVIDIA-hosted Kimi K2.6: https://build.nvidia.com/moonshotai/kimi-k2.6
 - NVIDIA-hosted MiniMax M3: https://build.nvidia.com/minimaxai/minimax-m3/modelcard
+- NVIDIA-hosted Mistral Large 3 675B Instruct 2512: https://build.nvidia.com/mistralai/mistral-large-3-675b-instruct-2512
+- NVIDIA Mistral Large 3 API docs: https://docs.api.nvidia.com/nim/reference/mistralai-mistral-large-3-675b-instruct-2512-infer
 - OpenRouter Kimi K2.6: https://openrouter.ai/moonshotai/kimi-k2.6-20260420
 - OpenRouter Kimi K2.6 free: https://openrouter.ai/moonshotai/kimi-k2.6:free
 - OpenRouter MiniMax M3: https://openrouter.ai/minimax/minimax-m3
+- OpenRouter Mistral Large 3 2512: https://openrouter.ai/mistralai/mistral-large-2512
 - NVIDIA-hosted DeepSeek V4 Pro: https://build.nvidia.com/deepseek-ai/deepseek-v4-pro
 - NVIDIA DeepSeek V4 Pro API docs: https://docs.api.nvidia.com/nim/reference/deepseek-ai-deepseek-v4-pro
 - NVIDIA Nemotron 3 Ultra 550B: https://build.nvidia.com/nvidia/nemotron-3-ultra-550b-a55b
@@ -160,18 +163,19 @@ This is the only model ranking in this implementation plan. It is provider-agnos
 
 1. `moonshotai/kimi-k2.6`
 2. `minimaxai/minimax-m3`
-3. `qwen/qwen3.5-397b-a17b`
-4. `qwen/qwen3.6-35b-a3b`
-5. `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`
-6. `nvidia/nemotron-nano-12b-v2-vl`
-7. `meta/llama-3.2-90b-vision-instruct`
-8. `meta/llama-3.2-11b-vision-instruct`
-9. `nex-agi/nex-n2-pro:free`
-10. `google/gemma-4-31b-it:free`
-11. `google/gemma-4-26b-a4b-it:free`
-12. `nvidia/llama-3.1-nemotron-nano-vl-8b-v1`
-13. `nvidia/cosmos3-nano-reasoner`
-14. `google/google-paligemma`
+3. `mistralai/mistral-large-3-675b-instruct-2512`
+4. `qwen/qwen3.5-397b-a17b`
+5. `qwen/qwen3.6-35b-a3b`
+6. `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`
+7. `nvidia/nemotron-nano-12b-v2-vl`
+8. `meta/llama-3.2-90b-vision-instruct`
+9. `meta/llama-3.2-11b-vision-instruct`
+10. `nex-agi/nex-n2-pro:free`
+11. `google/gemma-4-31b-it:free`
+12. `google/gemma-4-26b-a4b-it:free`
+13. `nvidia/llama-3.1-nemotron-nano-vl-8b-v1`
+14. `nvidia/cosmos3-nano-reasoner`
+15. `google/google-paligemma`
 
 Selection gates, evaluated in order:
 
