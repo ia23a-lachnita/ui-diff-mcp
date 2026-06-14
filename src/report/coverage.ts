@@ -11,6 +11,16 @@ function componentOverlapsDiff(component: PixelComponent, diff: DiffRecord): boo
   return overlapArea / componentArea >= 0.1;
 }
 
+export function findUncoveredComponents(
+  components: PixelComponent[],
+  diffs: DiffRecord[],
+  minArea: number
+): PixelComponent[] {
+  return components.filter(c =>
+    c.pixelCount >= minArea && !diffs.some(d => componentOverlapsDiff(c, d))
+  );
+}
+
 export function assignDiffComponentsToRecords(
   components: PixelComponent[],
   diffs: DiffRecord[],

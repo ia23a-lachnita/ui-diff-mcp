@@ -1,6 +1,55 @@
 import type { UiCriterion, DeterministicMeasurement } from "../schemas/core.js";
 import type { CriterionRubric } from "./criteria.js";
 
+const CLASSIFIABLE_CRITERIA = [
+  "presence",
+  "geometry",
+  "spacing_alignment",
+  "typography_content",
+  "color_appearance",
+  "icon_image",
+  "layering_clipping",
+  "component_state",
+  "chart_special_geometry"
+] as const;
+
+export function buildRecoveryPrompt(pixelCount: number, componentArea: number): string {
+  const criteriaList = CLASSIFIABLE_CRITERIA.join(" | ");
+  return [
+    `You are a UI diff recovery specialist. A visual difference region was detected by pixel analysis but was not matched to any located UI element.`,
+    ``,
+    `REGION STATS:`,
+    `  - Changed pixels: ${pixelCount}`,
+    `  - Component area: ${componentArea}px²`,
+    ``,
+    `EVIDENCE IMAGES (in order):`,
+    `  1. EXPECTED crop — expected image cropped to the changed region`,
+    `  2. ACTUAL crop — actual screenshot cropped to the changed region`,
+    `  3. Directional diff overlay — cyan where expected differs, magenta where actual differs, yellow at region outlines`,
+    `  4. Pixel-diff mask — white pixels mark changed regions`,
+    ``,
+    `TASK:`,
+    `Examine the images and determine whether this region contains a classifiable UI difference.`,
+    `If yes, provide: criterion, severity, a short descriptive label, coordinate frame, bounding box, and evidence.`,
+    `If the region cannot be classified as a meaningful UI diff (e.g., rendering noise, compression artifact), set classified to false.`,
+    ``,
+    `COORDINATE FRAME:`,
+    `- Use "expected" if your box is in the expected image coordinate space.`,
+    `- Use "actual" if in the actual screenshot coordinate space.`,
+    `- Use "normalized" if you use 0..1 fractions of image dimensions.`,
+    ``,
+    `VALID CRITERIA: ${criteriaList}`,
+    ``,
+    `STRICT RULES:`,
+    `- Report ONLY observable visual differences visible in the images.`,
+    `- Do NOT suggest code fixes or root causes.`,
+    `- Do NOT fabricate coordinates — use the region shown.`,
+    `- Evidence must be specific (e.g., "background color changed from dark to light").`,
+    ``,
+    `Respond with JSON only matching the schema provided. No prose before or after the JSON.`
+  ].join("\n");
+}
+
 export interface AuditorPromptContext {
   criterion: UiCriterion;
   rubric: CriterionRubric;

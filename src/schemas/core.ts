@@ -91,7 +91,11 @@ export const UiArtifactSchema = z.object({
     "actual_crop",
     "local_directional_overlay",
     "local_pixel_diff_mask",
-    "context_crop"
+    "context_crop",
+    "recovery_expected_crop",
+    "recovery_actual_crop",
+    "recovery_directional_overlay",
+    "recovery_pixel_diff_mask"
   ]),
   path: z.string().min(1),
   pairId: z.string().optional(),
@@ -99,6 +103,18 @@ export const UiArtifactSchema = z.object({
   targetLabel: z.string().optional()
 });
 export type UiArtifact = z.infer<typeof UiArtifactSchema>;
+
+export const UnassignedVisualEvidenceSchema = z.object({
+  id: z.string().min(1),
+  componentBox: BoxSchema,
+  pixelCount: z.number().int().positive(),
+  componentArea: z.number().int().positive(),
+  expectedCropArtifact: UiArtifactSchema,
+  actualCropArtifact: UiArtifactSchema,
+  directionalOverlayArtifact: UiArtifactSchema,
+  pixelDiffMaskArtifact: UiArtifactSchema
+});
+export type UnassignedVisualEvidence = z.infer<typeof UnassignedVisualEvidenceSchema>;
 
 export const DiffRecordSchema = z.object({
   id: z.string().min(1),

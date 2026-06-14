@@ -16,7 +16,8 @@ import { estimateFreeRunBudget, lookupOpenRouterQuota, checkFreeQuotaSufficiency
 import { makeOpenRouterVisionCaller, makeNvidiaVisionCaller, type VisionMode } from "../models/vision-json.js";
 import { auditElementPair, type AuditContext } from "../audit/audit-target.js";
 import { reviewAndMergeFindings } from "../audit/review-findings.js";
-import { assignDiffComponentsToRecords } from "../report/coverage.js";
+import { assignDiffComponentsToRecords, findUncoveredComponents } from "../report/coverage.js";
+import { runTargetRecovery } from "../recovery/target-recovery.js";
 import { writeUiDiffReport } from "../report/report-writer.js";
 import type { UiDiffReport, RunStatus, VisualClassificationStatus, LocatorCoverageStatus, DiffRecord, ElementPair, UiArtifact } from "../schemas/core.js";
 import { sampleColorStats } from "../signals/color.js";
@@ -304,7 +305,27 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
 
         const merged = reviewAndMergeFindings(auditedDiffs);
         allDiffs.push(...merged);
-        if (!locatorFailed && !auditSelection.limited) {
+
+        // Target recovery: classify uncovered changed-pixel regions
+        const significantComponents = pixelDiff.components.filter(c => c.pixelCount >= 50);
+        const uncoveredComponents = findUncoveredComponents(significantComponents, merged, 50);
+        if (uncoveredComponents.length > 0) {
+          const { recovered, unclassifiedCount } = await runTargetRecovery(uncoveredComponents, {
+            expectedRgba: { data: expectedImg.rgba, width: expectedImg.width, height: expectedImg.height },
+            actualRgba: { data: actualImg.rgba, width: actualImg.width, height: actualImg.height },
+            pixelDiffMask: pixelDiff.diffMask,
+            directionalOverlayPath,
+            artifactDir: artifactRoot,
+            recoveryCaller: auditorCaller,
+            reviewerCaller
+          });
+          allDiffs.push(...recovered);
+          if (unclassifiedCount > 0) {
+            visualClassificationStatus = "incomplete";
+          } else if (!locatorFailed && !auditSelection.limited) {
+            visualClassificationStatus = "complete";
+          }
+        } else if (!locatorFailed && !auditSelection.limited) {
           visualClassificationStatus = "complete";
         }
       }
