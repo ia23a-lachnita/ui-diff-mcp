@@ -11,6 +11,7 @@ from PIL import Image, UnidentifiedImageError
 
 from sidecars.locateanything.cv_components import detect_cv_components
 from sidecars.locateanything.ocr_text import detect_ocr_text
+from sidecars.locateanything.omniparser_adapter import detect_omniparser
 from sidecars.locateanything.parser import parse_elements
 
 
@@ -177,6 +178,20 @@ def locate_ui_elements(request: LocateRequest) -> dict[str, Any]:
     except Exception as exc:
         warnings.append(f"ocr_text lane failed: {type(exc).__name__}: {exc}")
         lane_metadata["ocr_text"] = {"status": "failed", "count": 0, "detail": str(exc)}
+
+    try:
+        omni_elements, omni_meta = detect_omniparser(image)
+        all_elements.extend(omni_elements)
+        lane_metadata["omniparser"] = omni_meta
+    except Exception as exc:
+        warnings.append(f"omniparser lane failed: {type(exc).__name__}: {exc}")
+        lane_metadata["omniparser"] = {
+            "status": "failed",
+            "count": 0,
+            "detail": str(exc),
+            "model": "microsoft/OmniParser",
+            "license": "AGPL-3.0"
+        }
 
     for query in request.queries:
         try:

@@ -168,5 +168,22 @@ class OcrTextLaneTests(unittest.TestCase):
         self.assertEqual(elements[0]["box"]["width"], 80)
 
 
+class OmniParserAdapterTests(unittest.TestCase):
+    def test_normalizes_omniparser_boxes(self):
+        from sidecars.locateanything.omniparser_adapter import omniparser_items_to_elements
+
+        items = [
+            {"type": "icon", "content": "settings", "bbox": [10, 20, 30, 40], "confidence": 0.88},
+            {"type": "text", "content": "Calories", "bbox": [50, 60, 140, 82], "confidence": 0.91},
+        ]
+
+        elements = omniparser_items_to_elements(items, image_width=200, image_height=400)
+
+        self.assertEqual(len(elements), 2)
+        self.assertEqual(elements[0]["queryId"], "omniparser")
+        self.assertEqual(elements[0]["label"], "settings")
+        self.assertEqual(elements[0]["box"], {"x": 10, "y": 20, "width": 20, "height": 20})
+
+
 if __name__ == "__main__":
     unittest.main()

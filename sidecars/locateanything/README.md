@@ -71,3 +71,9 @@ The sidecar v2 contract includes an `ocr_text` lane. The first implementation sh
 - PaddleOCR: stronger OCR and document parsing, heavier Python dependency.
 
 The release gate must pass without user-authored OCR config. If OCR is enabled, the report records the engine in `locatorMetadata.lanes.ocr_text.model`.
+
+### OmniParser lane
+
+`UI_DIFF_ENABLE_OMNIPARSER=1` enables the optional OmniParser lane when its Python dependencies and model weights are installed outside this repository.
+
+The OmniParser model card states the icon detection model is AGPL-licensed. This repo must not vendor those weights. The sidecar reports `license: "AGPL-3.0"` in `/v1/locate-ui-elements` metadata whenever this lane is configured or fails, so release reports can record the active license surface.
