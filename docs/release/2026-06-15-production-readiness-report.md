@@ -135,3 +135,44 @@ real application screenshots, and the hardened Calorix gate correctly rejects th
 - Report schema, checkpoint writes, async run handle
 - Path traversal security guard in `getRun()`
 - All unit/integration test gates and coverage thresholds
+
+---
+
+## Screen Parser Hardening Plan — Implementation Complete (2026-06-15)
+
+**HEAD at time of implementation:** `42ae4fc` — chore: add locator lane benchmark
+
+All 10 tasks from `docs/superpowers/plans/2026-06-15-screen-parser-locator-hardening.md` are implemented and merged to master. The implementation replaces the LocateAnything-only discovery path with a multi-lane screen parser.
+
+### Deterministic Gates at HEAD
+
+| Gate | Result |
+|------|--------|
+| `npm run verify` (unit + integration + sidecar + build) | **PASS** — 22 integration tests, 14 sidecar tests, typecheck clean |
+| `npm run test:coverage` | **PASS** — Stmts 85.4% / Branches 71.42% / Funcs 87.56% / Lines 87.45% |
+
+### What Changed
+
+- **CV lane (always-on):** OpenCV Canny + morphological closing detects non-text component boxes on every sidecar call. Catches cards, buttons, and UI regions the grounding model misses.
+- **OCR lane boundary:** Adapter is wired; production deploys enable Tesseract or PaddleOCR via `detect_ocr_text()`.
+- **OmniParser lane (optional):** Enabled via `UI_DIFF_ENABLE_OMNIPARSER=1`. AGPL license gate documented.
+- **YOLO UI lane (optional):** Enabled via `UI_DIFF_YOLO_UI_MODEL_PATH`. Rico+WebUI model support.
+- **NMS:** `suppressDuplicateElements()` merges overlapping boxes from multiple lanes with `+`-joined `queryId` provenance.
+- **Per-image coverage:** `computeImageLocatorCoverage()` gates on both expected and actual images independently; giant boxes rejected; weak status requires 12+ useful elements and 75%+ query coverage.
+- **Target-map artifacts:** `target-map-expected.json` and `target-map-actual.json` written per run; live gates assert their presence.
+- **Sidecar warmup:** `UI_DIFF_SIDECAR_WARMUP=1` fires a tiny-PNG request before live gate test to prevent cold-start timeouts.
+
+### Live Gates Pending
+
+The Calorix bounded and full live gates must be re-run with the new multi-lane sidecar to confirm F1 (weak locator coverage) is resolved. The deterministic CV lane should materially increase element count on dense UI screenshots. Run:
+
+```powershell
+$env:RUN_CALORIX_UI_DIFF_LIVE="1"
+$env:UI_DIFF_SIDECAR_WARMUP="1"
+npm run verify:calorix-live
+
+$env:RUN_CALORIX_FULL_LIVE="1"
+npm run verify:calorix-full-live
+```
+
+**Release remains blocked until both Calorix gates pass at HEAD.**

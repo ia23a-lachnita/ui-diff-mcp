@@ -97,11 +97,13 @@ This file is the persistent handoff state for implementation agents. Read it bef
 
 **Remaining known risk:** Union-box deterministic geometry coverage may over-cover: unrelated pixel changes inside a union box are not sent to recovery until shape-aware coverage is implemented. Documented in the production-readiness checklist.
 
-- Current task: Screen parser locator hardening research and implementation plan - **COMPLETE in this commit**
-- Active plan: `docs/superpowers/plans/2026-06-15-live-gate-hardening.md` — all 8 tasks complete
-- Last verification: Full live gate suite run on 2026-06-15T16:54Z at HEAD `7ab7733`. Results in `docs/release/2026-06-15-production-readiness-report.md`.
-- Next task: Execute `docs/superpowers/plans/2026-06-15-screen-parser-locator-hardening.md`, starting with per-image locator diagnostics and coverage scoring.
-- Blockers: **RELEASE BLOCKED** — `verify:calorix-live` failed with `locatorCoverageStatus: "weak"` on real Calorix UI screenshots. The new screen-parser hardening plan addresses this by demoting LocateAnything from single source of truth, adding multi-lane screen parsing, NMS, per-image coverage gates, and cold-start hardening.
+- Current task: Screen parser locator hardening plan — **ALL 10 TASKS COMPLETE** at HEAD `42ae4fc`
+- Active plan: `docs/superpowers/plans/2026-06-15-screen-parser-locator-hardening.md` — all 10 tasks complete
+- Last verification: `npm run verify` PASS + `npm run test:coverage` PASS at HEAD `42ae4fc` (85.4% stmts, all thresholds met). Live gate suite last run at `7ab7733`; Calorix re-run needed.
+- Next task: Re-run Calorix bounded and full live gates with new multi-lane sidecar to confirm F1 resolved. Command: `npm run verify:calorix-live` then `npm run verify:calorix-full-live` (set `UI_DIFF_SIDECAR_WARMUP=1`).
+- Blockers: **RELEASE BLOCKED** — Calorix live gate re-run pending. The multi-lane CV+OCR+LocateAnything screen parser is implemented and expected to resolve weak coverage on dense UI screenshots. Gate results from the fresh run will determine release readiness.
+
+| 2026-06-15 | `42ae4fc` | Screen parser hardening Tasks 1–10 | `npm run verify` PASS + `npm run test:coverage` PASS (85.4% stmts) | Tasks: per-image coverage scoring, sidecar v2 metadata, CV lane, OCR boundary, OmniParser adapter, YOLO adapter, NMS+diagnostics+target-map artifacts, live gate hardening, benchmark script. All Gemini reviews: agree, no MUST_FIX. Calorix live gate re-run required before release. |
 
 ## Screen Parser Locator Hardening Plan - 2026-06-15
 
