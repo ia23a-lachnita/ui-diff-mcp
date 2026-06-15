@@ -167,6 +167,16 @@ export const ModelSelectionSchema = z.object({
 });
 export type ModelSelection = z.infer<typeof ModelSelectionSchema>;
 
+export const RecoverySummarySchema = z.object({
+  totalUncoveredComponents: z.number().int().min(0),
+  attemptedComponents: z.number().int().min(0),
+  skippedComponents: z.number().int().min(0),
+  recoveredDiffs: z.number().int().min(0),
+  unclassifiedCount: z.number().int().min(0),
+  stoppedReason: z.enum(["none", "component_cap", "model_call_cap", "deadline_exceeded"]).default("none")
+});
+export type RecoverySummary = z.infer<typeof RecoverySummarySchema>;
+
 export const UiDiffReportSchema = z.object({
   schemaVersion: z.literal("0.1"),
   runId: z.string().min(1),
@@ -195,6 +205,7 @@ export const UiDiffReportSchema = z.object({
     detail: z.string().optional()
   })),
   runArtifacts: z.array(UiArtifactSchema).default([]),
-  warnings: z.array(z.string()).default([])
+  warnings: z.array(z.string()).default([]),
+  recoverySummary: RecoverySummarySchema.optional()
 });
 export type UiDiffReport = z.infer<typeof UiDiffReportSchema>;

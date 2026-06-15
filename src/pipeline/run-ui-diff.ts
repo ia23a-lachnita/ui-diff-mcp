@@ -20,7 +20,7 @@ import { assignDiffComponentsToRecords, findUncoveredComponents } from "../repor
 import { runTargetRecovery } from "../recovery/target-recovery.js";
 import { buildDeterministicDiffs } from "../diff/deterministic-diffs.js";
 import { writeUiDiffReport } from "../report/report-writer.js";
-import type { UiDiffReport, RunStatus, VisualClassificationStatus, LocatorCoverageStatus, DiffRecord, ElementPair, UiArtifact, AuditScope, ModelSelection } from "../schemas/core.js";
+import type { UiDiffReport, RunStatus, VisualClassificationStatus, LocatorCoverageStatus, DiffRecord, ElementPair, UiArtifact, AuditScope, ModelSelection, RecoverySummary } from "../schemas/core.js";
 import { computeColorEvidence } from "../signals/color.js";
 
 export interface RunInput {
@@ -128,6 +128,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
   let locatorCoverageStatus: LocatorCoverageStatus = "not_run";
   let auditScope: AuditScope | undefined = undefined;
   let modelSelection: ModelSelection | undefined = undefined;
+  let recoverySummary: RecoverySummary | undefined = undefined;
   const allDiffs: DiffRecord[] = [];
 
   const openRouterApiKey = process.env["OPENROUTER_API_KEY"] ?? "";
@@ -383,7 +384,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
         const significantComponents = pixelDiff.components.filter(c => c.pixelCount >= 50);
         const uncoveredComponents = findUncoveredComponents(significantComponents, allDiffs, 50);
         if (uncoveredComponents.length > 0) {
-          const { recovered, unclassifiedCount } = await runTargetRecovery(uncoveredComponents, {
+          const recoveryResult = await runTargetRecovery(uncoveredComponents, {
             expectedRgba: { data: expectedImg.rgba, width: expectedImg.width, height: expectedImg.height },
             actualRgba: { data: actualImg.rgba, width: actualImg.width, height: actualImg.height },
             pixelDiffMask: pixelDiff.diffMask,
@@ -392,8 +393,16 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
             recoveryCaller: auditorCaller,
             reviewerCaller
           });
-          allDiffs.push(...recovered);
-          if (unclassifiedCount > 0) {
+          allDiffs.push(...recoveryResult.recovered);
+          recoverySummary = {
+            totalUncoveredComponents: uncoveredComponents.length,
+            attemptedComponents: recoveryResult.attemptedComponents,
+            skippedComponents: recoveryResult.skippedComponents,
+            recoveredDiffs: recoveryResult.recovered.length,
+            unclassifiedCount: recoveryResult.unclassifiedCount,
+            stoppedReason: recoveryResult.stoppedReason
+          };
+          if (recoveryResult.unclassifiedCount > 0 || recoveryResult.stoppedReason !== "none") {
             visualClassificationStatus = "incomplete";
           } else if (!locatorFailed && !auditSelection.limited) {
             visualClassificationStatus = "complete";
@@ -434,6 +443,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     ...(locatorMetadata !== undefined ? { locatorMetadata } : {}),
     ...(auditScope !== undefined ? { auditScope } : {}),
     ...(modelSelection !== undefined ? { modelSelection } : {}),
+    ...(recoverySummary !== undefined ? { recoverySummary } : {}),
     expectedImagePath: expectedAbs,
     actualImagePath: actualAbs,
     artifactRoot,

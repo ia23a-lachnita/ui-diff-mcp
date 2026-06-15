@@ -75,6 +75,22 @@ const RECOVERY_JSON_SCHEMA = {
   additionalProperties: false
 } as const;
 
+export interface RecoveryBudget {
+  maxComponents: number;
+  maxModelCalls: number;
+  deadlineMs: number;
+  minComponentPixels: number;
+}
+
+function makeDefaultBudget(): RecoveryBudget {
+  return {
+    maxComponents: parseInt(process.env["UI_DIFF_MAX_RECOVERY_COMPONENTS"] ?? "12", 10),
+    maxModelCalls: parseInt(process.env["UI_DIFF_MAX_RECOVERY_MODEL_CALLS"] ?? "24", 10),
+    deadlineMs: Date.now() + parseInt(process.env["UI_DIFF_RECOVERY_BUDGET_MS"] ?? "120000", 10),
+    minComponentPixels: parseInt(process.env["UI_DIFF_MIN_RECOVERY_PIXELS"] ?? "80", 10)
+  };
+}
+
 export interface RecoveryContext {
   expectedRgba: { data: Uint8Array; width: number; height: number };
   actualRgba: { data: Uint8Array; width: number; height: number };
@@ -180,20 +196,57 @@ function boxOverlapsComponent(box: Box, component: PixelComponent, threshold = 0
   return overlapArea / componentArea >= threshold;
 }
 
+export interface RecoveryResult {
+  recovered: DiffRecord[];
+  unclassifiedCount: number;
+  attemptedComponents: number;
+  skippedComponents: number;
+  stoppedReason: "none" | "component_cap" | "model_call_cap" | "deadline_exceeded";
+}
+
 export async function runTargetRecovery(
   uncoveredComponents: PixelComponent[],
-  ctx: RecoveryContext
-): Promise<{ recovered: DiffRecord[]; unclassifiedCount: number }> {
+  ctx: RecoveryContext,
+  budget: RecoveryBudget = makeDefaultBudget()
+): Promise<RecoveryResult> {
   const recovered: DiffRecord[] = [];
   let unclassifiedCount = 0;
+  let modelCallsUsed = 0;
+  let stoppedReason: RecoveryResult["stoppedReason"] = "none";
   const imageWidth = ctx.expectedRgba.width;
   const imageHeight = ctx.expectedRgba.height;
+
+  // Filter noise below min pixel threshold, then rank: pixelCount desc, area desc, y asc, x asc
+  const eligible = uncoveredComponents
+    .filter(c => c.pixelCount >= budget.minComponentPixels)
+    .sort((a, b) => {
+      if (b.pixelCount !== a.pixelCount) return b.pixelCount - a.pixelCount;
+      const aArea = a.box.width * a.box.height;
+      const bArea = b.box.width * b.box.height;
+      if (bArea !== aArea) return bArea - aArea;
+      if (a.box.y !== b.box.y) return a.box.y - b.box.y;
+      return a.box.x - b.box.x;
+    });
+
+  const skippedComponents = Math.max(0, eligible.length - budget.maxComponents);
+  const toProcess = eligible.slice(0, budget.maxComponents);
 
   // Read directional overlay once for cropping
   const overlayRawResult = await sharp(ctx.directionalOverlayPath).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   const overlayData = new Uint8Array(overlayRawResult.data.buffer, overlayRawResult.data.byteOffset, overlayRawResult.data.byteLength);
 
-  for (const component of uncoveredComponents) {
+  let attemptedComponents = 0;
+
+  for (const component of toProcess) {
+    if (Date.now() >= budget.deadlineMs) {
+      stoppedReason = "deadline_exceeded";
+      break;
+    }
+    if (modelCallsUsed >= budget.maxModelCalls) {
+      stoppedReason = "model_call_cap";
+      break;
+    }
+    attemptedComponents++;
     const evidenceId = crypto.randomBytes(6).toString("hex");
     const box = component.box;
 
@@ -256,10 +309,12 @@ export async function runTargetRecovery(
         jsonSchema: { name: "recovery_classification", schema: RECOVERY_JSON_SCHEMA },
         timeoutMs: 60000
       });
+      modelCallsUsed++;
       recoveryModel = res.model;
       vlmResponse = RecoveryVlmResponseSchema.parse(res.parsed);
     } catch (err) {
       console.error(`Recovery VLM call failed for component ${evidenceId}:`, err);
+      modelCallsUsed++;
       unclassifiedCount++;
       continue;
     }
@@ -320,10 +375,12 @@ export async function runTargetRecovery(
         },
         timeoutMs: 30000
       });
+      modelCallsUsed++;
       const parsed = ReviewDecisionSchema.parse(reviewRes.parsed);
       reviewDecision = parsed.decision;
     } catch (err) {
       console.error(`Recovery reviewer call failed for component ${evidenceId}:`, err);
+      modelCallsUsed++;
       reviewDecision = "needs_escalation";
     }
 
@@ -358,5 +415,11 @@ export async function runTargetRecovery(
     void evidence; // evidence artifact metadata is captured in record.artifactPaths
   }
 
-  return { recovered, unclassifiedCount };
+  return {
+    recovered,
+    unclassifiedCount,
+    attemptedComponents,
+    skippedComponents,
+    stoppedReason
+  };
 }

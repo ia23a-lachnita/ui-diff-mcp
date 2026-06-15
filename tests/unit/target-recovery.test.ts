@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runTargetRecovery } from "../../src/recovery/target-recovery.js";
-import type { RecoveryContext } from "../../src/recovery/target-recovery.js";
+import type { RecoveryBudget, RecoveryContext } from "../../src/recovery/target-recovery.js";
 import type { PixelComponent } from "../../src/signals/pixel-diff.js";
 import type { VisionJsonCaller } from "../../src/models/vision-json.js";
 import { writeSolidPng } from "../../src/testing/fixture-images.js";
@@ -67,16 +67,23 @@ const component: PixelComponent = {
 };
 
 describe("runTargetRecovery", () => {
+  const unlimitedBudget: RecoveryBudget = {
+    maxComponents: 1000,
+    maxModelCalls: 2000,
+    deadlineMs: Date.now() + 300000,
+    minComponentPixels: 1
+  };
+
   it("returns empty when no components are provided", async () => {
     const ctx = makeCtx();
-    const { recovered, unclassifiedCount } = await runTargetRecovery([], ctx);
+    const { recovered, unclassifiedCount } = await runTargetRecovery([], ctx, unlimitedBudget);
     expect(recovered).toHaveLength(0);
     expect(unclassifiedCount).toBe(0);
   });
 
   it("marks component unclassified when VLM returns classified: false", async () => {
     const ctx = makeCtx();
-    const { recovered, unclassifiedCount } = await runTargetRecovery([component], ctx);
+    const { recovered, unclassifiedCount } = await runTargetRecovery([component], ctx, unlimitedBudget);
     expect(recovered).toHaveLength(0);
     expect(unclassifiedCount).toBe(1);
   });
@@ -104,7 +111,7 @@ describe("runTargetRecovery", () => {
     });
     const ctx = makeCtx({ recoveryCaller, reviewerCaller });
 
-    const { recovered, unclassifiedCount } = await runTargetRecovery([component], ctx);
+    const { recovered, unclassifiedCount } = await runTargetRecovery([component], ctx, unlimitedBudget);
     expect(recovered).toHaveLength(1);
     expect(recovered[0]?.criterion).toBe("geometry");
     expect(recovered[0]?.reviewerStatus).toBe("accepted");
@@ -134,7 +141,7 @@ describe("runTargetRecovery", () => {
     });
     const ctx = makeCtx({ recoveryCaller });
 
-    const { recovered, unclassifiedCount } = await runTargetRecovery([component], ctx);
+    const { recovered, unclassifiedCount } = await runTargetRecovery([component], ctx, unlimitedBudget);
     expect(recovered).toHaveLength(0);
     expect(unclassifiedCount).toBe(1);
   });
@@ -162,7 +169,7 @@ describe("runTargetRecovery", () => {
     });
     const ctx = makeCtx({ recoveryCaller, reviewerCaller });
 
-    const { recovered, unclassifiedCount } = await runTargetRecovery([component], ctx);
+    const { recovered, unclassifiedCount } = await runTargetRecovery([component], ctx, unlimitedBudget);
     expect(recovered).toHaveLength(0);
     expect(unclassifiedCount).toBe(1);
   });
@@ -184,7 +191,7 @@ describe("runTargetRecovery", () => {
     });
     const ctx = makeCtx({ recoveryCaller });
 
-    const { recovered, unclassifiedCount } = await runTargetRecovery([component], ctx);
+    const { recovered, unclassifiedCount } = await runTargetRecovery([component], ctx, unlimitedBudget);
     expect(recovered).toHaveLength(0);
     expect(unclassifiedCount).toBe(1);
   });
@@ -206,7 +213,7 @@ describe("runTargetRecovery", () => {
     });
     const ctx = makeCtx({ recoveryCaller });
 
-    const { recovered, unclassifiedCount } = await runTargetRecovery([component], ctx);
+    const { recovered, unclassifiedCount } = await runTargetRecovery([component], ctx, unlimitedBudget);
     expect(recovered).toHaveLength(0);
     expect(unclassifiedCount).toBe(1);
   });
@@ -220,7 +227,7 @@ describe("runTargetRecovery", () => {
     });
     const ctx = makeCtx({ recoveryCaller });
 
-    await runTargetRecovery([component], ctx);
+    await runTargetRecovery([component], ctx, unlimitedBudget);
 
     const files = await fs.readdir(tmpDir);
     const recoveryFiles = files.filter(f => f.startsWith("recovery-") && f.endsWith(".png"));
@@ -240,12 +247,30 @@ describe("runTargetRecovery", () => {
     });
     const ctx = makeCtx({ recoveryCaller });
 
-    await runTargetRecovery([component], ctx);
+    await runTargetRecovery([component], ctx, unlimitedBudget);
 
     expect(captured[0]?.images).toHaveLength(4);
     for (const img of captured[0]?.images ?? []) {
       expect(img).toMatch(/^data:image\/png;base64,/);
     }
+  });
+
+  it("caps recovery at maxComponents and reports skipped count", async () => {
+    const ctx = makeCtx();
+    const components: PixelComponent[] = Array.from({ length: 100 }, (_, i) => ({
+      box: { x: i, y: i, width: 10, height: 10 },
+      pixelCount: 100 + i
+    }));
+    const budget: RecoveryBudget = {
+      maxComponents: 5,
+      maxModelCalls: 1000,
+      deadlineMs: Date.now() + 300000,
+      minComponentPixels: 1
+    };
+    const result = await runTargetRecovery(components, ctx, budget);
+    expect(result.attemptedComponents).toBe(5);
+    expect(result.skippedComponents).toBe(95);
+    expect(result.stoppedReason).toBe("none");
   });
 
   it("marks needs_escalation when reviewer throws", async () => {
@@ -266,7 +291,7 @@ describe("runTargetRecovery", () => {
     const reviewerCaller: VisionJsonCaller = vi.fn().mockRejectedValue(new Error("timeout"));
     const ctx = makeCtx({ recoveryCaller, reviewerCaller });
 
-    const { recovered, unclassifiedCount } = await runTargetRecovery([component], ctx);
+    const { recovered, unclassifiedCount } = await runTargetRecovery([component], ctx, unlimitedBudget);
     expect(recovered).toHaveLength(1);
     expect(recovered[0]?.reviewerStatus).toBe("needs_escalation");
     expect(unclassifiedCount).toBe(0);

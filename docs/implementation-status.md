@@ -62,15 +62,16 @@ This file is the persistent handoff state for implementation agents. Read it bef
 | 2026-06-15 | `758d8d1` | Hardening Task 1 (Correct Live Gate Semantics) | `npm run verify` — 227 unit/e2e tests, 19 integration, build, typecheck clean | Split default-free (`verify:mcp-live` with NVIDIA+OpenRouter) from OpenRouter-only (`verify:openrouter-free-live`) live gates. Added `verify:mcp-live` script. Updated require-live-env.js and production-readiness-checklist.md. |
 | 2026-06-15 | `ca935e8`+`668efca` | Hardening Task 2 (Role-Specific Model Probes) | `npm run verify` — 227 unit/e2e tests, 19 integration, build, typecheck clean | Added `jsonMode` to VisionJsonRequest. Added role-specific probes (5 images auditor/reviewer, 4 recovery). Added ModelRouteCapabilities to model-registry. findValidProbe() requires schemaValid+contentAccurate+maxImages. Fixed Gemma typo and e2e mock fields. |
 | 2026-06-15 | `c040047` | Hardening Task 3 (Deterministic Geometry Diffs) | `npm run verify` — 227 unit/e2e tests, 19 integration, build, typecheck clean | Added deterministic-diffs.ts with unionBox and buildDeterministicDiffs. Integrated into pipeline before model audit. Documented known coverage limitation. |
-| 2026-06-15 | this commit | Hardening Task 4 (Weak Label Pairing) | `npm run verify` — 227 unit/e2e tests, 19 integration, build, typecheck clean | Added normalizeElementLabel() to element-map.ts (numeric-only and prompt-echo labels normalized to type-queryId-index). Geometry-aware type score in pair-elements.ts: type mismatch scores 0.55 (not 0) when IoU >= 0.72. |
+| 2026-06-15 | `37fa29d`+`5691de1` | Hardening Task 4 (Weak Label Pairing) | `npm run verify` — 228 unit/e2e tests, 19 integration, build, typecheck clean | Added normalizeElementLabel() to element-map.ts. Geometry-aware type score in pair-elements.ts. Gemini improvement: textScore uses label for deterministic-source elements. |
+| 2026-06-15 | this commit | Hardening Task 5 (Bound Target Recovery) | `npm run verify` — 229 unit/e2e tests, 19 integration, build, typecheck clean | Added RecoveryBudget interface with env overrides. Components sorted (pixelCount desc) and capped at maxComponents. Deadline and model-call-cap checks. RecoverySummarySchema in core.ts. recoverySummary recorded in pipeline. |
 
 ## Handoff Checklist
 
-- Current task: live gate hardening plan Task 4 (Weak Locator Label Pairing) — complete
+- Current task: live gate hardening plan Task 5 (Bound Target Recovery) — complete
 - Active plan: `docs/superpowers/plans/2026-06-15-live-gate-hardening.md`
-- Last completed step: Task 4 — label normalization and geometry-aware type scoring; `npm run verify` passed
-- Next step: Task 5 — Bound And Rank Target Recovery
-- Verification command and result: `npm run verify` — 227 unit/e2e tests, 19 integration, build, typecheck clean
+- Last completed step: Task 5 — RecoveryBudget, component ranking/cap, deadline check, RecoverySummarySchema; `npm run verify` passed
+- Next step: Task 6 — Write Partial Reports Before Long Model Work
+- Verification command and result: `npm run verify` — 229 unit/e2e tests, 19 integration, build, typecheck clean
 - Commit pushed: this commit
 - Files intentionally left modified: none after commit
-- Blockers: none for Tasks 1–4; Calorix timeouts addressed by Tasks 5–7
+- Blockers: none for Tasks 1–5; MCP timeout addressed by Tasks 6–7
