@@ -76,7 +76,12 @@ This file is the persistent handoff state for implementation agents. Read it bef
 
 | 2026-06-15 | `5c20e53` | Live gate test fixes (foreground budget + async handle) | `npm run typecheck` clean | Updated mcp-openrouter-free and mcp-full live tests to pass UI_DIFF_FOREGROUND_BUDGET_MS=240000; switched Calorix bounded and full tests to start_ui_diff_run + polling so the MCP server never holds a request open longer than 45s. |
 
-## Live Gate Hardening Sign-Off — 2026-06-15
+## Live Gate Hardening Sign-Off — 2026-06-15 (SUPERSEDED)
+
+> **SUPERSEDED by fresh gate run at `7ab7733` on 2026-06-15T16:54Z.**
+> The Calorix rows below were green at commit `5c20e53` but the fresh run failed with
+> `locatorCoverageStatus: "weak"`. The current release is blocked. See the fresh-run
+> results in `docs/release/2026-06-15-production-readiness-report.md`.
 
 **Commit at sign-off:** `5c20e53`
 
@@ -87,8 +92,8 @@ This file is the persistent handoff state for implementation agents. Read it bef
 | NVIDIA free live | `verify:nvidia-live` | ~12s | 4/4 passed |
 | OpenRouter free live | `verify:openrouter-free-live` | ~86s | 2/2 passed; OpenRouter auditor and reviewer selected and passing probe |
 | Default MCP live | `verify:mcp-live` | ~104s | 1/1 passed; `status !== "failed"`, `visualClassificationStatus: "complete"`, deterministic geometry diffs recorded |
-| Calorix bounded smoke | `verify:calorix-live` (`UI_DIFF_MAX_AUDIT_PAIRS=3`) | ~412s | 1/1 passed; no MCP timeout; report written with schema-valid JSON |
-| Calorix full audit | `verify:calorix-full-live` (unbounded) | ~432s | 1/1 passed; no MCP timeout; `auditLimited=false`; report written with all diffs evidenced |
+| Calorix bounded smoke | `verify:calorix-live` (`UI_DIFF_MAX_AUDIT_PAIRS=3`) | ~412s | 1/1 passed — **result invalidated by fresh run failure** |
+| Calorix full audit | `verify:calorix-full-live` (unbounded) | ~432s | 1/1 passed — **result invalidated by fresh run failure** |
 
 **Remaining known risk:** Union-box deterministic geometry coverage may over-cover: unrelated pixel changes inside a union box are not sent to recovery until shape-aware coverage is implemented. Documented in the production-readiness checklist.
 

@@ -39,10 +39,11 @@ do. A release tag should not be cut until weak locator coverage on real UI image
 **Assertion failed:** `locatorCoverageStatus` must not match `^(failed|weak)$`  
 **Received:** `"weak"`
 
-The LocateAnything sidecar detected too few elements relative to the pixel area of the
-Calorix screenshots. The `locatorCoverageStatus: "weak"` label is set by the pipeline when
-element boxes cover a below-threshold share of the image. This is a recurring pattern — the
-previously persisted Calorix run (`run-1781530941630-a2ada2`) also produced `"weak"`.
+The LocateAnything sidecar returned elements for fewer than 75% of the prompt query IDs
+sent during element discovery (`computeLocatorCoverageStatus` in `src/locator/element-map.ts`
+line 172: `queryIds.size >= promptCount * 0.75` → `"complete"`, else → `"weak"`). Coverage
+is query-ID-based, not pixel-area-based. This is a recurring pattern — the previously
+persisted Calorix run (`run-1781530941630-a2ada2`) also produced `"weak"`.
 
 **Impact:** Any real-world UI diff run on complex application screens will produce weak or
 incomplete locator results. The pipeline handles this gracefully (it still outputs diffs), but
@@ -50,10 +51,11 @@ the hardened test gate deliberately treats weak coverage as a release blocker be
 elements cannot be classified or reviewed.
 
 **Root causes to investigate:**
-- LocateAnything model confidence threshold may be too high for dense UI screenshots
+- LocateAnything model confidence threshold may be too high for dense UI screenshots,
+  causing many query prompts to return zero hits
 - The `today/expected.png` and `today/actual.png` Calorix images may have more UI density
-  than the model was fine-tuned on
-- `UI_DIFF_MAX_AUDIT_PAIRS=3` limits the locator sample; full run might spread coverage better
+  or element categories than the model was fine-tuned on
+- The set of locator query prompts may not match the element vocabulary present in the images
 
 **Required before release:**
 - Tune or replace the locator strategy for dense UI screens, or
@@ -123,11 +125,11 @@ real application screenshots, and the hardened Calorix gate correctly rejects th
 **To reach release readiness:**
 1. Resolve F1 (locator strategy for dense UIs) and pass `verify:calorix-live` and
    `verify:calorix-full-live` on the Calorix image pair without weak coverage
-2. Optionally: resolve F2 by increasing the default foreground budget or adding sidecar
-   warm-up documentation
+2. Resolve F2: increase the default foreground budget to ≥300 s or add explicit sidecar
+   warm-up documentation (required per external reviewer, not optional)
 
 **What is production-ready today:**
-- The MCP tool API surface (all 4 tools)
+- The MCP tool API surface (all 7 tools: `compare_ui_images`, `discover_ui_diffs`, `ui_diff_model_health`, `read_ui_diff_report`, `capture_mobile_screen`, `start_ui_diff_run`, `get_ui_diff_run_status`)
 - Deterministic geometry diff generation
 - Free-mode model selection (NVIDIA + OpenRouter fallback)
 - Report schema, checkpoint writes, async run handle
