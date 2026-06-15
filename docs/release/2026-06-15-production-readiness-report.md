@@ -128,7 +128,7 @@ real application screenshots, and the hardened Calorix gate correctly rejects th
 2. Resolve F2: increase the default foreground budget to ≥300 s or add explicit sidecar
    warm-up documentation (required per external reviewer, not optional)
 
-**What is production-ready today:**
+**Subsystems with passing gates (not a partial sign-off — release remains blocked by F1):**
 - The MCP tool API surface (all 7 tools: `compare_ui_images`, `discover_ui_diffs`, `ui_diff_model_health`, `read_ui_diff_report`, `capture_mobile_screen`, `start_ui_diff_run`, `get_ui_diff_run_status`)
 - Deterministic geometry diff generation
 - Free-mode model selection (NVIDIA + OpenRouter fallback)

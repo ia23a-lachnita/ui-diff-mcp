@@ -66,7 +66,7 @@ These last persisted run reports do not prove production readiness.
 
 The latest Calorix report has two release-blocking quality signals:
 
-- `locatorCoverageStatus` is `weak`, because only one actual element was located.
+- `locatorCoverageStatus` is `weak`, because fewer than 75% of locator query IDs returned any element hit (`computeLocatorCoverageStatus` in `src/locator/element-map.ts` requires `queryIds.size >= promptCount * 0.75` for `"complete"`).
 - `visualClassificationStatus` is `incomplete`, because most visual changes remained `unclassified_visual_change` and `not_reviewed`.
 
 That report shape should fail the current hardened Calorix live gates. The later test changes require:
