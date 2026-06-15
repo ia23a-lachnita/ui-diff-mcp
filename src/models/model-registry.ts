@@ -56,7 +56,8 @@ export const CANONICAL_MODEL_RANKING: readonly (Omit<ModelEntry, "required" | "p
       { provider: "nvidia", model: "moonshotai/kimi-k2.6" }
     ],
     paidRoutes: [{ provider: "openrouter", model: "moonshotai/kimi-k2.6" }],
-    defaultFreeModeHandling: "Probe native NVIDIA in free modes. OpenRouter Kimi is paid and requires explicit paid mode enablement."
+    defaultFreeModeHandling: "Probe native NVIDIA in free modes. OpenRouter Kimi is paid and requires explicit paid mode enablement.",
+    capabilities: { maxImages: 5, supportsJsonSchema: true, supportsJsonObject: true, supportsStreaming: true, allowedRoles: ["auditor", "reviewer"] }
   },
   {
     role: "reviewer", // Kimi K2.6 family, strongest reviewer candidate
@@ -67,7 +68,8 @@ export const CANONICAL_MODEL_RANKING: readonly (Omit<ModelEntry, "required" | "p
       { provider: "nvidia", model: "moonshotai/kimi-k2.6" }
     ],
     paidRoutes: [{ provider: "openrouter", model: "moonshotai/kimi-k2.6" }],
-    defaultFreeModeHandling: "Probe native NVIDIA in free modes. OpenRouter Kimi is paid and requires explicit paid mode enablement."
+    defaultFreeModeHandling: "Probe native NVIDIA in free modes. OpenRouter Kimi is paid and requires explicit paid mode enablement.",
+    capabilities: { maxImages: 5, supportsJsonSchema: true, supportsJsonObject: true, supportsStreaming: true, allowedRoles: ["auditor", "reviewer"] }
   },
   {
     role: "auditor", // MiniMax M3 family, general purpose
@@ -78,7 +80,8 @@ export const CANONICAL_MODEL_RANKING: readonly (Omit<ModelEntry, "required" | "p
       { provider: "nvidia", model: "minimaxai/minimax-m3" }
     ],
     paidRoutes: [{ provider: "openrouter", model: "minimax/minimax-m3" }],
-    defaultFreeModeHandling: "Probe native NVIDIA only in default free mode; block when licensing terms do not permit the run."
+    defaultFreeModeHandling: "Probe native NVIDIA only in default free mode; block when licensing terms do not permit the run.",
+    capabilities: { maxImages: 5, supportsJsonSchema: false, supportsJsonObject: true, supportsStreaming: true, allowedRoles: ["auditor", "reviewer"] }
   },
   {
     role: "reviewer", // MiniMax M3 family, strong independent reviewer candidate
@@ -89,7 +92,8 @@ export const CANONICAL_MODEL_RANKING: readonly (Omit<ModelEntry, "required" | "p
       { provider: "nvidia", model: "minimaxai/minimax-m3" }
     ],
     paidRoutes: [{ provider: "openrouter", model: "minimax/minimax-m3" }],
-    defaultFreeModeHandling: "Probe native NVIDIA in free modes. OpenRouter MiniMax is paid and requires explicit paid mode enablement."
+    defaultFreeModeHandling: "Probe native NVIDIA in free modes. OpenRouter MiniMax is paid and requires explicit paid mode enablement.",
+    capabilities: { maxImages: 5, supportsJsonSchema: false, supportsJsonObject: true, supportsStreaming: true, allowedRoles: ["auditor", "reviewer"] }
   },
   {
     role: "auditor", // Mistral Large 3 family, general purpose
@@ -100,7 +104,8 @@ export const CANONICAL_MODEL_RANKING: readonly (Omit<ModelEntry, "required" | "p
       { provider: "nvidia", model: "mistralai/mistral-large-3-675b-instruct-2512" }
     ],
     paidRoutes: [{ provider: "openrouter", model: "mistralai/mistral-large-2512" }],
-    defaultFreeModeHandling: "Probe native NVIDIA only in default free mode."
+    defaultFreeModeHandling: "Probe native NVIDIA only in default free mode.",
+    capabilities: { maxImages: 5, supportsJsonSchema: true, supportsJsonObject: true, supportsStreaming: true, allowedRoles: ["auditor", "reviewer"] }
   },
   {
     role: "reviewer", // Mistral Large 3 family, high-quality reviewer candidate
@@ -111,7 +116,8 @@ export const CANONICAL_MODEL_RANKING: readonly (Omit<ModelEntry, "required" | "p
       { provider: "nvidia", model: "mistralai/mistral-large-3-675b-instruct-2512" }
     ],
     paidRoutes: [{ provider: "openrouter", model: "mistralai/mistral-large-2512" }],
-    defaultFreeModeHandling: "Probe native NVIDIA in free modes. OpenRouter Mistral Large is paid and requires explicit paid mode enablement."
+    defaultFreeModeHandling: "Probe native NVIDIA in free modes. OpenRouter Mistral Large is paid and requires explicit paid mode enablement.",
+    capabilities: { maxImages: 5, supportsJsonSchema: true, supportsJsonObject: true, supportsStreaming: true, allowedRoles: ["auditor", "reviewer"] }
   },
   {
     role: "auditor", // Qwen3.5 397B A17B
@@ -121,7 +127,8 @@ export const CANONICAL_MODEL_RANKING: readonly (Omit<ModelEntry, "required" | "p
     eligibleFreeProviderRoutes: [
       { provider: "nvidia", model: "qwen/qwen3.5-397b-a17b" }
     ],
-    defaultFreeModeHandling: "Probe native NVIDIA; expect speed/quota risk."
+    defaultFreeModeHandling: "Probe native NVIDIA; expect speed/quota risk.",
+    capabilities: { maxImages: 5, supportsJsonSchema: true, supportsJsonObject: true, supportsStreaming: true, allowedRoles: ["auditor", "reviewer"] }
   },
   {
     role: "reviewer", // Qwen3.5 397B A17B
@@ -131,7 +138,8 @@ export const CANONICAL_MODEL_RANKING: readonly (Omit<ModelEntry, "required" | "p
     eligibleFreeProviderRoutes: [
       { provider: "nvidia", model: "qwen/qwen3.5-397b-a17b" }
     ],
-    defaultFreeModeHandling: "Probe native NVIDIA; expect speed/quota risk."
+    defaultFreeModeHandling: "Probe native NVIDIA; expect speed/quota risk.",
+    capabilities: { maxImages: 5, supportsJsonSchema: true, supportsJsonObject: true, supportsStreaming: true, allowedRoles: ["auditor", "reviewer"] }
   },
   {
     role: "auditor", // Qwen3.6 35B A3B
@@ -141,7 +149,8 @@ export const CANONICAL_MODEL_RANKING: readonly (Omit<ModelEntry, "required" | "p
     eligibleFreeProviderRoutes: [
       { provider: "nvidia", model: "qwen/qwen3.6-35b-a3b" }
     ],
-    defaultFreeModeHandling: "Probe native NVIDIA or self-hosted NIM only."
+    defaultFreeModeHandling: "Probe native NVIDIA or self-hosted NIM only.",
+    capabilities: { maxImages: 5, supportsJsonSchema: true, supportsJsonObject: true, supportsStreaming: true, allowedRoles: ["auditor", "reviewer"] }
   },
   {
     role: "reviewer", // Qwen3.6 35B A3B
@@ -151,7 +160,8 @@ export const CANONICAL_MODEL_RANKING: readonly (Omit<ModelEntry, "required" | "p
     eligibleFreeProviderRoutes: [
       { provider: "nvidia", model: "qwen/qwen3.6-35b-a3b" }
     ],
-    defaultFreeModeHandling: "Probe native NVIDIA or self-hosted NIM only."
+    defaultFreeModeHandling: "Probe native NVIDIA or self-hosted NIM only.",
+    capabilities: { maxImages: 5, supportsJsonSchema: true, supportsJsonObject: true, supportsStreaming: true, allowedRoles: ["auditor", "reviewer"] }
   },
   {
     role: "auditor", // Nemotron 3 Nano Omni 30B A3B Reasoning
@@ -162,7 +172,8 @@ export const CANONICAL_MODEL_RANKING: readonly (Omit<ModelEntry, "required" | "p
       { provider: "nvidia", model: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning" },
       { provider: "openrouter", model: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free" }
     ],
-    defaultFreeModeHandling: "Prefer native NVIDIA; use OpenRouter free only if native route unavailable."
+    defaultFreeModeHandling: "Prefer native NVIDIA; use OpenRouter free only if native route unavailable.",
+    capabilities: { maxImages: 5, supportsJsonSchema: true, supportsJsonObject: true, supportsStreaming: true, allowedRoles: ["auditor", "reviewer"] }
   },
   {
     role: "reviewer", // Nemotron 3 Nano Omni 30B A3B Reasoning
@@ -173,7 +184,8 @@ export const CANONICAL_MODEL_RANKING: readonly (Omit<ModelEntry, "required" | "p
       { provider: "nvidia", model: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning" },
       { provider: "openrouter", model: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free" }
     ],
-    defaultFreeModeHandling: "Prefer native NVIDIA; use OpenRouter free only if native route unavailable."
+    defaultFreeModeHandling: "Prefer native NVIDIA; use OpenRouter free only if native route unavailable.",
+    capabilities: { maxImages: 5, supportsJsonSchema: true, supportsJsonObject: true, supportsStreaming: true, allowedRoles: ["auditor", "reviewer"] }
   },
   {
     role: "reviewer", // Nex N2 Pro
@@ -183,7 +195,8 @@ export const CANONICAL_MODEL_RANKING: readonly (Omit<ModelEntry, "required" | "p
     eligibleFreeProviderRoutes: [
       { provider: "openrouter", model: "nex-agi/nex-n2-pro:free" }
     ],
-    defaultFreeModeHandling: "OpenRouter free route when native NVIDIA candidates do not pass probes."
+    defaultFreeModeHandling: "OpenRouter free route when native NVIDIA candidates do not pass probes.",
+    capabilities: { maxImages: 5, supportsJsonSchema: true, supportsJsonObject: true, supportsStreaming: true, allowedRoles: ["auditor", "reviewer"] }
   },
   {
     role: "reviewer", // Gemma 4 31B IT
@@ -193,7 +206,8 @@ export const CANONICAL_MODEL_RANKING: readonly (Omit<ModelEntry, "required" | "p
     eligibleFreeProviderRoutes: [
       { provider: "openrouter", model: "google/gemma-4-31b-it:free" }
     ],
-    defaultFreeModeHandling: "OpenRouter free route; schema must be probed."
+    defaultFreeModeHandling: "OpenRouter free route; schema must be probed.",
+    capabilities: { maxImages: 5, supportsJsonSchema: true, supportsJsonObject: true, supportsStreaming: true, allowedRoles: ["reviewer"] }
   },
   {
     role: "reviewer", // Gemma 4 26B A4B IT
@@ -203,7 +217,8 @@ export const CANONICAL_MODEL_RANKING: readonly (Omit<ModelEntry, "required" | "p
     eligibleFreeProviderRoutes: [
       { provider: "openrouter", model: "google/gemma-4-26b-a4b-it:free" }
     ],
-    defaultFreeModeHandling: "OpenRouter free route; schema must be probed."
+    defaultFreeModeHandling: "OpenRouter free route; schema must be probed.",
+    capabilities: { maxImages: 5, supportsJsonSchema: true, supportsJsonObject: true, supportsStreaming: true, allowedRoles: ["reviewer"] }
   },
   {
     role: "reviewer", // Nemotron Nano 12B v2 VL
@@ -214,7 +229,8 @@ export const CANONICAL_MODEL_RANKING: readonly (Omit<ModelEntry, "required" | "p
       { provider: "nvidia", model: "nvidia/nemotron-nano-12b-v2-vl" },
       { provider: "openrouter", model: "nvidia/nemotron-nano-12b-v2-vl:free" }
     ],
-    defaultFreeModeHandling: "Prefer native NVIDIA; use OpenRouter free only if native route unavailable."
+    defaultFreeModeHandling: "Prefer native NVIDIA; use OpenRouter free only if native route unavailable.",
+    capabilities: { maxImages: 5, supportsJsonSchema: true, supportsJsonObject: true, supportsStreaming: true, allowedRoles: ["reviewer"] }
   },
   {
     role: "reviewer", // Llama 3.2 90B Vision Instruct — single-image only on NVIDIA (live evidence)
@@ -246,7 +262,8 @@ export const CANONICAL_MODEL_RANKING: readonly (Omit<ModelEntry, "required" | "p
     eligibleFreeProviderRoutes: [
       { provider: "openrouter", model: "nex-agi/nex-n2-pro:free" }
     ],
-    defaultFreeModeHandling: "OpenRouter free fallback when native NVIDIA candidates fail or are unavailable."
+    defaultFreeModeHandling: "OpenRouter free fallback when native NVIDIA candidates fail or are unavailable.",
+    capabilities: { maxImages: 5, supportsJsonSchema: true, supportsJsonObject: true, supportsStreaming: true, allowedRoles: ["auditor", "reviewer"] }
   },
   {
     role: "auditor", // Gemma 4 31B IT
@@ -256,7 +273,8 @@ export const CANONICAL_MODEL_RANKING: readonly (Omit<ModelEntry, "required" | "p
     eligibleFreeProviderRoutes: [
       { provider: "openrouter", model: "google/gemma-4-31b-it:free" }
     ],
-    defaultFreeModeHandling: "OpenRouter free fallback; schema must be probed."
+    defaultFreeModeHandling: "OpenRouter free fallback; schema must be probed.",
+    capabilities: { maxImages: 5, supportsJsonSchema: true, supportsJsonObject: true, supportsStreaming: true, allowedRoles: ["auditor"] }
   },
   {
     role: "auditor", // Gemma 4 26B A4B IT
@@ -266,7 +284,8 @@ export const CANONICAL_MODEL_RANKING: readonly (Omit<ModelEntry, "required" | "p
     eligibleFreeProviderRoutes: [
       { provider: "openrouter", model: "google/gemma-4-26b-a4b-it:free" }
     ],
-    defaultFreeModeHandling: "OpenRouter free fallback; schema must be probed."
+    defaultFreeModeHandling: "OpenRouter free fallback; schema must be probed.",
+    capabilities: { maxImages: 5, supportsJsonSchema: true, supportsJsonObject: true, supportsStreaming: true, allowedRoles: ["auditor"] }
   },
   {
     role: "reviewer", // Llama 3.1 Nemotron Nano VL 8B
@@ -276,7 +295,8 @@ export const CANONICAL_MODEL_RANKING: readonly (Omit<ModelEntry, "required" | "p
     eligibleFreeProviderRoutes: [
       { provider: "nvidia", model: "nvidia/llama-3.1-nemotron-nano-vl-8b-v1" }
     ],
-    defaultFreeModeHandling: "Native NVIDIA lower-priority crop-level candidate."
+    defaultFreeModeHandling: "Native NVIDIA lower-priority crop-level candidate.",
+    capabilities: { maxImages: 5, supportsJsonSchema: true, supportsJsonObject: true, supportsStreaming: true, allowedRoles: ["reviewer"] }
   },
   {
     role: "target_recovery", // Cosmos3 Nano Reasoner
@@ -286,7 +306,8 @@ export const CANONICAL_MODEL_RANKING: readonly (Omit<ModelEntry, "required" | "p
     eligibleFreeProviderRoutes: [
       { provider: "nvidia", model: "nvidia/cosmos3-nano-reasoner" }
     ],
-    defaultFreeModeHandling: "Native NVIDIA lower-priority target-recovery candidate."
+    defaultFreeModeHandling: "Native NVIDIA lower-priority target-recovery candidate.",
+    capabilities: { maxImages: 4, supportsJsonSchema: true, supportsJsonObject: true, supportsStreaming: true, allowedRoles: ["target_recovery"] }
   },
   {
     role: "auditor", // PaliGemma
@@ -296,7 +317,8 @@ export const CANONICAL_MODEL_RANKING: readonly (Omit<ModelEntry, "required" | "p
     eligibleFreeProviderRoutes: [
       { provider: "nvidia", model: "google/google-paligemma" }
     ],
-    defaultFreeModeHandling: "Native NVIDIA fallback only if it surprisingly passes UI-diff probes."
+    defaultFreeModeHandling: "Native NVIDIA fallback only if it surprisingly passes UI-diff probes.",
+    capabilities: { maxImages: 1, supportsJsonSchema: false, supportsJsonObject: false, supportsStreaming: true, allowedRoles: ["auditor"] }
   }
 ];
 
@@ -314,8 +336,27 @@ export function getRequiredModels(): ModelEntry[] {
       model: r.model,
       costClass: c.costClass,
       probeTtlMs: 15 * 60 * 1000,
-      required: false
+      required: false,
+      ...(c.capabilities !== undefined ? { capabilities: c.capabilities } : {})
     }))
+  );
+}
+
+function findValidProbe(
+  probeResults: ProbeResult[],
+  provider: "openrouter" | "nvidia",
+  model: string,
+  logicalRole: "auditor" | "reviewer" | "escalation" | "target_recovery"
+): ProbeResult | undefined {
+  const requiredImages = requiredImagesForRole(logicalRole);
+  return probeResults.find(p =>
+    p.provider === provider &&
+    p.model === model &&
+    p.role === logicalRole &&
+    p.status === "pass" &&
+    p.schemaValid === true &&
+    p.contentAccurate === true &&
+    (p.maxImagesSupported === undefined || p.maxImagesSupported >= requiredImages)
   );
 }
 
@@ -349,12 +390,8 @@ export function selectModelForMode(
           if (isExcluded(paidRoute.provider, paidRoute.model)) {
             continue;
           }
-          const probe = probeResults.find(p =>
-            p.model === paidRoute.model &&
-            p.provider === paidRoute.provider &&
-            (p.role === logicalRole || p.role === candidate.role)
-          );
-          if (probe?.status === "pass") {
+          const probe = findValidProbe(probeResults, paidRoute.provider, paidRoute.model, logicalRole);
+          if (probe) {
             // Paid models have a longer TTL
             return { ...candidate, provider: paidRoute.provider, model: paidRoute.model, costClass: "paid", required: true, probeTtlMs: 24 * 60 * 60 * 1000 };
           }
@@ -368,21 +405,15 @@ export function selectModelForMode(
       const eligibleRoutes = candidate.eligibleFreeProviderRoutes;
 
       // Prioritize native NVIDIA for "free" and "free_nvidia" modes
-      const requiredImages = requiredImagesForRole(logicalRole);
-      const probeMatchesRole = (p: ProbeResult) =>
-        p.role === logicalRole &&
-        (p.maxImagesSupported === undefined || p.maxImagesSupported >= requiredImages);
-
       if (mode === "free" || mode === "free_nvidia") {
         if (isNvidiaApiKeyConfigured) {
           const nvidiaRoute = eligibleRoutes.find(r => r.provider === "nvidia");
           if (nvidiaRoute) {
-            if (isExcluded(nvidiaRoute.provider, nvidiaRoute.model)) {
-              continue;
-            }
-            const probe = probeResults.find(p => p.model === nvidiaRoute.model && p.provider === nvidiaRoute.provider && probeMatchesRole(p));
-            if (probe?.status === "pass") {
-              return { ...candidate, provider: nvidiaRoute.provider, model: nvidiaRoute.model, required: true, probeTtlMs: 15 * 60 * 1000 };
+            if (!isExcluded(nvidiaRoute.provider, nvidiaRoute.model)) {
+              const probe = findValidProbe(probeResults, nvidiaRoute.provider, nvidiaRoute.model, logicalRole);
+              if (probe) {
+                return { ...candidate, provider: nvidiaRoute.provider, model: nvidiaRoute.model, required: true, probeTtlMs: 15 * 60 * 1000 };
+              }
             }
           }
         }
@@ -392,12 +423,11 @@ export function selectModelForMode(
       if (mode === "free" || mode === "free_openrouter") {
         const openRouterRoute = eligibleRoutes.find(r => r.provider === "openrouter");
         if (openRouterRoute) {
-          if (isExcluded(openRouterRoute.provider, openRouterRoute.model)) {
-            continue;
-          }
-          const probe = probeResults.find(p => p.model === openRouterRoute.model && p.provider === openRouterRoute.provider && probeMatchesRole(p));
-          if (probe?.status === "pass") {
-            return { ...candidate, provider: openRouterRoute.provider, model: openRouterRoute.model, required: true, probeTtlMs: 15 * 60 * 1000 };
+          if (!isExcluded(openRouterRoute.provider, openRouterRoute.model)) {
+            const probe = findValidProbe(probeResults, openRouterRoute.provider, openRouterRoute.model, logicalRole);
+            if (probe) {
+              return { ...candidate, provider: openRouterRoute.provider, model: openRouterRoute.model, required: true, probeTtlMs: 15 * 60 * 1000 };
+            }
           }
         }
       }
