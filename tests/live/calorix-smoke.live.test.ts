@@ -66,12 +66,11 @@ describe.skipIf(!calorixLive)("Calorix live UI diff smoke", () => {
       // There must be paired targets available for audit
       expect(report.auditScope?.totalPairs ?? 0, "at least one element pair must be available for audit").toBeGreaterThan(0);
 
-      // At least one diff must be model-reviewed (not just unclassified pixel noise)
-      // unclassified_visual_change is auto-generated for every uncovered component and always
-      // has evidence, so "all diffs have evidence" is not a meaningful quality gate.
+      // At least one diff must have been accepted or rejected by the reviewer model.
+      // reviewerStatus "not_reviewed" covers both unclassified pixel noise and deterministic records.
       expect(report.diffs.length, "at least one diff must be reported").toBeGreaterThan(0);
-      const reviewedDiffs = report.diffs.filter((d: { criterion: string }) => d.criterion !== "unclassified_visual_change");
-      expect(reviewedDiffs.length, "at least one diff must be model-reviewed, not all unclassified pixel noise").toBeGreaterThan(0);
+      const reviewedDiffs = report.diffs.filter((d: { reviewerStatus: string }) => d.reviewerStatus !== "not_reviewed");
+      expect(reviewedDiffs.length, "at least one diff must be accepted or rejected by the reviewer model").toBeGreaterThan(0);
     } finally {
       await started.close();
     }
@@ -121,21 +120,25 @@ describe.skipIf(!calorixFullLive)("verify:calorix-full-live unbounded all-target
         if (statusOut.status !== "running") break;
       }
       expect(statusOut?.status, "run must terminate — not hang").not.toBe("running");
-      expect(statusOut?.status, `run must complete or be incomplete, got: ${statusOut?.status}`).toMatch(/^(complete|incomplete)$/);
+      expect(statusOut?.status, `run must complete, got: ${statusOut?.status}`).toBe("complete");
       expect(statusOut?.reportPath).toBeTruthy();
 
       const report = UiDiffReportSchema.parse(JSON.parse(await fs.readFile(statusOut!.reportPath!, "utf8")));
       expect(report.auditScope?.auditLimited ?? false).toBe(false);
 
-      // Locator must have successfully found elements
-      expect(report.locatorCoverageStatus, "locator must not have failed or timed out").not.toBe("failed");
+      // Locator must have found elements with adequate coverage — weak or failed is a gate failure
+      expect(report.locatorCoverageStatus, "locator coverage must not be weak or failed").not.toMatch(/^(failed|weak)$/);
       expect(report.elements.expected.length, "locator must find elements in expected image").toBeGreaterThan(0);
       expect(report.elements.actual.length, "locator must find elements in actual image").toBeGreaterThan(0);
       expect(report.auditScope?.totalPairs ?? 0, "at least one element pair must be available for audit").toBeGreaterThan(0);
 
-      // The run must have produced diffs with evidence
+      // Visual classification must be complete
+      expect(report.visualClassificationStatus, "visual classification must be complete").toBe("complete");
+
+      // At least one diff must have been accepted or rejected by the reviewer model
       expect(report.diffs.length, "at least one diff must be reported").toBeGreaterThan(0);
-      expect(report.diffs.every(d => d.evidence.length > 0)).toBe(true);
+      const reviewedDiffs = report.diffs.filter((d: { reviewerStatus: string }) => d.reviewerStatus !== "not_reviewed");
+      expect(reviewedDiffs.length, "at least one diff must be accepted or rejected by the reviewer model").toBeGreaterThan(0);
 
       console.info(`[full-audit] visualClassificationStatus=${report.visualClassificationStatus}`);
       console.info(`[full-audit] auditedPairs=${report.auditScope?.auditedPairs ?? "n/a"}, totalPairs=${report.auditScope?.totalPairs ?? "n/a"}`);

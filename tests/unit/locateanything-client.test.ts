@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import sharp from "sharp";
 import {
   LocatorUnavailableError,
   locateUiElements,
@@ -242,6 +243,108 @@ describe("locateUiElements", () => {
         timeoutMs: 5000
       })
     ).rejects.toThrow(/out of image bounds/);
+  });
+
+  it("rescales element coordinates from resized to original image space when maxDimension is set", async () => {
+    // 400×800 PNG; with maxDimension=200 sharp will resize to 100×200 (scale 0.25)
+    const pngPath = path.join(tmpDir, "large.png");
+    await sharp({
+      create: { width: 400, height: 800, channels: 3, background: { r: 128, g: 128, b: 128 } }
+    }).png().toFile(pngPath);
+
+    // Sidecar sees a 100×200 image and reports an element in that coordinate space
+    const body = JSON.stringify({
+      model: "nvidia/LocateAnything-3B",
+      image: { width: 100, height: 200 },
+      elements: [{
+        queryId: "q1", label: "button",
+        box: { x: 20, y: 40, width: 10, height: 5 },
+        rawBox1000: [200, 200, 100, 25], confidence: 0.9
+      }],
+      warnings: []
+    });
+
+    const { server: s, port } = await startServer((_req, res) => {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(body);
+    });
+    server = s;
+
+    const result = await locateUiElements({
+      endpoint: `http://127.0.0.1:${port}`,
+      request: { ...BASE_REQUEST, imagePath: pngPath },
+      timeoutMs: 5000,
+      maxDimension: 200
+    });
+
+    // Coordinates must be scaled back to the 400×800 original space (factor ×4)
+    expect(result.image).toEqual({ width: 400, height: 800 });
+    expect(result.elements[0]?.box).toEqual({ x: 80, y: 160, width: 40, height: 20 });
+  });
+
+  it("does not rescale coordinates when the image fits within maxDimension", async () => {
+    // 50×50 PNG — smaller than maxDimension=200, so sharp sends it as-is
+    const pngPath = path.join(tmpDir, "small.png");
+    await sharp({
+      create: { width: 50, height: 50, channels: 3, background: { r: 0, g: 0, b: 0 } }
+    }).png().toFile(pngPath);
+
+    const body = JSON.stringify({
+      model: "nvidia/LocateAnything-3B",
+      image: { width: 50, height: 50 },
+      elements: [{
+        queryId: "q1", label: "icon",
+        box: { x: 5, y: 5, width: 10, height: 10 },
+        rawBox1000: [100, 100, 200, 200], confidence: 0.8
+      }],
+      warnings: []
+    });
+
+    const { server: s, port } = await startServer((_req, res) => {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(body);
+    });
+    server = s;
+
+    const result = await locateUiElements({
+      endpoint: `http://127.0.0.1:${port}`,
+      request: { ...BASE_REQUEST, imagePath: pngPath },
+      timeoutMs: 5000,
+      maxDimension: 200
+    });
+
+    // No rescaling — coordinates unchanged
+    expect(result.image).toEqual({ width: 50, height: 50 });
+    expect(result.elements[0]?.box).toEqual({ x: 5, y: 5, width: 10, height: 10 });
+  });
+
+  it("skips coordinate rescaling when imageBase64 is already provided", async () => {
+    // When the caller pre-encodes the image, we cannot know its original dimensions
+    const body = JSON.stringify({
+      model: "nvidia/LocateAnything-3B",
+      image: { width: 100, height: 100 },
+      elements: [{
+        queryId: "q1", label: "tab",
+        box: { x: 10, y: 10, width: 20, height: 5 },
+        rawBox1000: [100, 100, 200, 50], confidence: 0.85
+      }],
+      warnings: []
+    });
+
+    const { server: s, port } = await startServer((_req, res) => {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(body);
+    });
+    server = s;
+
+    const result = await locateUiElements({
+      endpoint: `http://127.0.0.1:${port}`,
+      request: { ...BASE_REQUEST, imageBase64: "abc==", imageMimeType: "image/png" },
+      timeoutMs: 5000,
+      maxDimension: 200
+    });
+
+    expect(result.elements[0]?.box).toEqual({ x: 10, y: 10, width: 20, height: 5 });
   });
 
   it("throws LocatorUnavailableError on HTTP 503", async () => {
