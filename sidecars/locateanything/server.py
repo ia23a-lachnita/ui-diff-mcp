@@ -13,6 +13,7 @@ from sidecars.locateanything.cv_components import detect_cv_components
 from sidecars.locateanything.ocr_text import detect_ocr_text
 from sidecars.locateanything.omniparser_adapter import detect_omniparser
 from sidecars.locateanything.parser import parse_elements
+from sidecars.locateanything.yolo_adapter import detect_yolo_ui
 
 
 class LocateQuery(BaseModel):
@@ -192,6 +193,14 @@ def locate_ui_elements(request: LocateRequest) -> dict[str, Any]:
             "model": "microsoft/OmniParser",
             "license": "AGPL-3.0"
         }
+
+    try:
+        yolo_elements, yolo_meta = detect_yolo_ui(image)
+        all_elements.extend(yolo_elements)
+        lane_metadata["yolo_ui"] = yolo_meta
+    except Exception as exc:
+        warnings.append(f"yolo_ui lane failed: {type(exc).__name__}: {exc}")
+        lane_metadata["yolo_ui"] = {"status": "failed", "count": 0, "detail": str(exc), "model": "local-yolo-ui"}
 
     for query in request.queries:
         try:

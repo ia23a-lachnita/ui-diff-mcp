@@ -185,5 +185,22 @@ class OmniParserAdapterTests(unittest.TestCase):
         self.assertEqual(elements[0]["box"], {"x": 10, "y": 20, "width": 20, "height": 20})
 
 
+class YoloAdapterTests(unittest.TestCase):
+    def test_normalizes_yolo_detections(self):
+        from sidecars.locateanything.yolo_adapter import yolo_detections_to_elements
+
+        detections = [
+            {"class": "Button", "confidence": 0.9, "xyxy": [10, 20, 110, 60]},
+            {"class": "Icon", "confidence": 0.7, "xyxy": [150, 20, 180, 50]},
+        ]
+
+        elements = yolo_detections_to_elements(detections, image_width=200, image_height=400)
+
+        self.assertEqual(len(elements), 2)
+        self.assertEqual(elements[0]["queryId"], "yolo_ui")
+        self.assertEqual(elements[0]["label"], "Button")
+        self.assertEqual(elements[0]["box"]["height"], 40)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -77,3 +77,7 @@ The release gate must pass without user-authored OCR config. If OCR is enabled, 
 `UI_DIFF_ENABLE_OMNIPARSER=1` enables the optional OmniParser lane when its Python dependencies and model weights are installed outside this repository.
 
 The OmniParser model card states the icon detection model is AGPL-licensed. This repo must not vendor those weights. The sidecar reports `license: "AGPL-3.0"` in `/v1/locate-ui-elements` metadata whenever this lane is configured or fails, so release reports can record the active license surface.
+
+### YOLO UI lane
+
+`UI_DIFF_YOLO_UI_MODEL_PATH` points to a local UI-element detector model. Candidate training data includes Rico, VINS, WebUI, and the unified Rico+WebUI YOLO-format dataset. The first production goal is not to train a new model inside this repo; it is to make the sidecar contract accept a local detector and record its model path hash/metadata in reports.
