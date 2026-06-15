@@ -7,8 +7,8 @@ function geometryScore(a: UiElement, b: UiElement): number {
 }
 
 function textScore(a: UiElement, b: UiElement): number {
-  const ta = a.text?.trim().toLowerCase() ?? "";
-  const tb = b.text?.trim().toLowerCase() ?? "";
+  const ta = (a.source === "deterministic" ? a.label : a.text)?.trim().toLowerCase() ?? "";
+  const tb = (b.source === "deterministic" ? b.label : b.text)?.trim().toLowerCase() ?? "";
   if (!ta && !tb) return 0.5;
   if (!ta || !tb) return 0;
   if (ta === tb) return 1;

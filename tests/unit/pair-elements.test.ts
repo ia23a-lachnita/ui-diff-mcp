@@ -2,7 +2,16 @@ import { describe, expect, it } from "vitest";
 import { pairElements } from "../../src/pairing/pair-elements.js";
 import type { UiElement } from "../../src/schemas/core.js";
 
-function makeElement(id: string, label: string, x: number, y: number, w: number, h: number, text?: string): UiElement {
+function makeElement(
+  id: string,
+  label: string,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  text?: string,
+  source: "locator" | "deterministic" = "locator"
+): UiElement {
   return {
     id,
     label,
@@ -11,7 +20,7 @@ function makeElement(id: string, label: string, x: number, y: number, w: number,
     normalizedBox: { x: x / 400, y: y / 800, width: w / 400, height: h / 800 },
     text,
     confidence: 0.9,
-    source: "locator",
+    source,
     childIds: []
   };
 }
@@ -97,5 +106,19 @@ describe("pairElements", () => {
     const matchedActual = pairs.map(p => p.actualId).filter(Boolean);
     expect(new Set(matchedExpected).size).toBe(matchedExpected.length);
     expect(new Set(matchedActual).size).toBe(matchedActual.length);
+  });
+
+  it("pairs a deterministic expected element with a located actual element", () => {
+    // Deterministic elements have a label but no `text` field. The pairing should use
+    // the label for text comparison.
+    const expected = [makeElement("e1", "OK", 10, 10, 80, 40, undefined, "deterministic")];
+    const actual = [makeElement("a1", "OK button", 12, 12, 78, 38, "OK", "locator")];
+
+    const pairs = pairElements(expected, actual);
+    const matched = pairs.find(p => p.status === "matched");
+
+    expect(matched).toBeDefined();
+    expect(matched?.expectedId).toBe("e1");
+    expect(matched?.actualId).toBe("a1");
   });
 });
