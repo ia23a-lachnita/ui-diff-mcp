@@ -69,7 +69,7 @@ describe.skipIf(!calorixLive)("Calorix live UI diff smoke", () => {
       // At least one diff must have been accepted or rejected by the reviewer model.
       // reviewerStatus "not_reviewed" covers both unclassified pixel noise and deterministic records.
       expect(report.diffs.length, "at least one diff must be reported").toBeGreaterThan(0);
-      const reviewedDiffs = report.diffs.filter((d: { reviewerStatus: string; model?: string }) => d.reviewerStatus !== "not_reviewed" && d.model !== "deterministic");
+      const reviewedDiffs = report.diffs.filter(d => d.reviewerStatus !== "not_reviewed" && d.model !== "deterministic");
       expect(reviewedDiffs.length, "at least one diff must be accepted or rejected by the VLM reviewer (not deterministic-only)").toBeGreaterThan(0);
     } finally {
       await started.close();
@@ -137,7 +137,7 @@ describe.skipIf(!calorixFullLive)("verify:calorix-full-live unbounded all-target
 
       // At least one diff must have been accepted or rejected by the reviewer model
       expect(report.diffs.length, "at least one diff must be reported").toBeGreaterThan(0);
-      const reviewedDiffs = report.diffs.filter((d: { reviewerStatus: string; model?: string }) => d.reviewerStatus !== "not_reviewed" && d.model !== "deterministic");
+      const reviewedDiffs = report.diffs.filter(d => d.reviewerStatus !== "not_reviewed" && d.model !== "deterministic");
       expect(reviewedDiffs.length, "at least one diff must be accepted or rejected by the VLM reviewer (not deterministic-only)").toBeGreaterThan(0);
 
       console.info(`[full-audit] visualClassificationStatus=${report.visualClassificationStatus}`);
