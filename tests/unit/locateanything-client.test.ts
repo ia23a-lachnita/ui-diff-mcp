@@ -20,7 +20,15 @@ function startServer(
   handler: (req: http.IncomingMessage, res: http.ServerResponse) => void
 ): Promise<{ server: http.Server; port: number }> {
   return new Promise((resolve, reject) => {
-    const server = http.createServer(handler);
+    const server = http.createServer((req, res) => {
+      // Satisfy the health pre-flight that locateUiElements makes before sending the payload
+      if (req.url === "/health" && req.method === "GET") {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ready: true, error: null }));
+        return;
+      }
+      handler(req, res);
+    });
     server.listen(0, "127.0.0.1", () => {
       const addr = server.address();
       if (!addr || typeof addr === "string") {

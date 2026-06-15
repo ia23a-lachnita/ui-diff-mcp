@@ -1,13 +1,23 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { describe, expect, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { UiDiffReportSchema } from "../../src/schemas/core.js";
 import { startUiDiffMcpClient } from "../helpers/mcp-client.js";
+import { ensureSidecarRunning, type SidecarHandle } from "../helpers/sidecar-manager.js";
 
 const calorixLive = process.env["RUN_CALORIX_UI_DIFF_LIVE"] === "1";
 const calorixFullLive = process.env["RUN_CALORIX_FULL_LIVE"] === "1";
 
 describe.skipIf(!calorixLive)("Calorix live UI diff smoke", () => {
+  let sidecarHandle: SidecarHandle | undefined;
+
+  beforeAll(async () => {
+    const url = process.env["LOCATEANYTHING_SIDECAR_URL"] ?? "http://127.0.0.1:39731";
+    sidecarHandle = await ensureSidecarRunning(url);
+  }, 130000);
+
+  afterAll(() => { sidecarHandle?.close(); });
+
   test("runs configured Calorix image pair through start_ui_diff_run (async handle)", async () => {
     const expectedImagePath = process.env["UI_DIFF_LIVE_EXPECTED_IMAGE"];
     const actualImagePath = process.env["UI_DIFF_LIVE_ACTUAL_IMAGE"];
@@ -63,6 +73,15 @@ describe.skipIf(!calorixLive)("Calorix live UI diff smoke", () => {
 });
 
 describe.skipIf(!calorixFullLive)("verify:calorix-full-live unbounded all-target audit", () => {
+  let sidecarHandle: SidecarHandle | undefined;
+
+  beforeAll(async () => {
+    const url = process.env["LOCATEANYTHING_SIDECAR_URL"] ?? "http://127.0.0.1:39731";
+    sidecarHandle = await ensureSidecarRunning(url);
+  }, 130000);
+
+  afterAll(() => { sidecarHandle?.close(); });
+
   test("runs unbounded Calorix image pair — all pairs audited, no UI_DIFF_MAX_AUDIT_PAIRS limit", async () => {
     const expectedImagePath = process.env["UI_DIFF_LIVE_EXPECTED_IMAGE"];
     const actualImagePath = process.env["UI_DIFF_LIVE_ACTUAL_IMAGE"];

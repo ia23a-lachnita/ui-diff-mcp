@@ -102,8 +102,29 @@ async function withImagePayload(request: LocateAnythingRequest, maxDimension?: n
   }
 }
 
+export async function checkSidecarHealth(endpoint: string, timeoutMs = 5000): Promise<{ ready: boolean; error?: string }> {
+  try {
+    const resp = await fetch(`${endpoint}/health`, { signal: AbortSignal.timeout(timeoutMs) });
+    if (!resp.ok) return { ready: false, error: `HTTP ${resp.status}` };
+    const body = await resp.json() as { ready?: boolean; error?: string | null };
+    const errorMsg = body.error ?? undefined;
+    return { ready: body.ready === true, ...(errorMsg !== undefined ? { error: errorMsg } : {}) };
+  } catch (err) {
+    return { ready: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 export async function locateUiElements(options: LocateClientOptions): Promise<LocateAnythingResponse> {
   const { endpoint, request, timeoutMs, maxDimension } = options;
+
+  // Fast pre-flight: fail in 5s rather than waiting the full locator timeout
+  const health = await checkSidecarHealth(endpoint);
+  if (!health.ready) {
+    throw new LocatorUnavailableError(
+      health.error ? `Sidecar not ready: ${health.error}` : "Sidecar not ready"
+    );
+  }
+
   const requestBody = await withImagePayload(request, maxDimension);
 
   let rawResponse: Response;

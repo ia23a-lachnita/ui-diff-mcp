@@ -93,6 +93,15 @@ export function makeMockFetch(specs: ModelCallSpec[], fetchOpts?: MockFetchOptio
       });
     }
 
+    // Sidecar health pre-flight (new: locateUiElements calls /health before sending image)
+    if (typeof url === "string" && url.includes("/health")) {
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ ready: true, error: null })
+      });
+    }
+
     // Route sidecar requests back to a valid sidecar-shaped response so Zod
     // parsing in locateanything-client.ts succeeds.
     if (typeof url === "string" && url.includes("/v1/locate-ui-elements")) {
