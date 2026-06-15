@@ -10,8 +10,15 @@ param(
 $ErrorActionPreference = "Stop"
 
 if (-not $env:LOCATEANYTHING_EAGLE_EMBODIED_DIR) {
-  Write-Host "LOCATEANYTHING_EAGLE_EMBODIED_DIR is not set."
-  Write-Host "Set it to the NVlabs/Eagle/Embodied checkout path before starting the sidecar."
+  # Default for this machine — override by setting LOCATEANYTHING_EAGLE_EMBODIED_DIR in your shell profile
+  $defaultDir = "C:\Users\xursc\projects\Eagle\Embodied"
+  if (Test-Path $defaultDir) {
+    $env:LOCATEANYTHING_EAGLE_EMBODIED_DIR = $defaultDir
+    Write-Host "LOCATEANYTHING_EAGLE_EMBODIED_DIR defaulting to $defaultDir"
+  } else {
+    Write-Error "LOCATEANYTHING_EAGLE_EMBODIED_DIR is not set and default path '$defaultDir' does not exist. Set it to the Eagle/Embodied checkout containing locateanything_worker."
+    exit 1
+  }
 }
 
 if (-not $env:LOCATEANYTHING_IN_TOKEN_LIMIT) {

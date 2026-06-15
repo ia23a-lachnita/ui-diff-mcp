@@ -25,3 +25,37 @@ The implementation status file is the persistent source of truth for where the p
 - Never leave the status file saying a task is complete unless its verification command passed or the failure is explicitly recorded.
 - Every implementation commit should include the code/docs changed for that task plus the tracking updates for the same task.
 - The status file must not contain secrets, API keys, raw model credentials, or large generated artifact paths outside committed docs/examples.
+
+## Required Environment Variables
+
+These must be set in the shell before running live tests or the sidecar. They are never committed to the repo.
+
+| Variable | Required for | Value on this machine |
+|---|---|---|
+| `OPENROUTER_API_KEY` | Live model tests, free-mode pipeline | OpenRouter secret key |
+| `NVIDIA_API_KEY` | NVIDIA model probes and free-mode inference | NVIDIA API secret key |
+| `LOCATEANYTHING_SIDECAR_URL` | Any non-deterministic run | `http://127.0.0.1:39731` (default) |
+| `LOCATEANYTHING_EAGLE_EMBODIED_DIR` | Sidecar startup | `C:\Users\xursc\projects\Eagle\Embodied` |
+| `UI_DIFF_LIVE_EXPECTED_IMAGE` | Calorix live tests | Path to expected screenshot |
+| `UI_DIFF_LIVE_ACTUAL_IMAGE` | Calorix live tests | Path to actual screenshot |
+
+### Starting the LocateAnything sidecar
+
+```powershell
+# From the ui-diff-mcp project root:
+.\scripts\start-locateanything-sidecar.ps1
+```
+
+The script defaults `LOCATEANYTHING_EAGLE_EMBODIED_DIR` to `C:\Users\xursc\projects\Eagle\Embodied` if not set.
+The live tests (`RUN_CALORIX_UI_DIFF_LIVE=1`) auto-start the sidecar via `ensureSidecarRunning()` in
+`tests/helpers/sidecar-manager.ts` — no manual startup needed as long as `LOCATEANYTHING_EAGLE_EMBODIED_DIR` is set.
+
+### Running live gates
+
+```powershell
+# OpenRouter free-mode smoke (fixture images, ~5 min):
+$env:RUN_OPENROUTER_FREE_LIVE="1"; $env:OPENROUTER_API_KEY="sk-..."; $env:LOCATEANYTHING_SIDECAR_URL="http://127.0.0.1:39731"; npx vitest run tests/live/mcp-openrouter-free.live.test.ts
+
+# Calorix smoke (real project images, sidecar auto-starts, ~20 min):
+$env:RUN_CALORIX_UI_DIFF_LIVE="1"; $env:UI_DIFF_LIVE_EXPECTED_IMAGE="C:/path/to/expected.png"; $env:UI_DIFF_LIVE_ACTUAL_IMAGE="C:/path/to/actual.png"; $env:LOCATEANYTHING_EAGLE_EMBODIED_DIR="C:\Users\xursc\projects\Eagle\Embodied"; npx vitest run tests/live/calorix-smoke.live.test.ts
+```
