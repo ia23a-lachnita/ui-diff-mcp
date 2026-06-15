@@ -19,7 +19,8 @@ describe.skipIf(!calorixLive)("Calorix live UI diff smoke", () => {
     const projectRoot = "C:/Users/xursc/projects/calorix";
     await expect(fs.access(projectRoot)).resolves.toBeUndefined();
 
-    const started = await startUiDiffMcpClient();
+    // 10-min locator timeout for large phone screenshots (1200+ px tall)
+    const started = await startUiDiffMcpClient({ LOCATEANYTHING_TIMEOUT_MS: "600000" });
     try {
       const startResult = await started.client.callTool({
         name: "start_ui_diff_run",
@@ -29,25 +30,36 @@ describe.skipIf(!calorixLive)("Calorix live UI diff smoke", () => {
       const { runId } = startResult.structuredContent as { runId: string };
       expect(runId).toBeTruthy();
 
-      // Poll for up to 15 minutes
+      // Poll for up to 20 minutes (increased from 15 to account for locator processing large images)
       let statusOut: { status: string; reportPath?: string } | undefined;
-      for (let i = 0; i < 90; i++) {
+      for (let i = 0; i < 120; i++) {
         await new Promise(r => setTimeout(r, 10000));
         const statusResult = await started.client.callTool({ name: "get_ui_diff_run_status", arguments: { projectRoot, runId } });
         statusOut = statusResult.structuredContent as { status: string; reportPath?: string };
-        if (statusOut.status === "complete" || statusOut.status === "incomplete" || statusOut.status === "failed") break;
+        if (statusOut.status !== "running") break;
       }
-      expect(statusOut?.status, "run must complete, be incomplete, or fail — not hang").not.toBe("running");
-      expect(statusOut?.status).not.toBe("failed");
+      expect(statusOut?.status, "run must terminate — not hang").not.toBe("running");
+      expect(statusOut?.status, `run must complete or be incomplete, got: ${statusOut?.status}`).toMatch(/^(complete|incomplete)$/);
       expect(statusOut?.reportPath).toBeTruthy();
 
       const report = UiDiffReportSchema.parse(JSON.parse(await fs.readFile(statusOut!.reportPath!, "utf8")));
       expect(path.resolve(statusOut!.reportPath!).includes(`${path.sep}.ui-diff${path.sep}runs${path.sep}`)).toBe(true);
+
+      // Locator must have successfully found elements — timeout or unavailability is a gate failure
+      expect(report.locatorCoverageStatus, "locator must not have failed or timed out").not.toBe("failed");
+      expect(report.elements.expected.length, "locator must find elements in expected image").toBeGreaterThan(0);
+      expect(report.elements.actual.length, "locator must find elements in actual image").toBeGreaterThan(0);
+
+      // There must be paired targets available for audit
+      expect(report.auditScope?.totalPairs ?? 0, "at least one element pair must be available for audit").toBeGreaterThan(0);
+
+      // The run must have produced diffs with evidence
+      expect(report.diffs.length, "at least one diff must be reported").toBeGreaterThan(0);
       expect(report.diffs.every(d => d.evidence.length > 0)).toBe(true);
     } finally {
       await started.close();
     }
-  }, 900000);
+  }, 1200000);
 });
 
 describe.skipIf(!calorixFullLive)("verify:calorix-full-live unbounded all-target audit", () => {
@@ -64,7 +76,8 @@ describe.skipIf(!calorixFullLive)("verify:calorix-full-live unbounded all-target
     const projectRoot = "C:/Users/xursc/projects/calorix";
     await expect(fs.access(projectRoot)).resolves.toBeUndefined();
 
-    const started = await startUiDiffMcpClient();
+    // 10-min locator timeout for large phone screenshots
+    const started = await startUiDiffMcpClient({ LOCATEANYTHING_TIMEOUT_MS: "600000" });
     try {
       const startResult = await started.client.callTool({
         name: "start_ui_diff_run",
@@ -74,19 +87,31 @@ describe.skipIf(!calorixFullLive)("verify:calorix-full-live unbounded all-target
       const { runId } = startResult.structuredContent as { runId: string };
       expect(runId).toBeTruthy();
 
-      // Poll for up to 35 minutes
+      // Poll for up to 40 minutes
       let statusOut: { status: string; reportPath?: string } | undefined;
-      for (let i = 0; i < 210; i++) {
+      for (let i = 0; i < 240; i++) {
         await new Promise(r => setTimeout(r, 10000));
         const statusResult = await started.client.callTool({ name: "get_ui_diff_run_status", arguments: { projectRoot, runId } });
         statusOut = statusResult.structuredContent as { status: string; reportPath?: string };
-        if (statusOut.status === "complete" || statusOut.status === "incomplete" || statusOut.status === "failed") break;
+        if (statusOut.status !== "running") break;
       }
-      expect(statusOut?.status).not.toBe("failed");
+      expect(statusOut?.status, "run must terminate — not hang").not.toBe("running");
+      expect(statusOut?.status, `run must complete or be incomplete, got: ${statusOut?.status}`).toMatch(/^(complete|incomplete)$/);
       expect(statusOut?.reportPath).toBeTruthy();
 
       const report = UiDiffReportSchema.parse(JSON.parse(await fs.readFile(statusOut!.reportPath!, "utf8")));
       expect(report.auditScope?.auditLimited ?? false).toBe(false);
+
+      // Locator must have successfully found elements
+      expect(report.locatorCoverageStatus, "locator must not have failed or timed out").not.toBe("failed");
+      expect(report.elements.expected.length, "locator must find elements in expected image").toBeGreaterThan(0);
+      expect(report.elements.actual.length, "locator must find elements in actual image").toBeGreaterThan(0);
+      expect(report.auditScope?.totalPairs ?? 0, "at least one element pair must be available for audit").toBeGreaterThan(0);
+
+      // The run must have produced diffs with evidence
+      expect(report.diffs.length, "at least one diff must be reported").toBeGreaterThan(0);
+      expect(report.diffs.every(d => d.evidence.length > 0)).toBe(true);
+
       console.info(`[full-audit] visualClassificationStatus=${report.visualClassificationStatus}`);
       console.info(`[full-audit] auditedPairs=${report.auditScope?.auditedPairs ?? "n/a"}, totalPairs=${report.auditScope?.totalPairs ?? "n/a"}`);
       console.info(`[full-audit] diffs=${report.diffs.length}`);
@@ -94,7 +119,6 @@ describe.skipIf(!calorixFullLive)("verify:calorix-full-live unbounded all-target
         console.info(`[full-audit] auditor=${report.modelSelection.auditor?.provider}/${report.modelSelection.auditor?.model}`);
         console.info(`[full-audit] reviewer=${report.modelSelection.reviewer?.provider}/${report.modelSelection.reviewer?.model}`);
       }
-      expect(report.diffs.every(d => d.evidence.length > 0)).toBe(true);
     } finally {
       await started.close();
     }

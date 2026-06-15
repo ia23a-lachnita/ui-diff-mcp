@@ -1,6 +1,7 @@
 import { z } from "zod";
 import fs from "node:fs/promises";
 import path from "node:path";
+import sharp from "sharp";
 
 export const LocateAnythingRequestSchema = z.object({
   imagePath: z.string().min(1),
@@ -61,6 +62,8 @@ export interface LocateClientOptions {
   endpoint: string;
   request: LocateAnythingRequest;
   timeoutMs: number;
+  /** Resize image so its longest dimension does not exceed this value before sending. Default: no resize. */
+  maxDimension?: number;
 }
 
 function mimeTypeForImagePath(imagePath: string): LocateAnythingRequest["imageMimeType"] | undefined {
@@ -71,27 +74,37 @@ function mimeTypeForImagePath(imagePath: string): LocateAnythingRequest["imageMi
   return undefined;
 }
 
-async function withImagePayload(request: LocateAnythingRequest): Promise<LocateAnythingRequest> {
+async function withImagePayload(request: LocateAnythingRequest, maxDimension?: number): Promise<LocateAnythingRequest> {
   if (request.imageBase64) return request;
 
   const imageMimeType = mimeTypeForImagePath(request.imagePath);
   if (!imageMimeType) return request;
 
   try {
-    const imageBytes = await fs.readFile(request.imagePath);
+    let pipeline = sharp(request.imagePath);
+    if (maxDimension) {
+      pipeline = pipeline.resize(maxDimension, maxDimension, { fit: "inside", withoutEnlargement: true });
+    }
+    const imageBytes = await pipeline.png().toBuffer();
     return {
       ...request,
       imageBase64: imageBytes.toString("base64"),
-      imageMimeType
+      imageMimeType: "image/png"
     };
   } catch {
-    return request;
+    // Fall back to raw file read if sharp fails
+    try {
+      const imageBytes = await fs.readFile(request.imagePath);
+      return { ...request, imageBase64: imageBytes.toString("base64"), imageMimeType };
+    } catch {
+      return request;
+    }
   }
 }
 
 export async function locateUiElements(options: LocateClientOptions): Promise<LocateAnythingResponse> {
-  const { endpoint, request, timeoutMs } = options;
-  const requestBody = await withImagePayload(request);
+  const { endpoint, request, timeoutMs, maxDimension } = options;
+  const requestBody = await withImagePayload(request, maxDimension);
 
   let rawResponse: Response;
   try {

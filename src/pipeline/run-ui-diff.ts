@@ -177,6 +177,8 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
   const paidModeEnabled = process.env["UI_DIFF_ENABLE_PAID_MODE"] === "1";
   const locatorUrl = process.env["LOCATEANYTHING_SIDECAR_URL"] ?? "http://127.0.0.1:39731";
   const locatorTimeoutMs = Number.parseInt(process.env["LOCATEANYTHING_TIMEOUT_MS"] ?? "300000", 10);
+  const locatorMaxDimensionRaw = process.env["LOCATEANYTHING_MAX_DIMENSION"];
+  const locatorMaxDimension = locatorMaxDimensionRaw ? Number.parseInt(locatorMaxDimensionRaw, 10) : 1200;
   const locatorQueries = [
     { id: "text_labels", prompt: "Detect all visible text labels in box format." },
     { id: "buttons", prompt: "Locate all buttons and tappable controls in box format." },
@@ -232,7 +234,8 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
           generationMode: "hybrid",
           maxBoxesPerQuery: 200
         },
-        timeoutMs: locatorTimeoutMs
+        timeoutMs: locatorTimeoutMs,
+        maxDimension: locatorMaxDimension
       });
       const actResp = await locateUiElements({
         endpoint: locatorUrl,
@@ -242,7 +245,8 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
           generationMode: "hybrid",
           maxBoxesPerQuery: 200
         },
-        timeoutMs: locatorTimeoutMs
+        timeoutMs: locatorTimeoutMs,
+        maxDimension: locatorMaxDimension
       });
       expectedElements.push(...buildElementMap(expResp.elements, { width: expectedImg.width, height: expectedImg.height }));
       actualElements.push(...buildElementMap(actResp.elements, { width: actualImg.width, height: actualImg.height }));
@@ -318,13 +322,10 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     }
 
     const auditorEntry = selectModelForMode("auditor", mode, probeResults, process.env);
-    const reviewerEntry = selectModelForMode(
-      "reviewer",
-      mode,
-      probeResults,
-      process.env,
-      auditorEntry ? [{ provider: auditorEntry.provider, model: auditorEntry.model }] : []
-    );
+    // Reviewer selects independently without excluding the auditor model.
+    // Independence is desirable but not at the cost of a significantly weaker model —
+    // the best passing candidate wins for both roles.
+    const reviewerEntry = selectModelForMode("reviewer", mode, probeResults, process.env);
 
     await checkpoint("model_probe", "complete", pairs, modelHealth);
 

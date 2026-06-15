@@ -79,6 +79,7 @@ describe.skipIf(!liveEnabled)("live full MCP discover_ui_diffs (default free mod
         })
       ]));
     }
+    expect(report.locatorCoverageStatus, "locator must not have failed").not.toBe("failed");
     expect(report.elements.expected.length).toBeGreaterThan(0);
     expect(report.elements.actual.length).toBeGreaterThan(0);
 
