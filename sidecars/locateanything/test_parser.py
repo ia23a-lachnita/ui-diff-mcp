@@ -134,5 +134,22 @@ class LocateAnythingServerConfigTests(unittest.TestCase):
             _locateanything_max_new_tokens({"LOCATEANYTHING_MAX_NEW_TOKENS": "0"})
 
 
+class CvComponentLaneTests(unittest.TestCase):
+    def test_detects_simple_card_and_button_regions(self):
+        from PIL import Image, ImageDraw
+        from sidecars.locateanything.cv_components import detect_cv_components
+
+        image = Image.new("RGB", (240, 480), "#111111")
+        draw = ImageDraw.Draw(image)
+        draw.rounded_rectangle((20, 80, 220, 200), radius=16, fill="#222222", outline="#444444")
+        draw.rounded_rectangle((40, 140, 160, 180), radius=10, fill="#77aa44")
+
+        elements = detect_cv_components(image, max_boxes=20)
+
+        self.assertGreaterEqual(len(elements), 2)
+        self.assertTrue(any(el["queryId"] == "cv_components" for el in elements))
+        self.assertTrue(all(el["confidence"] >= 0.4 for el in elements))
+
+
 if __name__ == "__main__":
     unittest.main()

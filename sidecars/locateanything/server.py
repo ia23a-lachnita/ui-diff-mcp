@@ -9,6 +9,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from PIL import Image, UnidentifiedImageError
 
+from sidecars.locateanything.cv_components import detect_cv_components
 from sidecars.locateanything.parser import parse_elements
 
 
@@ -158,6 +159,15 @@ def locate_ui_elements(request: LocateRequest) -> dict[str, Any]:
     image_width, image_height = image.size
     all_elements: list[dict[str, Any]] = []
     warnings: list[str] = []
+    lane_metadata: dict[str, dict[str, Any]] = {}
+
+    try:
+        cv_elements = detect_cv_components(image, max_boxes=min(request.maxBoxesPerQuery, 200))
+        all_elements.extend(cv_elements)
+        lane_metadata["cv_components"] = {"status": "complete", "count": len(cv_elements), "model": "opencv"}
+    except Exception as exc:
+        warnings.append(f"cv_components lane failed: {type(exc).__name__}: {exc}")
+        lane_metadata["cv_components"] = {"status": "failed", "count": 0, "detail": str(exc), "model": "opencv"}
 
     for query in request.queries:
         try:
@@ -190,4 +200,5 @@ def locate_ui_elements(request: LocateRequest) -> dict[str, Any]:
         "image": {"width": image_width, "height": image_height},
         "elements": all_elements,
         "warnings": warnings,
+        "metadata": {"lanes": lane_metadata},
     }

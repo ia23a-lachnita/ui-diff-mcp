@@ -8,7 +8,7 @@ tokenizers==0.22.0
 accelerate==1.5.2
 timm>=1.0.11
 decord
-numpy>=1.25,<2
+numpy>=1.26,<3
 sentencepiece==0.2.0
 einops
 shortuuid
@@ -16,4 +16,4 @@ filetype
 bitstring
 peft==0.12.0
 lmdb
-opencv-python-headless==4.9.0.80
+opencv-python-headless>=4.10,<5
