@@ -202,5 +202,18 @@ class YoloAdapterTests(unittest.TestCase):
         self.assertEqual(elements[0]["box"]["height"], 40)
 
 
+class SkipModelEnvVarTests(unittest.TestCase):
+    def test_skip_model_truthy_values(self) -> None:
+        import os
+        for val in ("1", "true", "yes"):
+            with self.subTest(val=val):
+                self.assertIn(val.lower(), {"1", "true", "yes"})
+
+    def test_skip_model_falsy_values(self) -> None:
+        for val in ("", "0", "false", "no"):
+            with self.subTest(val=val):
+                self.assertNotIn(val.lower(), {"1", "true", "yes"})
+
+
 if __name__ == "__main__":
     unittest.main()

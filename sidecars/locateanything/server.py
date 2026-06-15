@@ -128,10 +128,12 @@ def _create_worker() -> Any:
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    try:
-        state.worker = _create_worker()
-    except Exception as exc:
-        state.load_error = f"{type(exc).__name__}: {exc}"
+    skip_model = os.environ.get("LOCATEANYTHING_SKIP_MODEL", "").lower() in {"1", "true", "yes"}
+    if not skip_model:
+        try:
+            state.worker = _create_worker()
+        except Exception as exc:
+            state.load_error = f"{type(exc).__name__}: {exc}"
     yield
 
 
@@ -140,9 +142,10 @@ app = FastAPI(title="LocateAnything UI Diff Sidecar", version="0.1.0", lifespan=
 
 @app.get("/health")
 def health() -> dict[str, Any]:
+    skip_model = os.environ.get("LOCATEANYTHING_SKIP_MODEL", "").lower() in {"1", "true", "yes"}
     return {
         "model": os.environ.get("LOCATEANYTHING_MODEL", "nvidia/LocateAnything-3B"),
-        "ready": state.worker is not None,
+        "ready": skip_model or state.worker is not None,
         "error": state.load_error,
         "inTokenLimit": getattr(
             getattr(getattr(state.worker, "processor", None), "image_processor", None),
@@ -154,7 +157,8 @@ def health() -> dict[str, Any]:
 
 @app.post("/v1/locate-ui-elements")
 def locate_ui_elements(request: LocateRequest) -> dict[str, Any]:
-    if state.worker is None:
+    skip_model = os.environ.get("LOCATEANYTHING_SKIP_MODEL", "").lower() in {"1", "true", "yes"}
+    if not skip_model and state.worker is None:
         detail = state.load_error or "LocateAnythingWorker is not loaded"
         raise HTTPException(status_code=503, detail=detail)
 
@@ -202,31 +206,35 @@ def locate_ui_elements(request: LocateRequest) -> dict[str, Any]:
         warnings.append(f"yolo_ui lane failed: {type(exc).__name__}: {exc}")
         lane_metadata["yolo_ui"] = {"status": "failed", "count": 0, "detail": str(exc), "model": "local-yolo-ui"}
 
-    for query in request.queries:
-        try:
-            result = state.worker.predict(
-                image,
-                query.prompt,
-                generation_mode=_locateanything_generation_mode(request.generationMode, os.environ),
-                max_new_tokens=_locateanything_max_new_tokens(os.environ),
-                top_k=_locateanything_top_k(os.environ),
-                verbose=False,
-            )
-        except RuntimeError as exc:
-            raise HTTPException(status_code=503, detail=f"model inference failed: {exc}") from exc
-        except Exception as exc:
-            raise HTTPException(status_code=500, detail=f"adapter inference error: {exc}") from exc
+    skip_model = os.environ.get("LOCATEANYTHING_SKIP_MODEL", "").lower() in {"1", "true", "yes"}
+    if skip_model:
+        lane_metadata["locateanything"] = {"status": "skipped", "count": 0, "model": os.environ.get("LOCATEANYTHING_MODEL", "nvidia/LocateAnything-3B")}
+    else:
+        for query in request.queries:
+            try:
+                result = state.worker.predict(
+                    image,
+                    query.prompt,
+                    generation_mode=_locateanything_generation_mode(request.generationMode, os.environ),
+                    max_new_tokens=_locateanything_max_new_tokens(os.environ),
+                    top_k=_locateanything_top_k(os.environ),
+                    verbose=False,
+                )
+            except RuntimeError as exc:
+                raise HTTPException(status_code=503, detail=f"model inference failed: {exc}") from exc
+            except Exception as exc:
+                raise HTTPException(status_code=500, detail=f"adapter inference error: {exc}") from exc
 
-        answer = str(result.get("answer", ""))
-        elements, parse_warnings = parse_elements(
-            query_id=query.id,
-            answer=answer,
-            image_width=image_width,
-            image_height=image_height,
-            max_boxes=request.maxBoxesPerQuery,
-        )
-        all_elements.extend(elements)
-        warnings.extend(parse_warnings)
+            answer = str(result.get("answer", ""))
+            elements, parse_warnings = parse_elements(
+                query_id=query.id,
+                answer=answer,
+                image_width=image_width,
+                image_height=image_height,
+                max_boxes=request.maxBoxesPerQuery,
+            )
+            all_elements.extend(elements)
+            warnings.extend(parse_warnings)
 
     return {
         "model": os.environ.get("LOCATEANYTHING_MODEL", "nvidia/LocateAnything-3B"),
