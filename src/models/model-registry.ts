@@ -11,6 +11,14 @@ export type ModelRole =
   | "escalation"
   | "target_recovery";
 
+export interface ModelRouteCapabilities {
+  maxImages: number;
+  supportsJsonSchema: boolean;
+  supportsJsonObject: boolean;
+  supportsStreaming: boolean;
+  allowedRoles: Array<"auditor" | "reviewer" | "target_recovery">;
+}
+
 export interface ModelEntry {
   role: ModelRole;
   provider: "openrouter" | "nvidia";
@@ -18,6 +26,18 @@ export interface ModelEntry {
   costClass: "free" | "paid";
   probeTtlMs: number;
   required: boolean;
+  capabilities?: ModelRouteCapabilities;
+  enabled?: boolean;
+}
+
+export function requiredImagesForRole(role: string): number {
+  if (role === "auditor" || role === "fast_auditor" || role === "reviewer" || role === "escalation") {
+    return 5;
+  }
+  if (role === "target_recovery") {
+    return 4;
+  }
+  return 2;
 }
 
 // Canonical Model Candidate Ranking from docs/superpowers/plans/2026-06-14-free-first-ui-diff-hardening.md
@@ -197,24 +217,26 @@ export const CANONICAL_MODEL_RANKING: readonly (Omit<ModelEntry, "required" | "p
     defaultFreeModeHandling: "Prefer native NVIDIA; use OpenRouter free only if native route unavailable."
   },
   {
-    role: "reviewer", // Llama 3.2 90B Vision Instruct
+    role: "reviewer", // Llama 3.2 90B Vision Instruct — single-image only on NVIDIA (live evidence)
     provider: "nvidia",
     model: "meta/llama-3.2-90b-vision-instruct",
     costClass: "free",
     eligibleFreeProviderRoutes: [
       { provider: "nvidia", model: "meta/llama-3.2-90b-vision-instruct" }
     ],
-    defaultFreeModeHandling: "Probe native NVIDIA as reviewer/escalation candidate."
+    defaultFreeModeHandling: "Probe native NVIDIA as reviewer/escalation candidate.",
+    capabilities: { maxImages: 1, supportsJsonSchema: true, supportsJsonObject: true, supportsStreaming: true, allowedRoles: ["reviewer"] }
   },
   {
-    role: "reviewer", // Llama 3.2 11B Vision Instruct
+    role: "reviewer", // Llama 3.2 11B Vision Instruct — single-image only on NVIDIA (live evidence)
     provider: "nvidia",
     model: "meta/llama-3.2-11b-vision-instruct",
     costClass: "free",
     eligibleFreeProviderRoutes: [
       { provider: "nvidia", model: "meta/llama-3.2-11b-vision-instruct" }
     ],
-    defaultFreeModeHandling: "Probe native NVIDIA as lighter crop-level candidate."
+    defaultFreeModeHandling: "Probe native NVIDIA as lighter crop-level candidate.",
+    capabilities: { maxImages: 1, supportsJsonSchema: true, supportsJsonObject: true, supportsStreaming: true, allowedRoles: ["reviewer"] }
   },
   {
     role: "auditor", // Nex N2 Pro
@@ -327,7 +349,11 @@ export function selectModelForMode(
           if (isExcluded(paidRoute.provider, paidRoute.model)) {
             continue;
           }
-          const probe = probeResults.find(p => p.model === paidRoute.model && p.provider === paidRoute.provider);
+          const probe = probeResults.find(p =>
+            p.model === paidRoute.model &&
+            p.provider === paidRoute.provider &&
+            (p.role === logicalRole || p.role === candidate.role)
+          );
           if (probe?.status === "pass") {
             // Paid models have a longer TTL
             return { ...candidate, provider: paidRoute.provider, model: paidRoute.model, costClass: "paid", required: true, probeTtlMs: 24 * 60 * 60 * 1000 };
@@ -342,6 +368,11 @@ export function selectModelForMode(
       const eligibleRoutes = candidate.eligibleFreeProviderRoutes;
 
       // Prioritize native NVIDIA for "free" and "free_nvidia" modes
+      const requiredImages = requiredImagesForRole(logicalRole);
+      const probeMatchesRole = (p: ProbeResult) =>
+        p.role === logicalRole &&
+        (p.maxImagesSupported === undefined || p.maxImagesSupported >= requiredImages);
+
       if (mode === "free" || mode === "free_nvidia") {
         if (isNvidiaApiKeyConfigured) {
           const nvidiaRoute = eligibleRoutes.find(r => r.provider === "nvidia");
@@ -349,7 +380,7 @@ export function selectModelForMode(
             if (isExcluded(nvidiaRoute.provider, nvidiaRoute.model)) {
               continue;
             }
-            const probe = probeResults.find(p => p.model === nvidiaRoute.model && p.provider === nvidiaRoute.provider);
+            const probe = probeResults.find(p => p.model === nvidiaRoute.model && p.provider === nvidiaRoute.provider && probeMatchesRole(p));
             if (probe?.status === "pass") {
               return { ...candidate, provider: nvidiaRoute.provider, model: nvidiaRoute.model, required: true, probeTtlMs: 15 * 60 * 1000 };
             }
@@ -364,7 +395,7 @@ export function selectModelForMode(
           if (isExcluded(openRouterRoute.provider, openRouterRoute.model)) {
             continue;
           }
-          const probe = probeResults.find(p => p.model === openRouterRoute.model && p.provider === openRouterRoute.provider);
+          const probe = probeResults.find(p => p.model === openRouterRoute.model && p.provider === openRouterRoute.provider && probeMatchesRole(p));
           if (probe?.status === "pass") {
             return { ...candidate, provider: openRouterRoute.provider, model: openRouterRoute.model, required: true, probeTtlMs: 15 * 60 * 1000 };
           }

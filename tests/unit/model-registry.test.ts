@@ -1,18 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { CANONICAL_MODEL_RANKING, getModelByRole, getRequiredModels, selectModelForMode, resolveMode } from "../../src/models/model-registry.js";
+import { CANONICAL_MODEL_RANKING, getModelByRole, getRequiredModels, selectModelForMode, resolveMode, requiredImagesForRole } from "../../src/models/model-registry.js";
 import type { ProbeResult } from "../../src/models/probes.js";
 
 const NOW = new Date().toISOString();
 
-function makeProbe(provider: string, model: string, status: "pass" | "fail" | "not_checked" = "pass"): ProbeResult {
-  return { role: "auditor", provider, model, status, checkedAt: NOW };
+function makeProbe(provider: string, model: string, role: string = "auditor", status: "pass" | "fail" | "not_checked" = "pass", maxImagesSupported = 5): ProbeResult {
+  return { role, provider, model, status, checkedAt: NOW, schemaValid: status === "pass", contentAccurate: status === "pass", maxImagesSupported };
 }
 
 function allPass(): ProbeResult[] {
-  return CANONICAL_MODEL_RANKING.flatMap(c => [
-    ...c.eligibleFreeProviderRoutes.map(r => makeProbe(r.provider, r.model)),
-    ...(c.paidRoutes ?? []).map(r => makeProbe(r.provider, r.model))
-  ]);
+  return CANONICAL_MODEL_RANKING.flatMap(c => {
+    const maxImages = c.role === "target_recovery" ? 4 : 5;
+    return [
+      ...c.eligibleFreeProviderRoutes.map(r => makeProbe(r.provider, r.model, c.role, "pass", maxImages)),
+      ...(c.paidRoutes ?? []).map(r => makeProbe(r.provider, r.model, c.role, "pass", maxImages))
+    ];
+  });
 }
 
 describe("CANONICAL_MODEL_RANKING", () => {
@@ -67,7 +70,7 @@ describe("selectModelForMode", () => {
     );
     const route = openRouterAuditor?.eligibleFreeProviderRoutes.find(r => r.provider === "openrouter");
     if (!route || !openRouterAuditor) return;
-    const probes: ProbeResult[] = [makeProbe(route.provider, route.model)];
+    const probes: ProbeResult[] = [makeProbe(route.provider, route.model, "auditor")];
     const entry = selectModelForMode("auditor", "free", probes, noEnv);
     expect(entry).toBeDefined();
     expect(entry?.costClass).toBe("free");
@@ -80,7 +83,7 @@ describe("selectModelForMode", () => {
     );
     const route = nvidiaAuditor?.eligibleFreeProviderRoutes.find(r => r.provider === "nvidia");
     if (!route || !nvidiaAuditor) return;
-    const probes: ProbeResult[] = [makeProbe(route.provider, route.model)];
+    const probes: ProbeResult[] = [makeProbe(route.provider, route.model, "auditor")];
     const entry = selectModelForMode("auditor", "free", probes, withNvidia);
     expect(entry).toBeDefined();
     expect(entry?.costClass).toBe("free");
@@ -133,7 +136,7 @@ describe("selectModelForMode", () => {
     }
     const paidRoute = paidAuditorCandidate.paidRoutes[0];
     if (!paidRoute) throw new Error("paidRoutes[0] is undefined");
-    const probes: ProbeResult[] = [makeProbe(paidRoute.provider, paidRoute.model)];
+    const probes: ProbeResult[] = [makeProbe(paidRoute.provider, paidRoute.model, "auditor")];
     const entry = selectModelForMode("auditor", "paid", probes, noEnv);
     expect(entry).toBeUndefined();
   });
@@ -147,7 +150,7 @@ describe("selectModelForMode", () => {
     }
     const paidRoute = paidAuditorCandidate.paidRoutes[0];
     if (!paidRoute) throw new Error("paidRoutes[0] is undefined");
-    const probes: ProbeResult[] = [makeProbe(paidRoute.provider, paidRoute.model)];
+    const probes: ProbeResult[] = [makeProbe(paidRoute.provider, paidRoute.model, "auditor")];
     const entry = selectModelForMode("auditor", "paid", probes, {
       UI_DIFF_ENABLE_PAID_MODE: "1"
     });
@@ -189,6 +192,23 @@ describe("selectModelForMode", () => {
     expect(selectModelForMode("escalation", "free", allPass(), noEnv)).toBeUndefined();
     expect(selectModelForMode("escalation", "free_openrouter", allPass(), noEnv)).toBeUndefined();
     expect(selectModelForMode("escalation", "free_nvidia", allPass(), withNvidia)).toBeUndefined();
+  });
+});
+
+describe("requiredImagesForRole", () => {
+  it("auditor and reviewer require 5 images", () => {
+    expect(requiredImagesForRole("auditor")).toBe(5);
+    expect(requiredImagesForRole("reviewer")).toBe(5);
+    expect(requiredImagesForRole("fast_auditor")).toBe(5);
+    expect(requiredImagesForRole("escalation")).toBe(5);
+  });
+
+  it("target_recovery requires 4 images", () => {
+    expect(requiredImagesForRole("target_recovery")).toBe(4);
+  });
+
+  it("unknown roles default to 2 images", () => {
+    expect(requiredImagesForRole("locator")).toBe(2);
   });
 });
 

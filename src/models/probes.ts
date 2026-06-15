@@ -12,8 +12,164 @@ export interface ProbeResult {
   ttftMs?: number | null;
   schemaValid?: boolean | null;
   contentAccurate?: boolean | null;
+  maxImagesSupported?: number;
 }
 
+const PROBE_COLORS = [
+  { r: 0, g: 0, b: 255 },    // blue — always first so hasBlueImage check passes
+  { r: 255, g: 0, b: 0 },    // red
+  { r: 0, g: 200, b: 0 },    // green
+  { r: 255, g: 200, b: 0 },  // yellow
+  { r: 128, g: 128, b: 128 } // gray
+];
+
+async function makeProbeImageSet(count: number): Promise<string[]> {
+  const images: string[] = [];
+  for (let i = 0; i < count; i++) {
+    const color = PROBE_COLORS[i % PROBE_COLORS.length]!;
+    const buf = await sharp({
+      create: { width: 64, height: 64, channels: 3, background: color }
+    }).png().toBuffer();
+    images.push(`data:image/png;base64,${buf.toString("base64")}`);
+  }
+  return images;
+}
+
+const MULTI_IMAGE_PROBE_SCHEMA = {
+  name: "multi_image_probe",
+  schema: {
+    type: "object",
+    properties: {
+      imageCount: { type: "integer" },
+      hasBlueImage: { type: "boolean" }
+    },
+    required: ["imageCount", "hasBlueImage"],
+    additionalProperties: false
+  }
+};
+
+const MULTI_IMAGE_PROBE_PROMPT =
+  "Count the total number of images provided. Also identify if any image has a predominantly blue background. " +
+  "Return JSON with two fields: imageCount (integer count of images) and hasBlueImage (boolean, true if any image is predominantly blue).";
+
+async function runRoleProbe(
+  entry: ModelEntry,
+  role: string,
+  imageCount: number,
+  openRouterApiKey?: string,
+  nvidiaApiKey?: string,
+  nvidiaBaseUrl?: string
+): Promise<ProbeResult> {
+  const key = entry.provider === "nvidia"
+    ? (nvidiaApiKey ?? process.env["NVIDIA_API_KEY"] ?? "")
+    : (openRouterApiKey ?? "");
+
+  if (!key) {
+    return {
+      role,
+      provider: entry.provider,
+      model: entry.model,
+      status: "not_checked",
+      detail: entry.provider === "nvidia" ? "NVIDIA_API_KEY not set" : "No OpenRouter API key provided",
+      schemaValid: null,
+      contentAccurate: null
+    };
+  }
+
+  const images = await makeProbeImageSet(imageCount);
+  const caller = entry.provider === "nvidia"
+    ? makeNvidiaVisionCaller(key, entry.model, nvidiaBaseUrl)
+    : makeOpenRouterVisionCaller(key, entry.model);
+
+  try {
+    const result = await caller({
+      prompt: MULTI_IMAGE_PROBE_PROMPT,
+      images,
+      jsonSchema: MULTI_IMAGE_PROBE_SCHEMA,
+      timeoutMs: 30000
+    });
+
+    const parsed = result.parsed as { imageCount?: unknown; hasBlueImage?: unknown };
+    const schemaValid = typeof parsed === "object" && parsed !== null &&
+      "imageCount" in parsed && "hasBlueImage" in parsed;
+    const contentAccurate = schemaValid &&
+      typeof parsed.imageCount === "number" &&
+      Math.round(parsed.imageCount) === imageCount &&
+      parsed.hasBlueImage === true;
+
+    if (schemaValid && contentAccurate) {
+      return {
+        role,
+        provider: entry.provider,
+        model: entry.model,
+        status: "pass",
+        jsonSchemaMode: "json_schema",
+        ttftMs: result.ttftMs ?? null,
+        schemaValid,
+        contentAccurate,
+        maxImagesSupported: imageCount,
+        checkedAt: new Date().toISOString()
+      };
+    }
+
+    return {
+      role,
+      provider: entry.provider,
+      model: entry.model,
+      status: "fail",
+      detail: `Probe failed. schemaValid=${schemaValid}, contentAccurate=${contentAccurate}. Parsed: ${JSON.stringify(parsed).slice(0, 200)}`,
+      jsonSchemaMode: "json_schema",
+      ttftMs: result.ttftMs ?? null,
+      schemaValid,
+      contentAccurate,
+      checkedAt: new Date().toISOString()
+    };
+  } catch (err) {
+    return {
+      role,
+      provider: entry.provider,
+      model: entry.model,
+      status: "fail",
+      detail: err instanceof Error ? err.message : String(err),
+      ttftMs: null,
+      schemaValid: false,
+      contentAccurate: false,
+      checkedAt: new Date().toISOString()
+    };
+  }
+}
+
+export async function probeAuditCapability(
+  entry: ModelEntry,
+  openRouterApiKey?: string,
+  nvidiaApiKey?: string,
+  nvidiaBaseUrl?: string
+): Promise<ProbeResult> {
+  // Audit sends 5 images: expected crop, actual crop, directional overlay, pixel mask, context crop
+  return runRoleProbe(entry, "auditor", 5, openRouterApiKey, nvidiaApiKey, nvidiaBaseUrl);
+}
+
+export async function probeReviewerCapability(
+  entry: ModelEntry,
+  openRouterApiKey?: string,
+  nvidiaApiKey?: string,
+  nvidiaBaseUrl?: string
+): Promise<ProbeResult> {
+  // Reviewer fixed 5-image max: expected crop, actual crop, directional overlay, pixel mask, context crop
+  return runRoleProbe(entry, "reviewer", 5, openRouterApiKey, nvidiaApiKey, nvidiaBaseUrl);
+}
+
+export async function probeRecoveryCapability(
+  entry: ModelEntry,
+  openRouterApiKey?: string,
+  nvidiaApiKey?: string,
+  nvidiaBaseUrl?: string
+): Promise<ProbeResult> {
+  // Recovery sends 4 images: expected crop, actual crop, overlay, mask
+  return runRoleProbe(entry, "target_recovery", 4, openRouterApiKey, nvidiaApiKey, nvidiaBaseUrl);
+}
+
+// Legacy single-probe functions kept for backward compatibility with direct callers
 async function makeBluePng64(): Promise<string> {
   const buf = await sharp({
     create: { width: 64, height: 64, channels: 3, background: { r: 0, g: 0, b: 255 } }
@@ -60,15 +216,7 @@ function checkContentAccuracy(parsed: unknown): boolean {
 function checkSchemaValidity(parsed: unknown): boolean {
   if (typeof parsed !== 'object' || parsed === null) return false;
   const p = parsed as { dominantColor?: string; hasRedRect?: boolean };
-  // Manually check for required properties for simplicity, could use a validator library for complex schemas
   return 'dominantColor' in p && 'hasRedRect' in p;
-}
-
-function evaluateProbeResult(parsed: unknown): { schemaValid: boolean; contentAccurate: boolean } {
-  const schemaValid = checkSchemaValidity(parsed);
-  // Only check content accuracy if the schema is at least valid enough to parse
-  const contentAccurate = schemaValid && checkContentAccuracy(parsed);
-  return { schemaValid, contentAccurate };
 }
 
 export async function probeOpenRouterModel(entry: ModelEntry, apiKey: string): Promise<ProbeResult> {
@@ -96,7 +244,8 @@ export async function probeOpenRouterModel(entry: ModelEntry, apiKey: string): P
       timeoutMs: 30000
     });
 
-    const { schemaValid, contentAccurate } = evaluateProbeResult(result.parsed);
+    const schemaValid = checkSchemaValidity(result.parsed);
+    const contentAccurate = schemaValid && checkContentAccuracy(result.parsed);
 
     if (schemaValid && contentAccurate) {
       return {
@@ -130,7 +279,7 @@ export async function probeOpenRouterModel(entry: ModelEntry, apiKey: string): P
       status: "fail",
       detail: err instanceof Error ? err.message : String(err),
       ttftMs: null,
-      schemaValid: false, // Assume schema is not valid if error occurs before evaluation
+      schemaValid: false,
       contentAccurate: false
     };
   }
@@ -166,7 +315,8 @@ export async function probeNvidiaModel(
       timeoutMs: 30000
     });
 
-    const { schemaValid, contentAccurate } = evaluateProbeResult(result.parsed);
+    const schemaValid = checkSchemaValidity(result.parsed);
+    const contentAccurate = schemaValid && checkContentAccuracy(result.parsed);
 
     if (schemaValid && contentAccurate) {
       return {
@@ -200,7 +350,7 @@ export async function probeNvidiaModel(
       status: "fail",
       detail: err instanceof Error ? err.message : String(err),
       ttftMs: null,
-      schemaValid: false, // Assume schema is not valid if error occurs before evaluation
+      schemaValid: false,
       contentAccurate: false
     };
   }
@@ -214,6 +364,16 @@ export async function probeRequiredModels(
 ): Promise<ProbeResult[]> {
   return Promise.all(
     entries.map(e => {
+      if (e.role === "auditor" || e.role === "fast_auditor") {
+        return probeAuditCapability(e, openRouterApiKey, nvidiaApiKey, nvidiaBaseUrl);
+      }
+      if (e.role === "reviewer" || e.role === "escalation") {
+        return probeReviewerCapability(e, openRouterApiKey, nvidiaApiKey, nvidiaBaseUrl);
+      }
+      if (e.role === "target_recovery") {
+        return probeRecoveryCapability(e, openRouterApiKey, nvidiaApiKey, nvidiaBaseUrl);
+      }
+      // fallback for unrecognized roles
       if (e.provider === "nvidia") return probeNvidiaModel(e, nvidiaApiKey, nvidiaBaseUrl);
       return probeOpenRouterModel(e, openRouterApiKey);
     })

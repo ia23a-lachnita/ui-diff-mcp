@@ -5,6 +5,7 @@ export interface VisionJsonRequest {
   images: string[];
   jsonSchema: { name: string; schema: Record<string, unknown> };
   timeoutMs: number;
+  jsonMode?: "json_schema" | "json_object" | "parser_only";
 }
 
 export interface VisionJsonResponse {
@@ -38,15 +39,19 @@ export function makeOpenRouterVisionCaller(apiKey: string, model: string): Visio
       content.push({ type: "image_url", image_url: { url } });
     }
 
-    const body = {
+    const jsonMode = req.jsonMode ?? "json_schema";
+    const responseFormat = jsonMode === "parser_only" ? undefined
+      : jsonMode === "json_object" ? { type: "json_object" as const }
+      : { type: "json_schema" as const, json_schema: { name: req.jsonSchema.name, strict: true, schema: req.jsonSchema.schema } };
+
+    const body: Record<string, unknown> = {
       model,
       messages: [{ role: "user" as const, content }],
-      response_format: {
-        type: "json_schema",
-        json_schema: { name: req.jsonSchema.name, strict: true, schema: req.jsonSchema.schema }
-      },
-      stream: true, // Enable streaming
+      stream: true,
     };
+    if (responseFormat !== undefined) {
+      body["response_format"] = responseFormat;
+    }
 
     let response: Response;
     try {
@@ -157,15 +162,19 @@ export function makeNvidiaVisionCaller(apiKey: string, model: string, baseUrl?: 
       content.push({ type: "image_url", image_url: { url } });
     }
 
-    const body = {
+    const jsonMode = req.jsonMode ?? "json_schema";
+    const responseFormat = jsonMode === "parser_only" ? undefined
+      : jsonMode === "json_object" ? { type: "json_object" as const }
+      : { type: "json_schema" as const, json_schema: { name: req.jsonSchema.name, strict: true, schema: req.jsonSchema.schema } };
+
+    const body: Record<string, unknown> = {
       model,
       messages: [{ role: "user" as const, content }],
-      response_format: {
-        type: "json_schema",
-        json_schema: { name: req.jsonSchema.name, strict: true, schema: req.jsonSchema.schema }
-      },
-      stream: true, // Enable streaming
+      stream: true,
     };
+    if (responseFormat !== undefined) {
+      body["response_format"] = responseFormat;
+    }
 
     let response: Response;
     try {
