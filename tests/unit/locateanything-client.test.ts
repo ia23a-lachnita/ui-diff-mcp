@@ -364,4 +364,34 @@ describe("locateUiElements", () => {
     expect((err as LocatorUnavailableError).code).toBe("locator_unavailable");
     expect((err as LocatorUnavailableError).status).toBe(503);
   });
+
+  it("accepts sidecar v2 lane metadata", async () => {
+    const body = JSON.stringify({
+      model: "screen-parser-v2",
+      image: { width: 100, height: 200 },
+      elements: [],
+      warnings: [],
+      metadata: {
+        lanes: {
+          ocr_text: { status: "complete", count: 12, model: "tesseract" },
+          omniparser: { status: "not_configured", count: 0, license: "AGPL-3.0" }
+        }
+      }
+    });
+
+    const { server: s, port } = await startServer((_req, res) => {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(body);
+    });
+    server = s;
+
+    const result = await locateUiElements({
+      endpoint: `http://127.0.0.1:${port}`,
+      request: BASE_REQUEST,
+      timeoutMs: 5000
+    });
+
+    expect(result.model).toBe("screen-parser-v2");
+    expect(result.metadata?.lanes?.ocr_text?.count).toBe(12);
+  });
 });

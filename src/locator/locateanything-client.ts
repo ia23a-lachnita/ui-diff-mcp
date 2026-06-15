@@ -36,6 +36,14 @@ export const LocateAnythingElementSchema = z.object({
 });
 export type LocateAnythingElement = z.infer<typeof LocateAnythingElementSchema>;
 
+const LaneMetadataSchema = z.object({
+  status: z.enum(["complete", "failed", "not_configured", "skipped"]),
+  count: z.number().int().nonnegative(),
+  detail: z.string().optional(),
+  model: z.string().optional(),
+  license: z.string().optional()
+});
+
 export const LocateAnythingResponseSchema = z.object({
   model: z.string().min(1),
   image: z.object({
@@ -43,7 +51,10 @@ export const LocateAnythingResponseSchema = z.object({
     height: z.number().int().positive()
   }),
   elements: z.array(LocateAnythingElementSchema),
-  warnings: z.array(z.string()).default([])
+  warnings: z.array(z.string()).default([]),
+  metadata: z.object({
+    lanes: z.record(z.string(), LaneMetadataSchema).optional()
+  }).optional()
 });
 export type LocateAnythingResponse = z.infer<typeof LocateAnythingResponseSchema>;
 
