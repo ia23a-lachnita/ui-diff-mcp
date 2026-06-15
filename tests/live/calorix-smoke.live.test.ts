@@ -71,6 +71,16 @@ describe.skipIf(!calorixLive)("Calorix live UI diff smoke", () => {
       expect(report.diffs.length, "at least one diff must be reported").toBeGreaterThan(0);
       const reviewedDiffs = report.diffs.filter(d => d.reviewerStatus !== "not_reviewed" && d.model !== "deterministic");
       expect(reviewedDiffs.length, "at least one diff must be accepted or rejected by the VLM reviewer (not deterministic-only)").toBeGreaterThan(0);
+
+      // Per-image locator coverage must be complete for both images
+      expect(report.locatorMetadata?.expected?.status, "expected image locator coverage must be complete").toBe("complete");
+      expect(report.locatorMetadata?.actual?.status, "actual image locator coverage must be complete").toBe("complete");
+      expect(report.locatorMetadata?.actual?.usefulElementCount ?? 0, "actual useful elements must be sufficient").toBeGreaterThanOrEqual(12);
+      expect(report.locatorMetadata?.actual?.reasons ?? [], "actual locator coverage has weakness reasons").toEqual([]);
+
+      // Target-map artifacts must be written for both images
+      expect(report.runArtifacts.some(a => a.role === "target_map_expected"), "target_map_expected artifact must be present").toBe(true);
+      expect(report.runArtifacts.some(a => a.role === "target_map_actual"), "target_map_actual artifact must be present").toBe(true);
     } finally {
       await started.close();
     }
@@ -140,6 +150,16 @@ describe.skipIf(!calorixFullLive)("verify:calorix-full-live unbounded all-target
       expect(report.diffs.length, "at least one diff must be reported").toBeGreaterThan(0);
       const reviewedDiffs = report.diffs.filter(d => d.reviewerStatus !== "not_reviewed" && d.model !== "deterministic");
       expect(reviewedDiffs.length, "at least one diff must be accepted or rejected by the VLM reviewer (not deterministic-only)").toBeGreaterThan(0);
+
+      // Per-image locator coverage must be complete for both images
+      expect(report.locatorMetadata?.expected?.status, "expected image locator coverage must be complete").toBe("complete");
+      expect(report.locatorMetadata?.actual?.status, "actual image locator coverage must be complete").toBe("complete");
+      expect(report.locatorMetadata?.actual?.usefulElementCount ?? 0, "actual useful elements must be sufficient").toBeGreaterThanOrEqual(12);
+      expect(report.locatorMetadata?.actual?.reasons ?? [], "actual locator coverage has weakness reasons").toEqual([]);
+
+      // Target-map artifacts must be written for both images
+      expect(report.runArtifacts.some(a => a.role === "target_map_expected"), "target_map_expected artifact must be present").toBe(true);
+      expect(report.runArtifacts.some(a => a.role === "target_map_actual"), "target_map_actual artifact must be present").toBe(true);
 
       console.info(`[full-audit] visualClassificationStatus=${report.visualClassificationStatus}`);
       console.info(`[full-audit] auditedPairs=${report.auditScope?.auditedPairs ?? "n/a"}, totalPairs=${report.auditScope?.totalPairs ?? "n/a"}`);

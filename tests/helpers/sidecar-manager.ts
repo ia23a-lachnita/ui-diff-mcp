@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import sharp from "sharp";
 
 const PROJECT_ROOT = path.resolve(fileURLToPath(import.meta.url), "../../../");
 
@@ -27,6 +28,29 @@ async function pollHealth(url: string, deadlineMs: number): Promise<boolean> {
   return false;
 }
 
+async function warmupSidecar(url: string): Promise<void> {
+  const tinyPng = await sharp({
+    create: { width: 10, height: 10, channels: 3, background: { r: 200, g: 200, b: 200 } }
+  }).png().toBuffer();
+  const body = JSON.stringify({
+    imagePath: "warmup",
+    imageBase64: tinyPng.toString("base64"),
+    imageMimeType: "image/png",
+    queries: [{ id: "warmup", prompt: "Locate any visible element." }],
+    maxBoxesPerQuery: 1
+  });
+  const resp = await fetch(`${url}/v1/locate-ui-elements`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body,
+    signal: AbortSignal.timeout(120000)
+  });
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => "");
+    throw new Error(`Sidecar warmup request failed: ${resp.status} ${text.slice(0, 200)}`);
+  }
+}
+
 /**
  * Ensures the LocateAnything sidecar is running at the given URL.
  * If it is already healthy, returns immediately.
@@ -39,12 +63,15 @@ export async function ensureSidecarRunning(
   url = "http://127.0.0.1:39731",
   startupTimeoutMs = 120000
 ): Promise<SidecarHandle> {
+  const warmup = process.env["UI_DIFF_SIDECAR_WARMUP"] === "1";
+
   // Fast check — already running?
   try {
     const resp = await fetch(`${url}/health`, { signal: AbortSignal.timeout(5000) });
     if (resp.ok) {
       const body = await resp.json() as { ready?: boolean };
       if (body.ready === true) {
+        if (warmup) await warmupSidecar(url);
         return { alreadyRunning: true, close() {} };
       }
     }
@@ -70,6 +97,8 @@ export async function ensureSidecarRunning(
       `Ensure LOCATEANYTHING_EAGLE_EMBODIED_DIR is set and the model is available.`
     );
   }
+
+  if (warmup) await warmupSidecar(url);
 
   return {
     alreadyRunning: false,
