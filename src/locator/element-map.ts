@@ -87,7 +87,7 @@ export function buildElementMap(
       queryId: raw.queryId,
       box,
       normalizedBox,
-      text: raw.rawText,
+      text: raw.rawText ?? undefined,
       confidence: raw.confidence,
       source: "locator",
       childIds: []

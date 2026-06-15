@@ -32,7 +32,7 @@ export const LocateAnythingElementSchema = z.object({
     z.number().finite()
   ]),
   confidence: z.number().finite().min(0).max(1),
-  rawText: z.string().optional()
+  rawText: z.string().nullish()
 });
 export type LocateAnythingElement = z.infer<typeof LocateAnythingElementSchema>;
 
