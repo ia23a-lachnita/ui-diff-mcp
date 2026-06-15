@@ -64,6 +64,16 @@ describe("buildElementMap", () => {
     expect(els[0]?.label).toMatch(/^button-buttons-/);
   });
 
+  it("preserves source lane in queryId while merging overlapping boxes", () => {
+    const els = buildElementMap([
+      makeEl("ocr_text", "Calories", 10, 20, 100, 24),
+      makeEl("yolo_ui", "Text", 12, 19, 98, 26)
+    ], { width: 200, height: 400 });
+
+    expect(els).toHaveLength(1);
+    expect(els[0]?.queryId).toContain("ocr_text");
+  });
+
   it("normalizes prompt-echo label starting with 'locate' to type-queryId-index pattern", () => {
     const els = buildElementMap(
       [makeEl("image_thumbnails_avatars", "Locate images thumbnails and avatars", 10, 10, 80, 80)],

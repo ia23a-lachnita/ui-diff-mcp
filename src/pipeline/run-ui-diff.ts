@@ -3,12 +3,14 @@ import path from "node:path";
 import sharp from "sharp";
 import { resolveInputImagePath, createRunDirectory } from "../security/paths.js";
 import { loadNormalizedImage } from "../images/normalize.js";
-import { writeOverlay } from "../images/artifacts.js";
+import { writeOverlay, writeJsonArtifact } from "../images/artifacts.js";
 import { computePixelDiff } from "../signals/pixel-diff.js";
 import { extractEdgeMask } from "../signals/edge.js";
 import { createDirectionalDiffOverlay, type Rgba } from "../images/directional-diff.js";
 import { locateUiElements, LocatorUnavailableError } from "../locator/locateanything-client.js";
-import { buildElementMap, computeLocatorMetadata, computeLocatorCoverageStatus } from "../locator/element-map.js";
+import { buildElementMap, computeLocatorMetadata } from "../locator/element-map.js";
+import { computeImageLocatorCoverage } from "../locator/coverage.js";
+import { buildTargetMapJson } from "../locator/diagnostics.js";
 import { pairElements } from "../pairing/pair-elements.js";
 import { selectModelForMode, resolveMode, CANONICAL_MODEL_RANKING, type ModelEntry } from "../models/model-registry.js";
 import { probeRequiredModels, type ProbeResult } from "../models/probes.js";
@@ -250,11 +252,34 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
       });
       expectedElements.push(...buildElementMap(expResp.elements, { width: expectedImg.width, height: expectedImg.height }));
       actualElements.push(...buildElementMap(actResp.elements, { width: actualImg.width, height: actualImg.height }));
-      locatorCoverageStatus = computeLocatorCoverageStatus(
-        [...expectedElements, ...actualElements],
-        locatorQueries.length,
-        false
-      );
+      
+      const expectedCoverage = computeImageLocatorCoverage({
+        elements: expectedElements,
+        promptCount: locatorQueries.length,
+        imageSize: { width: expectedImg.width, height: expectedImg.height }
+      });
+      const actualCoverage = computeImageLocatorCoverage({
+        elements: actualElements,
+        promptCount: locatorQueries.length,
+        imageSize: { width: actualImg.width, height: actualImg.height }
+      });
+      
+      locatorCoverageStatus = expectedCoverage.status === "complete" && actualCoverage.status === "complete"
+        ? "complete"
+        : expectedCoverage.status === "failed" || actualCoverage.status === "failed"
+          ? "failed"
+          : "weak";
+
+      await writeJsonArtifact(path.join(artifactDir, "target-map-expected.json"), buildTargetMapJson({
+        imageRole: "expected",
+        coverage: expectedCoverage,
+        elements: expectedElements
+      }));
+      await writeJsonArtifact(path.join(artifactDir, "target-map-actual.json"), buildTargetMapJson({
+        imageRole: "actual",
+        coverage: actualCoverage,
+        elements: actualElements
+      }));
     } catch (err) {
       locatorFailed = true;
       locatorCoverageStatus = "failed";

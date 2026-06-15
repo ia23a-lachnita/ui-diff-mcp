@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import type { UiElement, UiElementType } from "../schemas/core.js";
 import type { LocateAnythingElement } from "./locateanything-client.js";
+import { suppressDuplicateElements } from "./nms.js";
 import { iou, toNormalizedBox, containsCenter, area } from "../signals/geometry.js";
 import type { EdgeComponent } from "../signals/edge.js";
 
@@ -66,31 +67,14 @@ export function buildElementMap(
   imageSize: ImageSize,
   deterministicBoxes: DeterministicBox[] = []
 ): UiElement[] {
-  const elements: UiElement[] = [];
-  const merged = new Set<number>();
+  let elements: UiElement[] = [];
 
   for (let i = 0; i < rawElements.length; i++) {
-    if (merged.has(i)) continue;
     const raw = rawElements[i];
     if (!raw) continue;
 
     const type = resolveType(raw.queryId, raw.label);
-    let box = { ...raw.box };
-
-    for (let j = i + 1; j < rawElements.length; j++) {
-      if (merged.has(j)) continue;
-      const other = rawElements[j];
-      if (!other) continue;
-      if (iou(box, other.box) >= 0.82) {
-        merged.add(j);
-        box = {
-          x: Math.min(box.x, other.box.x),
-          y: Math.min(box.y, other.box.y),
-          width: Math.max(box.x + box.width, other.box.x + other.box.width) - Math.min(box.x, other.box.x),
-          height: Math.max(box.y + box.height, other.box.y + other.box.height) - Math.min(box.y, other.box.y)
-        };
-      }
-    }
+    const box = { ...raw.box };
 
     const normalizedBox = toNormalizedBox(box, imageSize.width, imageSize.height);
     const label = normalizeElementLabel(raw.label, raw.queryId ?? "unknown", type, i);
@@ -130,6 +114,8 @@ export function buildElementMap(
       });
     }
   }
+
+  elements = suppressDuplicateElements(elements);
 
   for (let i = 0; i < elements.length; i++) {
     for (let j = 0; j < elements.length; j++) {
