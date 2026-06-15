@@ -71,11 +71,14 @@ This file is the persistent handoff state for implementation agents. Read it bef
 
 | 2026-06-15 | this commit | Hardening Task 7 (MCP Long-Run Handle) | `npm run verify` — 234 unit/e2e tests, 21 integration, build, typecheck clean | Created run-store.ts (in-memory + filesystem). Added start_ui_diff_run and get_ui_diff_run_status tools. discover_ui_diffs enforces UI_DIFF_FOREGROUND_BUDGET_MS (default 45000ms) and returns structured incomplete on timeout. recoverySummary added to CompareUiImagesOutputSchema. |
 
-- Current task: live gate hardening plan Task 7 (MCP Long-Run Handle) — complete
+| 2026-06-15 | `5eae958` | Hardening Task 7 schema/type fixes | `npm run verify` — 241 unit/e2e tests, 21 integration, build, typecheck clean | Fixed stray `ptional()` in tool-schemas.ts, added missing `label` to StartUiDiffRunInputSchema, corrected `handleStartUiDiffRun` label param type for exactOptionalPropertyTypes. |
+| 2026-06-15 | `4fab69d` | Coverage repair: new test files | `npm run test:coverage` — 85.14% stmts / 71.37% branches / 87.83% funcs / 86.83% lines (all thresholds met) | Added unit tests for run-store, server handlers (start/status/queued), writeJsonArtifact, deduplicateDiffs severity-upgrade branch, and selectTriggeredCriteria icon/overlap/state/chart branches. |
+
+- Current task: Task 8 — Final Live Gates And Release Sign-Off (in progress)
 - Active plan: `docs/superpowers/plans/2026-06-15-live-gate-hardening.md`
-- Last completed step: Task 7 — run-store.ts, start_ui_diff_run, get_ui_diff_run_status, foreground budget; `npm run verify` passed
-- Next step: Task 8 — Final Live Gates And Release Sign-Off
-- Verification command and result: `npm run verify` — 234 unit/e2e tests, 21 integration, build, typecheck clean
-- Commit pushed: this commit
+- Last completed step: Task 8 Step 1 (deterministic verify + coverage): `npm run verify` passed; `npm run test:coverage` passed all thresholds; `git diff --check` clean. Task 8 Step 2 partial: `verify:nvidia-live` — 4/4 passed.
+- Next step: Task 8 Steps 2–6 (remaining live gates require LocateAnything sidecar at `http://127.0.0.1:39731`)
+- Verification command and result: `npm run verify` — 241 unit/e2e tests, 21 integration, build, typecheck clean; `npm run test:coverage` all thresholds met; `npm run verify:nvidia-live` — 4/4 passed
+- Commit pushed: `4fab69d`
 - Files intentionally left modified: none after commit
-- Blockers: none for Tasks 1–7; Task 8 requires live gates to run
+- Blockers: Task 8 Steps 2–6 blocked on `LOCATEANYTHING_EAGLE_EMBODIED_DIR` not set; sidecar not running. Set env var and run `.\scripts\start-locateanything-sidecar.ps1`, then set `LOCATEANYTHING_SIDECAR_URL=http://127.0.0.1:39731`.
