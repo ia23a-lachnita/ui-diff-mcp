@@ -66,8 +66,8 @@ describe.skipIf(!calorixLive)("Calorix live UI diff smoke", () => {
       // There must be paired targets available for audit
       expect(report.auditScope?.totalPairs ?? 0, "at least one element pair must be available for audit").toBeGreaterThan(0);
 
-      // At least one diff must have been accepted or rejected by the reviewer model.
-      // reviewerStatus "not_reviewed" covers both unclassified pixel noise and deterministic records.
+      // At least one diff must have gone through model review, not only pixel noise or deterministic checks.
+      // Deterministic records use reviewerStatus="accepted", so model must also be non-deterministic.
       expect(report.diffs.length, "at least one diff must be reported").toBeGreaterThan(0);
       const reviewedDiffs = report.diffs.filter(d => d.reviewerStatus !== "not_reviewed" && d.model !== "deterministic");
       expect(reviewedDiffs.length, "at least one diff must be accepted or rejected by the VLM reviewer (not deterministic-only)").toBeGreaterThan(0);
@@ -135,7 +135,8 @@ describe.skipIf(!calorixFullLive)("verify:calorix-full-live unbounded all-target
       // Visual classification must be complete
       expect(report.visualClassificationStatus, "visual classification must be complete").toBe("complete");
 
-      // At least one diff must have been accepted or rejected by the reviewer model
+      // At least one diff must have gone through model review, not only pixel noise or deterministic checks.
+      // Deterministic records use reviewerStatus="accepted", so model must also be non-deterministic.
       expect(report.diffs.length, "at least one diff must be reported").toBeGreaterThan(0);
       const reviewedDiffs = report.diffs.filter(d => d.reviewerStatus !== "not_reviewed" && d.model !== "deterministic");
       expect(reviewedDiffs.length, "at least one diff must be accepted or rejected by the VLM reviewer (not deterministic-only)").toBeGreaterThan(0);

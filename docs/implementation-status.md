@@ -92,8 +92,16 @@ This file is the persistent handoff state for implementation agents. Read it bef
 
 **Remaining known risk:** Union-box deterministic geometry coverage may over-cover: unrelated pixel changes inside a union box are not sent to recovery until shape-aware coverage is implemented. Documented in the production-readiness checklist.
 
-- Current task: Task 8 — Final Live Gates And Release Sign-Off — **COMPLETE**
+- Current task: Last persisted run readiness review and P3 wording fix - **COMPLETE in this commit**
 - Active plan: `docs/superpowers/plans/2026-06-15-live-gate-hardening.md` — all 8 tasks complete
-- Last verification: all live gates passed on 2026-06-15; commit `5c20e53`
-- Next task: none — hardening plan fully signed off
-- Blockers: none
+- Last verification: `npm run verify`, `npm run test:coverage`, and `git diff --check` passed on 2026-06-15 for the latest P3 wording/documentation change. Coverage remained 85.36% statements / 71.37% branches / 87.95% functions / 87.09% lines.
+- Next task: run fresh hardened live gates before a release tag if formal release sign-off is needed.
+- Blockers: none for committed code/test gates. The latest persisted Calorix report on disk (`run-1781530941630-a2ada2`) is a known-bad report with weak locator coverage and incomplete visual classification; it should not be used as production sign-off evidence.
+
+## Last Persisted Run Review - 2026-06-15
+
+**Document:** `docs/release/2026-06-15-last-run-readiness-review.md`
+
+**Result:** the latest persisted Calorix report does not prove production readiness. It records `locatorCoverageStatus: "weak"` and `visualClassificationStatus: "incomplete"`. That shape is useful regression evidence because the current hardened live gates should reject it.
+
+**Code follow-up:** fixed the P3 live-test wording so the comments match the actual predicate: live gates now require a non-deterministic, model-reviewed diff and do not imply `not_reviewed` covers deterministic records by itself.
