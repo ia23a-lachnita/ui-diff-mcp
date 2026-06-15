@@ -34,6 +34,14 @@ const QUERY_ID_TYPE_MAP: Readonly<Record<string, UiElementType>> = {
   image_thumbnails_avatars: "image"
 };
 
+function normalizeElementLabel(rawLabel: string, queryId: string, type: UiElementType, index: number): string {
+  const trimmed = rawLabel.trim();
+  if (/^\d+$/.test(trimmed) || trimmed.toLowerCase().startsWith("locate ")) {
+    return `${type}-${queryId}-${index}`;
+  }
+  return trimmed;
+}
+
 function resolveType(queryId: string | undefined, label: string): UiElementType {
   if (queryId && queryId in QUERY_ID_TYPE_MAP) {
     return QUERY_ID_TYPE_MAP[queryId] as UiElementType;
@@ -85,11 +93,12 @@ export function buildElementMap(
     }
 
     const normalizedBox = toNormalizedBox(box, imageSize.width, imageSize.height);
-    const id = stableId(type, raw.label, box.x, box.y, box.width, box.height);
+    const label = normalizeElementLabel(raw.label, raw.queryId ?? "unknown", type, i);
+    const id = stableId(type, label, box.x, box.y, box.width, box.height);
 
     elements.push({
       id,
-      label: raw.label,
+      label,
       type,
       queryId: raw.queryId,
       box,

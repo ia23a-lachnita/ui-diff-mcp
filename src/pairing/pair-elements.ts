@@ -20,10 +20,6 @@ function textScore(a: UiElement, b: UiElement): number {
   return matches / longer;
 }
 
-function typeScore(a: UiElement, b: UiElement): number {
-  return a.type === b.type ? 1 : 0;
-}
-
 function hierarchyScore(a: UiElement, b: UiElement): number {
   if (a.parentId !== undefined && a.parentId === b.parentId) return 1;
   if (a.parentId === undefined && b.parentId === undefined) return 0.5;
@@ -31,10 +27,14 @@ function hierarchyScore(a: UiElement, b: UiElement): number {
 }
 
 function pairScore(expected: UiElement, actual: UiElement): number {
+  const gScore = geometryScore(expected, actual);
+  // Relax type mismatch when geometry strongly overlaps — locators sometimes misclassify
+  // type for same-region elements (e.g. text vs image for the same crop area).
+  const tScore = expected.type === actual.type ? 1 : gScore >= 0.72 ? 0.55 : 0;
   return (
-    0.45 * geometryScore(expected, actual) +
+    0.45 * gScore +
     0.25 * textScore(expected, actual) +
-    0.20 * typeScore(expected, actual) +
+    0.20 * tScore +
     0.10 * hierarchyScore(expected, actual)
   );
 }
@@ -88,7 +88,7 @@ export function pairElements(
     const reasons: string[] = [];
     reasons.push(`geometry=${geometryScore(exp, act).toFixed(2)}`);
     reasons.push(`text=${textScore(exp, act).toFixed(2)}`);
-    reasons.push(`type=${typeScore(exp, act).toFixed(2)}`);
+    reasons.push(`type=${(exp.type === act.type ? 1 : 0).toFixed(2)}`);
 
     pairs.push({
       id: makePairId(exp.id, act.id),

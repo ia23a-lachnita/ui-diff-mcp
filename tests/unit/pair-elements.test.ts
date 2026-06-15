@@ -42,6 +42,47 @@ describe("pairElements", () => {
     expect(pairs[0]?.actualId).toBe("a1");
   });
 
+  it("pairs cross-type elements with high geometry overlap (locator misclassification regression)", () => {
+    // Simulates: expected is type=text with generated label "0", actual is type=image
+    // with prompt-echo label — same region, shifted 20px. After label normalization both
+    // get generated labels; pairing should succeed despite type mismatch because IoU >= 0.72.
+    const expected: UiElement = {
+      id: "e1", label: "text-buttons-0", type: "text",
+      box: { x: 20, y: 50, width: 160, height: 20 },
+      normalizedBox: { x: 0.05, y: 0.0625, width: 0.4, height: 0.025 },
+      confidence: 0.9, source: "locator", childIds: []
+    };
+    const actual: UiElement = {
+      id: "a1", label: "image-image_thumbnails_avatars-0", type: "image",
+      box: { x: 20, y: 50, width: 160, height: 20 },
+      normalizedBox: { x: 0.05, y: 0.0625, width: 0.4, height: 0.025 },
+      confidence: 0.9, source: "locator", childIds: []
+    };
+    const pairs = pairElements([expected], [actual]);
+    const matched = pairs.find(p => p.status === "matched" || p.status === "uncertain");
+    expect(matched).toBeDefined();
+    expect(matched?.expectedId).toBe("e1");
+    expect(matched?.actualId).toBe("a1");
+  });
+
+  it("still rejects cross-type pairs with poor geometry overlap", () => {
+    const expected: UiElement = {
+      id: "e1", label: "text-q-0", type: "text",
+      box: { x: 0, y: 0, width: 50, height: 20 },
+      normalizedBox: { x: 0, y: 0, width: 0.125, height: 0.025 },
+      confidence: 0.9, source: "locator", childIds: []
+    };
+    const actual: UiElement = {
+      id: "a1", label: "image-q-0", type: "image",
+      box: { x: 200, y: 300, width: 50, height: 20 },
+      normalizedBox: { x: 0.5, y: 0.375, width: 0.125, height: 0.025 },
+      confidence: 0.9, source: "locator", childIds: []
+    };
+    const pairs = pairElements([expected], [actual]);
+    const matched = pairs.find(p => p.status === "matched");
+    expect(matched).toBeUndefined();
+  });
+
   it("assigns each element to at most one pair", () => {
     const expected = [
       makeElement("e1", "Button A", 10, 10, 80, 40, "A"),

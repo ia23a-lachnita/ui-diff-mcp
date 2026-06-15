@@ -59,13 +59,18 @@ This file is the persistent handoff state for implementation agents. Read it bef
 | 2026-06-14 | this commit | Live gate execution and pixel-mask fix | `npm run verify` — 196 unit/e2e tests, 10 sidecar parser tests, build, 19 integration tests. Live gates: `verify:free-live` passed; `verify:nvidia-live` passed; `verify:live` failed with incomplete visual classification; `verify:calorix-live` timed out after about 10 minutes; `verify:calorix-full-live` timed out after about 30 minutes. | Fixed `computePixelDiff` binary mask extraction so unchanged pixels are not counted as diff mass. Updated generic live MCP test to use valid `free_openrouter` mode and structured artifact/model-selection assertions. Generic live diagnostic selected auditor `openrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free` and reviewer `openrouter/nex-agi/nex-n2-pro:free`, but did not classify the simple shifted rectangle; Calorix runs produced recovery artifacts then hit MCP request timeouts. |
 | 2026-06-15 | this commit | Corrected default-free MCP live runs and hardening plan | `npm run build` passed. Generic MCP `mode: "free"` run completed with native NVIDIA `moonshotai/kimi-k2.6` auditor and `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning` reviewer but remained visually incomplete. `npm run verify:calorix-live` timed out after about 10 minutes. `npm run verify:calorix-full-live` timed out after about 30 minutes. Gemini final plan review: `AGREEMENT_STATUS: agree`, `MUST_FIX: None`, `SHOULD_FIX: None`. | Added `docs/superpowers/plans/2026-06-15-live-gate-hardening.md`. The plan covers correct default/openrouter live gate split, role-specific model probes, deterministic geometry diffs, weak locator label pairing, bounded target recovery, checkpoint reports, async MCP run handles, and final live gates. |
 
+| 2026-06-15 | `758d8d1` | Hardening Task 1 (Correct Live Gate Semantics) | `npm run verify` — 227 unit/e2e tests, 19 integration, build, typecheck clean | Split default-free (`verify:mcp-live` with NVIDIA+OpenRouter) from OpenRouter-only (`verify:openrouter-free-live`) live gates. Added `verify:mcp-live` script. Updated require-live-env.js and production-readiness-checklist.md. |
+| 2026-06-15 | `ca935e8`+`668efca` | Hardening Task 2 (Role-Specific Model Probes) | `npm run verify` — 227 unit/e2e tests, 19 integration, build, typecheck clean | Added `jsonMode` to VisionJsonRequest. Added role-specific probes (5 images auditor/reviewer, 4 recovery). Added ModelRouteCapabilities to model-registry. findValidProbe() requires schemaValid+contentAccurate+maxImages. Fixed Gemma typo and e2e mock fields. |
+| 2026-06-15 | `c040047` | Hardening Task 3 (Deterministic Geometry Diffs) | `npm run verify` — 227 unit/e2e tests, 19 integration, build, typecheck clean | Added deterministic-diffs.ts with unionBox and buildDeterministicDiffs. Integrated into pipeline before model audit. Documented known coverage limitation. |
+| 2026-06-15 | this commit | Hardening Task 4 (Weak Label Pairing) | `npm run verify` — 227 unit/e2e tests, 19 integration, build, typecheck clean | Added normalizeElementLabel() to element-map.ts (numeric-only and prompt-echo labels normalized to type-queryId-index). Geometry-aware type score in pair-elements.ts: type mismatch scores 0.55 (not 0) when IoU >= 0.72. |
+
 ## Handoff Checklist
 
-- Current task: live gate hardening plan Task 1 (Correct Live Gate Semantics) — complete
+- Current task: live gate hardening plan Task 4 (Weak Locator Label Pairing) — complete
 - Active plan: `docs/superpowers/plans/2026-06-15-live-gate-hardening.md`
-- Last completed step: Task 1 — split default-free and OpenRouter-only live gates; `npm run verify` passed
-- Next step: Task 2 — add role-specific model capability probes
-- Verification command and result: `npm run verify` — 196 unit/e2e tests, 10 sidecar, 19 integration, build, typecheck clean
-- Commit pushed: pending Gemini review
+- Last completed step: Task 4 — label normalization and geometry-aware type scoring; `npm run verify` passed
+- Next step: Task 5 — Bound And Rank Target Recovery
+- Verification command and result: `npm run verify` — 227 unit/e2e tests, 19 integration, build, typecheck clean
+- Commit pushed: this commit
 - Files intentionally left modified: none after commit
-- Blockers: none for Task 1; visual classification incomplete and Calorix timeouts addressed by Tasks 2–7
+- Blockers: none for Tasks 1–4; Calorix timeouts addressed by Tasks 5–7

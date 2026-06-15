@@ -53,4 +53,32 @@ describe("buildElementMap", () => {
     const r2 = buildElementMap(input, { width: 200, height: 400 });
     expect(r1[0]?.id).toBe(r2[0]?.id);
   });
+
+  it("normalizes numeric-only label to type-queryId-index pattern", () => {
+    const els = buildElementMap(
+      [makeEl("buttons", "0", 10, 10, 80, 40)],
+      { width: 200, height: 400 }
+    );
+    expect(els).toHaveLength(1);
+    expect(els[0]?.label).not.toBe("0");
+    expect(els[0]?.label).toMatch(/^button-buttons-/);
+  });
+
+  it("normalizes prompt-echo label starting with 'locate' to type-queryId-index pattern", () => {
+    const els = buildElementMap(
+      [makeEl("image_thumbnails_avatars", "Locate images thumbnails and avatars", 10, 10, 80, 80)],
+      { width: 200, height: 400 }
+    );
+    expect(els).toHaveLength(1);
+    expect(els[0]?.label).not.toMatch(/^locate /i);
+    expect(els[0]?.label).toMatch(/^image-image_thumbnails_avatars-/);
+  });
+
+  it("preserves non-trivial labels unchanged", () => {
+    const els = buildElementMap(
+      [makeEl("buttons", "Submit button", 10, 10, 80, 40)],
+      { width: 200, height: 400 }
+    );
+    expect(els[0]?.label).toBe("Submit button");
+  });
 });
