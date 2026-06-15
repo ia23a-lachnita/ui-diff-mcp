@@ -14,7 +14,9 @@ let started: StartedMcpClient | undefined;
 beforeEach(async () => {
   tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ui-diff-live-openrouter-"));
   if (liveEnabled) {
-    started = await startUiDiffMcpClient();
+    // Live gate may take 2–3 minutes; use a long foreground budget so the pipeline completes
+    // within the foreground window rather than returning an incomplete result at 45 s.
+    started = await startUiDiffMcpClient({ UI_DIFF_FOREGROUND_BUDGET_MS: "240000" });
   }
 });
 

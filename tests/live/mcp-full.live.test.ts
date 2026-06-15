@@ -14,7 +14,7 @@ let started: StartedMcpClient | undefined;
 beforeEach(async () => {
   tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ui-diff-live-full-"));
   if (liveEnabled) {
-    started = await startUiDiffMcpClient();
+    started = await startUiDiffMcpClient({ UI_DIFF_FOREGROUND_BUDGET_MS: "240000" });
   }
 });
 
