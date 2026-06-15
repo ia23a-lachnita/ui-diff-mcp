@@ -61,12 +61,11 @@ This file is the persistent handoff state for implementation agents. Read it bef
 
 ## Handoff Checklist
 
-- Current task: none — live gate hardening plan complete and ready for review
-- Active plan: `docs/superpowers/plans/2026-06-14-free-first-ui-diff-hardening.md`
-- Next plan: `docs/superpowers/plans/2026-06-15-live-gate-hardening.md`
-- Last completed step: corrected default-free MCP live run and Calorix live gates rerun; implementation plan drafted and Gemini-reviewed
-- Next step: owner review of `docs/superpowers/plans/2026-06-15-live-gate-hardening.md`, then execute Task 1
-- Verification command and result: `npm run build` passed; corrected generic default-free MCP live run completed incomplete; `verify:calorix-live` and `verify:calorix-full-live` timed out; Gemini final plan review passed
-- Commit pushed: pending for this task
+- Current task: live gate hardening plan Task 1 (Correct Live Gate Semantics) — complete
+- Active plan: `docs/superpowers/plans/2026-06-15-live-gate-hardening.md`
+- Last completed step: Task 1 — split default-free and OpenRouter-only live gates; `npm run verify` passed
+- Next step: Task 2 — add role-specific model capability probes
+- Verification command and result: `npm run verify` — 196 unit/e2e tests, 10 sidecar, 19 integration, build, typecheck clean
+- Commit pushed: pending Gemini review
 - Files intentionally left modified: none after commit
-- Blockers: generic default-free live classification incomplete; Calorix bounded/full live gates timeout
+- Blockers: none for Task 1; visual classification incomplete and Calorix timeouts addressed by Tasks 2–7

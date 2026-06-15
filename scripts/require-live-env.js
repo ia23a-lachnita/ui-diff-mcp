@@ -11,11 +11,15 @@ if (process.env[varName] !== "1") {
   console.error(`Error: ${varName}=1 must be set to run this live release gate.`);
   if (varName === "RUN_UI_DIFF_LIVE") {
     console.error(
-      "Also set OPENROUTER_API_KEY and LOCATEANYTHING_SIDECAR_URL before running verify:live."
+      "Also set OPENROUTER_API_KEY, NVIDIA_API_KEY, and LOCATEANYTHING_SIDECAR_URL before running verify:mcp-live."
+    );
+  } else if (varName === "RUN_OPENROUTER_FREE_LIVE") {
+    console.error(
+      "Also set OPENROUTER_API_KEY and LOCATEANYTHING_SIDECAR_URL before running verify:openrouter-free-live."
     );
   } else if (varName === "RUN_FREE_LIVE") {
     console.error(
-      "Also set OPENROUTER_API_KEY before running verify:free-live."
+      "Also set OPENROUTER_API_KEY before running verify:free-live (alias for verify:openrouter-free-live)."
     );
   } else if (varName === "RUN_NVIDIA_LIVE") {
     console.error(

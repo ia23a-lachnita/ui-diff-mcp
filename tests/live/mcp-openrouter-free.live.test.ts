@@ -6,13 +6,13 @@ import { UiDiffReportSchema } from "../../src/schemas/core.js";
 import { writeTwoButtonFixture } from "../../src/testing/fixture-images.js";
 import { startUiDiffMcpClient, type StartedMcpClient } from "../helpers/mcp-client.js";
 
-const liveEnabled = process.env["RUN_UI_DIFF_LIVE"] === "1";
+const liveEnabled = process.env["RUN_OPENROUTER_FREE_LIVE"] === "1";
 
 let tmpDir = "";
 let started: StartedMcpClient | undefined;
 
 beforeEach(async () => {
-  tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ui-diff-live-full-"));
+  tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ui-diff-live-openrouter-"));
   if (liveEnabled) {
     started = await startUiDiffMcpClient();
   }
@@ -23,8 +23,9 @@ afterEach(async () => {
   if (tmpDir) await fs.rm(tmpDir, { recursive: true, force: true });
 });
 
-describe.skipIf(!liveEnabled)("live full MCP discover_ui_diffs (default free mode)", () => {
-  test("runs through stdio with real sidecar and default free mode", async () => {
+describe.skipIf(!liveEnabled)("live MCP discover_ui_diffs (OpenRouter-only free mode)", () => {
+  test("runs through stdio with real sidecar and free_openrouter mode", async () => {
+    expect(process.env["OPENROUTER_API_KEY"], "OPENROUTER_API_KEY must be set").toBeTruthy();
     expect(process.env["LOCATEANYTHING_SIDECAR_URL"], "LOCATEANYTHING_SIDECAR_URL must be set").toBeTruthy();
 
     const { expected, actual } = await writeTwoButtonFixture(tmpDir, "expected.png", "actual.png");
@@ -34,9 +35,9 @@ describe.skipIf(!liveEnabled)("live full MCP discover_ui_diffs (default free mod
         expectedImagePath: expected,
         actualImagePath: actual,
         projectRoot: tmpDir,
-        mode: "free"
+        mode: "free_openrouter"
       }
-    }, undefined, { timeout: 600000, maxTotalTimeout: 900000 });
+    }, undefined, { timeout: 240000, maxTotalTimeout: 300000 });
 
     expect(result.isError).not.toBe(true);
     const structured = result.structuredContent as {
@@ -56,16 +57,8 @@ describe.skipIf(!liveEnabled)("live full MCP discover_ui_diffs (default free mod
     ]));
 
     const report = UiDiffReportSchema.parse(JSON.parse(await fs.readFile(structured.reportPath, "utf8")));
-    expect(report.modelSelection?.auditor).toEqual(expect.objectContaining({
-      provider: expect.stringMatching(/^(nvidia|openrouter)$/),
-      model: expect.any(String),
-      costClass: "free"
-    }));
-    expect(report.modelSelection?.reviewer).toEqual(expect.objectContaining({
-      provider: expect.stringMatching(/^(nvidia|openrouter)$/),
-      model: expect.any(String),
-      costClass: "free"
-    }));
+    expect(report.modelSelection?.auditor?.provider).toBe("openrouter");
+    expect(report.modelSelection?.reviewer?.provider).toBe("openrouter");
     const selectedRoutes = [
       report.modelSelection?.auditor,
       report.modelSelection?.reviewer
@@ -86,5 +79,5 @@ describe.skipIf(!liveEnabled)("live full MCP discover_ui_diffs (default free mod
     for (const forbidden of ["root cause", "change the code", "edit config", "acceptance passed"]) {
       expect(reportText.includes(forbidden)).toBe(false);
     }
-  }, 900000);
+  }, 300000);
 });

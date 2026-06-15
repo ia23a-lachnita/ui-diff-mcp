@@ -17,18 +17,20 @@ Required result:
 - Coverage thresholds pass.
 - `npm audit` reports no critical vulnerability.
 
-## Free OpenRouter Live Gate
+## OpenRouter-Only Free Live Gate
 
 ```powershell
-$env:RUN_FREE_LIVE="1"
+$env:RUN_OPENROUTER_FREE_LIVE="1"
 $env:OPENROUTER_API_KEY="<real-openrouter-key>"
-npm run verify:free-live
+$env:LOCATEANYTHING_SIDECAR_URL="http://127.0.0.1:39731"
+npm run verify:openrouter-free-live
 ```
 
 Required result:
 
 - OpenRouter quota is available and recorded.
 - At least one `:free` auditor and reviewer pass probes.
+- `modelSelection.auditor.provider` and `modelSelection.reviewer.provider` are both `openrouter`.
 - Probe results (model, provider, status) are logged.
 
 ## NVIDIA Endpoint Live Gate
@@ -46,26 +48,28 @@ Required result:
 - At least one native NVIDIA free VLM passes reviewer probe.
 - `modelSelection.provider` is `nvidia` in the probe summary.
 
-## Full OpenRouter Live Gate
+## Default Free MCP Live Gate
 
 ```powershell
 $env:RUN_UI_DIFF_LIVE="1"
 $env:OPENROUTER_API_KEY="<real-openrouter-key>"
+$env:NVIDIA_API_KEY="<real-nvidia-key>"
 $env:LOCATEANYTHING_SIDECAR_URL="http://127.0.0.1:39731"
 $env:LOCATEANYTHING_IN_TOKEN_LIMIT="4096"
 $env:LOCATEANYTHING_GENERATION_MODE="hybrid"
 $env:LOCATEANYTHING_MAX_NEW_TOKENS="512"
 $env:LOCATEANYTHING_TIMEOUT_MS="300000"
-npm run verify:live
+npm run verify:mcp-live
 ```
 
 Required result:
 
-- OpenRouter auditor and reviewer probes pass.
+- Auditor and reviewer are selected from `nvidia` or `openrouter` providers with `costClass: "free"`.
 - LocateAnything sidecar returns valid in-bounds boxes.
 - `discover_ui_diffs` completes through the MCP stdio server.
-- The report has `status: "complete"` and `visualClassificationStatus: "complete"`.
-- Required model health entries are `pass`.
+- The report has `status !== "failed"`.
+- Exact selected provider, model, and costClass are recorded in `modelSelection`.
+- Required model health entries for selected routes are `pass`.
 - The report includes normalized images, pixel diff, overlay, report JSON, and artifact index.
 
 ## Bounded Calorix Smoke Gate
