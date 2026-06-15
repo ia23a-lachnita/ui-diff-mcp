@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from PIL import Image, UnidentifiedImageError
 
 from sidecars.locateanything.cv_components import detect_cv_components
+from sidecars.locateanything.ocr_text import detect_ocr_text
 from sidecars.locateanything.parser import parse_elements
 
 
@@ -168,6 +169,14 @@ def locate_ui_elements(request: LocateRequest) -> dict[str, Any]:
     except Exception as exc:
         warnings.append(f"cv_components lane failed: {type(exc).__name__}: {exc}")
         lane_metadata["cv_components"] = {"status": "failed", "count": 0, "detail": str(exc), "model": "opencv"}
+
+    try:
+        ocr_elements, ocr_engine = detect_ocr_text(image)
+        all_elements.extend(ocr_elements)
+        lane_metadata["ocr_text"] = {"status": "complete", "count": len(ocr_elements), "model": ocr_engine}
+    except Exception as exc:
+        warnings.append(f"ocr_text lane failed: {type(exc).__name__}: {exc}")
+        lane_metadata["ocr_text"] = {"status": "failed", "count": 0, "detail": str(exc)}
 
     for query in request.queries:
         try:

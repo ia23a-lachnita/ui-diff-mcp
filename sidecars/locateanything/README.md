@@ -62,3 +62,12 @@ Parser-only tests do not load the model:
 ```powershell
 python -m unittest sidecars.locateanything.test_parser
 ```
+
+### OCR lane
+
+The sidecar v2 contract includes an `ocr_text` lane. The first implementation ships the adapter boundary and records `model: "disabled"` unless an OCR engine is installed. Production candidates:
+
+- Tesseract/Tesseract.js: simplest local deployment and word boxes.
+- PaddleOCR: stronger OCR and document parsing, heavier Python dependency.
+
+The release gate must pass without user-authored OCR config. If OCR is enabled, the report records the engine in `locatorMetadata.lanes.ocr_text.model`.
