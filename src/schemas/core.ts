@@ -167,6 +167,16 @@ export const ModelSelectionSchema = z.object({
 });
 export type ModelSelection = z.infer<typeof ModelSelectionSchema>;
 
+export const StageStatusSchema = z.object({
+  name: z.string().min(1),
+  status: z.enum(["pending", "running", "complete", "failed", "skipped"]),
+  startedAt: z.string().datetime().optional(),
+  completedAt: z.string().datetime().optional(),
+  durationMs: z.number().int().min(0).optional(),
+  detail: z.string().optional()
+});
+export type StageStatus = z.infer<typeof StageStatusSchema>;
+
 export const RecoverySummarySchema = z.object({
   totalUncoveredComponents: z.number().int().min(0),
   attemptedComponents: z.number().int().min(0),
@@ -207,6 +217,7 @@ export const UiDiffReportSchema = z.object({
   })),
   runArtifacts: z.array(UiArtifactSchema).default([]),
   warnings: z.array(z.string()).default([]),
-  recoverySummary: RecoverySummarySchema.optional()
+  recoverySummary: RecoverySummarySchema.optional(),
+  stages: z.array(StageStatusSchema).default([])
 });
 export type UiDiffReport = z.infer<typeof UiDiffReportSchema>;

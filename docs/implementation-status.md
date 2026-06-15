@@ -67,11 +67,13 @@ This file is the persistent handoff state for implementation agents. Read it bef
 
 ## Handoff Checklist
 
-- Current task: live gate hardening plan Task 5 (Bound Target Recovery) — complete
+| 2026-06-15 | this commit | Hardening Task 6 (Checkpoint Reports) | `npm run verify` — 234 unit/e2e tests, 19 integration, build, typecheck clean | Added StageStatusSchema to core.ts, stages field to UiDiffReportSchema. writeReportCheckpoint() in report-writer.ts (atomic tmp→rename). Checkpoints after locator+pairing, probing, audit, and recovery in pipeline. New report-writer.test.ts. |
+
+- Current task: live gate hardening plan Task 6 (Checkpoint Reports) — complete
 - Active plan: `docs/superpowers/plans/2026-06-15-live-gate-hardening.md`
-- Last completed step: Task 5 — RecoveryBudget, component ranking/cap, deadline check, RecoverySummarySchema; `npm run verify` passed
-- Next step: Task 6 — Write Partial Reports Before Long Model Work
-- Verification command and result: `npm run verify` — 229 unit/e2e tests, 19 integration, build, typecheck clean
+- Last completed step: Task 6 — StageStatusSchema, writeReportCheckpoint, pipeline checkpoints; `npm run verify` passed
+- Next step: Task 7 — Add MCP Long-Run Handle
+- Verification command and result: `npm run verify` — 234 unit/e2e tests, 19 integration, build, typecheck clean
 - Commit pushed: this commit
 - Files intentionally left modified: none after commit
-- Blockers: none for Tasks 1–5; MCP timeout addressed by Tasks 6–7
+- Blockers: none for Tasks 1–6; MCP foreground timeout addressed by Task 7

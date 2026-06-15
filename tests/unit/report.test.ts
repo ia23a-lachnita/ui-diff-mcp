@@ -71,7 +71,8 @@ describe("writeUiDiffReport", () => {
       diffs: [],
       modelHealth: [],
       runArtifacts: [],
-      warnings: []
+      warnings: [],
+      stages: []
     };
 
     const output = await writeUiDiffReport(report);
@@ -111,7 +112,8 @@ describe("writeUiDiffReport", () => {
       }],
       modelHealth: [],
       runArtifacts: [],
-      warnings: []
+      warnings: [],
+      stages: []
     };
 
     const output = await writeUiDiffReport(report);
@@ -138,6 +140,7 @@ describe("writeUiDiffReport", () => {
       modelHealth: [],
       runArtifacts: [],
       warnings: [],
+      stages: [],
       auditScope: { auditedPairs: 3, totalPairs: 5, auditLimited: true, limitReason: "max pairs limit" }
     };
 
@@ -169,7 +172,8 @@ describe("writeUiDiffReport", () => {
       diffs: [],
       modelHealth: [],
       runArtifacts: [],
-      warnings: []
+      warnings: [],
+      stages: []
     };
 
     const output = await writeUiDiffReport(report);

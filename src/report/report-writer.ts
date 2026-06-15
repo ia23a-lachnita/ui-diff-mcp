@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { UiDiffReport, UiArtifact, AuditScope } from "../schemas/core.js";
+import { UiDiffReportSchema } from "../schemas/core.js";
 
 export interface CompactOutput {
   runId: string;
@@ -15,6 +16,15 @@ export interface CompactOutput {
   locatorCoverageStatus: string;
   auditLimited: boolean;
   auditScope?: AuditScope;
+}
+
+export async function writeReportCheckpoint(report: UiDiffReport): Promise<string> {
+  const reportPath = path.join(report.artifactRoot, "report.json");
+  const tmpPath = `${reportPath}.tmp`;
+  await fs.mkdir(report.artifactRoot, { recursive: true });
+  await fs.writeFile(tmpPath, JSON.stringify(UiDiffReportSchema.parse(report), null, 2), "utf8");
+  await fs.rename(tmpPath, reportPath);
+  return reportPath;
 }
 
 export async function writeUiDiffReport(

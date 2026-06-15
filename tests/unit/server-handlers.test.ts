@@ -46,7 +46,8 @@ function report(): UiDiffReport {
     diffs: [],
     modelHealth: [],
     runArtifacts: [],
-    warnings: []
+    warnings: [],
+    stages: []
   };
 }
 

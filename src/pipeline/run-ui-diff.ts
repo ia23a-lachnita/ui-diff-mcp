@@ -19,8 +19,8 @@ import { reviewAndMergeFindings } from "../audit/review-findings.js";
 import { assignDiffComponentsToRecords, findUncoveredComponents } from "../report/coverage.js";
 import { runTargetRecovery } from "../recovery/target-recovery.js";
 import { buildDeterministicDiffs } from "../diff/deterministic-diffs.js";
-import { writeUiDiffReport } from "../report/report-writer.js";
-import type { UiDiffReport, RunStatus, VisualClassificationStatus, LocatorCoverageStatus, DiffRecord, ElementPair, UiArtifact, AuditScope, ModelSelection, RecoverySummary } from "../schemas/core.js";
+import { writeUiDiffReport, writeReportCheckpoint } from "../report/report-writer.js";
+import type { UiDiffReport, RunStatus, VisualClassificationStatus, LocatorCoverageStatus, DiffRecord, ElementPair, UiArtifact, AuditScope, ModelSelection, RecoverySummary, StageStatus } from "../schemas/core.js";
 import { computeColorEvidence } from "../signals/color.js";
 
 export interface RunInput {
@@ -130,6 +130,45 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
   let modelSelection: ModelSelection | undefined = undefined;
   let recoverySummary: RecoverySummary | undefined = undefined;
   const allDiffs: DiffRecord[] = [];
+  const stages: StageStatus[] = [];
+  const createdAt = new Date().toISOString();
+  const runArtifacts: UiArtifact[] = [
+    { role: "expected_normalized", path: normalizedExpPath },
+    { role: "actual_normalized", path: normalizedActPath },
+    { role: "pixel_diff", path: pixelDiffPngPath },
+    { role: "pixel_diff_mask", path: pixelDiffMaskPath },
+    { role: "directional_overlay", path: directionalOverlayPath }
+  ];
+
+  async function checkpoint(
+    stageName: string,
+    stageStatus: StageStatus["status"],
+    currentPairs: ElementPair[],
+    currentModelHealth: UiDiffReport["modelHealth"]
+  ): Promise<void> {
+    stages.push({ name: stageName, status: stageStatus, completedAt: new Date().toISOString() });
+    await writeReportCheckpoint({
+      schemaVersion: "0.1",
+      runId,
+      createdAt,
+      status: status === "complete" && stageStatus === "failed" ? "incomplete" : status,
+      visualClassificationStatus,
+      locatorCoverageStatus,
+      ...(auditScope !== undefined ? { auditScope } : {}),
+      ...(modelSelection !== undefined ? { modelSelection } : {}),
+      ...(recoverySummary !== undefined ? { recoverySummary } : {}),
+      expectedImagePath: expectedAbs,
+      actualImagePath: actualAbs,
+      artifactRoot,
+      elements: { expected: expectedElements, actual: actualElements },
+      pairs: currentPairs,
+      diffs: allDiffs,
+      modelHealth: currentModelHealth,
+      runArtifacts,
+      warnings,
+      stages: [...stages]
+    });
+  }
 
   const openRouterApiKey = process.env["OPENROUTER_API_KEY"] ?? "";
   const nvidiaApiKey = process.env["NVIDIA_API_KEY"] ?? "";
@@ -239,6 +278,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
   allDiffs.push(...deterministicDiffs);
 
   const modelHealth: UiDiffReport["modelHealth"] = [];
+  await checkpoint("locator_pairing_deterministic", "complete", pairs, modelHealth);
 
   if (mode !== "deterministic_only" && status !== "insufficient_free_quota") {
     const probe = opts?.probeOverride ?? probeRequiredModels;
@@ -284,6 +324,8 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
       process.env,
       auditorEntry ? [{ provider: auditorEntry.provider, model: auditorEntry.model }] : []
     );
+
+    await checkpoint("model_probe", "complete", pairs, modelHealth);
 
     if (!auditorEntry || !reviewerEntry) {
       if (!locatorFailed) {
@@ -379,6 +421,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
 
         const merged = reviewAndMergeFindings(auditedDiffs);
         allDiffs.push(...merged);
+        await checkpoint("audit", "complete", pairs, modelHealth);
 
         // Target recovery: classify uncovered changed-pixel regions
         const significantComponents = pixelDiff.components.filter(c => c.pixelCount >= 50);
@@ -407,6 +450,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
           } else if (!locatorFailed && !auditSelection.limited) {
             visualClassificationStatus = "complete";
           }
+          await checkpoint("target_recovery", "complete", pairs, modelHealth);
         } else if (!locatorFailed && !auditSelection.limited) {
           visualClassificationStatus = "complete";
         }
@@ -421,14 +465,6 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     pixelDiffPngPath
   );
 
-  const runArtifacts: UiArtifact[] = [
-    { role: "expected_normalized", path: normalizedExpPath },
-    { role: "actual_normalized", path: normalizedActPath },
-    { role: "pixel_diff", path: pixelDiffPngPath },
-    { role: "pixel_diff_mask", path: pixelDiffMaskPath },
-    { role: "directional_overlay", path: directionalOverlayPath },
-  ];
-
   const locatorMetadata = locatorCoverageStatus !== "not_run"
     ? computeLocatorMetadata([...expectedElements, ...actualElements], locatorQueries.length)
     : undefined;
@@ -436,7 +472,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
   const report: UiDiffReport = {
     schemaVersion: "0.1",
     runId,
-    createdAt: new Date().toISOString(),
+    createdAt,
     status,
     visualClassificationStatus,
     locatorCoverageStatus,
@@ -452,7 +488,8 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     diffs: finalDiffs,
     modelHealth,
     runArtifacts,
-    warnings
+    warnings,
+    stages
   };
 
   return writeUiDiffReport(report);
