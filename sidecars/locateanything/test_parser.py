@@ -151,5 +151,22 @@ class CvComponentLaneTests(unittest.TestCase):
         self.assertTrue(all(el["confidence"] >= 0.4 for el in elements))
 
 
+class OcrTextLaneTests(unittest.TestCase):
+    def test_converts_ocr_words_to_locator_elements(self):
+        from sidecars.locateanything.ocr_text import ocr_words_to_elements
+
+        words = [
+            {"text": "Today", "box": {"x": 10, "y": 20, "width": 80, "height": 24}, "confidence": 0.95},
+            {"text": "", "box": {"x": 0, "y": 0, "width": 10, "height": 10}, "confidence": 0.99},
+        ]
+
+        elements = ocr_words_to_elements(words, image_width=200, image_height=400)
+
+        self.assertEqual(len(elements), 1)
+        self.assertEqual(elements[0]["queryId"], "ocr_text")
+        self.assertEqual(elements[0]["label"], "Today")
+        self.assertEqual(elements[0]["box"]["width"], 80)
+
+
 if __name__ == "__main__":
     unittest.main()
