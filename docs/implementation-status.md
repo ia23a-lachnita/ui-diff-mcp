@@ -9,11 +9,11 @@ This file is the persistent handoff state for implementation agents. Read it bef
 - Approved spec: `docs/superpowers/specs/2026-06-12-ui-diff-mcp-research-design.md`.
 - Active implementation plan: `docs/superpowers/plans/2026-06-12-ui-diff-mcp-mvp-implementation.md`.
 - Production-readiness test plan: `docs/superpowers/plans/2026-06-13-production-readiness-tests.md`.
-- Current task: Live gate execution after model-routing correction — complete, with production blockers found.
-- Next task: fix generic live visual classification incompleteness and Calorix recovery/runtime timeouts before production sign-off.
-- Last verification: `npm run verify` passed (196 unit/e2e tests, 10 sidecar parser tests, build, 19 integration tests). `npm run verify:free-live` passed. `npm run verify:nvidia-live` passed. `npm run verify:live` failed because the synthetic live report ended with `visualClassificationStatus: "incomplete"`. `npm run verify:calorix-live` timed out after about 10 minutes. `npm run verify:calorix-full-live` timed out after about 30 minutes.
-- Code review: Gemini CLI using `gemini-3.1-pro-preview` returned `AGREEMENT_STATUS: agree`, `MUST_FIX: none`, `SHOULD_FIX: none`. It also confirmed OpenRouter Kimi free is not listed by Models API and paid mode is sufficiently hard to enable.
-- Open blockers: production sign-off is blocked by incomplete generic live classification and Calorix bounded/full live timeouts.
+- Current task: Live gate hardening plan after corrected default-free MCP live runs — complete.
+- Next task: execute `docs/superpowers/plans/2026-06-15-live-gate-hardening.md`.
+- Last verification: `npm run build` passed. Corrected generic MCP live run in `mode: "free"` completed but returned `visualClassificationStatus: "incomplete"` with two `unclassified_visual_change` records. `npm run verify:calorix-live` timed out after about 10 minutes with `UI_DIFF_MAX_AUDIT_PAIRS=3`. `npm run verify:calorix-full-live` timed out after about 30 minutes. `git diff --check` for the plan commit exited 0 with CRLF warnings only.
+- Code review: Gemini CLI using `gemini-3.1-pro-preview` reviewed `docs/superpowers/plans/2026-06-15-live-gate-hardening.md`; final blocker pass returned `AGREEMENT_STATUS: agree`, `MUST_FIX: None`, `SHOULD_FIX: None`.
+- Open blockers: production sign-off is blocked until the live gate hardening plan is implemented and the corrected default MCP, bounded Calorix, and full Calorix live gates finish without MCP protocol timeouts.
 
 ## Standing Implementation Rules
 
@@ -57,14 +57,16 @@ This file is the persistent handoff state for implementation agents. Read it bef
 | 2026-06-14 | `84a9eb3` | Model-routing correction | `npm run verify` — 196 unit/e2e tests, 10 sidecar parser tests, build, 19 integration tests; `git diff --check` exited 0 with CRLF warnings only | Removed stale OpenRouter `moonshotai/kimi-k2.6:free` runtime route; kept native NVIDIA Kimi as free candidate and OpenRouter Kimi as paid-only. Promoted reviewer selection to strong model families before nano VL routes, avoids auditor's exact route when another strong route passes, requires `UI_DIFF_ENABLE_PAID_MODE=1` for paid selection, and records model `costClass` in report `modelSelection`. Gemini 3.1 Pro Preview: no findings. |
 | 2026-06-14 | `612a9ab` | Calorix agent launch scripts | Not recorded in this status file before this update | Added `launch-calorix-claude.bat` and `launch-calorix-claude.ps1`. |
 | 2026-06-14 | this commit | Live gate execution and pixel-mask fix | `npm run verify` — 196 unit/e2e tests, 10 sidecar parser tests, build, 19 integration tests. Live gates: `verify:free-live` passed; `verify:nvidia-live` passed; `verify:live` failed with incomplete visual classification; `verify:calorix-live` timed out after about 10 minutes; `verify:calorix-full-live` timed out after about 30 minutes. | Fixed `computePixelDiff` binary mask extraction so unchanged pixels are not counted as diff mass. Updated generic live MCP test to use valid `free_openrouter` mode and structured artifact/model-selection assertions. Generic live diagnostic selected auditor `openrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free` and reviewer `openrouter/nex-agi/nex-n2-pro:free`, but did not classify the simple shifted rectangle; Calorix runs produced recovery artifacts then hit MCP request timeouts. |
+| 2026-06-15 | this commit | Corrected default-free MCP live runs and hardening plan | `npm run build` passed. Generic MCP `mode: "free"` run completed with native NVIDIA `moonshotai/kimi-k2.6` auditor and `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning` reviewer but remained visually incomplete. `npm run verify:calorix-live` timed out after about 10 minutes. `npm run verify:calorix-full-live` timed out after about 30 minutes. Gemini final plan review: `AGREEMENT_STATUS: agree`, `MUST_FIX: None`, `SHOULD_FIX: None`. | Added `docs/superpowers/plans/2026-06-15-live-gate-hardening.md`. The plan covers correct default/openrouter live gate split, role-specific model probes, deterministic geometry diffs, weak locator label pairing, bounded target recovery, checkpoint reports, async MCP run handles, and final live gates. |
 
 ## Handoff Checklist
 
-- Current task: none — live gate execution complete, blockers recorded
+- Current task: none — live gate hardening plan complete and ready for review
 - Active plan: `docs/superpowers/plans/2026-06-14-free-first-ui-diff-hardening.md`
-- Last completed step: live gates run; pixel-mask fix verified locally; failed live outcomes recorded
-- Next step: investigate and fix recovery/runtime behavior causing Calorix live timeouts and the incomplete synthetic live classification
-- Verification command and result: `npm run verify` passed. `verify:free-live` and `verify:nvidia-live` passed. `verify:live` failed with incomplete visual classification. `verify:calorix-live` and `verify:calorix-full-live` timed out.
+- Next plan: `docs/superpowers/plans/2026-06-15-live-gate-hardening.md`
+- Last completed step: corrected default-free MCP live run and Calorix live gates rerun; implementation plan drafted and Gemini-reviewed
+- Next step: owner review of `docs/superpowers/plans/2026-06-15-live-gate-hardening.md`, then execute Task 1
+- Verification command and result: `npm run build` passed; corrected generic default-free MCP live run completed incomplete; `verify:calorix-live` and `verify:calorix-full-live` timed out; Gemini final plan review passed
 - Commit pushed: pending for this task
 - Files intentionally left modified: none after commit
-- Blockers: generic live classification incomplete; Calorix bounded/full live gates timeout
+- Blockers: generic default-free live classification incomplete; Calorix bounded/full live gates timeout
