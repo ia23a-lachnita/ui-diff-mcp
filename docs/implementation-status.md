@@ -97,11 +97,19 @@ This file is the persistent handoff state for implementation agents. Read it bef
 
 **Remaining known risk:** Union-box deterministic geometry coverage may over-cover: unrelated pixel changes inside a union box are not sent to recovery until shape-aware coverage is implemented. Documented in the production-readiness checklist.
 
-- Current task: Fresh live gate run + production readiness report + Gemini review — **COMPLETE**
+- Current task: Screen parser locator hardening research and implementation plan - **COMPLETE in this commit**
 - Active plan: `docs/superpowers/plans/2026-06-15-live-gate-hardening.md` — all 8 tasks complete
 - Last verification: Full live gate suite run on 2026-06-15T16:54Z at HEAD `7ab7733`. Results in `docs/release/2026-06-15-production-readiness-report.md`.
-- Next task: Resolve F1 (weak locator coverage on Calorix images) then re-run `verify:calorix-live` and `verify:calorix-full-live` before cutting a release tag.
-- Blockers: **RELEASE BLOCKED** — `verify:calorix-live` failed with `locatorCoverageStatus: "weak"` on real Calorix UI screenshots. Gemini 2.5 Pro agrees this is a hard release blocker. See `docs/release/2026-06-15-production-readiness-report.md`.
+- Next task: Execute `docs/superpowers/plans/2026-06-15-screen-parser-locator-hardening.md`, starting with per-image locator diagnostics and coverage scoring.
+- Blockers: **RELEASE BLOCKED** — `verify:calorix-live` failed with `locatorCoverageStatus: "weak"` on real Calorix UI screenshots. The new screen-parser hardening plan addresses this by demoting LocateAnything from single source of truth, adding multi-lane screen parsing, NMS, per-image coverage gates, and cold-start hardening.
+
+## Screen Parser Locator Hardening Plan - 2026-06-15
+
+**Document:** `docs/superpowers/plans/2026-06-15-screen-parser-locator-hardening.md`
+
+**Reason:** The fresh Calorix gate showed LocateAnything-only discovery is not reliable enough for dense real mobile screenshots. The plan researches and replaces that single-lane locator strategy with a measured screen parser architecture: deterministic CV, OCR boundary, optional OmniParser, optional local YOLO UI detector, LocateAnything as a demoted grounding lane, lane-aware NMS, per-image coverage scoring, target-map diagnostics, and stricter live gates.
+
+**Gemini review:** Gemini 3.1 Pro Preview independently reviewed the locator problem and recommended pivoting from LocateAnything-only discovery to a dedicated screen parser, preferring OmniParser-style parsing or YOLO+OCR. It later reviewed the plan and identified duplicate multi-lane boxes as the main implementation risk; Task 7 now includes explicit NMS tests and `suppressDuplicateElements()`. Final blocker-only retry did not return the exact requested template but stated that the multi-lane screen parser, deterministic CV/OCR, optional OmniParser/YOLO, NMS, and strict per-image coverage plan addresses the root cause.
 
 ## Last Persisted Run Review - 2026-06-15
 
