@@ -1,12 +1,23 @@
+import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("../../src/pipeline/run-store.js", () => ({
+  putRun: vi.fn().mockResolvedValue(undefined),
+  getRun: vi.fn().mockResolvedValue(undefined)
+}));
+
 import {
   handleCaptureMobileScreen,
   handleCompareUiImages,
+  handleGetUiDiffRunStatus,
   handleModelHealth,
   handleReadUiDiffReport,
+  handleStartUiDiffRun,
   type ServerDeps
 } from "../../src/server.js";
+import { putRun, getRun } from "../../src/pipeline/run-store.js";
 import type { RunOutput } from "../../src/pipeline/run-ui-diff.js";
 import type { UiDiffReport } from "../../src/schemas/core.js";
 
@@ -67,6 +78,16 @@ function deps(overrides: Partial<ServerDeps> = {}): ServerDeps {
     ...overrides
   };
 }
+
+let tmpDir: string;
+
+beforeEach(async () => {
+  tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "server-handler-test-"));
+});
+
+afterEach(async () => {
+  await fs.rm(tmpDir, { recursive: true, force: true });
+});
 
 describe("server tool handlers", () => {
   it("compare handler forces deterministic mode", async () => {
@@ -160,5 +181,39 @@ describe("server tool handlers", () => {
     const result = await handleCaptureMobileScreen({ target: "adb" }, d);
     expect(d.captureMobileScreen).toHaveBeenCalledWith("adb");
     expect(result.structuredContent).toEqual({ imagePath: "C:/tmp/screen.png" });
+  });
+
+  it("start_ui_diff_run returns queued status and a runId", async () => {
+    const d = deps();
+    const result = await handleStartUiDiffRun({
+      expectedImagePath: "expected.png",
+      actualImagePath: "actual.png",
+      projectRoot: tmpDir,
+      mode: "deterministic_only"
+    }, d);
+    const structured = result.structuredContent as { runId: string; status: string };
+    expect(structured.status).toBe("queued");
+    expect(structured.runId).toMatch(/^run-/);
+  });
+
+  it("get_ui_diff_run_status returns state from getRun including label", async () => {
+    const runId = "run-label-test";
+    vi.mocked(getRun).mockResolvedValueOnce({
+      runId,
+      status: "complete",
+      projectRoot: tmpDir,
+      startedAt: new Date().toISOString(),
+      label: "smoke-label"
+    });
+    const statusResult = await handleGetUiDiffRunStatus({ projectRoot: tmpDir, runId });
+    const statusOut = statusResult.structuredContent as { label?: string; status: string };
+    expect(statusOut.status).toBe("complete");
+    expect(statusOut.label).toBe("smoke-label");
+  });
+
+  it("get_ui_diff_run_status returns not_found for unknown runId", async () => {
+    const result = await handleGetUiDiffRunStatus({ projectRoot: tmpDir, runId: "nonexistent-run" });
+    const structured = result.structuredContent as { status: string };
+    expect(structured.status).toBe("not_found");
   });
 });
