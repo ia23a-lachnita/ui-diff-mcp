@@ -173,7 +173,8 @@ export const RecoverySummarySchema = z.object({
   skippedComponents: z.number().int().min(0),
   recoveredDiffs: z.number().int().min(0),
   unclassifiedCount: z.number().int().min(0),
-  stoppedReason: z.enum(["none", "component_cap", "model_call_cap", "deadline_exceeded"]).default("none")
+  stoppedReason: z.enum(["none", "component_cap", "model_call_cap", "deadline_exceeded"]).default("none"),
+  model: z.string().optional()
 });
 export type RecoverySummary = z.infer<typeof RecoverySummarySchema>;
 

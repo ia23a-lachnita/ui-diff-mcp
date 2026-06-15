@@ -202,6 +202,7 @@ export interface RecoveryResult {
   attemptedComponents: number;
   skippedComponents: number;
   stoppedReason: "none" | "component_cap" | "model_call_cap" | "deadline_exceeded";
+  model?: string;
 }
 
 export async function runTargetRecovery(
@@ -215,6 +216,7 @@ export async function runTargetRecovery(
   let stoppedReason: RecoveryResult["stoppedReason"] = "none";
   const imageWidth = ctx.expectedRgba.width;
   const imageHeight = ctx.expectedRgba.height;
+  let recoveryModel: string | undefined;
 
   // Filter noise below min pixel threshold, then rank: pixelCount desc, area desc, y asc, x asc
   const eligible = uncoveredComponents
@@ -301,7 +303,7 @@ export async function runTargetRecovery(
     const recoveryPrompt = buildRecoveryPrompt(component.pixelCount, Math.round(box.width * box.height));
 
     let vlmResponse: z.infer<typeof RecoveryVlmResponseSchema>;
-    let recoveryModel = "unknown";
+    let componentRecoveryModel = "unknown";
     try {
       const res = await ctx.recoveryCaller({
         prompt: recoveryPrompt,
@@ -310,7 +312,10 @@ export async function runTargetRecovery(
         timeoutMs: 60000
       });
       modelCallsUsed++;
-      recoveryModel = res.model;
+      componentRecoveryModel = res.model;
+      if (!recoveryModel) {
+        recoveryModel = res.model;
+      }
       vlmResponse = RecoveryVlmResponseSchema.parse(res.parsed);
     } catch (err) {
       console.error(`Recovery VLM call failed for component ${evidenceId}:`, err);
@@ -408,7 +413,7 @@ export async function runTargetRecovery(
       ],
       artifactPaths: artifacts,
       reviewerStatus: reviewDecision === "needs_escalation" ? "needs_escalation" : "accepted",
-      model: recoveryModel
+      model: componentRecoveryModel
     };
 
     recovered.push(record);
@@ -420,6 +425,7 @@ export async function runTargetRecovery(
     unclassifiedCount,
     attemptedComponents,
     skippedComponents,
-    stoppedReason
+    stoppedReason,
+    ...(recoveryModel !== undefined ? { model: recoveryModel } : {})
   };
 }

@@ -296,4 +296,25 @@ describe("runTargetRecovery", () => {
     expect(recovered[0]?.reviewerStatus).toBe("needs_escalation");
     expect(unclassifiedCount).toBe(0);
   });
+
+  it("returns the recovery model name in the result", async () => {
+    const recoveryCaller: VisionJsonCaller = vi.fn().mockResolvedValue({
+      parsed: {
+        classified: true,
+        criterion: "geometry",
+        severity: "medium",
+        label: "Submit button",
+        coordinateFrame: "expected",
+        box: { x: 10, y: 10, width: 80, height: 60 },
+        evidence: ["element shifted 15px"]
+      },
+      rawContent: "",
+      model: "test-model-123",
+      provider: "openrouter"
+    });
+    const ctx = makeCtx({ recoveryCaller });
+
+    const { model } = await runTargetRecovery([component], ctx, unlimitedBudget);
+    expect(model).toBe("test-model-123");
+  });
 });
