@@ -92,11 +92,11 @@ This file is the persistent handoff state for implementation agents. Read it bef
 
 **Remaining known risk:** Union-box deterministic geometry coverage may over-cover: unrelated pixel changes inside a union box are not sent to recovery until shape-aware coverage is implemented. Documented in the production-readiness checklist.
 
-- Current task: Last persisted run readiness review and P3 wording fix - **COMPLETE in this commit**
+- Current task: Fresh live gate run + production readiness report + Gemini review — **COMPLETE**
 - Active plan: `docs/superpowers/plans/2026-06-15-live-gate-hardening.md` — all 8 tasks complete
-- Last verification: `npm run verify`, `npm run test:coverage`, and `git diff --check` passed on 2026-06-15 for the latest P3 wording/documentation change. Coverage remained 85.36% statements / 71.37% branches / 87.95% functions / 87.09% lines.
-- Next task: run fresh hardened live gates before a release tag if formal release sign-off is needed.
-- Blockers: none for committed code/test gates. The latest persisted Calorix report on disk (`run-1781530941630-a2ada2`) is a known-bad report with weak locator coverage and incomplete visual classification; it should not be used as production sign-off evidence.
+- Last verification: Full live gate suite run on 2026-06-15T16:54Z at HEAD `7ab7733`. Results in `docs/release/2026-06-15-production-readiness-report.md`.
+- Next task: Resolve F1 (weak locator coverage on Calorix images) then re-run `verify:calorix-live` and `verify:calorix-full-live` before cutting a release tag.
+- Blockers: **RELEASE BLOCKED** — `verify:calorix-live` failed with `locatorCoverageStatus: "weak"` on real Calorix UI screenshots. Gemini 2.5 Pro agrees this is a hard release blocker. See `docs/release/2026-06-15-production-readiness-report.md`.
 
 ## Last Persisted Run Review - 2026-06-15
 
