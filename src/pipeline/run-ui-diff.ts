@@ -9,7 +9,7 @@ import { extractEdgeMask } from "../signals/edge.js";
 import { createDirectionalDiffOverlay, type Rgba } from "../images/directional-diff.js";
 import { locateUiElements, LocatorUnavailableError } from "../locator/locateanything-client.js";
 import { buildElementMap, computeLocatorMetadata } from "../locator/element-map.js";
-import { computeImageLocatorCoverage } from "../locator/coverage.js";
+import { computeImageLocatorCoverage, type ImageLocatorCoverage } from "../locator/coverage.js";
 import { buildTargetMapJson } from "../locator/diagnostics.js";
 import { pairElements } from "../pairing/pair-elements.js";
 import { selectModelForMode, resolveMode, CANONICAL_MODEL_RANKING, type ModelEntry } from "../models/model-registry.js";
@@ -195,6 +195,8 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
   const expectedElements: ReturnType<typeof buildElementMap> = [];
   const actualElements: ReturnType<typeof buildElementMap> = [];
   let locatorFailed = false;
+  let expectedCoverage: ImageLocatorCoverage | undefined;
+  let actualCoverage: ImageLocatorCoverage | undefined;
 
   if (mode === "paid" && !paidModeEnabled) {
     warnings.push("Paid mode requested but UI_DIFF_ENABLE_PAID_MODE=1 is not set; paid routes are disabled.");
@@ -253,12 +255,12 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
       expectedElements.push(...buildElementMap(expResp.elements, { width: expectedImg.width, height: expectedImg.height }));
       actualElements.push(...buildElementMap(actResp.elements, { width: actualImg.width, height: actualImg.height }));
       
-      const expectedCoverage = computeImageLocatorCoverage({
+      expectedCoverage = computeImageLocatorCoverage({
         elements: expectedElements,
         promptCount: locatorQueries.length,
         imageSize: { width: expectedImg.width, height: expectedImg.height }
       });
-      const actualCoverage = computeImageLocatorCoverage({
+      actualCoverage = computeImageLocatorCoverage({
         elements: actualElements,
         promptCount: locatorQueries.length,
         imageSize: { width: actualImg.width, height: actualImg.height }
@@ -270,16 +272,20 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
           ? "failed"
           : "weak";
 
-      await writeJsonArtifact(path.join(artifactDir, "target-map-expected.json"), buildTargetMapJson({
+      await writeJsonArtifact(path.join(artifactRoot, "target-map-expected.json"), buildTargetMapJson({
         imageRole: "expected",
         coverage: expectedCoverage,
         elements: expectedElements
       }));
-      await writeJsonArtifact(path.join(artifactDir, "target-map-actual.json"), buildTargetMapJson({
+      await writeJsonArtifact(path.join(artifactRoot, "target-map-actual.json"), buildTargetMapJson({
         imageRole: "actual",
         coverage: actualCoverage,
         elements: actualElements
       }));
+      runArtifacts.push(
+        { role: "target_map_expected", path: path.join(artifactRoot, "target-map-expected.json") },
+        { role: "target_map_actual", path: path.join(artifactRoot, "target-map-actual.json") }
+      );
     } catch (err) {
       locatorFailed = true;
       locatorCoverageStatus = "failed";
@@ -493,7 +499,11 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
   );
 
   const locatorMetadata = locatorCoverageStatus !== "not_run"
-    ? computeLocatorMetadata([...expectedElements, ...actualElements], locatorQueries.length)
+    ? {
+        ...computeLocatorMetadata([...expectedElements, ...actualElements], locatorQueries.length),
+        ...(expectedCoverage !== undefined ? { expected: expectedCoverage } : {}),
+        ...(actualCoverage !== undefined ? { actual: actualCoverage } : {})
+      }
     : undefined;
 
   const report: UiDiffReport = {

@@ -64,7 +64,6 @@ export function computeImageLocatorCoverage(input: ImageLocatorCoverageInput): I
     promptCount: input.promptCount,
     usefulElementCount: useful.length,
     queryCounts,
-    queryCounts,
     queryCoverageRatio,
     rejectedElementCount: input.elements.length - useful.length,
     reasons
