@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { RunStatusSchema, UiDiffReportSchema, UiArtifactSchema, AuditScopeSchema, LocatorCoverageStatusSchema, VisualClassificationStatusSchema } from "./core.js";
+import { RunStatusSchema, UiDiffReportSchema, UiArtifactSchema, AuditScopeSchema, LocatorCoverageStatusSchema, VisualClassificationStatusSchema, RecoverySummarySchema } from "./core.js";
 
 export const CompareUiImagesInputSchema = {
   expectedImagePath: z.string().min(1),
@@ -21,7 +21,8 @@ export const CompareUiImagesOutputSchema = {
   visualClassificationStatus: VisualClassificationStatusSchema,
   locatorCoverageStatus: LocatorCoverageStatusSchema.default("not_run"),
   auditLimited: z.boolean().default(false),
-  auditScope: AuditScopeSchema.optional()
+  auditScope: AuditScopeSchema.optional(),
+  recoverySummary: RecoverySummarySchema.optional()
 };
 
 export const ModelHealthOutputSchema = {
@@ -41,4 +42,32 @@ export const ReadUiDiffReportOutputSchema = {
 
 export const CaptureScreenOutputSchema = {
   imagePath: z.string().min(1)
+};
+
+export const StartUiDiffRunInputSchema = {
+  expectedImagePath: z.string().min(1),
+  actualImagePath: z.string().min(1),
+  projectRoot: z.string().min(1).optional(),
+  mode: z.enum(["free", "free_openrouter", "free_nvidia", "paid", "deterministic_only"]).default("free")
+};
+
+export const StartUiDiffRunOutputSchema = {
+  runId: z.string().min(1),
+  status: z.enum(["queued"]),
+  message: z.string().min(1)
+};
+
+export const GetUiDiffRunStatusInputSchema = {
+  projectRoot: z.string().min(1),
+  runId: z.string().min(1)
+};
+
+export const GetUiDiffRunStatusOutputSchema = {
+  runId: z.string().min(1),
+  status: z.enum(["queued", "running", "complete", "incomplete", "failed", "not_found"]),
+  reportPath: z.string().optional(),
+  artifactRoot: z.string().optional(),
+  startedAt: z.string().optional(),
+  completedAt: z.string().optional(),
+  error: z.string().optional()
 };

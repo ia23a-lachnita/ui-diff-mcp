@@ -7,8 +7,13 @@ import {
   CompareUiImagesOutputSchema,
   ModelHealthOutputSchema,
   ReadUiDiffReportOutputSchema,
-  CaptureScreenOutputSchema
+  CaptureScreenOutputSchema,
+  StartUiDiffRunInputSchema,
+  StartUiDiffRunOutputSchema,
+  GetUiDiffRunStatusInputSchema,
+  GetUiDiffRunStatusOutputSchema
 } from "./schemas/tool-schemas.js";
+import { putRun, getRun } from "./pipeline/run-store.js";
 import { runUiDiff, type RunInput, type RunOutput } from "./pipeline/run-ui-diff.js";
 import { captureMobileScreen } from "./capture/mobile-capture.js";
 import { probeRequiredModels, type ProbeResult } from "./models/probes.js";
@@ -51,6 +56,8 @@ export const defaultServerDeps: ServerDeps = {
   readFile: fs.readFile
 };
 
+const DEFAULT_FOREGROUND_BUDGET_MS = 45000;
+
 export async function handleCompareUiImages(
   input: {
     expectedImagePath: string;
@@ -65,10 +72,121 @@ export async function handleCompareUiImages(
   const runInput = forcedMode === "deterministic_only"
     ? buildRunInput({ ...input, mode: "deterministic_only" })
     : buildRunInput(input);
-  const result = await deps.runUiDiff(runInput);
+
+  const budgetMs = parseInt(process.env["UI_DIFF_FOREGROUND_BUDGET_MS"] ?? String(DEFAULT_FOREGROUND_BUDGET_MS), 10);
+
+  let settled = false;
+  const runPromise = deps.runUiDiff(runInput).then(r => { settled = true; return r; });
+  const timeoutPromise = new Promise<null>(resolve => setTimeout(() => resolve(null), budgetMs));
+
+  const raceResult = await Promise.race([runPromise, timeoutPromise]);
+
+  if (raceResult !== null) {
+    return {
+      content: [{ type: "text" as const, text: raceResult.summary }],
+      structuredContent: toRecord(raceResult)
+    };
+  }
+
+  // Budget exceeded — try to surface the latest checkpoint report
+  void settled;
+  const projectRoot = input.projectRoot ?? process.cwd();
+  const runsDir = path.join(projectRoot, ".ui-diff", "runs");
+  let incompleteReportPath: string | undefined;
+  try {
+    const entries = await fs.readdir(runsDir);
+    const sorted = entries.sort().reverse();
+    for (const entry of sorted) {
+      const candidate = path.join(runsDir, entry, "artifacts", "report.json");
+      try { await fs.access(candidate); incompleteReportPath = candidate; break; } catch { /* skip */ }
+    }
+  } catch { /* no runs dir yet */ }
+
+  const pendingPath = incompleteReportPath ?? path.join(projectRoot, ".ui-diff", "runs", "pending", "report.json");
+  const incompleteResult = {
+    runId: "timeout",
+    status: "incomplete",
+    diffCount: 0,
+    reportPath: pendingPath,
+    artifactRoot: path.dirname(pendingPath),
+    runArtifacts: [],
+    summary: `Run exceeded foreground budget of ${budgetMs}ms. Use start_ui_diff_run for long-running audits.`,
+    warnings: [`Foreground budget of ${budgetMs}ms exceeded.`],
+    visualClassificationStatus: "incomplete",
+    locatorCoverageStatus: "not_run",
+    auditLimited: false
+  };
   return {
-    content: [{ type: "text" as const, text: result.summary }],
-    structuredContent: toRecord(result)
+    content: [{ type: "text" as const, text: incompleteResult.summary }],
+    structuredContent: toRecord(incompleteResult)
+  };
+}
+
+export async function handleStartUiDiffRun(
+  input: {
+    expectedImagePath: string;
+    actualImagePath: string;
+    projectRoot?: string | undefined;
+    mode?: string | undefined;
+  },
+  deps: ServerDeps
+) {
+  const projectRoot = input.projectRoot ?? process.cwd();
+  const runId = `run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const runInput = buildRunInput({ ...input, projectRoot });
+
+  const state = { runId, status: "queued" as const, projectRoot, startedAt: new Date().toISOString() };
+  await putRun(state);
+
+  void (async () => {
+    await putRun({ ...state, status: "running" });
+    try {
+      const result = await deps.runUiDiff(runInput);
+      await putRun({
+        ...state,
+        status: result.status === "complete" ? "complete" : "incomplete",
+        reportPath: result.reportPath,
+        artifactRoot: result.artifactRoot,
+        completedAt: new Date().toISOString()
+      });
+    } catch (err) {
+      await putRun({
+        ...state,
+        status: "failed",
+        error: err instanceof Error ? err.message : String(err),
+        completedAt: new Date().toISOString()
+      });
+    }
+  })();
+
+  return {
+    content: [{ type: "text" as const, text: `Run ${runId} started. Poll get_ui_diff_run_status or read_ui_diff_report.` }],
+    structuredContent: toRecord({ runId, status: "queued", message: `Run started. Poll get_ui_diff_run_status with runId "${runId}".` })
+  };
+}
+
+export async function handleGetUiDiffRunStatus(
+  input: { projectRoot: string; runId: string }
+) {
+  const found = await getRun(input.projectRoot, input.runId);
+  if (!found) {
+    return {
+      content: [{ type: "text" as const, text: `Run ${input.runId} not found.` }],
+      structuredContent: toRecord({ runId: input.runId, status: "not_found" })
+    };
+  }
+  const out: Record<string, unknown> = {
+    runId: found.runId,
+    status: found.status,
+    startedAt: found.startedAt
+  };
+  if (found.reportPath !== undefined) out["reportPath"] = found.reportPath;
+  if (found.artifactRoot !== undefined) out["artifactRoot"] = found.artifactRoot;
+  if (found.completedAt !== undefined) out["completedAt"] = found.completedAt;
+  if (found.error !== undefined) out["error"] = found.error;
+  return {
+    content: [{ type: "text" as const, text: `Run ${found.runId}: ${found.status}.` }],
+    structuredContent: out
   };
 }
 
@@ -173,6 +291,26 @@ export function createServer(deps: ServerDeps = defaultServerDeps): McpServer {
       outputSchema: CaptureScreenOutputSchema
     },
     async (input) => handleCaptureMobileScreen(input, deps)
+  );
+
+  server.registerTool(
+    "start_ui_diff_run",
+    {
+      description: "Starts a UI diff run in the background without holding the MCP request open. Returns a runId to poll with get_ui_diff_run_status. Use this for large or slow audits like Calorix full scans.",
+      inputSchema: StartUiDiffRunInputSchema,
+      outputSchema: StartUiDiffRunOutputSchema
+    },
+    async (input) => handleStartUiDiffRun(input, deps)
+  );
+
+  server.registerTool(
+    "get_ui_diff_run_status",
+    {
+      description: "Returns the status of a background UI diff run started by start_ui_diff_run.",
+      inputSchema: GetUiDiffRunStatusInputSchema,
+      outputSchema: GetUiDiffRunStatusOutputSchema
+    },
+    async (input) => handleGetUiDiffRunStatus(input)
   );
 
   return server;

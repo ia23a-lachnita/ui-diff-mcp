@@ -32,7 +32,9 @@ describe("MCP stdio tool surface", () => {
       "discover_ui_diffs",
       "ui_diff_model_health",
       "read_ui_diff_report",
-      "capture_mobile_screen"
+      "capture_mobile_screen",
+      "start_ui_diff_run",
+      "get_ui_diff_run_status"
     ]) {
       const tool = byName.get(name);
       expect(tool).toBeTruthy();
@@ -123,6 +125,65 @@ describe("MCP stdio tool surface", () => {
       expect(["pass", "fail", "not_checked"]).toContain(r.status);
     }
   }, 60000);
+
+  it("discover_ui_diffs returns structured incomplete result when foreground budget is exceeded", async () => {
+    // Start a server with a 100ms foreground budget — well below any real probe+model round-trip.
+    const fastBudgetClient = await startUiDiffMcpClient({
+      OPENROUTER_API_KEY: "",
+      LOCATEANYTHING_SIDECAR_URL: "http://127.0.0.1:9",
+      UI_DIFF_FOREGROUND_BUDGET_MS: "100"
+    });
+    try {
+      const { expected, actual } = await writeTwoButtonFixture(tmpDir, "exp-budget.png", "act-budget.png");
+      const result = await fastBudgetClient.client.callTool({
+        name: "discover_ui_diffs",
+        arguments: {
+          expectedImagePath: expected,
+          actualImagePath: actual,
+          projectRoot: tmpDir,
+          mode: "free"
+        }
+      });
+      // Must not error at MCP protocol level — must return structured content
+      expect(result.isError).not.toBe(true);
+      const structured = result.structuredContent as { status: string; visualClassificationStatus: string };
+      expect(structured.status).toBe("incomplete");
+      expect(structured.visualClassificationStatus).toBe("incomplete");
+    } finally {
+      await fastBudgetClient.close();
+    }
+  }, 30000);
+
+  it("start_ui_diff_run returns queued status and get_ui_diff_run_status returns the run state", async () => {
+    const { expected, actual } = await writeTwoButtonFixture(tmpDir, "exp-async.png", "act-async.png");
+    const startResult = await started!.client.callTool({
+      name: "start_ui_diff_run",
+      arguments: {
+        expectedImagePath: expected,
+        actualImagePath: actual,
+        projectRoot: tmpDir,
+        mode: "deterministic_only"
+      }
+    });
+    expect(startResult.isError).not.toBe(true);
+    const startOut = startResult.structuredContent as { runId: string; status: string };
+    expect(startOut.status).toBe("queued");
+    expect(startOut.runId).toBeTruthy();
+
+    // Poll for up to 20 seconds until complete or failed
+    let statusOut: { runId: string; status: string } | undefined;
+    for (let i = 0; i < 40; i++) {
+      await new Promise(r => setTimeout(r, 500));
+      const statusResult = await started!.client.callTool({
+        name: "get_ui_diff_run_status",
+        arguments: { projectRoot: tmpDir, runId: startOut.runId }
+      });
+      statusOut = statusResult.structuredContent as { runId: string; status: string };
+      if (statusOut.status === "complete" || statusOut.status === "incomplete" || statusOut.status === "failed") break;
+    }
+    expect(statusOut?.runId).toBe(startOut.runId);
+    expect(["complete", "incomplete"]).toContain(statusOut?.status);
+  }, 30000);
 
   it("returns a validation error for invalid compare_ui_images arguments", async () => {
     const result = await started!.client.callTool({
