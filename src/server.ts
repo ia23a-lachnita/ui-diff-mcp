@@ -128,14 +128,21 @@ export async function handleStartUiDiffRun(
     actualImagePath: string;
     projectRoot?: string | undefined;
     mode?: string | undefined;
+    label?: string | undefined;
   },
   deps: ServerDeps
 ) {
   const projectRoot = input.projectRoot ?? process.cwd();
   const runId = `run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  const runInput = buildRunInput({ ...input, projectRoot });
+  const runInput = buildRunInput({
+    expectedImagePath: input.expectedImagePath,
+    actualImagePath: input.actualImagePath,
+    mode: input.mode,
+    projectRoot,
+    runLabel: input.label
+  });
 
-  const state = { runId, status: "queued" as const, projectRoot, startedAt: new Date().toISOString() };
+  const state = { runId, status: "queued" as const, projectRoot, startedAt: new Date().toISOString(), ...(input.label !== undefined ? { label: input.label } : {}) };
   await putRun(state);
 
   void (async () => {
@@ -184,6 +191,7 @@ export async function handleGetUiDiffRunStatus(
   if (found.artifactRoot !== undefined) out["artifactRoot"] = found.artifactRoot;
   if (found.completedAt !== undefined) out["completedAt"] = found.completedAt;
   if (found.error !== undefined) out["error"] = found.error;
+  if (found.label !== undefined) out["label"] = found.label;
   return {
     content: [{ type: "text" as const, text: `Run ${found.runId}: ${found.status}.` }],
     structuredContent: out

@@ -48,7 +48,8 @@ export const StartUiDiffRunInputSchema = {
   expectedImagePath: z.string().min(1),
   actualImagePath: z.string().min(1),
   projectRoot: z.string().min(1).optional(),
-  mode: z.enum(["free", "free_openrouter", "free_nvidia", "paid", "deterministic_only"]).default("free")
+  mode: z.enum(["free", "free_openrouter", "free_nvidia", "paid", "deterministic_only"]).default("free"),
+  label: z.string().min(1).max(80).optional()
 };
 
 export const StartUiDiffRunOutputSchema = {
@@ -69,5 +70,6 @@ export const GetUiDiffRunStatusOutputSchema = {
   artifactRoot: z.string().optional(),
   startedAt: z.string().optional(),
   completedAt: z.string().optional(),
-  error: z.string().optional()
+  error: z.string().optional(),
+  label: z.string().optional()
 };
