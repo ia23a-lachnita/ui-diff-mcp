@@ -47,10 +47,17 @@ export function computeImageLocatorCoverage(input: ImageLocatorCoverageInput): I
   const queryCoverageRatio = input.promptCount === 0
     ? 0
     : Object.keys(queryCounts).length / input.promptCount;
+
+  // cv_components is a whole-image deterministic lane — if it provides enough elements it
+  // substitutes for the standard query-category coverage requirement, since it detects all
+  // visible UI regions without being constrained to the 8 category prompts.
+  const cvElementCount = queryCounts["cv_components"] ?? 0;
+  const cvSubstitutesQueryCoverage = cvElementCount >= Math.ceil(minElementCount / 2);
+
   const reasons: string[] = [];
 
   if (input.promptCount === 0) reasons.push("no_locator_prompts");
-  if (queryCoverageRatio < minQueryCoverageRatio) reasons.push("query_coverage_below_threshold");
+  if (!cvSubstitutesQueryCoverage && queryCoverageRatio < minQueryCoverageRatio) reasons.push("query_coverage_below_threshold");
   if (useful.length < minElementCount) reasons.push("element_count_below_minimum");
   if (useful.length === 0 && input.elements.length > 0) reasons.push("all_elements_rejected_as_low_quality");
 
