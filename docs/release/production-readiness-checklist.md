@@ -72,6 +72,10 @@ Required result:
 - Required model health entries for selected routes are `pass`.
 - The report includes normalized images, pixel diff, overlay, report JSON, and artifact index.
 
+## Known Coverage Limitation
+
+Deterministic geometry diffs use a union box that covers both the expected and actual element positions. This prevents shifted elements from being reported as unclassified pixel fragments during target recovery. However, unrelated pixel changes that fall inside the union box may be considered covered and not sent to recovery until shape-aware coverage is implemented in a future task.
+
 ## Bounded Calorix Smoke Gate
 
 ```powershell

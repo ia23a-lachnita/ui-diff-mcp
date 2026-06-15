@@ -18,6 +18,7 @@ import { auditElementPair, makeElementSlug, type AuditContext } from "../audit/a
 import { reviewAndMergeFindings } from "../audit/review-findings.js";
 import { assignDiffComponentsToRecords, findUncoveredComponents } from "../report/coverage.js";
 import { runTargetRecovery } from "../recovery/target-recovery.js";
+import { buildDeterministicDiffs } from "../diff/deterministic-diffs.js";
 import { writeUiDiffReport } from "../report/report-writer.js";
 import type { UiDiffReport, RunStatus, VisualClassificationStatus, LocatorCoverageStatus, DiffRecord, ElementPair, UiArtifact, AuditScope, ModelSelection } from "../schemas/core.js";
 import { computeColorEvidence } from "../signals/color.js";
@@ -224,6 +225,18 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
 
   const pairs = pairElements(expectedElements, actualElements);
 
+  // Deterministic diffs: geometry and presence records derived directly from locator pairing.
+  // These are accepted without VLM review. Union-box coverage prevents shifted elements from
+  // appearing as unclassified pixel fragments, but unrelated changes that fall inside a union
+  // box may be considered covered until shape-aware coverage is implemented (see checklist).
+  const deterministicDiffs = buildDeterministicDiffs({
+    pairs,
+    expectedElements,
+    actualElements,
+    minMovePx: 4
+  });
+  allDiffs.push(...deterministicDiffs);
+
   const modelHealth: UiDiffReport["modelHealth"] = [];
 
   if (mode !== "deterministic_only" && status !== "insufficient_free_quota") {
@@ -368,7 +381,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
 
         // Target recovery: classify uncovered changed-pixel regions
         const significantComponents = pixelDiff.components.filter(c => c.pixelCount >= 50);
-        const uncoveredComponents = findUncoveredComponents(significantComponents, merged, 50);
+        const uncoveredComponents = findUncoveredComponents(significantComponents, allDiffs, 50);
         if (uncoveredComponents.length > 0) {
           const { recovered, unclassifiedCount } = await runTargetRecovery(uncoveredComponents, {
             expectedRgba: { data: expectedImg.rgba, width: expectedImg.width, height: expectedImg.height },
