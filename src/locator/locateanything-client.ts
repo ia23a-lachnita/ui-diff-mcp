@@ -125,6 +125,19 @@ export async function locateUiElements(options: LocateClientOptions): Promise<Lo
     );
   }
 
+  // Capture original image dimensions before any resize so we can scale coordinates back.
+  // The sidecar returns boxes in the coordinate space of the image it received; after a
+  // resize the caller still expects boxes in original-image space.
+  let originalWidth: number | undefined;
+  let originalHeight: number | undefined;
+  if (maxDimension && request.imagePath && !request.imageBase64) {
+    try {
+      const meta = await sharp(request.imagePath).metadata();
+      originalWidth = meta.width;
+      originalHeight = meta.height;
+    } catch { /* ignore — coordinate rescaling won't apply */ }
+  }
+
   const requestBody = await withImagePayload(request, maxDimension);
 
   let rawResponse: Response;
@@ -156,6 +169,25 @@ export async function locateUiElements(options: LocateClientOptions): Promise<Lo
   }
 
   const parsed = LocateAnythingResponseSchema.parse(json);
+
+  // Scale box coordinates from resized-image space back to original-image space.
+  // The sidecar contract: boxes are in the coordinate space of the image it received.
+  // After a resize, parsed.image reflects the smaller sent size, not the original.
+  if (
+    originalWidth && originalHeight &&
+    (originalWidth !== parsed.image.width || originalHeight !== parsed.image.height)
+  ) {
+    const scaleX = originalWidth / parsed.image.width;
+    const scaleY = originalHeight / parsed.image.height;
+    for (const el of parsed.elements) {
+      el.box.x = Math.round(el.box.x * scaleX);
+      el.box.y = Math.round(el.box.y * scaleY);
+      el.box.width = Math.round(el.box.width * scaleX);
+      el.box.height = Math.round(el.box.height * scaleY);
+    }
+    parsed.image.width = originalWidth;
+    parsed.image.height = originalHeight;
+  }
 
   const { width, height } = parsed.image;
   for (const el of parsed.elements) {

@@ -10,6 +10,7 @@ export interface RunHandleState {
   startedAt: string;
   completedAt?: string;
   error?: string;
+  label?: string;
 }
 
 const runs = new Map<string, RunHandleState>();
@@ -25,7 +26,12 @@ export async function putRun(state: RunHandleState): Promise<void> {
   );
 }
 
+function isValidRunId(id: string): boolean {
+  return /^[a-zA-Z0-9_-]+$/.test(id);
+}
+
 export async function getRun(projectRoot: string, runId: string): Promise<RunHandleState | undefined> {
+  if (!isValidRunId(runId)) return undefined;
   const inMemory = runs.get(runId);
   if (inMemory) return inMemory;
   const statePath = path.join(projectRoot, ".ui-diff", "generated", "run-state", `${runId}.json`);

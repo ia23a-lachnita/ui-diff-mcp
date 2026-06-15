@@ -49,23 +49,29 @@ describe.skipIf(!calorixLive)("Calorix live UI diff smoke", () => {
         if (statusOut.status !== "running") break;
       }
       expect(statusOut?.status, "run must terminate — not hang").not.toBe("running");
-      expect(statusOut?.status, `run must complete or be incomplete, got: ${statusOut?.status}`).toMatch(/^(complete|incomplete)$/);
+      expect(statusOut?.status, `run must complete, got: ${statusOut?.status}`).toBe("complete");
       expect(statusOut?.reportPath).toBeTruthy();
 
       const report = UiDiffReportSchema.parse(JSON.parse(await fs.readFile(statusOut!.reportPath!, "utf8")));
       expect(path.resolve(statusOut!.reportPath!).includes(`${path.sep}.ui-diff${path.sep}runs${path.sep}`)).toBe(true);
 
-      // Locator must have successfully found elements — timeout or unavailability is a gate failure
-      expect(report.locatorCoverageStatus, "locator must not have failed or timed out").not.toBe("failed");
+      // Locator must have found elements with adequate coverage — weak or failed is a gate failure
+      expect(report.locatorCoverageStatus, "locator coverage must not be weak or failed").not.toMatch(/^(failed|weak)$/);
       expect(report.elements.expected.length, "locator must find elements in expected image").toBeGreaterThan(0);
       expect(report.elements.actual.length, "locator must find elements in actual image").toBeGreaterThan(0);
+
+      // Visual classification must be complete — incomplete means the model did not finish reviewing
+      expect(report.visualClassificationStatus, "visual classification must be complete").toBe("complete");
 
       // There must be paired targets available for audit
       expect(report.auditScope?.totalPairs ?? 0, "at least one element pair must be available for audit").toBeGreaterThan(0);
 
-      // The run must have produced diffs with evidence
+      // At least one diff must be model-reviewed (not just unclassified pixel noise)
+      // unclassified_visual_change is auto-generated for every uncovered component and always
+      // has evidence, so "all diffs have evidence" is not a meaningful quality gate.
       expect(report.diffs.length, "at least one diff must be reported").toBeGreaterThan(0);
-      expect(report.diffs.every(d => d.evidence.length > 0)).toBe(true);
+      const reviewedDiffs = report.diffs.filter((d: { criterion: string }) => d.criterion !== "unclassified_visual_change");
+      expect(reviewedDiffs.length, "at least one diff must be model-reviewed, not all unclassified pixel noise").toBeGreaterThan(0);
     } finally {
       await started.close();
     }

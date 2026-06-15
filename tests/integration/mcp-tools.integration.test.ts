@@ -156,34 +156,47 @@ describe("MCP stdio tool surface", () => {
 
   it("start_ui_diff_run returns queued status and get_ui_diff_run_status returns the run state", async () => {
     const { expected, actual } = await writeTwoButtonFixture(tmpDir, "exp-async.png", "act-async.png");
+    const testLabel = `test-run-${Date.now()}`;
     const startResult = await started!.client.callTool({
       name: "start_ui_diff_run",
       arguments: {
         expectedImagePath: expected,
         actualImagePath: actual,
         projectRoot: tmpDir,
-        mode: "deterministic_only"
+        mode: "deterministic_only",
+        label: testLabel
       }
     });
     expect(startResult.isError).not.toBe(true);
-    const startOut = startResult.structuredContent as { runId: string; status: string };
+    const startOut = startResult.structuredContent as { runId: string; status:string };
     expect(startOut.status).toBe("queued");
     expect(startOut.runId).toBeTruthy();
 
     // Poll for up to 20 seconds until complete or failed
-    let statusOut: { runId: string; status: string } | undefined;
+    let statusOut: { runId: string; status: string; label?: string } | undefined;
     for (let i = 0; i < 40; i++) {
       await new Promise(r => setTimeout(r, 500));
       const statusResult = await started!.client.callTool({
         name: "get_ui_diff_run_status",
         arguments: { projectRoot: tmpDir, runId: startOut.runId }
       });
-      statusOut = statusResult.structuredContent as { runId: string; status: string };
+      statusOut = statusResult.structuredContent as { runId: string; status: string; label?: string };
       if (statusOut.status === "complete" || statusOut.status === "incomplete" || statusOut.status === "failed") break;
     }
     expect(statusOut?.runId).toBe(startOut.runId);
+    expect(statusOut?.label).toBe(testLabel);
     expect(["complete", "incomplete"]).toContain(statusOut?.status);
   }, 30000);
+
+  it("get_ui_diff_run_status rejects path-traversal runIds", async () => {
+    const result = await started!.client.callTool({
+      name: "get_ui_diff_run_status",
+      arguments: { projectRoot: tmpDir, runId: "../../../etc/passwd" }
+    });
+    // Must not error at protocol level but must return not-found, not file contents
+    const structured = result.structuredContent as { status?: string } | undefined;
+    expect(structured?.status ?? "not_found").toBe("not_found");
+  });
 
   it("returns a validation error for invalid compare_ui_images arguments", async () => {
     const result = await started!.client.callTool({
