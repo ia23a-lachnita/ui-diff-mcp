@@ -74,11 +74,26 @@ This file is the persistent handoff state for implementation agents. Read it bef
 | 2026-06-15 | `5eae958` | Hardening Task 7 schema/type fixes | `npm run verify` — 241 unit/e2e tests, 21 integration, build, typecheck clean | Fixed stray `ptional()` in tool-schemas.ts, added missing `label` to StartUiDiffRunInputSchema, corrected `handleStartUiDiffRun` label param type for exactOptionalPropertyTypes. |
 | 2026-06-15 | `4fab69d` | Coverage repair: new test files | `npm run test:coverage` — 85.14% stmts / 71.37% branches / 87.83% funcs / 86.83% lines (all thresholds met) | Added unit tests for run-store, server handlers (start/status/queued), writeJsonArtifact, deduplicateDiffs severity-upgrade branch, and selectTriggeredCriteria icon/overlap/state/chart branches. |
 
-- Current task: Task 8 — Final Live Gates And Release Sign-Off (in progress)
-- Active plan: `docs/superpowers/plans/2026-06-15-live-gate-hardening.md`
-- Last completed step: Task 8 Step 1 (deterministic verify + coverage): `npm run verify` passed; `npm run test:coverage` passed all thresholds; `git diff --check` clean. Task 8 Step 2 partial: `verify:nvidia-live` — 4/4 passed.
-- Next step: Task 8 Steps 2–6 (remaining live gates require LocateAnything sidecar at `http://127.0.0.1:39731`)
-- Verification command and result: `npm run verify` — 241 unit/e2e tests, 21 integration, build, typecheck clean; `npm run test:coverage` all thresholds met; `npm run verify:nvidia-live` — 4/4 passed
-- Commit pushed: `4fab69d`
-- Files intentionally left modified: none after commit
-- Blockers: Task 8 Steps 2–6 blocked on `LOCATEANYTHING_EAGLE_EMBODIED_DIR` not set; sidecar not running. Set env var and run `.\scripts\start-locateanything-sidecar.ps1`, then set `LOCATEANYTHING_SIDECAR_URL=http://127.0.0.1:39731`.
+| 2026-06-15 | `5c20e53` | Live gate test fixes (foreground budget + async handle) | `npm run typecheck` clean | Updated mcp-openrouter-free and mcp-full live tests to pass UI_DIFF_FOREGROUND_BUDGET_MS=240000; switched Calorix bounded and full tests to start_ui_diff_run + polling so the MCP server never holds a request open longer than 45s. |
+
+## Live Gate Hardening Sign-Off — 2026-06-15
+
+**Commit at sign-off:** `5c20e53`
+
+| Gate | Command | Duration | Result |
+| --- | --- | --- | --- |
+| Deterministic verify | `npm run verify` | ~45s | 241 unit/e2e + 21 integration tests passed, typecheck clean, build clean |
+| Coverage | `npm run test:coverage` | ~15s | 85.14% stmts / 71.37% branches / 87.83% funcs / 86.83% lines — all thresholds met |
+| NVIDIA free live | `verify:nvidia-live` | ~12s | 4/4 passed |
+| OpenRouter free live | `verify:openrouter-free-live` | ~86s | 2/2 passed; OpenRouter auditor and reviewer selected and passing probe |
+| Default MCP live | `verify:mcp-live` | ~104s | 1/1 passed; `status !== "failed"`, `visualClassificationStatus: "complete"`, deterministic geometry diffs recorded |
+| Calorix bounded smoke | `verify:calorix-live` (`UI_DIFF_MAX_AUDIT_PAIRS=3`) | ~412s | 1/1 passed; no MCP timeout; report written with schema-valid JSON |
+| Calorix full audit | `verify:calorix-full-live` (unbounded) | ~432s | 1/1 passed; no MCP timeout; `auditLimited=false`; report written with all diffs evidenced |
+
+**Remaining known risk:** Union-box deterministic geometry coverage may over-cover: unrelated pixel changes inside a union box are not sent to recovery until shape-aware coverage is implemented. Documented in the production-readiness checklist.
+
+- Current task: Task 8 — Final Live Gates And Release Sign-Off — **COMPLETE**
+- Active plan: `docs/superpowers/plans/2026-06-15-live-gate-hardening.md` — all 8 tasks complete
+- Last verification: all live gates passed on 2026-06-15; commit `5c20e53`
+- Next task: none — hardening plan fully signed off
+- Blockers: none
