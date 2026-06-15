@@ -44,6 +44,7 @@ export interface RunOutput {
   locatorCoverageStatus: string;
   auditLimited: boolean;
   auditScope?: AuditScope;
+  recoverySummary?: RecoverySummary;
 }
 
 type ProbeOverride = (entries: ModelEntry[], openRouterApiKey: string, nvidiaApiKey?: string, nvidiaBaseUrl?: string) => Promise<ProbeResult[]>;

@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { UiDiffReport, UiArtifact, AuditScope } from "../schemas/core.js";
+import type { UiDiffReport, UiArtifact, AuditScope, RecoverySummary } from "../schemas/core.js";
 import { UiDiffReportSchema } from "../schemas/core.js";
 
 export interface CompactOutput {
@@ -16,6 +16,7 @@ export interface CompactOutput {
   locatorCoverageStatus: string;
   auditLimited: boolean;
   auditScope?: AuditScope;
+  recoverySummary?: RecoverySummary;
 }
 
 export async function writeReportCheckpoint(report: UiDiffReport): Promise<string> {
@@ -65,6 +66,7 @@ export async function writeUiDiffReport(
     visualClassificationStatus: report.visualClassificationStatus,
     locatorCoverageStatus: report.locatorCoverageStatus,
     auditLimited: report.auditScope?.auditLimited ?? false,
-    ...(report.auditScope !== undefined ? { auditScope: report.auditScope } : {})
+    ...(report.auditScope !== undefined ? { auditScope: report.auditScope } : {}),
+    ...(report.recoverySummary !== undefined ? { recoverySummary: report.recoverySummary } : {})
   };
 }
