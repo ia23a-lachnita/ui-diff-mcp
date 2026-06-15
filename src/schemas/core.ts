@@ -140,9 +140,30 @@ export type VisualClassificationStatus = z.infer<typeof VisualClassificationStat
 export const LocatorCoverageStatusSchema = z.enum(["complete", "weak", "failed", "not_run"]);
 export type LocatorCoverageStatus = z.infer<typeof LocatorCoverageStatusSchema>;
 
+export const ImageLocatorCoverageSchema = z.object({
+  status: LocatorCoverageStatusSchema,
+  promptCount: z.number().int().nonnegative(),
+  usefulElementCount: z.number().int().nonnegative(),
+  queryCounts: z.record(z.string(), z.number().int().nonnegative()),
+  queryCoverageRatio: z.number().finite().min(0).max(1),
+  rejectedElementCount: z.number().int().nonnegative(),
+  reasons: z.array(z.string()).default([])
+});
+
+export const LocatorLaneMetadataSchema = z.object({
+  status: z.enum(["complete", "failed", "not_configured", "skipped"]),
+  count: z.number().int().nonnegative(),
+  detail: z.string().optional(),
+  model: z.string().optional(),
+  license: z.string().optional()
+});
+
 export const LocatorMetadataSchema = z.object({
   promptCount: z.number().int().nonnegative(),
-  queryCounts: z.record(z.string(), z.number().int().nonnegative())
+  queryCounts: z.record(z.string(), z.number().int().nonnegative()),
+  expected: ImageLocatorCoverageSchema.optional(),
+  actual: ImageLocatorCoverageSchema.optional(),
+  lanes: z.record(z.string(), LocatorLaneMetadataSchema).optional()
 });
 
 export const AuditScopeSchema = z.object({
