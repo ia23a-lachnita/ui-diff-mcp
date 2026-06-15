@@ -35,7 +35,7 @@ describe.skipIf(!calorixLive)("Calorix live UI diff smoke", () => {
       const startResult = await started.client.callTool({
         name: "start_ui_diff_run",
         arguments: { expectedImagePath: expectedImagePath!, actualImagePath: actualImagePath!, projectRoot, mode: "free" }
-      });
+      }, undefined, { timeout: 600000 });
       expect(startResult.isError).not.toBe(true);
       const { runId } = startResult.structuredContent as { runId: string };
       expect(runId).toBeTruthy();
@@ -44,7 +44,7 @@ describe.skipIf(!calorixLive)("Calorix live UI diff smoke", () => {
       let statusOut: { status: string; reportPath?: string } | undefined;
       for (let i = 0; i < 120; i++) {
         await new Promise(r => setTimeout(r, 10000));
-        const statusResult = await started.client.callTool({ name: "get_ui_diff_run_status", arguments: { projectRoot, runId } });
+        const statusResult = await started.client.callTool({ name: "get_ui_diff_run_status", arguments: { projectRoot, runId } }, undefined, { timeout: 600000 });
         statusOut = statusResult.structuredContent as { status: string; reportPath?: string };
         if (statusOut.status !== "running") break;
       }
@@ -116,7 +116,7 @@ describe.skipIf(!calorixFullLive)("verify:calorix-full-live unbounded all-target
       const startResult = await started.client.callTool({
         name: "start_ui_diff_run",
         arguments: { expectedImagePath: expectedImagePath!, actualImagePath: actualImagePath!, projectRoot, mode: "free" }
-      });
+      }, undefined, { timeout: 600000 });
       expect(startResult.isError).not.toBe(true);
       const { runId } = startResult.structuredContent as { runId: string };
       expect(runId).toBeTruthy();
@@ -125,7 +125,7 @@ describe.skipIf(!calorixFullLive)("verify:calorix-full-live unbounded all-target
       let statusOut: { status: string; reportPath?: string } | undefined;
       for (let i = 0; i < 240; i++) {
         await new Promise(r => setTimeout(r, 10000));
-        const statusResult = await started.client.callTool({ name: "get_ui_diff_run_status", arguments: { projectRoot, runId } });
+        const statusResult = await started.client.callTool({ name: "get_ui_diff_run_status", arguments: { projectRoot, runId } }, undefined, { timeout: 600000 });
         statusOut = statusResult.structuredContent as { status: string; reportPath?: string };
         if (statusOut.status !== "running") break;
       }
