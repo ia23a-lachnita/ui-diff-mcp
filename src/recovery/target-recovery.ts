@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
 import { z } from "zod";
-import type { Box, DiffRecord, UiArtifact, UnassignedVisualEvidence } from "../schemas/core.js";
+import type { Box, DiffRecord, UiArtifact, UnassignedVisualEvidence, RecoveryComponentTrace } from "../schemas/core.js";
 import { UiCriterionSchema } from "../schemas/core.js";
 import type { PixelComponent } from "../signals/pixel-diff.js";
 import type { VisionJsonCaller } from "../models/vision-json.js";
@@ -202,6 +202,7 @@ export interface RecoveryResult {
   attemptedComponents: number;
   skippedComponents: number;
   stoppedReason: "none" | "component_cap" | "model_call_cap" | "deadline_exceeded";
+  trace: RecoveryComponentTrace[];
   model?: string;
 }
 
@@ -211,6 +212,7 @@ export async function runTargetRecovery(
   budget: RecoveryBudget = makeDefaultBudget()
 ): Promise<RecoveryResult> {
   const recovered: DiffRecord[] = [];
+  const trace: RecoveryComponentTrace[] = [];
   let unclassifiedCount = 0;
   let modelCallsUsed = 0;
   let stoppedReason: RecoveryResult["stoppedReason"] = "none";
@@ -218,34 +220,71 @@ export async function runTargetRecovery(
   const imageHeight = ctx.expectedRgba.height;
   let recoveryModel: string | undefined;
 
-  // Filter noise below min pixel threshold, then rank: pixelCount desc, area desc, y asc, x asc
-  const eligible = uncoveredComponents
-    .filter(c => c.pixelCount >= budget.minComponentPixels)
+  // Assign stable componentIds before sorting, then rank: pixelCount desc, area desc, y asc, x asc
+  const ranked = uncoveredComponents
+    .map((component, originalIndex) => ({
+      component,
+      componentId: `component-${String(originalIndex + 1).padStart(4, "0")}`
+    }))
     .sort((a, b) => {
-      if (b.pixelCount !== a.pixelCount) return b.pixelCount - a.pixelCount;
-      const aArea = a.box.width * a.box.height;
-      const bArea = b.box.width * b.box.height;
+      if (b.component.pixelCount !== a.component.pixelCount) return b.component.pixelCount - a.component.pixelCount;
+      const aArea = a.component.box.width * a.component.box.height;
+      const bArea = b.component.box.width * b.component.box.height;
       if (bArea !== aArea) return bArea - aArea;
-      if (a.box.y !== b.box.y) return a.box.y - b.box.y;
-      return a.box.x - b.box.x;
+      if (a.component.box.y !== b.component.box.y) return a.component.box.y - b.component.box.y;
+      return a.component.box.x - b.component.box.x;
     });
 
+  // Push below-threshold traces
+  for (const entry of ranked.filter(e => e.component.pixelCount < budget.minComponentPixels)) {
+    trace.push({
+      componentId: entry.componentId,
+      rank: 0,
+      componentBox: entry.component.box,
+      pixelCount: entry.component.pixelCount,
+      status: "below_threshold",
+      artifactPaths: []
+    });
+  }
+
+  const eligible = ranked.filter(e => e.component.pixelCount >= budget.minComponentPixels);
   const skippedComponents = Math.max(0, eligible.length - budget.maxComponents);
+  const cappedEntries = eligible.slice(budget.maxComponents);
   const toProcess = eligible.slice(0, budget.maxComponents);
+
+  // Push skipped_component_cap traces
+  for (let i = 0; i < cappedEntries.length; i++) {
+    const entry = cappedEntries[i]!;
+    trace.push({
+      componentId: entry.componentId,
+      rank: budget.maxComponents + i,
+      componentBox: entry.component.box,
+      pixelCount: entry.component.pixelCount,
+      status: "skipped_component_cap",
+      artifactPaths: []
+    });
+  }
 
   // Read directional overlay once for cropping
   const overlayRawResult = await sharp(ctx.directionalOverlayPath).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   const overlayData = new Uint8Array(overlayRawResult.data.buffer, overlayRawResult.data.byteOffset, overlayRawResult.data.byteLength);
 
   let attemptedComponents = 0;
+  let loopStoppedAt = toProcess.length;
 
-  for (const component of toProcess) {
+  for (let rankIndex = 0; rankIndex < toProcess.length; rankIndex++) {
+    const entry = toProcess[rankIndex]!;
+    const component = entry.component;
+    const componentId = entry.componentId;
+
     if (Date.now() >= budget.deadlineMs) {
       stoppedReason = "deadline_exceeded";
+      loopStoppedAt = rankIndex;
       break;
     }
     if (modelCallsUsed >= budget.maxModelCalls) {
       stoppedReason = "model_call_cap";
+      loopStoppedAt = rankIndex;
       break;
     }
     attemptedComponents++;
@@ -287,6 +326,8 @@ export async function runTargetRecovery(
       pixelDiffMaskArtifact: artifacts[3]!
     };
 
+    const baseTrace = { componentId, rank: rankIndex, componentBox: box, pixelCount: component.pixelCount, artifactPaths: artifacts };
+
     // Encode crops for VLM
     const expB64 = await toBase64Png(expCrop.data, expCrop.width, expCrop.height, 4);
     const actB64 = await toBase64Png(actCrop.data, actCrop.width, actCrop.height, 4);
@@ -304,6 +345,7 @@ export async function runTargetRecovery(
 
     let vlmResponse: z.infer<typeof RecoveryVlmResponseSchema>;
     let componentRecoveryModel = "unknown";
+    const recoveryStarted = Date.now();
     try {
       const res = await ctx.recoveryCaller({
         prompt: recoveryPrompt,
@@ -318,14 +360,25 @@ export async function runTargetRecovery(
       }
       vlmResponse = RecoveryVlmResponseSchema.parse(res.parsed);
     } catch (err) {
+      const traceStatus = err instanceof z.ZodError ? "recovery_schema_error" as const : "recovery_error" as const;
+      trace.push({
+        ...baseTrace,
+        status: traceStatus,
+        model: componentRecoveryModel,
+        recoveryDurationMs: Date.now() - recoveryStarted,
+        errorKind: err instanceof z.ZodError ? "schema" as const : "provider" as const,
+        errorMessage: err instanceof Error ? err.message.slice(0, 500) : String(err).slice(0, 500)
+      });
       console.error(`Recovery VLM call failed for component ${evidenceId}:`, err);
       modelCallsUsed++;
       unclassifiedCount++;
       continue;
     }
+    const recoveryDurationMs = Date.now() - recoveryStarted;
 
     // VLM explicitly determined no regression in this region — valid verdict, not a failure.
     if (!vlmResponse.classified) {
+      trace.push({ ...baseTrace, status: "classified_false", model: componentRecoveryModel, recoveryDurationMs });
       continue;
     }
 
@@ -336,6 +389,7 @@ export async function runTargetRecovery(
       !vlmResponse.evidence ||
       !vlmResponse.coordinateFrame
     ) {
+      trace.push({ ...baseTrace, status: "missing_required_fields", model: componentRecoveryModel, recoveryDurationMs });
       unclassifiedCount++;
       continue;
     }
@@ -344,11 +398,13 @@ export async function runTargetRecovery(
     const rawBox = vlmResponse.box;
     if (!isBoxInBounds(rawBox, imageWidth, imageHeight)) {
       console.warn(`Recovery: box out of bounds for component ${evidenceId}, skipping`);
+      trace.push({ ...baseTrace, status: "box_out_of_bounds", model: componentRecoveryModel, recoveryDurationMs, criterion: vlmResponse.criterion });
       unclassifiedCount++;
       continue;
     }
     if (!boxOverlapsComponent(rawBox, component)) {
       console.warn(`Recovery: box does not overlap component ${evidenceId}, skipping`);
+      trace.push({ ...baseTrace, status: "box_no_component_overlap", model: componentRecoveryModel, recoveryDurationMs, criterion: vlmResponse.criterion });
       unclassifiedCount++;
       continue;
     }
@@ -366,6 +422,8 @@ export async function runTargetRecovery(
     );
 
     let reviewDecision: "accepted" | "rejected" | "needs_escalation" = "accepted";
+    const reviewerStarted = Date.now();
+    let reviewerModel = "unknown";
     try {
       const reviewRes = await ctx.reviewerCaller({
         prompt: reviewerPrompt,
@@ -387,13 +445,16 @@ export async function runTargetRecovery(
       modelCallsUsed++;
       const parsed = ReviewDecisionSchema.parse(reviewRes.parsed);
       reviewDecision = parsed.decision;
+      reviewerModel = reviewRes.model;
     } catch (err) {
       console.error(`Recovery reviewer call failed for component ${evidenceId}:`, err);
       modelCallsUsed++;
       reviewDecision = "needs_escalation";
     }
+    const reviewerDurationMs = Date.now() - reviewerStarted;
 
     if (reviewDecision === "rejected") {
+      trace.push({ ...baseTrace, status: "recovery_rejected", model: componentRecoveryModel, reviewerModel, recoveryDurationMs, reviewerDurationMs, criterion: vlmResponse.criterion });
       unclassifiedCount++;
       continue;
     }
@@ -421,7 +482,33 @@ export async function runTargetRecovery(
     };
 
     recovered.push(record);
+    trace.push({
+      ...baseTrace,
+      status: reviewDecision === "needs_escalation" ? "recovery_needs_escalation" : "recovery_accepted",
+      model: componentRecoveryModel,
+      reviewerModel,
+      recoveryDurationMs,
+      reviewerDurationMs,
+      criterion: vlmResponse.criterion,
+      diffId: record.id
+    });
     void evidence; // evidence artifact metadata is captured in record.artifactPaths
+  }
+
+  // Push skipped traces for entries that weren't reached due to deadline/model_call_cap
+  if (stoppedReason === "deadline_exceeded" || stoppedReason === "model_call_cap") {
+    const skippedStatus = stoppedReason === "deadline_exceeded" ? "skipped_deadline" as const : "skipped_model_call_cap" as const;
+    for (let i = loopStoppedAt; i < toProcess.length; i++) {
+      const entry = toProcess[i]!;
+      trace.push({
+        componentId: entry.componentId,
+        rank: i,
+        componentBox: entry.component.box,
+        pixelCount: entry.component.pixelCount,
+        status: skippedStatus,
+        artifactPaths: []
+      });
+    }
   }
 
   return {
@@ -430,6 +517,7 @@ export async function runTargetRecovery(
     attemptedComponents,
     skippedComponents,
     stoppedReason,
+    trace,
     ...(recoveryModel !== undefined ? { model: recoveryModel } : {})
   };
 }

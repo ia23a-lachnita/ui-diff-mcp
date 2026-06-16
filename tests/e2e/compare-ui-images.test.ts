@@ -115,12 +115,22 @@ describe("runUiDiff with mock sidecar and models (full mode)", () => {
       diffs: unknown[];
       elements: { expected: unknown[]; actual: unknown[] };
       visualClassificationStatus: string;
+      debugSummary?: unknown;
+      runArtifacts: { role: string; path: string }[];
     };
     expect(Array.isArray(report.diffs)).toBe(true);
     expect(Array.isArray(report.elements.expected)).toBe(true);
     // Recovery may leave some pixel-diff regions unclassified when the VLM mock returns
     // classified:false; the important check is that the VLM stage ran (not "not_run").
     expect(report.visualClassificationStatus).not.toBe("not_run");
+
+    // Debug artifacts must be present
+    expect(report.debugSummary).toBeDefined();
+    expect(report.runArtifacts.some((a: { role: string }) => a.role === "audit_trace")).toBe(true);
+    expect(report.runArtifacts.some((a: { role: string }) => a.role === "coverage_trace")).toBe(true);
+    expect(report.runArtifacts.some((a: { role: string }) => a.role === "recovery_trace")).toBe(true);
+    expect(report.runArtifacts.some((a: { role: string }) => a.role === "debug_summary")).toBe(true);
+
     const sidecarCalls = mockFetch.mock.calls.filter(([url]) =>
       typeof url === "string" && url.includes("/v1/locate-ui-elements")
     );

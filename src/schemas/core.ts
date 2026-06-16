@@ -95,7 +95,11 @@ export const UiArtifactSchema = z.object({
     "recovery_expected_crop",
     "recovery_actual_crop",
     "recovery_directional_overlay",
-    "recovery_pixel_diff_mask"
+    "recovery_pixel_diff_mask",
+    "audit_trace",
+    "coverage_trace",
+    "recovery_trace",
+    "debug_summary"
   ]),
   path: z.string().min(1),
   pairId: z.string().optional(),
@@ -211,6 +215,113 @@ export const RecoverySummarySchema = z.object({
 });
 export type RecoverySummary = z.infer<typeof RecoverySummarySchema>;
 
+export const AuditDecisionStatusSchema = z.enum([
+  "criterion_not_triggered",
+  "auditor_has_diff",
+  "auditor_no_diff",
+  "auditor_error",
+  "auditor_schema_error",
+  "empty_evidence",
+  "reviewer_accepted",
+  "reviewer_rejected",
+  "reviewer_needs_escalation",
+  "reviewer_error"
+]);
+
+export const AuditCriterionTraceSchema = z.object({
+  pairId: z.string().min(1),
+  expectedId: z.string().optional(),
+  actualId: z.string().optional(),
+  targetLabel: z.string().min(1),
+  targetType: UiElementTypeSchema,
+  criterion: UiCriterionSchema.exclude(["unclassified_visual_change"]),
+  status: AuditDecisionStatusSchema,
+  model: z.string().optional(),
+  reviewerModel: z.string().optional(),
+  auditorDurationMs: z.number().int().min(0).optional(),
+  reviewerDurationMs: z.number().int().min(0).optional(),
+  evidenceCount: z.number().int().min(0).default(0),
+  diffId: z.string().optional(),
+  skipReason: z.string().max(500).optional(),
+  rejectionReason: z.string().optional(),
+  errorKind: z.enum(["provider", "schema", "unexpected"]).optional(),
+  errorMessage: z.string().max(500).optional(),
+  imageRoles: z.array(z.string()).default([]),
+  artifactPaths: z.array(UiArtifactSchema).default([])
+});
+export type AuditCriterionTrace = z.infer<typeof AuditCriterionTraceSchema>;
+
+export const CoverageDecisionStatusSchema = z.enum([
+  "below_threshold",
+  "covered_by_diff",
+  "uncovered"
+]);
+
+export const CoverageDecisionTraceSchema = z.object({
+  componentId: z.string().min(1),
+  componentBox: BoxSchema,
+  pixelCount: z.number().int().min(0),
+  status: CoverageDecisionStatusSchema,
+  coveringDiffId: z.string().optional(),
+  coveringCriterion: UiCriterionSchema.optional(),
+  overlapRatio: z.number().finite().min(0).max(1).optional()
+});
+export type CoverageDecisionTrace = z.infer<typeof CoverageDecisionTraceSchema>;
+
+export const RecoveryDecisionStatusSchema = z.enum([
+  "below_threshold",
+  "skipped_component_cap",
+  "skipped_model_call_cap",
+  "skipped_deadline",
+  "classified_false",
+  "recovery_accepted",
+  "recovery_needs_escalation",
+  "recovery_rejected",
+  "recovery_error",
+  "recovery_schema_error",
+  "missing_required_fields",
+  "box_out_of_bounds",
+  "box_no_component_overlap"
+]);
+
+export const RecoveryComponentTraceSchema = z.object({
+  componentId: z.string().min(1),
+  rank: z.number().int(),
+  componentBox: BoxSchema,
+  pixelCount: z.number().int().min(0),
+  status: RecoveryDecisionStatusSchema,
+  model: z.string().optional(),
+  reviewerModel: z.string().optional(),
+  recoveryDurationMs: z.number().int().min(0).optional(),
+  reviewerDurationMs: z.number().int().min(0).optional(),
+  diffId: z.string().optional(),
+  criterion: UiCriterionSchema.exclude(["unclassified_visual_change"]).optional(),
+  errorKind: z.enum(["provider", "schema", "validation", "budget", "unexpected"]).optional(),
+  errorMessage: z.string().max(500).optional(),
+  artifactPaths: z.array(UiArtifactSchema).default([])
+});
+export type RecoveryComponentTrace = z.infer<typeof RecoveryComponentTraceSchema>;
+
+export const RunDebugSummarySchema = z.object({
+  auditPairs: z.number().int().min(0),
+  auditCriterionCalls: z.number().int().min(0),
+  auditAccepted: z.number().int().min(0),
+  auditRejected: z.number().int().min(0),
+  auditNoDiff: z.number().int().min(0),
+  auditErrors: z.number().int().min(0),
+  coverageComponents: z.number().int().min(0),
+  coverageCovered: z.number().int().min(0),
+  coverageUncovered: z.number().int().min(0),
+  coverageBelowThreshold: z.number().int().min(0),
+  recoveryAttempted: z.number().int().min(0),
+  recoveryAccepted: z.number().int().min(0),
+  recoveryRejected: z.number().int().min(0),
+  recoveryClassifiedFalse: z.number().int().min(0),
+  recoveryErrors: z.number().int().min(0),
+  recoverySkipped: z.number().int().min(0)
+});
+export type RunDebugSummary = z.infer<typeof RunDebugSummarySchema>;
+
 export const UiDiffReportSchema = z.object({
   schemaVersion: z.literal("0.1"),
   runId: z.string().min(1),
@@ -241,6 +352,7 @@ export const UiDiffReportSchema = z.object({
   runArtifacts: z.array(UiArtifactSchema).default([]),
   warnings: z.array(z.string()).default([]),
   recoverySummary: RecoverySummarySchema.optional(),
-  stages: z.array(StageStatusSchema).default([])
+  stages: z.array(StageStatusSchema).default([]),
+  debugSummary: RunDebugSummarySchema.optional()
 });
 export type UiDiffReport = z.infer<typeof UiDiffReportSchema>;

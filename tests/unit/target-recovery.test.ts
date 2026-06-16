@@ -255,6 +255,46 @@ describe("runTargetRecovery", () => {
     }
   });
 
+  it("traces classified_false as an attempted no-regression verdict", async () => {
+    const result = await runTargetRecovery([component], makeCtx(), unlimitedBudget);
+    expect(result.trace[0]).toMatchObject({ status: "classified_false", pixelCount: component.pixelCount });
+  });
+
+  it("traces reviewer rejection", async () => {
+    const result = await runTargetRecovery([component], makeCtx({
+      recoveryCaller: vi.fn().mockResolvedValue({
+        parsed: { classified: true, criterion: "geometry", severity: "medium", label: "Button", coordinateFrame: "expected", box: component.box, evidence: ["visible"] },
+        rawContent: "", model: "recovery-model", provider: "nvidia"
+      }),
+      reviewerCaller: vi.fn().mockResolvedValue({
+        parsed: { decision: "rejected", reason: "not supported" },
+        rawContent: "", model: "review-model", provider: "nvidia"
+      })
+    }), unlimitedBudget);
+    expect(result.trace[0]).toMatchObject({ status: "recovery_rejected", model: "recovery-model", reviewerModel: "review-model" });
+  });
+
+  it("traces skipped components caused by cap", async () => {
+    const components = Array.from({ length: 3 }, (_, i) => ({ box: { x: i * 20, y: 0, width: 10, height: 10 }, pixelCount: 100 }));
+    const result = await runTargetRecovery(components, makeCtx(), { maxComponents: 1, maxModelCalls: 10, deadlineMs: Date.now() + 300000, minComponentPixels: 1 });
+    expect(result.trace.filter(t => t.status === "skipped_component_cap")).toHaveLength(2);
+  });
+
+  it("traces recovery_accepted for accepted diff", async () => {
+    const result = await runTargetRecovery([component], makeCtx({
+      recoveryCaller: vi.fn().mockResolvedValue({
+        parsed: { classified: true, criterion: "geometry", severity: "medium", label: "Button", coordinateFrame: "expected", box: component.box, evidence: ["element shifted 15px"] },
+        rawContent: "", model: "recovery-model", provider: "nvidia"
+      }),
+      reviewerCaller: vi.fn().mockResolvedValue({
+        parsed: { decision: "accepted", reason: "confirmed" },
+        rawContent: "", model: "review-model", provider: "nvidia"
+      })
+    }), unlimitedBudget);
+    expect(result.trace[0]).toMatchObject({ status: "recovery_accepted", criterion: "geometry" });
+    expect(result.trace[0]?.diffId).toBeTruthy();
+  });
+
   it("caps recovery at maxComponents and reports skipped count", async () => {
     const ctx = makeCtx();
     const components: PixelComponent[] = Array.from({ length: 100 }, (_, i) => ({

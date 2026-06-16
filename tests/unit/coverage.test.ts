@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findUncoveredComponents, assignDiffComponentsToRecords } from "../../src/report/coverage.js";
+import { findUncoveredComponents, assignDiffComponentsToRecords, traceCoverageDecisions } from "../../src/report/coverage.js";
 import type { PixelComponent } from "../../src/signals/pixel-diff.js";
 import type { DiffRecord } from "../../src/schemas/core.js";
 
@@ -56,6 +56,38 @@ describe("findUncoveredComponents", () => {
     const diffs = [makeDiff(90, 90, 50, 50)];
     const uncovered = findUncoveredComponents(components, diffs, 10);
     expect(uncovered).toHaveLength(1);
+  });
+});
+
+describe("traceCoverageDecisions", () => {
+  it("traces covered component with covering diff id and overlap ratio", () => {
+    const components = [makeComponent(0, 0, 100, 100, 900)];
+    const diffs = [makeDiff(0, 0, 50, 100)];
+    const trace = traceCoverageDecisions(components, diffs, 10);
+    expect(trace[0]).toMatchObject({
+      status: "covered_by_diff",
+      coveringDiffId: diffs[0]!.id,
+      coveringCriterion: "geometry",
+      overlapRatio: 0.5
+    });
+  });
+
+  it("traces below-threshold components instead of silently losing them", () => {
+    const trace = traceCoverageDecisions([makeComponent(0, 0, 5, 5, 5)], [], 10);
+    expect(trace[0]?.status).toBe("below_threshold");
+  });
+
+  it("traces uncovered component with no covering diff", () => {
+    const components = [makeComponent(0, 0, 50, 50, 200)];
+    const trace = traceCoverageDecisions(components, [], 10);
+    expect(trace[0]?.status).toBe("uncovered");
+    expect(trace[0]?.componentId).toBe("component-0001");
+  });
+
+  it("assigns stable sequential componentIds", () => {
+    const components = [makeComponent(0, 0, 10, 10), makeComponent(20, 0, 10, 10), makeComponent(40, 0, 10, 10)];
+    const trace = traceCoverageDecisions(components, [], 10);
+    expect(trace.map(t => t.componentId)).toEqual(["component-0001", "component-0002", "component-0003"]);
   });
 });
 

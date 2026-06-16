@@ -127,6 +127,51 @@ describe("auditElementPair", () => {
     grayPng = await writeSolidPng(tmpDir, "gray.png", 200, 400, 128, 128, 128);
   });
 
+  function makeAuditContext(overrides: {
+    auditorCaller?: VisionJsonCaller;
+    reviewerCaller?: VisionJsonCaller;
+    boxDeltaPx?: number;
+  } = {}) {
+    const auditorCaller: VisionJsonCaller = overrides.auditorCaller ?? vi.fn().mockResolvedValue({
+      parsed: { hasDiff: false },
+      rawContent: "",
+      model: "default-auditor",
+      provider: "nvidia"
+    });
+    const reviewerCaller: VisionJsonCaller = overrides.reviewerCaller ?? vi.fn().mockResolvedValue({
+      parsed: { decision: "accepted", reason: "confirmed" },
+      rawContent: "",
+      model: "default-reviewer",
+      provider: "nvidia"
+    });
+    return {
+      expectedImagePath: grayPng,
+      actualImagePath: grayPng,
+      expectedElements: [expectedEl],
+      actualElements: [{ ...expectedEl, id: "a1", box: { x: 10, y: 50 + (overrides.boxDeltaPx ?? 0), width: 80, height: 40 } }],
+      artifactDir: tmpDir,
+      auditorCaller,
+      reviewerCaller,
+      expectedRgba: { data: new Uint8Array(200 * 400 * 4), width: 200, height: 400 },
+      actualRgba: { data: new Uint8Array(200 * 400 * 4), width: 200, height: 400 },
+      measurements: [],
+      auditIndex: 1,
+      auditTotal: 1,
+      elementSlug: "submit-button",
+      triggerCtx: {
+        pairingStatus: "matched" as const,
+        boxDeltaPx: overrides.boxDeltaPx ?? 0,
+        textDelta: false,
+        colorDelta: false,
+        edgeMismatch: false,
+        overlapDetected: false,
+        stateWordsDiffer: false,
+        elementType: "button" as const,
+        measurements: []
+      }
+    };
+  }
+
   afterEach(async () => {
     vi.restoreAllMocks();
     await fs.rm(tmpDir, { recursive: true, force: true });
@@ -349,6 +394,36 @@ describe("auditElementPair", () => {
     const metadata = await sharp(expectedCropPath).metadata();
     expect(metadata.width).toBe(expectedEl.box.width);
     expect(metadata.height).toBe(expectedEl.box.height);
+  });
+
+  it("records auditor_no_diff when model returns hasDiff false", async () => {
+    const auditorCaller = vi.fn().mockResolvedValue({ parsed: { hasDiff: false }, rawContent: "", model: "audit-model", provider: "nvidia" });
+    const reviewerCaller = vi.fn();
+    const result = await auditElementPair(pair, makeAuditContext({ auditorCaller, reviewerCaller, boxDeltaPx: 15 }));
+    expect(result.accepted).toHaveLength(0);
+    expect(result.trace.some(t => t.status === "auditor_no_diff" && t.model === "audit-model")).toBe(true);
+    expect(reviewerCaller).not.toHaveBeenCalled();
+  });
+
+  it("records empty_evidence when hasDiff true has no evidence", async () => {
+    const auditorCaller = vi.fn().mockResolvedValue({ parsed: { hasDiff: true, title: "Bad" }, rawContent: "", model: "audit-model", provider: "nvidia" });
+    const result = await auditElementPair(pair, makeAuditContext({ auditorCaller, boxDeltaPx: 15 }));
+    expect(result.trace.some(t => t.status === "empty_evidence")).toBe(true);
+  });
+
+  it("records reviewer_rejected with reason", async () => {
+    const result = await auditElementPair(pair, makeAuditContext({
+      auditorCaller: vi.fn().mockResolvedValue({ parsed: { hasDiff: true, evidence: ["visible"], title: "Shift" }, rawContent: "", model: "audit-model", provider: "nvidia" }),
+      reviewerCaller: vi.fn().mockResolvedValue({ parsed: { decision: "rejected", reason: "not supported" }, rawContent: "", model: "review-model", provider: "nvidia" }),
+      boxDeltaPx: 15
+    }));
+    expect(result.trace.some(t => t.status === "reviewer_rejected" && t.rejectionReason === "not supported")).toBe(true);
+  });
+
+  it("records criterion_not_triggered for criteria not selected by triggers", async () => {
+    const auditorCaller = vi.fn().mockResolvedValue({ parsed: { hasDiff: false }, rawContent: "", model: "m", provider: "nvidia" });
+    const result = await auditElementPair(pair, makeAuditContext({ auditorCaller, boxDeltaPx: 0 }));
+    expect(result.trace.some(t => t.status === "criterion_not_triggered")).toBe(true);
   });
 
   it("sends directional overlay and context crop as evidence images to auditor", async () => {

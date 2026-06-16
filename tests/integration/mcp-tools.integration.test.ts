@@ -67,7 +67,7 @@ describe("MCP stdio tool surface", () => {
     expect(structured.status).toBe("complete");
     expect(structured.diffCount).toBeGreaterThanOrEqual(1);
     expect(structured.reportPath.endsWith("report.json")).toBe(true);
-    expect(structured.runArtifacts).toHaveLength(5);
+    expect(structured.runArtifacts.length).toBeGreaterThanOrEqual(9);
 
     const report = UiDiffReportSchema.parse(JSON.parse(await fs.readFile(structured.reportPath, "utf8")));
     expect(report.visualClassificationStatus).toBe("not_run");

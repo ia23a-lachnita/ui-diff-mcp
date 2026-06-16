@@ -82,6 +82,12 @@ describe.skipIf(!calorixLive)("Calorix live UI diff smoke", () => {
       // Target-map artifacts must be written for both images
       expect(report.runArtifacts.some(a => a.role === "target_map_expected"), "target_map_expected artifact must be present").toBe(true);
       expect(report.runArtifacts.some(a => a.role === "target_map_actual"), "target_map_actual artifact must be present").toBe(true);
+
+      // Debug insight artifacts must be present before Calorix sign-off
+      expect(report.debugSummary, "debug summary must be written").toBeDefined();
+      expect(report.runArtifacts.some(a => a.role === "audit_trace"), "audit trace artifact must exist").toBe(true);
+      expect(report.runArtifacts.some(a => a.role === "coverage_trace"), "coverage trace artifact must exist").toBe(true);
+      expect(report.runArtifacts.some(a => a.role === "recovery_trace"), "recovery trace artifact must exist").toBe(true);
     } finally {
       await started.close();
     }
@@ -162,6 +168,15 @@ describe.skipIf(!calorixFullLive)("verify:calorix-full-live unbounded all-target
       // Target-map artifacts must be written for both images
       expect(report.runArtifacts.some(a => a.role === "target_map_expected"), "target_map_expected artifact must be present").toBe(true);
       expect(report.runArtifacts.some(a => a.role === "target_map_actual"), "target_map_actual artifact must be present").toBe(true);
+
+      // Debug insight artifacts must be present before Calorix sign-off
+      expect(report.debugSummary, "debug summary must be written").toBeDefined();
+      expect(report.runArtifacts.some(a => a.role === "audit_trace"), "audit trace artifact must exist").toBe(true);
+      expect(report.runArtifacts.some(a => a.role === "coverage_trace"), "coverage trace artifact must exist").toBe(true);
+      expect(report.runArtifacts.some(a => a.role === "recovery_trace"), "recovery trace artifact must exist").toBe(true);
+      expect(report.debugSummary?.auditPairs ?? 0).toBeGreaterThan(0);
+      expect(report.debugSummary?.auditCriterionCalls ?? 0).toBeGreaterThan(0);
+      expect(report.debugSummary?.coverageComponents ?? 0).toBeGreaterThan(0);
 
       console.info(`[full-audit] visualClassificationStatus=${report.visualClassificationStatus}`);
       console.info(`[full-audit] auditedPairs=${report.auditScope?.auditedPairs ?? "n/a"}, totalPairs=${report.auditScope?.totalPairs ?? "n/a"}`);

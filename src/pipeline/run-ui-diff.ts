@@ -18,11 +18,12 @@ import { estimateFreeRunBudget, lookupOpenRouterQuota, checkFreeQuotaSufficiency
 import { makeOpenRouterVisionCaller, makeNvidiaVisionCaller, type VisionMode } from "../models/vision-json.js";
 import { auditElementPair, makeElementSlug, type AuditContext } from "../audit/audit-target.js";
 import { reviewAndMergeFindings } from "../audit/review-findings.js";
-import { assignDiffComponentsToRecords, findUncoveredComponents } from "../report/coverage.js";
+import { assignDiffComponentsToRecords, traceCoverageDecisions } from "../report/coverage.js";
 import { runTargetRecovery } from "../recovery/target-recovery.js";
+import { writeRunDebugArtifacts, type RunDebugTrace } from "../debug/run-debug.js";
 import { buildDeterministicDiffs } from "../diff/deterministic-diffs.js";
 import { writeUiDiffReport, writeReportCheckpoint } from "../report/report-writer.js";
-import type { UiDiffReport, RunStatus, VisualClassificationStatus, LocatorCoverageStatus, DiffRecord, ElementPair, UiArtifact, AuditScope, ModelSelection, RecoverySummary, StageStatus, LocatorLaneMetadata } from "../schemas/core.js";
+import type { UiDiffReport, RunStatus, VisualClassificationStatus, LocatorCoverageStatus, DiffRecord, ElementPair, UiArtifact, AuditScope, ModelSelection, RecoverySummary, StageStatus, LocatorLaneMetadata, RunDebugSummary } from "../schemas/core.js";
 import { computeColorEvidence } from "../signals/color.js";
 
 export interface RunInput {
@@ -47,6 +48,7 @@ export interface RunOutput {
   auditLimited: boolean;
   auditScope?: AuditScope;
   recoverySummary?: RecoverySummary;
+  debugSummary?: RunDebugSummary;
 }
 
 type ProbeOverride = (entries: ModelEntry[], openRouterApiKey: string, nvidiaApiKey?: string, nvidiaBaseUrl?: string) => Promise<ProbeResult[]>;
@@ -133,6 +135,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
   let auditScope: AuditScope | undefined = undefined;
   let modelSelection: ModelSelection | undefined = undefined;
   let recoverySummary: RecoverySummary | undefined = undefined;
+  const debugTrace: RunDebugTrace = { audit: [], coverage: [], recovery: [] };
   const allDiffs: DiffRecord[] = [];
   const stages: StageStatus[] = [];
   const createdAt = new Date().toISOString();
@@ -477,7 +480,8 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
             elementSlug: makeElementSlug(refEl.label)
           };
 
-          const { accepted } = await auditElementPair(pair, ctx);
+          const { accepted, trace } = await auditElementPair(pair, ctx);
+          debugTrace.audit.push(...trace);
           auditedDiffs.push(...accepted);
         }
 
@@ -494,7 +498,8 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
 
         // Target recovery: classify uncovered changed-pixel regions
         const significantComponents = pixelDiff.components.filter(c => c.pixelCount >= 50);
-        const uncoveredComponents = findUncoveredComponents(significantComponents, allDiffs, 50);
+        debugTrace.coverage = traceCoverageDecisions(significantComponents, allDiffs, 50);
+        const uncoveredComponents = significantComponents.filter((_, index) => debugTrace.coverage[index]?.status === "uncovered");
         if (uncoveredComponents.length > 0) {
           const recoveryResult = await runTargetRecovery(uncoveredComponents, {
             expectedRgba: { data: expectedImg.rgba, width: expectedImg.width, height: expectedImg.height },
@@ -505,6 +510,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
             recoveryCaller: auditorCaller,
             reviewerCaller
           });
+          debugTrace.recovery.push(...recoveryResult.trace);
           allDiffs.push(...recoveryResult.recovered);
           recoverySummary = {
             totalUncoveredComponents: uncoveredComponents.length,
@@ -533,6 +539,10 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     50,
     pixelDiffPngPath
   );
+
+  // Write debug trace artifacts and attach summary to the report
+  const debugArtifactsResult = await writeRunDebugArtifacts(artifactRoot, debugTrace);
+  runArtifacts.push(...debugArtifactsResult.artifacts);
 
   const locatorMetadata = locatorCoverageStatus !== "not_run"
     ? {
@@ -564,7 +574,8 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     modelHealth,
     runArtifacts,
     warnings,
-    stages
+    stages,
+    debugSummary: debugArtifactsResult.summary
   };
 
   return writeUiDiffReport(report);

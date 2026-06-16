@@ -3,7 +3,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
 import { z } from "zod";
-import type { ElementPair, UiElement, DiffRecord, DeterministicMeasurement, UiArtifact, Box } from "../schemas/core.js";
+import { UiCriterionSchema } from "../schemas/core.js";
+import type { ElementPair, UiElement, DiffRecord, DeterministicMeasurement, UiArtifact, Box, AuditCriterionTrace, UiCriterion } from "../schemas/core.js";
 import { rubrics, selectTriggeredCriteria, AuditResultSchema, type TriggerContext } from "./criteria.js";
 import { buildAuditorPrompt, buildReviewerPrompt } from "./prompts.js";
 import type { VisionJsonCaller } from "../models/vision-json.js";
@@ -131,15 +132,16 @@ function diffId(): string {
 export async function auditElementPair(
   pair: ElementPair,
   ctx: AuditContext
-): Promise<{ accepted: DiffRecord[]; rejected: DiffRecord[] }> {
+): Promise<{ accepted: DiffRecord[]; rejected: DiffRecord[]; trace: AuditCriterionTrace[] }> {
   const accepted: DiffRecord[] = [];
   const rejected: DiffRecord[] = [];
+  const trace: AuditCriterionTrace[] = [];
 
   const expectedEl = ctx.expectedElements.find(e => e.id === pair.expectedId);
   const actualEl = ctx.actualElements.find(e => e.id === pair.actualId);
 
   const refEl = expectedEl ?? actualEl;
-  if (!refEl) return { accepted, rejected };
+  if (!refEl) return { accepted, rejected, trace };
 
   const criteria = selectTriggeredCriteria(ctx.triggerCtx);
 
@@ -224,7 +226,47 @@ export async function auditElementPair(
   if (localPixelDiffMaskB64) images.push(`data:image/png;base64,${localPixelDiffMaskB64}`);
   if (contextCropB64) images.push(`data:image/png;base64,${contextCropB64}`);
 
-  for (const criterion of criteria) {
+  const imageRoles = [
+    expectedCropB64 ? "expected_crop" : null,
+    actualCropB64 ? "actual_crop" : null,
+    localDirectionalOverlayB64 ? "local_directional_overlay" : null,
+    localPixelDiffMaskB64 ? "local_pixel_diff_mask" : null,
+    contextCropB64 ? "context_crop" : null
+  ].filter((v): v is string => v !== null);
+
+  function pushTrace(
+    criterion: Exclude<UiCriterion, "unclassified_visual_change">,
+    status: AuditCriterionTrace["status"],
+    extra: Partial<AuditCriterionTrace> = {}
+  ): void {
+    trace.push({
+      pairId: pair.id,
+      ...(pair.expectedId !== undefined ? { expectedId: pair.expectedId } : {}),
+      ...(pair.actualId !== undefined ? { actualId: pair.actualId } : {}),
+      targetLabel: refEl!.label,
+      targetType: refEl!.type,
+      criterion,
+      status,
+      evidenceCount: 0,
+      imageRoles,
+      artifactPaths: auditArtifacts,
+      ...extra
+    });
+  }
+
+  const triggeredCriteria = new Set(criteria);
+  const allClassifiableCriteria = UiCriterionSchema.options.filter(
+    (c): c is Exclude<UiCriterion, "unclassified_visual_change"> => c !== "unclassified_visual_change"
+  );
+  for (const criterion of allClassifiableCriteria) {
+    if (!triggeredCriteria.has(criterion)) {
+      pushTrace(criterion, "criterion_not_triggered", {
+        skipReason: "criterion not selected by deterministic trigger signals"
+      });
+    }
+  }
+
+  for (const criterion of criteria as Exclude<UiCriterion, "unclassified_visual_change">[]) {
     const rubric = rubrics[criterion];
 
     const auditorPrompt = buildAuditorPrompt({
@@ -238,6 +280,7 @@ export async function auditElementPair(
 
     let auditResult: z.infer<typeof AuditResultSchema>;
     let auditModel = "unknown";
+    const started = Date.now();
     try {
       const response = await ctx.auditorCaller({
         prompt: auditorPrompt,
@@ -248,14 +291,35 @@ export async function auditElementPair(
       auditModel = response.model;
       auditResult = AuditResultSchema.parse(response.parsed);
     } catch (err) {
+      pushTrace(criterion, err instanceof z.ZodError ? "auditor_schema_error" : "auditor_error", {
+        auditorDurationMs: Date.now() - started,
+        model: auditModel,
+        errorKind: err instanceof z.ZodError ? "schema" : "provider",
+        errorMessage: err instanceof Error ? err.message.slice(0, 500) : String(err).slice(0, 500)
+      });
       console.error(`Auditor call failed for criterion ${criterion}:`, err);
       continue;
     }
 
-    if (!auditResult.hasDiff) continue;
+    if (!auditResult.hasDiff) {
+      pushTrace(criterion, "auditor_no_diff", {
+        auditorDurationMs: Date.now() - started,
+        model: auditModel,
+        evidenceCount: auditResult.evidence?.length ?? 0
+      });
+      continue;
+    }
 
     const evidence = auditResult.evidence ?? [];
-    if (evidence.length === 0) continue;
+    if (evidence.length === 0) {
+      pushTrace(criterion, "empty_evidence", {
+        auditorDurationMs: Date.now() - started,
+        model: auditModel
+      });
+      continue;
+    }
+
+    const auditorDurationMs = Date.now() - started;
 
     const reviewerPrompt = buildReviewerPrompt(
       criterion,
@@ -265,6 +329,11 @@ export async function auditElementPair(
     );
 
     let reviewDecision: "accepted" | "rejected" | "needs_escalation" = "accepted";
+    const reviewerStarted = Date.now();
+    let reviewModel = "unknown";
+    let reviewReason: string | undefined;
+    let reviewerTraceStatus: AuditCriterionTrace["status"] = "reviewer_needs_escalation";
+    let reviewerErrorMsg: string | undefined;
     try {
       const reviewResponse = await ctx.reviewerCaller({
         prompt: reviewerPrompt,
@@ -285,10 +354,18 @@ export async function auditElementPair(
       });
       const parsed = ReviewDecisionSchema.parse(reviewResponse.parsed);
       reviewDecision = parsed.decision;
+      reviewModel = reviewResponse.model;
+      reviewReason = parsed.reason;
+      reviewerTraceStatus = reviewDecision === "accepted" ? "reviewer_accepted"
+        : reviewDecision === "rejected" ? "reviewer_rejected"
+        : "reviewer_needs_escalation";
     } catch (err) {
       console.error(`Reviewer call failed for criterion ${criterion}:`, err);
       reviewDecision = "needs_escalation";
+      reviewerTraceStatus = "reviewer_error";
+      reviewerErrorMsg = err instanceof Error ? err.message.slice(0, 500) : String(err).slice(0, 500);
     }
+    const reviewerDurationMs = Date.now() - reviewerStarted;
 
     const record: DiffRecord = {
       id: diffId(),
@@ -299,7 +376,7 @@ export async function auditElementPair(
       location: refEl.box,
       evidence,
       measurements: [...(auditResult.measurements ?? []), ...ctx.measurements],
-      artifactPaths: auditArtifacts, // Use the collected UiArtifacts
+      artifactPaths: auditArtifacts,
       reviewerStatus: reviewDecision === "needs_escalation" ? "needs_escalation" : reviewDecision,
       model: auditModel
     };
@@ -309,7 +386,18 @@ export async function auditElementPair(
     } else {
       accepted.push(record);
     }
+
+    pushTrace(criterion, reviewerTraceStatus, {
+      model: auditModel,
+      reviewerModel: reviewModel,
+      auditorDurationMs,
+      reviewerDurationMs,
+      evidenceCount: evidence.length,
+      diffId: record.id,
+      ...(reviewReason !== undefined ? { rejectionReason: reviewReason } : {}),
+      ...(reviewerErrorMsg !== undefined ? { errorKind: "provider" as const, errorMessage: reviewerErrorMsg } : {})
+    });
   }
 
-  return { accepted, rejected };
+  return { accepted, rejected, trace };
 }

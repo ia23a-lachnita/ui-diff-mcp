@@ -124,6 +124,13 @@ Required result:
 - `modelSelection` is present in `report.json` with auditor and reviewer model/provider.
 - All diffs have at least one evidence string.
 
+## Debug Insight Gate
+
+A production sign-off run must include `debugSummary`, `audit-trace.json`,
+`coverage-trace.json`, and `recovery-trace.json`. The traces must explain every
+auditor/reviewer/recovery loss point using structured statuses. A run that only
+reports final diff counts without these traces is not acceptable for Calorix sign-off.
+
 ## Sign-Off Record
 
 Append a dated note to `docs/implementation-status.md` with:
