@@ -52,7 +52,7 @@ export const UiElementSchema = z.object({
   normalizedBox: NormalizedBoxSchema,
   text: z.string().optional(),
   confidence: z.number().finite().min(0).max(1),
-  source: z.enum(["locator", "ocr", "deterministic", "merged"]),
+  source: z.enum(["locator", "ocr", "deterministic", "merged", "projected"]),
   parentId: z.string().optional(),
   childIds: z.array(z.string()).default([])
 });
@@ -137,7 +137,7 @@ export type RunStatus = z.infer<typeof RunStatusSchema>;
 export const VisualClassificationStatusSchema = z.enum(["complete", "incomplete", "not_run"]);
 export type VisualClassificationStatus = z.infer<typeof VisualClassificationStatusSchema>;
 
-export const LocatorCoverageStatusSchema = z.enum(["complete", "weak", "failed", "not_run"]);
+export const LocatorCoverageStatusSchema = z.enum(["complete", "weak", "failed", "not_run", "projected"]);
 export type LocatorCoverageStatus = z.infer<typeof LocatorCoverageStatusSchema>;
 
 export const ImageLocatorCoverageSchema = z.object({
@@ -163,6 +163,7 @@ export const LocatorMetadataSchema = z.object({
   queryCounts: z.record(z.string(), z.number().int().nonnegative()),
   expected: ImageLocatorCoverageSchema.optional(),
   actual: ImageLocatorCoverageSchema.optional(),
+  locatorActualMode: z.enum(["independent", "projected"]).optional(),
   lanes: z.record(z.string(), LocatorLaneMetadataSchema).optional()
 });
 
