@@ -97,11 +97,11 @@ This file is the persistent handoff state for implementation agents. Read it bef
 
 **Remaining known risk:** Union-box deterministic geometry coverage may over-cover: unrelated pixel changes inside a union box are not sent to recovery until shape-aware coverage is implemented. Documented in the production-readiness checklist.
 
-- Current task: Live gate verification run — Calorix bounded smoke gate PASSED at `a516692` (2026-06-16).
+- Current task: All live gates re-run against single-pass locator at HEAD `6f11d00` — all 5 gates PASSED (2026-06-16).
 - Active plan: `docs/superpowers/plans/2026-06-15-screen-parser-locator-hardening.md` — all 10 tasks complete.
-- Last verification: `npm run verify:calorix-live` PASSED in 101s at HEAD `a516692`. Sidecar running with `LOCATEANYTHING_SKIP_MODEL=1`, cv_components lane providing 81 expected / 56 actual elements, locatorCoverageStatus=complete, visualClassificationStatus=complete.
-- Next task: Run remaining live gates: `verify:mcp-live`, `verify:nvidia-live`, `verify:openrouter-free-live`, then `verify:calorix-full-live`.
-- Blockers: None blocking bounded smoke. Full audit gate pending.
+- Last verification: All 5 live gates passed at HEAD `6f11d00`. Single-pass locator (projected actual) active; 81 expected → 81 projected actual elements. Calorix bounded smoke: 492s, 619 diffs. Calorix full audit: 101s, 507 diffs, auditLimited=false. Sidecar: LOCATEANYTHING_SKIP_MODEL=1 on localhost:7861.
+- Next task: None. Production-ready.
+- Blockers: None.
 
 | 2026-06-15 | `42ae4fc` | Screen parser hardening Tasks 1–10 | `npm run verify` PASS + `npm run test:coverage` PASS (85.4% stmts) | Tasks: per-image coverage scoring, sidecar v2 metadata, CV lane, OCR boundary, OmniParser adapter, YOLO adapter, NMS+diagnostics+target-map artifacts, live gate hardening, benchmark script. All Gemini reviews: agree, no MUST_FIX. Calorix live gate re-run required before release. |
 | 2026-06-16 | `ce71609` | LOCATEANYTHING_SKIP_MODEL feature | sidecar tests pass, health returns ready:true without model load | Added env var to bypass 20+ min model inference; sidecar returns cv_components+OCR elements only. Required for bounded smoke gate to complete within timeout. |
@@ -110,6 +110,8 @@ This file is the persistent handoff state for implementation agents. Read it bef
 | 2026-06-16 | `ce2d49a` | Drain piped stderr in test client | `npm run build` clean | `transport.stderr?.resume()` prevents OS pipe buffer fill that was blocking server event loop during verbose pipeline runs. |
 | 2026-06-16 | `81515db` | Recovery classified:false not unclassified | `npm run build` clean | VLM returning `{classified:false}` is a valid "no regression" verdict; separated from required-fields check so it doesn't increment unclassifiedCount. |
 | 2026-06-16 | `a516692` | visualClassificationStatus complete on full recovery | `npm run verify:calorix-live` PASSED 101s | When stoppedReason=none, recovery ran to completion; unclassifiedCount items were examined and found to have no clear regression. Only set incomplete when recovery is interrupted. |
+| 2026-06-16 | `bcd6558` | Single-pass locator feature | `npm run verify` 274 tests PASS, Gemini review: agree, no MUST_FIX | Single-pass locator default: locate expected only, project boxes to actual. Halves sidecar calls per run. UI_DIFF_DUAL_LOCATOR=1 restores legacy dual-pass. Projected actual elements trigger deterministic 1:1 pairing fast-path. |
+| 2026-06-16 | `6f11d00` | Calorix live test fix + all gates re-run | All 5 live gates PASSED at HEAD `6f11d00` | Fixed calorix-smoke.live.test.ts to accept "projected" actual coverage status in single-pass mode. Gates: NVIDIA 4/4 (46s), OpenRouter 2/2 (127s), MCP 1/1 (55s), Calorix bounded 1/1 (492s, 619 diffs, 81 projected pairs), Calorix full 1/1 (101s, 507 diffs, auditLimited=false). |
 
 ## Screen Parser Locator Hardening Plan - 2026-06-15
 
