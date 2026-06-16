@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import type { UiElement, UiElementType } from "../schemas/core.js";
+import type { UiElement, UiElementType, LocatorLaneMetadata } from "../schemas/core.js";
 import type { LocateAnythingElement } from "./locateanything-client.js";
 import { suppressDuplicateElements } from "./nms.js";
 import { iou, toNormalizedBox, containsCenter, area } from "../signals/geometry.js";
@@ -161,6 +161,29 @@ export function projectElementsToActual(
       source: "projected" as const
     };
   });
+}
+
+const LANE_STATUS_RANK: Record<string, number> = { failed: 3, not_configured: 2, skipped: 1, complete: 0 };
+
+/** Merge two lane-metadata records, taking the worse status and summing element counts. */
+export function mergeLocatorLanes(
+  a: Record<string, LocatorLaneMetadata>,
+  b: Record<string, LocatorLaneMetadata>
+): Record<string, LocatorLaneMetadata> {
+  const result: Record<string, LocatorLaneMetadata> = { ...a };
+  for (const [lane, bMeta] of Object.entries(b)) {
+    const aMeta = result[lane];
+    if (!aMeta) {
+      result[lane] = bMeta;
+    } else {
+      result[lane] = {
+        ...aMeta,
+        status: (LANE_STATUS_RANK[bMeta.status] ?? 0) > (LANE_STATUS_RANK[aMeta.status] ?? 0) ? bMeta.status : aMeta.status,
+        count: aMeta.count + bMeta.count
+      };
+    }
+  }
+  return result;
 }
 
 export function computeLocatorMetadata(

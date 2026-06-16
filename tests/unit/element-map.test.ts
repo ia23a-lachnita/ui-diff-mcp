@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildElementMap, projectElementsToActual } from "../../src/locator/element-map.js";
+import { buildElementMap, projectElementsToActual, mergeLocatorLanes } from "../../src/locator/element-map.js";
 import type { LocateAnythingElement } from "../../src/locator/locateanything-client.js";
 
 function makeEl(id: string, label: string, x: number, y: number, w: number, h: number): LocateAnythingElement {
@@ -145,5 +145,58 @@ describe("projectElementsToActual", () => {
     // Same pixel box but normalized differently
     expect(projected[0]?.normalizedBox.width).toBeCloseTo(0.25);
     expect(projected[0]?.normalizedBox.height).toBeCloseTo(0.25);
+  });
+});
+
+describe("mergeLocatorLanes", () => {
+  it("passes lanes from b that are absent in a through unchanged", () => {
+    const result = mergeLocatorLanes(
+      { cv_components: { status: "complete", count: 10 } },
+      { ocr_text: { status: "complete", count: 5, model: "tesseract" } }
+    );
+    expect(result["cv_components"]).toEqual({ status: "complete", count: 10 });
+    expect(result["ocr_text"]).toEqual({ status: "complete", count: 5, model: "tesseract" });
+  });
+
+  it("sums counts when both maps contain the same lane", () => {
+    const result = mergeLocatorLanes(
+      { cv_components: { status: "complete", count: 12 } },
+      { cv_components: { status: "complete", count: 8 } }
+    );
+    expect(result["cv_components"]?.count).toBe(20);
+    expect(result["cv_components"]?.status).toBe("complete");
+  });
+
+  it("takes the worse status when merging the same lane", () => {
+    const result = mergeLocatorLanes(
+      { ocr_text: { status: "complete", count: 7 } },
+      { ocr_text: { status: "failed", count: 0, detail: "tesseract unavailable" } }
+    );
+    expect(result["ocr_text"]?.status).toBe("failed");
+    expect(result["ocr_text"]?.count).toBe(7);
+  });
+
+  it("status rank: failed > not_configured > skipped > complete", () => {
+    const statuses = ["complete", "skipped", "not_configured", "failed"] as const;
+    for (let i = 0; i < statuses.length - 1; i++) {
+      const worse = mergeLocatorLanes(
+        { lane: { status: statuses[i]!, count: 1 } },
+        { lane: { status: statuses[i + 1]!, count: 1 } }
+      );
+      expect(worse["lane"]?.status).toBe(statuses[i + 1]);
+    }
+  });
+
+  it("preserves model/detail/license from the a-side entry when merging", () => {
+    const result = mergeLocatorLanes(
+      { cv_components: { status: "complete", count: 3, model: "opencv", license: "MIT" } },
+      { cv_components: { status: "complete", count: 4 } }
+    );
+    expect(result["cv_components"]?.model).toBe("opencv");
+    expect(result["cv_components"]?.license).toBe("MIT");
+  });
+
+  it("returns empty object when both inputs are empty", () => {
+    expect(mergeLocatorLanes({}, {})).toEqual({});
   });
 });

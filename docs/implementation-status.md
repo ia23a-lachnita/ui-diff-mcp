@@ -4,14 +4,14 @@ This file is the persistent handoff state for implementation agents. Read it bef
 
 ## Current State
 
-- Status: **Live gate re-run required.** Code-review fixes at `a5dfeda`/`c_next` changed gate semantics: `visualClassificationStatus` now becomes "incomplete" when `unclassifiedCount > 0` (the `6f11d00` Calorix run had 12 unclassified items, invalidating that evidence), and both Calorix gates now require dual-locator mode (`UI_DIFF_DUAL_LOCATOR=1`) so actual-image discovery is independently verified. All unit tests still pass. Current HEAD: `a5dfeda` (pending current build commit).
+- Status: **Live gate re-run required.** Code-review fixes at `f54bd04` changed gate semantics: `visualClassificationStatus` now becomes "incomplete" when `unclassifiedCount > 0` (the `6f11d00` Calorix run had 12 unclassified items, invalidating that evidence), and both Calorix gates now require dual-locator mode (`UI_DIFF_DUAL_LOCATOR=1`) so actual-image discovery is independently verified. All unit tests still pass. Current HEAD: `f54bd04`.
 - Branch: `master`.
 - Approved spec: `docs/superpowers/specs/2026-06-12-ui-diff-mcp-research-design.md`.
 - Active implementation plan: `docs/superpowers/plans/2026-06-12-ui-diff-mcp-mvp-implementation.md`.
 - Production-readiness test plan: `docs/superpowers/plans/2026-06-13-production-readiness-tests.md`.
 - Current task: Re-run all 5 live gates to establish fresh sign-off at current HEAD.
 - Next task: None if all gates pass. Production-ready.
-- Last verification: `npm run verify` — 274 unit tests PASS at HEAD `097ecf9`. Calorix gates at `6f11d00` are **invalidated** by `visualClassificationStatus` logic change. NVIDIA/OpenRouter/MCP gates unaffected and still valid.
+- Last verification: `npm run verify` — 274 unit tests PASS at HEAD `f54bd04`. Calorix gates at `6f11d00` are **invalidated** by `visualClassificationStatus` logic change. NVIDIA/OpenRouter/MCP gates unaffected and still valid.
 - Open blockers: Calorix bounded and full-live gates must be re-run with `UI_DIFF_DUAL_LOCATOR=1` in effect (now hardcoded in test) before production sign-off.
 
 ## Standing Implementation Rules
