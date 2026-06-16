@@ -4,15 +4,15 @@ This file is the persistent handoff state for implementation agents. Read it bef
 
 ## Current State
 
-- Status: **Live gate re-run required.** Code-review fixes at `60a2b76` changed gate semantics: `visualClassificationStatus` now becomes "incomplete" when `unclassifiedCount > 0` (the `6f11d00` Calorix run had 12 unclassified items, invalidating that evidence), and both Calorix gates now require dual-locator mode (`UI_DIFF_DUAL_LOCATOR=1`) so actual-image discovery is independently verified. All unit tests still pass. Current HEAD: `60a2b76`.
+- Status: **Debug-insight plan drafted before next live gate run.** Current HEAD before this docs update: `3d38e4f`. The latest Calorix run artifacts show target and recovery evidence exists, but the report cannot explain why individual audited targets or recovery candidates did not become final classified diffs. New plan: `docs/superpowers/plans/2026-06-16-run-debug-insights.md`.
 - Branch: `master`.
 - Approved spec: `docs/superpowers/specs/2026-06-12-ui-diff-mcp-research-design.md`.
 - Active implementation plan: `docs/superpowers/plans/2026-06-12-ui-diff-mcp-mvp-implementation.md`.
 - Production-readiness test plan: `docs/superpowers/plans/2026-06-13-production-readiness-tests.md`.
-- Current task: Re-run all 5 live gates to establish fresh sign-off at current HEAD.
-- Next task: None if all gates pass. Production-ready.
-- Last verification: `npm run verify` — 277 unit tests PASS at HEAD `60a2b76`. Calorix gates at `6f11d00` are **invalidated** by `visualClassificationStatus` logic change. NVIDIA/OpenRouter/MCP gates unaffected and still valid.
-- Open blockers: Calorix bounded and full-live gates must be re-run with `UI_DIFF_DUAL_LOCATOR=1` in effect (now hardcoded in test) before production sign-off.
+- Current task: Review and approve `docs/superpowers/plans/2026-06-16-run-debug-insights.md` before running new Calorix live gates.
+- Next task: Implement run debug traces, then re-run Calorix live gates with trace artifacts enabled.
+- Last verification: `npm test` and `npm run typecheck` passed during code-review cycle at `a1343d2`; later documentation/status commits did not change runtime code. A fresh `npm run verify` is required after implementing the debug-insight plan.
+- Open blockers: Fresh Calorix bounded/full live gates should not be used for production sign-off until the report includes audit, coverage, and recovery trace artifacts explaining lost candidates.
 
 ## Standing Implementation Rules
 
@@ -108,6 +108,7 @@ This file is the persistent handoff state for implementation agents. Read it bef
 | 2026-06-16 | `bcd6558` | Single-pass locator feature | `npm run verify` 274 tests PASS, Gemini review: agree, no MUST_FIX | Single-pass locator default: locate expected only, project boxes to actual. Halves sidecar calls per run. UI_DIFF_DUAL_LOCATOR=1 restores legacy dual-pass. Projected actual elements trigger deterministic 1:1 pairing fast-path. |
 | 2026-06-16 | `6f11d00` | Calorix live test fix + all gates re-run | All 5 live gates PASSED at HEAD `6f11d00` | Fixed calorix-smoke.live.test.ts to accept "projected" actual coverage status in single-pass mode. Gates: NVIDIA 4/4 (46s), OpenRouter 2/2 (127s), MCP 1/1 (55s), Calorix bounded 1/1 (492s, 619 diffs, 81 projected pairs), Calorix full 1/1 (101s, 507 diffs, auditLimited=false). |
 | 2026-06-16 | `fa5265a` | Pixel-diff mask visibility fix + containment NMS | 274 unit tests PASS | Fixed pixel-diff mask encoding 0/1→0/255 so mask PNGs are visible instead of solid black. Added `suppressContainedElements()` after IoU NMS to remove small elements ≥85% covered by a moderately-larger element (area ratio <6×), reducing redundant crops. Fixed unit test to count non-zero mask pixels instead of summing values. |
+| 2026-06-16 | this commit | Run debug-insight implementation plan | Plan self-review complete; Gemini 3.1 Pro Preview review: agree, MUST_FIX none, SHOULD_FIX none | Added `docs/superpowers/plans/2026-06-16-run-debug-insights.md`. The plan adds audit, coverage, and recovery trace artifacts so the next Calorix live run can explain why target-pair and recovery candidates did or did not become final classified diffs. |
 
 ## Screen Parser Locator Hardening Plan - 2026-06-15
 
