@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildElementMap } from "../../src/locator/element-map.js";
+import { buildElementMap, projectElementsToActual } from "../../src/locator/element-map.js";
 import type { LocateAnythingElement } from "../../src/locator/locateanything-client.js";
 
 function makeEl(id: string, label: string, x: number, y: number, w: number, h: number): LocateAnythingElement {
@@ -90,5 +90,60 @@ describe("buildElementMap", () => {
       { width: 200, height: 400 }
     );
     expect(els[0]?.label).toBe("Submit button");
+  });
+});
+
+describe("projectElementsToActual", () => {
+  it("returns empty array for empty input", () => {
+    expect(projectElementsToActual([], { width: 400, height: 800 })).toHaveLength(0);
+  });
+
+  it("creates projected elements with source=projected and proj- id prefix", () => {
+    const expected = buildElementMap(
+      [makeEl("buttons", "Submit", 10, 10, 80, 40)],
+      { width: 200, height: 400 }
+    );
+    const projected = projectElementsToActual(expected, { width: 200, height: 400 });
+    expect(projected).toHaveLength(1);
+    expect(projected[0]?.source).toBe("projected");
+    expect(projected[0]?.id).toMatch(/^proj-/);
+    expect(projected[0]?.label).toBe(expected[0]?.label);
+  });
+
+  it("copies box coordinates unchanged when actual is same size as expected", () => {
+    const expected = buildElementMap(
+      [makeEl("buttons", "Save", 20, 30, 60, 25)],
+      { width: 300, height: 600 }
+    );
+    const projected = projectElementsToActual(expected, { width: 300, height: 600 });
+    expect(projected[0]?.box).toEqual(expected[0]?.box);
+  });
+
+  it("clamps box to actual image bounds when actual is smaller", () => {
+    const expected = buildElementMap(
+      [makeEl("buttons", "Footer button", 150, 350, 100, 50)],
+      { width: 300, height: 400 }
+    );
+    // Actual is narrower — box should be clamped
+    const projected = projectElementsToActual(expected, { width: 200, height: 400 });
+    const box = projected[0]?.box;
+    expect(box).toBeDefined();
+    if (box) {
+      expect(box.x + box.width).toBeLessThanOrEqual(200);
+      expect(box.y + box.height).toBeLessThanOrEqual(400);
+      expect(box.width).toBeGreaterThan(0);
+      expect(box.height).toBeGreaterThan(0);
+    }
+  });
+
+  it("recomputes normalizedBox for actual image size", () => {
+    const expected = buildElementMap(
+      [makeEl("buttons", "OK", 0, 0, 100, 100)],
+      { width: 200, height: 200 }
+    );
+    const projected = projectElementsToActual(expected, { width: 400, height: 400 });
+    // Same pixel box but normalized differently
+    expect(projected[0]?.normalizedBox.width).toBeCloseTo(0.25);
+    expect(projected[0]?.normalizedBox.height).toBeCloseTo(0.25);
   });
 });

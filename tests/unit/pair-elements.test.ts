@@ -10,7 +10,7 @@ function makeElement(
   w: number,
   h: number,
   text?: string,
-  source: "locator" | "deterministic" = "locator"
+  source: "locator" | "deterministic" | "projected" = "locator"
 ): UiElement {
   return {
     id,
@@ -120,5 +120,52 @@ describe("pairElements", () => {
     expect(matched).toBeDefined();
     expect(matched?.expectedId).toBe("e1");
     expect(matched?.actualId).toBe("a1");
+  });
+
+  describe("projected fast-path", () => {
+    it("1:1 zips expected and projected actual elements with score=1", () => {
+      const expected = [
+        makeElement("e1", "Button A", 10, 10, 80, 40),
+        makeElement("e2", "Button B", 100, 10, 80, 40)
+      ];
+      const actual = [
+        makeElement("proj-e1", "Button A", 10, 10, 80, 40, undefined, "projected"),
+        makeElement("proj-e2", "Button B", 100, 10, 80, 40, undefined, "projected")
+      ];
+      const pairs = pairElements(expected, actual);
+      expect(pairs).toHaveLength(2);
+      expect(pairs[0]?.status).toBe("matched");
+      expect(pairs[0]?.score).toBe(1);
+      expect(pairs[0]?.reasons).toContain("projected");
+      expect(pairs[0]?.expectedId).toBe("e1");
+      expect(pairs[0]?.actualId).toBe("proj-e1");
+    });
+
+    it("returns empty array for empty inputs", () => {
+      const pairs = pairElements([], []);
+      expect(pairs).toHaveLength(0);
+    });
+
+    it("produces no missing or extra pairs in projected mode", () => {
+      const expected = [makeElement("e1", "Label", 0, 0, 50, 50)];
+      const actual = [makeElement("proj-e1", "Label", 0, 0, 50, 50, undefined, "projected")];
+      const pairs = pairElements(expected, actual);
+      const missing = pairs.filter(p => p.status === "missing");
+      const extra = pairs.filter(p => p.status === "extra");
+      expect(missing).toHaveLength(0);
+      expect(extra).toHaveLength(0);
+    });
+
+    it("does not use projected fast-path when actual has mixed sources", () => {
+      const expected = [makeElement("e1", "A", 0, 0, 50, 50)];
+      const actual = [
+        makeElement("proj-e1", "A", 0, 0, 50, 50, undefined, "projected"),
+        makeElement("a2", "B", 100, 100, 50, 50, undefined, "locator")
+      ];
+      const pairs = pairElements(expected, actual);
+      // Falls through to scored path — "a2" ends up as extra, not paired
+      const extra = pairs.find(p => p.status === "extra" && p.actualId === "a2");
+      expect(extra).toBeDefined();
+    });
   });
 });

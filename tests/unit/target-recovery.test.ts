@@ -81,11 +81,11 @@ describe("runTargetRecovery", () => {
     expect(unclassifiedCount).toBe(0);
   });
 
-  it("marks component unclassified when VLM returns classified: false", async () => {
+  it("treats classified:false as a valid no-regression verdict (not unclassified)", async () => {
     const ctx = makeCtx();
     const { recovered, unclassifiedCount } = await runTargetRecovery([component], ctx, unlimitedBudget);
     expect(recovered).toHaveLength(0);
-    expect(unclassifiedCount).toBe(1);
+    expect(unclassifiedCount).toBe(0);
   });
 
   it("returns a DiffRecord when VLM classifies and reviewer accepts", async () => {

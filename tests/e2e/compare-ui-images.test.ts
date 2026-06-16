@@ -124,7 +124,7 @@ describe("runUiDiff with mock sidecar and models (full mode)", () => {
     const sidecarCalls = mockFetch.mock.calls.filter(([url]) =>
       typeof url === "string" && url.includes("/v1/locate-ui-elements")
     );
-    expect(sidecarCalls).toHaveLength(2);
+    expect(sidecarCalls).toHaveLength(1);
     const firstSidecarBody = JSON.parse(String(sidecarCalls[0]?.[1]?.body)) as { queries: unknown[] };
     expect(firstSidecarBody.queries).toHaveLength(8);
   });
