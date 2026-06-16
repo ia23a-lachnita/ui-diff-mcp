@@ -44,10 +44,33 @@ function makePairId(expectedId?: string, actualId?: string): string {
   return crypto.createHash("sha1").update(raw).digest("hex").slice(0, 12);
 }
 
+function buildProjectedPairs(
+  expectedElements: UiElement[],
+  actualElements: UiElement[]
+): ElementPair[] {
+  return expectedElements.map((exp, i) => {
+    const act = actualElements[i];
+    return {
+      id: makePairId(exp.id, act?.id),
+      expectedId: exp.id,
+      ...(act !== undefined ? { actualId: act.id } : {}),
+      status: "matched" as const,
+      score: 1,
+      reasons: ["projected"]
+    };
+  });
+}
+
 export function pairElements(
   expectedElements: UiElement[],
   actualElements: UiElement[]
 ): ElementPair[] {
+  // Fast-path: when all actual elements are projected from expected, pair 1:1 by index.
+  // Adds/removes are detected by VLM audit and pixel-diff recovery, not by the locator.
+  if (actualElements.length > 0 && actualElements.every(a => a.source === "projected")) {
+    return buildProjectedPairs(expectedElements, actualElements);
+  }
+
   const pairs: ElementPair[] = [];
   const matchedActual = new Set<string>();
   const matchedExpected = new Set<string>();
