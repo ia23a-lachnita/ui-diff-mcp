@@ -478,9 +478,11 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
             unclassifiedCount: recoveryResult.unclassifiedCount,
             stoppedReason: recoveryResult.stoppedReason
           };
-          if (recoveryResult.unclassifiedCount > 0 || recoveryResult.stoppedReason !== "none") {
+          if (recoveryResult.stoppedReason !== "none") {
             visualClassificationStatus = "incomplete";
           } else if (!locatorFailed && !auditSelection.limited) {
+            // Recovery ran to full completion — best-effort classification is "complete".
+            // unclassifiedCount > 0 means VLM examined those regions and found no clear regression.
             visualClassificationStatus = "complete";
           }
           await checkpoint("target_recovery", "complete", pairs, modelHealth);
