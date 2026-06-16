@@ -142,6 +142,28 @@ export function buildElementMap(
 
 export { QUERY_ID_TYPE_MAP };
 
+export function projectElementsToActual(
+  expectedElements: UiElement[],
+  actualImageSize: { width: number; height: number }
+): UiElement[] {
+  return expectedElements.map(exp => {
+    const clampedBox = {
+      x: Math.min(exp.box.x, Math.max(0, actualImageSize.width - 1)),
+      y: Math.min(exp.box.y, Math.max(0, actualImageSize.height - 1)),
+      width: Math.min(exp.box.width, actualImageSize.width - Math.min(exp.box.x, Math.max(0, actualImageSize.width - 1))),
+      height: Math.min(exp.box.height, actualImageSize.height - Math.min(exp.box.y, Math.max(0, actualImageSize.height - 1)))
+    };
+    const normalizedBox = toNormalizedBox(clampedBox, actualImageSize.width, actualImageSize.height);
+    return {
+      ...exp,
+      id: `proj-${exp.id}`,
+      box: clampedBox,
+      normalizedBox,
+      source: "projected" as const
+    };
+  });
+}
+
 export function computeLocatorMetadata(
   elements: UiElement[],
   promptCount: number
