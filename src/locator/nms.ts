@@ -1,5 +1,5 @@
 import type { UiElement } from "../schemas/core.js";
-import { iou } from "../signals/geometry.js";
+import { iou, intersect, area } from "../signals/geometry.js";
 
 function mergeQueryIds(a?: string, b?: string): string | undefined {
   const parts = new Set<string>();
@@ -21,9 +21,40 @@ function mergeElement(primary: UiElement, duplicate: UiElement): UiElement {
   };
 }
 
+// Suppress a smaller element when it is mostly contained within a larger one, but only
+// when the larger element is close enough in size that the VLM will still see the detail.
+// containmentThreshold: fraction of smaller element's area that must overlap the larger (default 0.85).
+// maxAreaRatio: if larger/smaller > this, keep smaller — the large crop would hide fine detail (default 6).
+function suppressContainedElements(
+  elements: UiElement[],
+  containmentThreshold = 0.85,
+  maxAreaRatio = 6
+): UiElement[] {
+  const byAreaDesc = [...elements].sort((a, b) => area(b.box) - area(a.box));
+  const suppressed = new Set<string>();
+
+  for (let i = 0; i < byAreaDesc.length; i++) {
+    const large = byAreaDesc[i]!;
+    if (suppressed.has(large.id)) continue;
+    const largeArea = area(large.box);
+    for (let j = i + 1; j < byAreaDesc.length; j++) {
+      const small = byAreaDesc[j]!;
+      if (suppressed.has(small.id)) continue;
+      const smallArea = area(small.box);
+      if (smallArea === 0 || largeArea / smallArea > maxAreaRatio) continue;
+      const inter = intersect(large.box, small.box);
+      if (!inter) continue;
+      const containment = area(inter) / smallArea;
+      if (containment >= containmentThreshold) suppressed.add(small.id);
+    }
+  }
+
+  return elements.filter(e => !suppressed.has(e.id));
+}
+
 export function suppressDuplicateElements(
   elements: UiElement[],
-  options: { iouThreshold?: number } = {}
+  options: { iouThreshold?: number; containmentThreshold?: number; maxAreaRatio?: number } = {}
 ): UiElement[] {
   const iouThreshold = options.iouThreshold ?? 0.72;
   const sorted = [...elements].sort((a, b) => b.confidence - a.confidence);
@@ -38,5 +69,9 @@ export function suppressDuplicateElements(
     kept[index] = mergeElement(kept[index]!, element);
   }
 
-  return kept;
+  return suppressContainedElements(
+    kept,
+    options.containmentThreshold ?? 0.85,
+    options.maxAreaRatio ?? 6
+  );
 }

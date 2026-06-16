@@ -104,7 +104,7 @@ describe("pixelDiff", () => {
     const result = computePixelDiff(expectedPath, actualPath);
     expect(result.changedPixels).toBeGreaterThan(0);
     expect(result.components.length).toBeGreaterThanOrEqual(1);
-    const maskPixels = result.diffMask.reduce((sum, v) => sum + v, 0);
+    const maskPixels = result.diffMask.reduce((count, v) => count + (v > 0 ? 1 : 0), 0);
     expect(maskPixels).toBe(result.changedPixels);
     expect(maskPixels).toBeLessThan(2000);
 

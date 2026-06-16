@@ -102,7 +102,7 @@ export function computePixelDiff(
     const b = diffData[i * 4 + 2];
     const isDiffRed = r !== undefined && g !== undefined && b !== undefined && r > 200 && g < 80 && b < 80;
     const isDiffBlue = r !== undefined && g !== undefined && b !== undefined && b > 200 && r < 80 && g < 80;
-    mask[i] = isDiffRed || isDiffBlue ? 1 : 0;
+    mask[i] = isDiffRed || isDiffBlue ? 255 : 0;
   }
 
   const components = labelComponents(mask, width, height);
