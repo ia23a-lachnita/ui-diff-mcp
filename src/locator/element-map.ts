@@ -147,12 +147,11 @@ export function projectElementsToActual(
   actualImageSize: { width: number; height: number }
 ): UiElement[] {
   return expectedElements.map(exp => {
-    const clampedBox = {
-      x: Math.min(exp.box.x, Math.max(0, actualImageSize.width - 1)),
-      y: Math.min(exp.box.y, Math.max(0, actualImageSize.height - 1)),
-      width: Math.min(exp.box.width, actualImageSize.width - Math.min(exp.box.x, Math.max(0, actualImageSize.width - 1))),
-      height: Math.min(exp.box.height, actualImageSize.height - Math.min(exp.box.y, Math.max(0, actualImageSize.height - 1)))
-    };
+    const x = Math.max(0, Math.min(exp.box.x, actualImageSize.width - 1));
+    const y = Math.max(0, Math.min(exp.box.y, actualImageSize.height - 1));
+    const width = Math.max(1, Math.min(exp.box.width, actualImageSize.width - x));
+    const height = Math.max(1, Math.min(exp.box.height, actualImageSize.height - y));
+    const clampedBox = { x, y, width, height };
     const normalizedBox = toNormalizedBox(clampedBox, actualImageSize.width, actualImageSize.height);
     return {
       ...exp,
@@ -176,6 +175,7 @@ export function computeLocatorMetadata(
   }
   return { promptCount, queryCounts };
 }
+
 
 export function computeLocatorCoverageStatus(
   elements: UiElement[],
