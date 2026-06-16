@@ -176,10 +176,14 @@ export function mergeLocatorLanes(
     if (!aMeta) {
       result[lane] = bMeta;
     } else {
+      const bWins = (LANE_STATUS_RANK[bMeta.status] ?? 0) > (LANE_STATUS_RANK[aMeta.status] ?? 0);
+      const winner = bWins ? bMeta : aMeta;
+      const { detail: _drop, ...aBase } = aMeta;
       result[lane] = {
-        ...aMeta,
-        status: (LANE_STATUS_RANK[bMeta.status] ?? 0) > (LANE_STATUS_RANK[aMeta.status] ?? 0) ? bMeta.status : aMeta.status,
-        count: aMeta.count + bMeta.count
+        ...aBase,
+        status: winner.status,
+        count: aMeta.count + bMeta.count,
+        ...(winner.detail !== undefined ? { detail: winner.detail } : {})
       };
     }
   }

@@ -199,4 +199,21 @@ describe("mergeLocatorLanes", () => {
   it("returns empty object when both inputs are empty", () => {
     expect(mergeLocatorLanes({}, {})).toEqual({});
   });
+
+  it("takes detail from the worse (b) side when b wins the status", () => {
+    const result = mergeLocatorLanes(
+      { ocr_text: { status: "complete", count: 7 } },
+      { ocr_text: { status: "failed", count: 0, detail: "tesseract unavailable" } }
+    );
+    expect(result["ocr_text"]?.detail).toBe("tesseract unavailable");
+  });
+
+  it("keeps detail from the better (a) side when a already holds the worse status", () => {
+    const result = mergeLocatorLanes(
+      { ocr_text: { status: "failed", count: 3, detail: "missing binary" } },
+      { ocr_text: { status: "complete", count: 9 } }
+    );
+    expect(result["ocr_text"]?.status).toBe("failed");
+    expect(result["ocr_text"]?.detail).toBe("missing binary");
+  });
 });
