@@ -97,9 +97,9 @@ This file is the persistent handoff state for implementation agents. Read it bef
 
 **Remaining known risk:** Union-box deterministic geometry coverage may over-cover: unrelated pixel changes inside a union box are not sent to recovery until shape-aware coverage is implemented. Documented in the production-readiness checklist.
 
-- Current task: All live gates re-run against single-pass locator at HEAD `6f11d00` — all 5 gates PASSED (2026-06-16).
+- Current task: Post-production artifact quality fixes at HEAD `fa5265a` — complete.
 - Active plan: `docs/superpowers/plans/2026-06-15-screen-parser-locator-hardening.md` — all 10 tasks complete.
-- Last verification: All 5 live gates passed at HEAD `6f11d00`. Single-pass locator (projected actual) active; 81 expected → 81 projected actual elements. Calorix bounded smoke: 492s, 619 diffs. Calorix full audit: 101s, 507 diffs, auditLimited=false. Sidecar: LOCATEANYTHING_SKIP_MODEL=1 on localhost:7861.
+- Last verification: `npm run verify` — 274 unit tests PASS at HEAD `fa5265a`. pixel-diff masks now render as visible white (0/255). Containment NMS suppresses small crops ≥85% covered by moderately-larger elements (area ratio <6×).
 - Next task: None. Production-ready.
 - Blockers: None.
 
@@ -112,6 +112,7 @@ This file is the persistent handoff state for implementation agents. Read it bef
 | 2026-06-16 | `a516692` | visualClassificationStatus complete on full recovery | `npm run verify:calorix-live` PASSED 101s | When stoppedReason=none, recovery ran to completion; unclassifiedCount items were examined and found to have no clear regression. Only set incomplete when recovery is interrupted. |
 | 2026-06-16 | `bcd6558` | Single-pass locator feature | `npm run verify` 274 tests PASS, Gemini review: agree, no MUST_FIX | Single-pass locator default: locate expected only, project boxes to actual. Halves sidecar calls per run. UI_DIFF_DUAL_LOCATOR=1 restores legacy dual-pass. Projected actual elements trigger deterministic 1:1 pairing fast-path. |
 | 2026-06-16 | `6f11d00` | Calorix live test fix + all gates re-run | All 5 live gates PASSED at HEAD `6f11d00` | Fixed calorix-smoke.live.test.ts to accept "projected" actual coverage status in single-pass mode. Gates: NVIDIA 4/4 (46s), OpenRouter 2/2 (127s), MCP 1/1 (55s), Calorix bounded 1/1 (492s, 619 diffs, 81 projected pairs), Calorix full 1/1 (101s, 507 diffs, auditLimited=false). |
+| 2026-06-16 | `fa5265a` | Pixel-diff mask visibility fix + containment NMS | 274 unit tests PASS | Fixed pixel-diff mask encoding 0/1→0/255 so mask PNGs are visible instead of solid black. Added `suppressContainedElements()` after IoU NMS to remove small elements ≥85% covered by a moderately-larger element (area ratio <6×), reducing redundant crops. Fixed unit test to count non-zero mask pixels instead of summing values. |
 
 ## Screen Parser Locator Hardening Plan - 2026-06-15
 
