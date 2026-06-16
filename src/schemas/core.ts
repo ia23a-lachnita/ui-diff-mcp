@@ -157,6 +157,7 @@ export const LocatorLaneMetadataSchema = z.object({
   model: z.string().optional(),
   license: z.string().optional()
 });
+export type LocatorLaneMetadata = z.infer<typeof LocatorLaneMetadataSchema>;
 
 export const LocatorMetadataSchema = z.object({
   promptCount: z.number().int().nonnegative(),

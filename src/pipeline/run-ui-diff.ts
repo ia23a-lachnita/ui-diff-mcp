@@ -22,7 +22,7 @@ import { assignDiffComponentsToRecords, findUncoveredComponents } from "../repor
 import { runTargetRecovery } from "../recovery/target-recovery.js";
 import { buildDeterministicDiffs } from "../diff/deterministic-diffs.js";
 import { writeUiDiffReport, writeReportCheckpoint } from "../report/report-writer.js";
-import type { UiDiffReport, RunStatus, VisualClassificationStatus, LocatorCoverageStatus, DiffRecord, ElementPair, UiArtifact, AuditScope, ModelSelection, RecoverySummary, StageStatus } from "../schemas/core.js";
+import type { UiDiffReport, RunStatus, VisualClassificationStatus, LocatorCoverageStatus, DiffRecord, ElementPair, UiArtifact, AuditScope, ModelSelection, RecoverySummary, StageStatus, LocatorLaneMetadata } from "../schemas/core.js";
 import { computeColorEvidence } from "../signals/color.js";
 
 export interface RunInput {
@@ -129,6 +129,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
   let status: RunStatus = "complete";
   let visualClassificationStatus: VisualClassificationStatus = "not_run";
   let locatorCoverageStatus: LocatorCoverageStatus = "not_run";
+  let locatorLanes: Record<string, LocatorLaneMetadata> | undefined;
   let auditScope: AuditScope | undefined = undefined;
   let modelSelection: ModelSelection | undefined = undefined;
   let recoverySummary: RecoverySummary | undefined = undefined;
@@ -244,6 +245,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
         maxDimension: locatorMaxDimension
       });
       expectedElements.push(...buildElementMap(expResp.elements, { width: expectedImg.width, height: expectedImg.height }));
+      locatorLanes = expResp.metadata?.lanes;
 
       if (dualLocatorEnabled) {
         // Legacy dual-pass: independently locate elements in the actual image too.
@@ -508,11 +510,9 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
             unclassifiedCount: recoveryResult.unclassifiedCount,
             stoppedReason: recoveryResult.stoppedReason
           };
-          if (recoveryResult.stoppedReason !== "none") {
+          if (recoveryResult.stoppedReason !== "none" || recoveryResult.unclassifiedCount > 0) {
             visualClassificationStatus = "incomplete";
           } else if (!locatorFailed && !auditSelection.limited) {
-            // Recovery ran to full completion — best-effort classification is "complete".
-            // unclassifiedCount > 0 means VLM examined those regions and found no clear regression.
             visualClassificationStatus = "complete";
           }
           await checkpoint("target_recovery", "complete", pairs, modelHealth);
@@ -535,7 +535,8 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
         ...computeLocatorMetadata([...expectedElements, ...actualElements], locatorQueries.length),
         ...(expectedCoverage !== undefined ? { expected: expectedCoverage } : {}),
         ...(actualCoverage !== undefined ? { actual: actualCoverage } : {}),
-        locatorActualMode: dualLocatorEnabled ? "independent" as const : "projected" as const
+        locatorActualMode: dualLocatorEnabled ? "independent" as const : "projected" as const,
+        ...(locatorLanes !== undefined ? { lanes: locatorLanes } : {})
       }
     : undefined;
 

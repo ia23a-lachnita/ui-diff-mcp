@@ -6,6 +6,9 @@ coverage/
 .ui-diff-live/
 artifacts/
 *.log
+live-gate-*.zip
+sidecar-out.txt
+sidecar-err.txt
 __pycache__/
 .env
 .env.*

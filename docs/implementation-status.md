@@ -4,16 +4,15 @@ This file is the persistent handoff state for implementation agents. Read it bef
 
 ## Current State
 
-- Status: production-readiness gates executed, then free-first/product-hardening gaps were identified from live runs and captured in a new implementation plan. The first version of that plan was rejected for insufficient NVIDIA API model research; a dedicated NVIDIA model research document has now been added.
+- Status: **Production-ready.** All 5 live gates passed at HEAD `6f11d00`. Subsequent artifact-quality commits (`fa5265a`, `097ecf9`) added pixel-diff mask visibility fix, containment NMS, and progress-log documentation. Current HEAD: `097ecf9`.
 - Branch: `master`.
 - Approved spec: `docs/superpowers/specs/2026-06-12-ui-diff-mcp-research-design.md`.
 - Active implementation plan: `docs/superpowers/plans/2026-06-12-ui-diff-mcp-mvp-implementation.md`.
 - Production-readiness test plan: `docs/superpowers/plans/2026-06-13-production-readiness-tests.md`.
-- Current task: Live gate hardening plan after corrected default-free MCP live runs — complete.
-- Next task: execute `docs/superpowers/plans/2026-06-15-live-gate-hardening.md`.
-- Last verification: `npm run build` passed. Corrected generic MCP live run in `mode: "free"` completed but returned `visualClassificationStatus: "incomplete"` with two `unclassified_visual_change` records. `npm run verify:calorix-live` timed out after about 10 minutes with `UI_DIFF_MAX_AUDIT_PAIRS=3`. `npm run verify:calorix-full-live` timed out after about 30 minutes. `git diff --check` for the plan commit exited 0 with CRLF warnings only.
-- Code review: Gemini CLI using `gemini-3.1-pro-preview` reviewed `docs/superpowers/plans/2026-06-15-live-gate-hardening.md`; final blocker pass returned `AGREEMENT_STATUS: agree`, `MUST_FIX: None`, `SHOULD_FIX: None`.
-- Open blockers: production sign-off is blocked until the live gate hardening plan is implemented and the corrected default MCP, bounded Calorix, and full Calorix live gates finish without MCP protocol timeouts.
+- Current task: Code-review findings triage (2026-06-16 evening) — fix `visualClassificationStatus` false-complete on `unclassifiedCount > 0`, propagate sidecar lane metadata into reports, update `.gitignore` for generated run artifacts.
+- Next task: None. Production-ready.
+- Last verification: `npm run verify` — 274 unit tests PASS at HEAD `097ecf9`. All 5 live gates passed at `6f11d00` (NVIDIA 4/4, OpenRouter 2/2, MCP 1/1, Calorix bounded 1/1, Calorix full 1/1).
+- Open blockers: None.
 
 ## Standing Implementation Rules
 
