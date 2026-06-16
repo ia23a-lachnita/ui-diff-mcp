@@ -96,11 +96,7 @@ This file is the persistent handoff state for implementation agents. Read it bef
 
 **Remaining known risk:** Union-box deterministic geometry coverage may over-cover: unrelated pixel changes inside a union box are not sent to recovery until shape-aware coverage is implemented. Documented in the production-readiness checklist.
 
-- Current task: Post-production artifact quality fixes at HEAD `fa5265a` — complete.
-- Active plan: `docs/superpowers/plans/2026-06-15-screen-parser-locator-hardening.md` — all 10 tasks complete.
-- Last verification: `npm run verify` — 274 unit tests PASS at HEAD `fa5265a`. pixel-diff masks now render as visible white (0/255). Containment NMS suppresses small crops ≥85% covered by moderately-larger elements (area ratio <6×).
-- Next task: None. Production-ready.
-- Blockers: None.
+**Known limitation (low severity):** `mergeLocatorLanes` inherits `model`/`license` from the a-side (expected) entry even when the b-side (actual) has the worse status. Safe today because both images run through the same sidecar instance. If per-image sidecars diverge, the fix is a schema change to represent `expectedLanes`/`actualLanes` separately on `LocatorMetadataSchema` rather than a single merged record.
 
 | 2026-06-15 | `42ae4fc` | Screen parser hardening Tasks 1–10 | `npm run verify` PASS + `npm run test:coverage` PASS (85.4% stmts) | Tasks: per-image coverage scoring, sidecar v2 metadata, CV lane, OCR boundary, OmniParser adapter, YOLO adapter, NMS+diagnostics+target-map artifacts, live gate hardening, benchmark script. All Gemini reviews: agree, no MUST_FIX. Calorix live gate re-run required before release. |
 | 2026-06-16 | `ce71609` | LOCATEANYTHING_SKIP_MODEL feature | sidecar tests pass, health returns ready:true without model load | Added env var to bypass 20+ min model inference; sidecar returns cv_components+OCR elements only. Required for bounded smoke gate to complete within timeout. |
