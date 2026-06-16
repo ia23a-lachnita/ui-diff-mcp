@@ -8,7 +8,7 @@ import { computePixelDiff } from "../signals/pixel-diff.js";
 import { extractEdgeMask } from "../signals/edge.js";
 import { createDirectionalDiffOverlay, type Rgba } from "../images/directional-diff.js";
 import { locateUiElements, LocatorUnavailableError } from "../locator/locateanything-client.js";
-import { buildElementMap, computeLocatorMetadata } from "../locator/element-map.js";
+import { buildElementMap, computeLocatorMetadata, projectElementsToActual } from "../locator/element-map.js";
 import { computeImageLocatorCoverage, type ImageLocatorCoverage } from "../locator/coverage.js";
 import { buildTargetMapJson } from "../locator/diagnostics.js";
 import { pairElements } from "../pairing/pair-elements.js";
@@ -228,6 +228,8 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     }
   }
 
+  const dualLocatorEnabled = process.env["UI_DIFF_DUAL_LOCATOR"] === "1";
+
   if (mode !== "deterministic_only" && status !== "insufficient_free_quota") {
     try {
       const expResp = await locateUiElements({
@@ -241,36 +243,63 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
         timeoutMs: locatorTimeoutMs,
         maxDimension: locatorMaxDimension
       });
-      const actResp = await locateUiElements({
-        endpoint: locatorUrl,
-        request: {
-          imagePath: normalizedActPath,
-          queries: locatorQueries,
-          generationMode: "hybrid",
-          maxBoxesPerQuery: 200
-        },
-        timeoutMs: locatorTimeoutMs,
-        maxDimension: locatorMaxDimension
-      });
       expectedElements.push(...buildElementMap(expResp.elements, { width: expectedImg.width, height: expectedImg.height }));
-      actualElements.push(...buildElementMap(actResp.elements, { width: actualImg.width, height: actualImg.height }));
-      
+
+      if (dualLocatorEnabled) {
+        // Legacy dual-pass: independently locate elements in the actual image too.
+        const actResp = await locateUiElements({
+          endpoint: locatorUrl,
+          request: {
+            imagePath: normalizedActPath,
+            queries: locatorQueries,
+            generationMode: "hybrid",
+            maxBoxesPerQuery: 200
+          },
+          timeoutMs: locatorTimeoutMs,
+          maxDimension: locatorMaxDimension
+        });
+        actualElements.push(...buildElementMap(actResp.elements, { width: actualImg.width, height: actualImg.height }));
+      } else {
+        // Single-pass default: project expected element boxes onto the actual image.
+        // The auditor VLM compares crops at the same coordinates; recovery handles
+        // elements that moved or appeared outside those locations.
+        actualElements.push(...projectElementsToActual(expectedElements, {
+          width: actualImg.width,
+          height: actualImg.height
+        }));
+        warnings.push("Single-pass locator active (projection mode). Set UI_DIFF_DUAL_LOCATOR=1 for legacy dual-pass mode.");
+      }
+
       expectedCoverage = computeImageLocatorCoverage({
         elements: expectedElements,
         promptCount: locatorQueries.length,
         imageSize: { width: expectedImg.width, height: expectedImg.height }
       });
-      actualCoverage = computeImageLocatorCoverage({
-        elements: actualElements,
-        promptCount: locatorQueries.length,
-        imageSize: { width: actualImg.width, height: actualImg.height }
-      });
-      
-      locatorCoverageStatus = expectedCoverage.status === "complete" && actualCoverage.status === "complete"
-        ? "complete"
-        : expectedCoverage.status === "failed" || actualCoverage.status === "failed"
-          ? "failed"
-          : "weak";
+
+      if (dualLocatorEnabled) {
+        actualCoverage = computeImageLocatorCoverage({
+          elements: actualElements,
+          promptCount: locatorQueries.length,
+          imageSize: { width: actualImg.width, height: actualImg.height }
+        });
+        locatorCoverageStatus = expectedCoverage.status === "complete" && actualCoverage.status === "complete"
+          ? "complete"
+          : expectedCoverage.status === "failed" || actualCoverage.status === "failed"
+            ? "failed"
+            : "weak";
+      } else {
+        // Projected actual coverage is a synthetic placeholder — status driven by expected only.
+        actualCoverage = {
+          status: "projected",
+          promptCount: locatorQueries.length,
+          usefulElementCount: actualElements.length,
+          queryCounts: {},
+          queryCoverageRatio: 1,
+          rejectedElementCount: 0,
+          reasons: ["elements_projected_from_expected"]
+        };
+        locatorCoverageStatus = expectedCoverage.status;
+      }
 
       await writeJsonArtifact(path.join(artifactRoot, "target-map-expected.json"), buildTargetMapJson({
         imageRole: "expected",
@@ -280,7 +309,8 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
       await writeJsonArtifact(path.join(artifactRoot, "target-map-actual.json"), buildTargetMapJson({
         imageRole: "actual",
         coverage: actualCoverage,
-        elements: actualElements
+        elements: actualElements,
+        elementsSource: dualLocatorEnabled ? "independent" : "projected"
       }));
       runArtifacts.push(
         { role: "target_map_expected", path: path.join(artifactRoot, "target-map-expected.json") },
@@ -504,7 +534,8 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     ? {
         ...computeLocatorMetadata([...expectedElements, ...actualElements], locatorQueries.length),
         ...(expectedCoverage !== undefined ? { expected: expectedCoverage } : {}),
-        ...(actualCoverage !== undefined ? { actual: actualCoverage } : {})
+        ...(actualCoverage !== undefined ? { actual: actualCoverage } : {}),
+        locatorActualMode: dualLocatorEnabled ? "independent" as const : "projected" as const
       }
     : undefined;
 
