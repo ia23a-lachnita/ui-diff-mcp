@@ -30,7 +30,7 @@ describe.skipIf(!calorixLive)("Calorix live UI diff smoke", () => {
     await expect(fs.access(projectRoot)).resolves.toBeUndefined();
 
     // 10-min locator timeout for large phone screenshots (1200+ px tall)
-    const started = await startUiDiffMcpClient({ LOCATEANYTHING_TIMEOUT_MS: "600000" });
+    const started = await startUiDiffMcpClient({ LOCATEANYTHING_TIMEOUT_MS: "600000", UI_DIFF_DUAL_LOCATOR: "1" });
     try {
       const startResult = await started.client.callTool({
         name: "start_ui_diff_run",
@@ -73,14 +73,11 @@ describe.skipIf(!calorixLive)("Calorix live UI diff smoke", () => {
       expect(reviewedDiffs.length, "at least one diff must be accepted or rejected by the VLM reviewer (not deterministic-only)").toBeGreaterThan(0);
 
       // Per-image locator coverage must be complete for both images.
-      // In single-pass mode the actual coverage status is "projected" (elements derived from
-      // expected); both "complete" and "projected" are acceptable — only "weak" or "failed" is a gate failure.
+      // Gate runs with UI_DIFF_DUAL_LOCATOR=1 so actual is independently located — "projected" is a gate failure.
       expect(report.locatorMetadata?.expected?.status, "expected image locator coverage must be complete").toBe("complete");
-      expect(["complete", "projected"], "actual image locator coverage must be complete or projected").toContain(report.locatorMetadata?.actual?.status);
+      expect(report.locatorMetadata?.actual?.status, "actual image locator coverage must be complete (not projected)").toBe("complete");
       expect(report.locatorMetadata?.actual?.usefulElementCount ?? 0, "actual useful elements must be sufficient").toBeGreaterThanOrEqual(12);
-      if (report.locatorMetadata?.actual?.status !== "projected") {
-        expect(report.locatorMetadata?.actual?.reasons ?? [], "actual locator coverage has weakness reasons").toEqual([]);
-      }
+      expect(report.locatorMetadata?.actual?.reasons ?? [], "actual locator coverage has weakness reasons").toEqual([]);
 
       // Target-map artifacts must be written for both images
       expect(report.runArtifacts.some(a => a.role === "target_map_expected"), "target_map_expected artifact must be present").toBe(true);
@@ -115,7 +112,7 @@ describe.skipIf(!calorixFullLive)("verify:calorix-full-live unbounded all-target
     await expect(fs.access(projectRoot)).resolves.toBeUndefined();
 
     // 10-min locator timeout for large phone screenshots
-    const started = await startUiDiffMcpClient({ LOCATEANYTHING_TIMEOUT_MS: "600000" });
+    const started = await startUiDiffMcpClient({ LOCATEANYTHING_TIMEOUT_MS: "600000", UI_DIFF_DUAL_LOCATOR: "1" });
     try {
       const startResult = await started.client.callTool({
         name: "start_ui_diff_run",
@@ -156,14 +153,11 @@ describe.skipIf(!calorixFullLive)("verify:calorix-full-live unbounded all-target
       expect(reviewedDiffs.length, "at least one diff must be accepted or rejected by the VLM reviewer (not deterministic-only)").toBeGreaterThan(0);
 
       // Per-image locator coverage must be complete for both images.
-      // In single-pass mode the actual coverage status is "projected" (elements derived from
-      // expected); both "complete" and "projected" are acceptable — only "weak" or "failed" is a gate failure.
+      // Gate runs with UI_DIFF_DUAL_LOCATOR=1 so actual is independently located — "projected" is a gate failure.
       expect(report.locatorMetadata?.expected?.status, "expected image locator coverage must be complete").toBe("complete");
-      expect(["complete", "projected"], "actual image locator coverage must be complete or projected").toContain(report.locatorMetadata?.actual?.status);
+      expect(report.locatorMetadata?.actual?.status, "actual image locator coverage must be complete (not projected)").toBe("complete");
       expect(report.locatorMetadata?.actual?.usefulElementCount ?? 0, "actual useful elements must be sufficient").toBeGreaterThanOrEqual(12);
-      if (report.locatorMetadata?.actual?.status !== "projected") {
-        expect(report.locatorMetadata?.actual?.reasons ?? [], "actual locator coverage has weakness reasons").toEqual([]);
-      }
+      expect(report.locatorMetadata?.actual?.reasons ?? [], "actual locator coverage has weakness reasons").toEqual([]);
 
       // Target-map artifacts must be written for both images
       expect(report.runArtifacts.some(a => a.role === "target_map_expected"), "target_map_expected artifact must be present").toBe(true);

@@ -248,7 +248,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
       locatorLanes = expResp.metadata?.lanes;
 
       if (dualLocatorEnabled) {
-        // Legacy dual-pass: independently locate elements in the actual image too.
+        // Dual-pass: independently locate elements in the actual image too.
         const actResp = await locateUiElements({
           endpoint: locatorUrl,
           request: {
@@ -261,6 +261,24 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
           maxDimension: locatorMaxDimension
         });
         actualElements.push(...buildElementMap(actResp.elements, { width: actualImg.width, height: actualImg.height }));
+        // Merge actual-image lane results into locatorLanes (take worse status per lane, sum counts).
+        if (actResp.metadata?.lanes) {
+          const statusRank: Record<string, number> = { failed: 3, not_configured: 2, skipped: 1, complete: 0 };
+          const merged: Record<string, LocatorLaneMetadata> = { ...(locatorLanes ?? {}) };
+          for (const [lane, actMeta] of Object.entries(actResp.metadata.lanes)) {
+            const expMeta = merged[lane];
+            if (!expMeta) {
+              merged[lane] = actMeta;
+            } else {
+              merged[lane] = {
+                ...expMeta,
+                status: (statusRank[actMeta.status] ?? 0) > (statusRank[expMeta.status] ?? 0) ? actMeta.status : expMeta.status,
+                count: expMeta.count + actMeta.count
+              };
+            }
+          }
+          locatorLanes = merged;
+        }
       } else {
         // Single-pass default: project expected element boxes onto the actual image.
         // The auditor VLM compares crops at the same coordinates; recovery handles

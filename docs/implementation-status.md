@@ -4,15 +4,15 @@ This file is the persistent handoff state for implementation agents. Read it bef
 
 ## Current State
 
-- Status: **Production-ready.** All 5 live gates passed at HEAD `6f11d00`. Subsequent artifact-quality commits (`fa5265a`, `097ecf9`) added pixel-diff mask visibility fix, containment NMS, and progress-log documentation. Current HEAD: `097ecf9`.
+- Status: **Live gate re-run required.** Code-review fixes at `a5dfeda`/`c_next` changed gate semantics: `visualClassificationStatus` now becomes "incomplete" when `unclassifiedCount > 0` (the `6f11d00` Calorix run had 12 unclassified items, invalidating that evidence), and both Calorix gates now require dual-locator mode (`UI_DIFF_DUAL_LOCATOR=1`) so actual-image discovery is independently verified. All unit tests still pass. Current HEAD: `a5dfeda` (pending current build commit).
 - Branch: `master`.
 - Approved spec: `docs/superpowers/specs/2026-06-12-ui-diff-mcp-research-design.md`.
 - Active implementation plan: `docs/superpowers/plans/2026-06-12-ui-diff-mcp-mvp-implementation.md`.
 - Production-readiness test plan: `docs/superpowers/plans/2026-06-13-production-readiness-tests.md`.
-- Current task: Code-review findings triage (2026-06-16 evening) — fix `visualClassificationStatus` false-complete on `unclassifiedCount > 0`, propagate sidecar lane metadata into reports, update `.gitignore` for generated run artifacts.
-- Next task: None. Production-ready.
-- Last verification: `npm run verify` — 274 unit tests PASS at HEAD `097ecf9`. All 5 live gates passed at `6f11d00` (NVIDIA 4/4, OpenRouter 2/2, MCP 1/1, Calorix bounded 1/1, Calorix full 1/1).
-- Open blockers: None.
+- Current task: Re-run all 5 live gates to establish fresh sign-off at current HEAD.
+- Next task: None if all gates pass. Production-ready.
+- Last verification: `npm run verify` — 274 unit tests PASS at HEAD `097ecf9`. Calorix gates at `6f11d00` are **invalidated** by `visualClassificationStatus` logic change. NVIDIA/OpenRouter/MCP gates unaffected and still valid.
+- Open blockers: Calorix bounded and full-live gates must be re-run with `UI_DIFF_DUAL_LOCATOR=1` in effect (now hardcoded in test) before production sign-off.
 
 ## Standing Implementation Rules
 
