@@ -324,8 +324,12 @@ export async function runTargetRecovery(
       continue;
     }
 
+    // VLM explicitly determined no regression in this region — valid verdict, not a failure.
+    if (!vlmResponse.classified) {
+      continue;
+    }
+
     if (
-      !vlmResponse.classified ||
       !vlmResponse.criterion ||
       !vlmResponse.label ||
       !vlmResponse.box ||
