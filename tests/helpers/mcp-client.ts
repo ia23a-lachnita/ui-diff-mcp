@@ -1,3 +1,4 @@
+import { Readable } from "node:stream";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
@@ -23,6 +24,10 @@ export async function startUiDiffMcpClient(
   });
 
   await client.connect(transport);
+
+  // Drain the piped stderr so the server's event loop never blocks on a full OS pipe buffer.
+  // Without this, verbose pipeline logging fills the 64KB pipe and freezes the server mid-run.
+  if (transport.stderr) (transport.stderr as Readable).resume();
 
   return {
     client,
