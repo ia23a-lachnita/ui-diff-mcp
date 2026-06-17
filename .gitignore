@@ -7,6 +7,8 @@ coverage/
 artifacts/
 *.log
 live-gate-*.zip
+*-run-*.zip
+all-gates-run-*.zip
 sidecar-out.txt
 sidecar-err.txt
 __pycache__/

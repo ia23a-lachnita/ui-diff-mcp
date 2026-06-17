@@ -181,7 +181,13 @@ describe.skipIf(!calorixFullLive)("verify:calorix-full-live unbounded all-target
       // Ideal: visualClassificationStatus === "complete". When incomplete, the provider trace
       // must contain route_exhausted events for target_recovery explaining why recovery failed.
       // This aligns with the plan acceptance criterion: "blocked if incomplete WITHOUT a trace."
+      // NOTE: a PASS here with incomplete status is a DIAGNOSTIC pass, not production-ready
+      // completion. Production release requires visualClassificationStatus === "complete".
       if (report.visualClassificationStatus === "incomplete") {
+        console.warn(
+          "[DEGRADED PASS] visualClassificationStatus is incomplete — free-tier provider routes exhausted." +
+          " Production release is BLOCKED until full classification completes."
+        );
         const ptFullPath = report.runArtifacts.find(a => a.role === "provider_trace")?.path;
         if (ptFullPath) {
           const ptFull = JSON.parse(await fs.readFile(ptFullPath, "utf8")) as Array<{ event: string; role: string }>;

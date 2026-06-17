@@ -4,14 +4,14 @@ This file is the persistent handoff state for implementation agents. Read it bef
 
 ## Current State
 
-- Status: **Provider route diversity and tracing plan complete. All live gates green at `1738c1a`.** Two-phase free-mode selection (NVIDIA-first, diverse OR fallback), `provider-trace.json` written every run, markdown-JSON stripping for Gemma-class models, OR fallbacks for target_recovery, and gate assertions aligned with the plan acceptance criteria. NVIDIA cosmos3-nano-reasoner is 404; recovery uses nex-agi/nex-n2-pro:free + google/gemma-4-31b-it:free as OR fallbacks. Free-tier rate limits (Gemma 429, Nex timeout) cause recovery route exhaustion on Calorix; provider trace explains this and the full gate accepts incomplete-with-trace per plan. Gemini 2.5 Pro review: agree, no MUST_FIX.
+- Status: **Diagnostic gates pass; production release blocked until full Calorix classification completes.** Provider route diversity and tracing plan is code-complete at `1738c1a`. All isolated gates pass (NVIDIA 4/4, OpenRouter 2/2, MCP 1/1, Calorix bounded 1/1). The full Calorix gate passes with a **DEGRADED PASS** — `visualClassificationStatus: incomplete` because free-tier recovery routes (Nex, Gemma) exhaust at Calorix scale. The provider trace records the exhaustion and the gate accepts incomplete-with-trace per plan acceptance criterion. This is better diagnostics, not production-ready completion. Production release requires `visualClassificationStatus === "complete"`. Gemini 2.5 Pro review: agree, no MUST_FIX.
 - Branch: `master`.
 - Approved spec: `docs/superpowers/specs/2026-06-12-ui-diff-mcp-research-design.md`.
 - Active implementation plan: `docs/superpowers/plans/2026-06-17-provider-route-diversity-and-tracing.md` (all tasks complete).
 - Production-readiness test plan: `docs/superpowers/plans/2026-06-13-production-readiness-tests.md`.
 - Current task: Plan complete. Next: no pending tasks.
 - Last verification: `npm run verify` — 22 integration tests pass, typecheck clean (at `1738c1a`). All 5 live gates pass.
-- Open blockers: None. Known runtime constraint: free-tier recovery models (Nex, Gemma) exhaust on Calorix scale. Provider trace records the exhaustion; the full gate accepts incomplete-with-trace per plan acceptance criterion.
+- Open blockers: **Production release blocked** — full Calorix classification is incomplete due to free-tier recovery model exhaustion (Nex timeout, Gemma 429). Provider trace records the exhaustion and the full gate passes diagnostically, but `visualClassificationStatus: complete` is required for production sign-off. Next step: identify paid or higher-quota recovery route capable of completing all 79 pairs.
 
 ## Standing Implementation Rules
 

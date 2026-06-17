@@ -44,7 +44,14 @@ export function makeFallbackVisionCaller(
   // This prevents burning quota/time retrying an already-known-unhealthy route on
   // every model call (e.g. NVIDIA 429 should not be retried for the rest of the run).
   let healthyStartIndex = 0;
+  // Track exhaustion state across invocations so subsequent calls short-circuit
+  // instead of re-emitting route_exhausted for every model audit after routes deplete.
+  let exhaustedEmitted = false;
+  let persistedLastErr: unknown;
   return async (req) => {
+    if (healthyStartIndex >= candidates.length) {
+      throw persistedLastErr ?? new Error("all provider candidates exhausted");
+    }
     let lastErr: unknown;
     for (let i = healthyStartIndex; i < candidates.length; i++) {
       const candidate = candidates[i]!;
@@ -82,6 +89,7 @@ export function makeFallbackVisionCaller(
         return result;
       } catch (err) {
         lastErr = err;
+        persistedLastErr = err;
         const completedAt = new Date().toISOString();
         const errMsg = err instanceof Error ? err.message : String(err);
         const retryable = isRetryableProviderError(err);
@@ -139,24 +147,28 @@ export function makeFallbackVisionCaller(
               });
             }
           } else {
-            traceSink?.({
-              phase,
-              event: "route_exhausted",
-              role,
-              provider: candidate.provider,
-              model: candidate.model,
-              modelFamilyKey: modelFamilyKey(candidate.model),
-              routeIndex: i,
-              reason: "no more candidates available",
-              status: "error"
-            });
+            if (!exhaustedEmitted) {
+              exhaustedEmitted = true;
+              traceSink?.({
+                phase,
+                event: "route_exhausted",
+                role,
+                provider: candidate.provider,
+                model: candidate.model,
+                modelFamilyKey: modelFamilyKey(candidate.model),
+                routeIndex: i,
+                reason: "no more candidates available",
+                status: "error"
+              });
+            }
           }
           healthyStartIndex++;
         }
       }
     }
-    // All candidates exhausted
-    if (traceSink && candidates.length > 0) {
+    // All candidates exhausted — emit once across all invocations of this caller
+    if (!exhaustedEmitted && traceSink && candidates.length > 0) {
+      exhaustedEmitted = true;
       const last = candidates[candidates.length - 1]!;
       const phase = last.phase ?? "audit";
       const role = phase === "reviewer" ? "reviewer" as const : phase === "recovery" ? "target_recovery" as const : "auditor" as const;
