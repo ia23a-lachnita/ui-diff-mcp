@@ -78,6 +78,36 @@ export const DeterministicMeasurementSchema = z.object({
 });
 export type DeterministicMeasurement = z.infer<typeof DeterministicMeasurementSchema>;
 
+export const ProviderTraceEventSchema = z.object({
+  eventId: z.string().min(1),
+  phase: z.enum(["probe", "audit", "reviewer", "recovery", "quota_preflight"]),
+  event: z.enum([
+    "call_start", "call_success", "call_error",
+    "route_unhealthy", "fallback", "route_exhausted",
+    "probe_result", "quota_result"
+  ]),
+  role: z.enum(["auditor", "reviewer", "target_recovery", "locator", "quota"]),
+  provider: z.string().min(1),
+  model: z.string().min(1),
+  modelFamilyKey: z.string().min(1),
+  routeIndex: z.number().int().min(0).optional(),
+  attempt: z.number().int().min(0).optional(),
+  startedAt: z.string().datetime().optional(),
+  completedAt: z.string().datetime().optional(),
+  durationMs: z.number().int().min(0).optional(),
+  status: z.enum(["ok", "error", "pass", "fail", "not_checked", "skipped"]).optional(),
+  errorKind: z.string().max(120).optional(),
+  httpStatus: z.number().int().optional(),
+  retryable: z.boolean().optional(),
+  reason: z.string().max(500).optional(),
+  // Safe usage metadata — no prompt text, image data, API keys, or raw response bodies
+  inputTokens: z.number().int().min(0).optional(),
+  outputTokens: z.number().int().min(0).optional(),
+  ttftMs: z.number().min(0).optional(),
+  finishReason: z.string().max(64).optional()
+}).strict(); // strict() rejects unknown fields to prevent accidental leakage of sensitive data
+export type ProviderTraceEvent = z.infer<typeof ProviderTraceEventSchema>;
+
 export const UiArtifactSchema = z.object({
   role: z.enum([
     "expected_normalized",
@@ -99,7 +129,8 @@ export const UiArtifactSchema = z.object({
     "audit_trace",
     "coverage_trace",
     "recovery_trace",
-    "debug_summary"
+    "debug_summary",
+    "provider_trace"
   ]),
   path: z.string().min(1),
   pairId: z.string().optional(),

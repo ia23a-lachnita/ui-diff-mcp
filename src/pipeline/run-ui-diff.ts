@@ -22,6 +22,7 @@ import { reviewAndMergeFindings } from "../audit/review-findings.js";
 import { assignDiffComponentsToRecords, traceCoverageDecisions } from "../report/coverage.js";
 import { runTargetRecovery } from "../recovery/target-recovery.js";
 import { writeRunDebugArtifacts, type RunDebugTrace } from "../debug/run-debug.js";
+import { ProviderTraceWriter, writeProviderTrace } from "../debug/provider-trace.js";
 import { buildDeterministicDiffs } from "../diff/deterministic-diffs.js";
 import { writeUiDiffReport, writeReportCheckpoint } from "../report/report-writer.js";
 import type { UiDiffReport, RunStatus, VisualClassificationStatus, LocatorCoverageStatus, DiffRecord, ElementPair, UiArtifact, AuditScope, ModelSelection, RecoverySummary, StageStatus, LocatorLaneMetadata, RunDebugSummary } from "../schemas/core.js";
@@ -157,6 +158,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
   let modelSelection: ModelSelection | undefined = undefined;
   let recoverySummary: RecoverySummary | undefined = undefined;
   const debugTrace: RunDebugTrace = { audit: [], coverage: [], recovery: [] };
+  const providerTrace = new ProviderTraceWriter();
   const allDiffs: DiffRecord[] = [];
   const stages: StageStatus[] = [];
   const createdAt = new Date().toISOString();
@@ -402,7 +404,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
       return [...freeEntries, ...paidEntries];
     });
 
-    const probeResults = await probe(probeEntries, openRouterApiKey, nvidiaApiKey, nvidiaBaseUrl);
+    const probeResults = await probe(probeEntries, openRouterApiKey, nvidiaApiKey, nvidiaBaseUrl, providerTrace.sink);
     for (const p of probeResults) {
       modelHealth.push({
         role: p.role,
@@ -468,26 +470,32 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
           auditorCandidates.map(e => ({
             caller: makeVisionCaller(e, openRouterApiKey, nvidiaApiKey, nvidiaBaseUrl),
             provider: e.provider,
-            model: e.model
+            model: e.model,
+            phase: "audit" as const
           })),
-          makeFallbackWarning("auditor")
+          makeFallbackWarning("auditor"),
+          providerTrace.sink
         );
         const reviewerCaller = makeFallbackVisionCaller(
           reviewerCandidates.map(e => ({
             caller: makeVisionCaller(e, openRouterApiKey, nvidiaApiKey, nvidiaBaseUrl),
             provider: e.provider,
-            model: e.model
+            model: e.model,
+            phase: "reviewer" as const
           })),
-          makeFallbackWarning("reviewer")
+          makeFallbackWarning("reviewer"),
+          providerTrace.sink
         );
         const recoveryCaller = recoveryCandidates.length > 0
           ? makeFallbackVisionCaller(
               recoveryCandidates.map(e => ({
                 caller: makeVisionCaller(e, openRouterApiKey, nvidiaApiKey, nvidiaBaseUrl),
                 provider: e.provider,
-                model: e.model
+                model: e.model,
+                phase: "recovery" as const
               })),
-              makeFallbackWarning("target_recovery")
+              makeFallbackWarning("target_recovery"),
+              providerTrace.sink
             )
           : undefined;
 
@@ -623,6 +631,11 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
   // Write debug trace artifacts and attach summary to the report
   const debugArtifactsResult = await writeRunDebugArtifacts(artifactRoot, debugTrace);
   runArtifacts.push(...debugArtifactsResult.artifacts);
+
+  // Write provider-trace artifact: metadata-only record of all probe, call, route-health,
+  // and fallback events. No prompts, image data, API keys, or raw response bodies.
+  const providerTraceArtifact = await writeProviderTrace(artifactRoot, providerTrace);
+  runArtifacts.push(providerTraceArtifact);
 
   const locatorMetadata = locatorCoverageStatus !== "not_run"
     ? {

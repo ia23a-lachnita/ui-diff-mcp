@@ -1,6 +1,22 @@
 import type { VisionMode } from "./vision-json.js";
 import type { ProbeResult } from "./probes.js";
 
+/**
+ * Normalize a model identifier to its family key for diversity comparisons.
+ * Strips OpenRouter routing/tier suffixes (:free, :beta, :nitro, :extended,
+ * :floor, :YYYYMMDD permaslugs) so the same model served through two providers
+ * maps to the same key.
+ *
+ * Examples:
+ *   nvidia/nemotron-3-nano-omni-30b-a3b-reasoning        → unchanged
+ *   nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free   → nvidia/nemotron-3-nano-omni-30b-a3b-reasoning
+ *   google/gemma-4-31b-it:free                           → google/gemma-4-31b-it
+ *   moonshotai/kimi-k2.6:20250120                        → moonshotai/kimi-k2.6
+ */
+export function modelFamilyKey(model: string): string {
+  return model.replace(/:(?:free|beta|nitro|extended|floor|\d{8})$/i, "");
+}
+
 export type { VisionMode };
 
 export type ModelRole =
@@ -446,28 +462,79 @@ export function selectFallbackModelsForMode(
   excludedRoutes: Array<{ provider: ModelEntry["provider"]; model: string }> = []
 ): ModelEntry[] {
   const results: ModelEntry[] = [];
-  const excluded = [...excludedRoutes];
   const seen = new Set<string>();
 
-  while (results.length < maxCandidates) {
-    const next = selectModelForMode(logicalRole, mode, probeResults, env, excluded);
-    if (!next) break;
-    const key = `${next.provider}:${next.model}`;
-    if (seen.has(key)) break;
-    seen.add(key);
-    results.push(next);
-    excluded.push({ provider: next.provider, model: next.model });
-  }
+  if (mode === "free") {
+    // Phase 1: collect NVIDIA-only routes up to maxCandidates.
+    // Using free_nvidia ensures NVIDIA-first ordering without mixing in OpenRouter
+    // routes during the primary selection loop.
+    const nvidiaExcluded = [...excludedRoutes];
+    while (results.length < maxCandidates) {
+      const next = selectModelForMode(logicalRole, "free_nvidia", probeResults, env, nvidiaExcluded);
+      if (!next) break;
+      const key = `${next.provider}:${next.model}`;
+      if (seen.has(key)) break;
+      seen.add(key);
+      results.push(next);
+      nvidiaExcluded.push({ provider: next.provider, model: next.model });
+    }
 
-  // In free mode, guarantee at least one OpenRouter :free fallback candidate exists
-  // after NVIDIA-preferred routes. Without this, if all passing probes are NVIDIA the
-  // route list is NVIDIA-only and a NVIDIA 429 exhausts all candidates with no fallback.
-  if (mode === "free" && results.length > 0 && !results.some(r => r.provider === "openrouter")) {
-    const orCandidate = selectModelForMode(
-      logicalRole, "free_openrouter", probeResults, env,
-      results.map(r => ({ provider: r.provider, model: r.model }))
-    );
-    if (orCandidate) results.push(orCandidate);
+    // Phase 2: supplement with diverse OpenRouter :free fallbacks.
+    // Prefer routes whose modelFamilyKey is not already in the selected NVIDIA
+    // primaries so a Calorix-scale NVIDIA 429 cascade falls back to a genuinely
+    // different model family rather than a same-model-through-different-provider hop.
+    const nvidiaFamilyKeys = new Set(results.map(r => modelFamilyKey(r.model)));
+    const orExcluded = [...excludedRoutes, ...results.map(r => ({ provider: r.provider, model: r.model }))];
+    const differentFamily: ModelEntry[] = [];
+    const sameFamily: ModelEntry[] = [];
+    for (;;) {
+      const next = selectModelForMode(logicalRole, "free_openrouter", probeResults, env, orExcluded);
+      if (!next) break;
+      const key = `${next.provider}:${next.model}`;
+      orExcluded.push({ provider: next.provider, model: next.model });
+      if (seen.has(key)) continue;
+      if (nvidiaFamilyKeys.has(modelFamilyKey(next.model))) {
+        sameFamily.push(next);
+      } else {
+        differentFamily.push(next);
+      }
+      if (differentFamily.length + sameFamily.length >= maxCandidates) break;
+    }
+
+    // Add all passing different-family OpenRouter routes.
+    for (const c of differentFamily) {
+      const key = `${c.provider}:${c.model}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        results.push(c);
+      }
+    }
+
+    // Same-family OpenRouter route allowed only when no different-family alternative exists.
+    // This lets a same-model-through-different-provider route (e.g. nemotron:free when native
+    // NVIDIA nemotron is the primary) be the last-resort fallback without being skipped entirely.
+    if (differentFamily.length === 0) {
+      for (const c of sameFamily) {
+        const key = `${c.provider}:${c.model}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          results.push(c);
+          break;
+        }
+      }
+    }
+  } else {
+    // Non-free modes: simple sequential selection (no diversity override needed).
+    const excluded = [...excludedRoutes];
+    while (results.length < maxCandidates) {
+      const next = selectModelForMode(logicalRole, mode, probeResults, env, excluded);
+      if (!next) break;
+      const key = `${next.provider}:${next.model}`;
+      if (seen.has(key)) break;
+      seen.add(key);
+      results.push(next);
+      excluded.push({ provider: next.provider, model: next.model });
+    }
   }
 
   return results;

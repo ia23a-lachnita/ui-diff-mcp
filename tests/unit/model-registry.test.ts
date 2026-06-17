@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CANONICAL_MODEL_RANKING, getModelByRole, getRequiredModels, selectModelForMode, selectFallbackModelsForMode, resolveMode, requiredImagesForRole } from "../../src/models/model-registry.js";
+import { CANONICAL_MODEL_RANKING, getModelByRole, getRequiredModels, selectModelForMode, selectFallbackModelsForMode, resolveMode, requiredImagesForRole, modelFamilyKey } from "../../src/models/model-registry.js";
 import type { ProbeResult } from "../../src/models/probes.js";
 
 const NOW = new Date().toISOString();
@@ -274,6 +274,113 @@ describe("requiredImagesForRole", () => {
 
   it("unknown roles default to 2 images", () => {
     expect(requiredImagesForRole("locator")).toBe(2);
+  });
+});
+
+describe("modelFamilyKey", () => {
+  it("strips :free suffix", () => {
+    expect(modelFamilyKey("nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"))
+      .toBe("nvidia/nemotron-3-nano-omni-30b-a3b-reasoning");
+    expect(modelFamilyKey("nex-agi/nex-n2-pro:free")).toBe("nex-agi/nex-n2-pro");
+    expect(modelFamilyKey("google/gemma-4-31b-it:free")).toBe("google/gemma-4-31b-it");
+  });
+
+  it("strips dated permaslug suffix", () => {
+    expect(modelFamilyKey("moonshotai/kimi-k2.6:20250120")).toBe("moonshotai/kimi-k2.6");
+  });
+
+  it("strips :beta, :nitro, :extended, :floor suffixes", () => {
+    expect(modelFamilyKey("some/model:beta")).toBe("some/model");
+    expect(modelFamilyKey("some/model:nitro")).toBe("some/model");
+    expect(modelFamilyKey("some/model:extended")).toBe("some/model");
+    expect(modelFamilyKey("some/model:floor")).toBe("some/model");
+  });
+
+  it("returns model unchanged when no suffix to strip", () => {
+    expect(modelFamilyKey("nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"))
+      .toBe("nvidia/nemotron-3-nano-omni-30b-a3b-reasoning");
+    expect(modelFamilyKey("moonshotai/kimi-k2.6")).toBe("moonshotai/kimi-k2.6");
+    expect(modelFamilyKey("qwen/qwen3.5-397b-a17b")).toBe("qwen/qwen3.5-397b-a17b");
+  });
+
+  it("native NVIDIA and OpenRouter :free copy of the same model share a family key", () => {
+    const native = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning";
+    const orFree = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free";
+    expect(modelFamilyKey(native)).toBe(modelFamilyKey(orFree));
+  });
+});
+
+describe("selectFallbackModelsForMode — route diversity", () => {
+  const withNvidia: Record<string, string | undefined> = { NVIDIA_API_KEY: "test-key" };
+  const noEnv: Record<string, string | undefined> = {};
+
+  it("free mode: NVIDIA primary routes come before OpenRouter routes in the list", () => {
+    const probes: ProbeResult[] = [
+      makeProbe("nvidia", "qwen/qwen3.5-397b-a17b", "auditor"),
+      makeProbe("openrouter", "nex-agi/nex-n2-pro:free", "auditor"),
+    ];
+    const candidates = selectFallbackModelsForMode("auditor", "free", probes, 3, withNvidia);
+    const firstOrIdx = candidates.findIndex(c => c.provider === "openrouter");
+    const lastNvidiaIdx = Math.max(...candidates.map((c, i) => c.provider === "nvidia" ? i : -1));
+    expect(firstOrIdx).toBeGreaterThan(lastNvidiaIdx);
+  });
+
+  it("free mode: multiple passing different-family OpenRouter routes are all returned", () => {
+    const probes: ProbeResult[] = [
+      makeProbe("nvidia", "qwen/qwen3.5-397b-a17b", "auditor"),
+      makeProbe("openrouter", "nex-agi/nex-n2-pro:free", "auditor"),
+      makeProbe("openrouter", "google/gemma-4-31b-it:free", "auditor"),
+    ];
+    const candidates = selectFallbackModelsForMode("auditor", "free", probes, 3, withNvidia);
+    const orModels = candidates.filter(c => c.provider === "openrouter").map(c => c.model);
+    expect(orModels).toContain("nex-agi/nex-n2-pro:free");
+    expect(orModels).toContain("google/gemma-4-31b-it:free");
+  });
+
+  it("free mode: same-family OpenRouter Nemotron is skipped when different-family alternatives pass", () => {
+    const probes: ProbeResult[] = [
+      makeProbe("nvidia", "qwen/qwen3.5-397b-a17b", "auditor"),
+      makeProbe("nvidia", "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning", "auditor"),
+      // same-family as native nemotron:
+      makeProbe("openrouter", "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free", "auditor"),
+      // different-family alternatives:
+      makeProbe("openrouter", "nex-agi/nex-n2-pro:free", "auditor"),
+      makeProbe("openrouter", "google/gemma-4-31b-it:free", "auditor"),
+    ];
+    const candidates = selectFallbackModelsForMode("auditor", "free", probes, 3, withNvidia);
+    const orModels = candidates.filter(c => c.provider === "openrouter").map(c => c.model);
+    // Same-family Nemotron:free must NOT appear when different-family alternatives exist
+    expect(orModels).not.toContain("nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free");
+    // Different-family routes must be chosen instead
+    expect(orModels.length).toBeGreaterThan(0);
+    expect(orModels.some(m => m.includes("nex") || m.includes("gemma"))).toBe(true);
+  });
+
+  it("free mode: same-family OpenRouter Nemotron is used when it is the only passing OpenRouter route", () => {
+    const probes: ProbeResult[] = [
+      makeProbe("nvidia", "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning", "auditor"),
+      makeProbe("openrouter", "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free", "auditor"),
+    ];
+    const candidates = selectFallbackModelsForMode("auditor", "free", probes, 3, withNvidia);
+    const orModels = candidates.filter(c => c.provider === "openrouter").map(c => c.model);
+    // Only same-family option — must still be included as last-resort fallback
+    expect(orModels).toContain("nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free");
+  });
+
+  it("free_nvidia contains no OpenRouter route even when all probes pass", () => {
+    const candidates = selectFallbackModelsForMode("auditor", "free_nvidia", allPass(), 3, withNvidia);
+    expect(candidates.every(c => c.provider === "nvidia")).toBe(true);
+  });
+
+  it("free_openrouter contains no NVIDIA route even when all probes pass", () => {
+    const candidates = selectFallbackModelsForMode("auditor", "free_openrouter", allPass(), 3, withNvidia);
+    expect(candidates.every(c => c.provider === "openrouter")).toBe(true);
+  });
+
+  it("free mode without NVIDIA key selects only OpenRouter routes, all treated as different-family", () => {
+    const candidates = selectFallbackModelsForMode("auditor", "free", allPass(), 3, noEnv);
+    expect(candidates.length).toBeGreaterThan(0);
+    expect(candidates.every(c => c.provider === "openrouter")).toBe(true);
   });
 });
 
