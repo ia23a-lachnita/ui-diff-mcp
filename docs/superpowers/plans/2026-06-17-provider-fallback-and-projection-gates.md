@@ -215,4 +215,16 @@ Gemini 3.1 Pro Preview review attempt on 2026-06-17:
 
 - Command: `gemini -m gemini-3.1-pro-preview --approval-mode plan --skip-trust --output-format text -p "..."`
 - Result: blocked by provider capacity. The CLI retried and returned HTTP 429 / `MODEL_CAPACITY_EXHAUSTED` with message `No capacity available for model gemini-3.1-pro-preview on the server`.
-- Status: review not completed. Retry Gemini 3.1 Pro Preview before or during Task 1 implementation if capacity returns.
+
+Fallback review attempts on 2026-06-17, strongest-first:
+
+- `gemini-3-pro-preview`: failed with `Invalid stream: The model returned an empty response or malformed tool call`.
+- `gemini-2.5-pro`: failed with `Invalid stream: The model returned an empty response or malformed tool call`.
+- `gemini-2.5-flash`: completed review.
+
+Gemini 2.5 Flash review result:
+
+- `AGREEMENT_STATUS: agree`
+- `MUST_FIX: none`
+- `SHOULD_FIX: none`
+- `RATIONALE: The plan comprehensively addresses all specified requirements. It clearly outlines how projection will remain the default, how the dual locator will be restricted, the fallback logic for free mode (NVIDIA-first to OpenRouter), the strict NVIDIA-only behavior for free_nvidia, independent selection for target_recovery, and explicit reporting of mixed provider usage. The tasks are well-defined with clear verification steps.`

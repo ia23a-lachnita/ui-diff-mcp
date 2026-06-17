@@ -11,7 +11,7 @@ This file is the persistent handoff state for implementation agents. Read it bef
 - Production-readiness test plan: `docs/superpowers/plans/2026-06-13-production-readiness-tests.md`.
 - Current task: Implement Task 1 from the provider fallback/projection plan: lock Calorix bounded/full gates to projection.
 - Next task: Guard the legacy dual locator behind `UI_DIFF_ALLOW_DUAL_LOCATOR=1` plus `UI_DIFF_DUAL_LOCATOR_REASON`, then add ordered provider fallback and independent target-recovery route selection.
-- Last verification: Planning-only update. Gemini 3.1 Pro Preview review was attempted but blocked by HTTP 429 / `MODEL_CAPACITY_EXHAUSTED`. A fresh `npm run verify` is required before the provider-fallback implementation commit.
+- Last verification: Planning-only update. Gemini 3.1 Pro Preview review was attempted but blocked by HTTP 429 / `MODEL_CAPACITY_EXHAUSTED`; fallback attempts with Gemini 3 Pro Preview and Gemini 2.5 Pro returned malformed streams; Gemini 2.5 Flash completed review with `AGREEMENT_STATUS: agree`, `MUST_FIX: none`, `SHOULD_FIX: none`. A fresh `npm run verify` is required before the provider-fallback implementation commit.
 - Open blockers: Calorix production sign-off is blocked until default Calorix gates run in projection mode, audit/reviewer/recovery can fall back away from unhealthy native NVIDIA free routes in `free` mode, explicit `free_nvidia` stays NVIDIA-only, and bounded/full Calorix live gates pass at HEAD with debug artifacts present.
 
 ## Standing Implementation Rules
@@ -113,6 +113,7 @@ This file is the persistent handoff state for implementation agents. Read it bef
 | 2026-06-17 | `9ca9459` | Launch script update | Not applicable; scripts only | Added `launch-ui-diff-claude.bat` and `launch-ui-diff-claude.ps1` with optional prompt parameter. |
 | 2026-06-17 | this commit | Provider-fallback handoff update | Review only; no tests run | Recorded June 17 live-gate failure at `9ca9459`: audit saw widespread native NVIDIA invalid/truncated JSON, recovery saw NVIDIA HTTP 429 on all 12 calls, and the next task is audit/recovery fallback to alternate passing routes such as OpenRouter free. |
 | 2026-06-17 | this commit | Provider fallback and projection gate plan | Gemini 3.1 Pro Preview review attempted, blocked by HTTP 429 / `MODEL_CAPACITY_EXHAUSTED`; `git diff --check` clean with CRLF warning only | Added `docs/superpowers/plans/2026-06-17-provider-fallback-and-projection-gates.md`. The plan makes projection the default Calorix gate path, guards the legacy dual locator, keeps `free_nvidia` NVIDIA-only, adds NVIDIA-first/OpenRouter-free fallback for `free`, and selects target recovery independently. |
+| 2026-06-17 | this commit | Provider fallback plan fallback review | Gemini 3.1 Pro Preview blocked by capacity; Gemini 3 Pro Preview and Gemini 2.5 Pro returned malformed streams; Gemini 2.5 Flash agreed with no MUST_FIX/SHOULD_FIX | Updated the plan review section with the strongest-first reviewer attempts and the successful Gemini 2.5 Flash review result. |
 
 ## Screen Parser Locator Hardening Plan - 2026-06-15
 
