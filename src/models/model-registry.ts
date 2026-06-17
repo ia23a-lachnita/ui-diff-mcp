@@ -437,6 +437,31 @@ export function selectModelForMode(
   return undefined;
 }
 
+export function selectFallbackModelsForMode(
+  logicalRole: "auditor" | "reviewer" | "escalation" | "target_recovery",
+  mode: VisionMode,
+  probeResults: ProbeResult[],
+  maxCandidates: number,
+  env: Record<string, string | undefined> = process.env as Record<string, string | undefined>,
+  excludedRoutes: Array<{ provider: ModelEntry["provider"]; model: string }> = []
+): ModelEntry[] {
+  const results: ModelEntry[] = [];
+  const excluded = [...excludedRoutes];
+  const seen = new Set<string>();
+
+  while (results.length < maxCandidates) {
+    const next = selectModelForMode(logicalRole, mode, probeResults, env, excluded);
+    if (!next) break;
+    const key = `${next.provider}:${next.model}`;
+    if (seen.has(key)) break;
+    seen.add(key);
+    results.push(next);
+    excluded.push({ provider: next.provider, model: next.model });
+  }
+
+  return results;
+}
+
 export function resolveMode(rawMode: string | undefined): VisionMode {
   // 'free_only' is deprecated and now treated as 'free'
   if (rawMode === "free_only") {
