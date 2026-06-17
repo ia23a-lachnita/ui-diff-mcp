@@ -87,6 +87,21 @@ describe("makeFallbackVisionCaller", () => {
     expect(events).toHaveLength(1); // event fires once at the transition, not per-call
   });
 
+  it("route_exhausted traceSink emits exactly once across repeated post-exhaustion calls, and short-circuit skips call_start", async () => {
+    const trace: string[] = [];
+    const traceSink = vi.fn((e: { event: string }) => trace.push(e.event));
+    const c1 = cand(vi.fn().mockRejectedValue(new Error("HTTP 429")), "nvidia", "m1");
+    const c2 = cand(vi.fn().mockRejectedValue(new Error("HTTP 503")), "openrouter", "m2");
+    const caller = makeFallbackVisionCaller([c1, c2], undefined, traceSink as never);
+    await expect(caller(dummyReq)).rejects.toThrow(); // exhausts both candidates
+    await expect(caller(dummyReq)).rejects.toThrow(); // short-circuits — no new provider calls
+    await expect(caller(dummyReq)).rejects.toThrow(); // short-circuits — no new provider calls
+    // route_exhausted must appear exactly once regardless of how many times caller is invoked after exhaustion
+    expect(trace.filter(e => e === "route_exhausted")).toHaveLength(1);
+    // call 1 emits 2 call_starts (m1 then m2); calls 2 and 3 short-circuit before the loop
+    expect(trace.filter(e => e === "call_start")).toHaveLength(2);
+  });
+
   it("two separate caller instances have independent health state", async () => {
     const failFn = vi.fn().mockRejectedValue(new Error("HTTP 429"));
     const okFn = vi.fn().mockResolvedValue(ok2);

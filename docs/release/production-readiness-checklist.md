@@ -154,9 +154,12 @@ reports final diff counts without these traces is not acceptable for Calorix sig
 ## Provider Trace Gate
 
 Every run writes `artifacts/provider-trace.json` alongside the audit, coverage,
-and recovery traces. Release sign-off is **blocked** if `visualClassificationStatus`
-is `incomplete` without a `provider-trace.json` that explains route exhaustion or
-fallback decisions.
+and recovery traces.
+
+Production release sign-off is **blocked** whenever `visualClassificationStatus !== "complete"`.
+A `provider-trace.json` that explains route exhaustion makes an incomplete result an acceptable
+**diagnostic/degraded gate pass** — it does **not** satisfy the production sign-off requirement.
+Incomplete-with-trace means "the tool instrumented its failure correctly," not "the tool finished."
 
 **Triage recipe:**
 
