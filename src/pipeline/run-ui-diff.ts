@@ -12,7 +12,8 @@ import { buildElementMap, computeLocatorMetadata, projectElementsToActual, merge
 import { computeImageLocatorCoverage, type ImageLocatorCoverage } from "../locator/coverage.js";
 import { buildTargetMapJson } from "../locator/diagnostics.js";
 import { pairElements } from "../pairing/pair-elements.js";
-import { selectModelForMode, resolveMode, CANONICAL_MODEL_RANKING, type ModelEntry } from "../models/model-registry.js";
+import { selectModelForMode, selectFallbackModelsForMode, resolveMode, CANONICAL_MODEL_RANKING, type ModelEntry } from "../models/model-registry.js";
+import { makeFallbackVisionCaller } from "../models/fallback-caller.js";
 import { probeRequiredModels, type ProbeResult } from "../models/probes.js";
 import { estimateFreeRunBudget, lookupOpenRouterQuota, checkFreeQuotaSufficiency } from "../models/free-quota.js";
 import { makeOpenRouterVisionCaller, makeNvidiaVisionCaller, type VisionMode } from "../models/vision-json.js";
@@ -413,11 +414,10 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
       });
     }
 
-    const auditorEntry = selectModelForMode("auditor", mode, probeResults, process.env);
-    // Reviewer selects independently without excluding the auditor model.
-    // Independence is desirable but not at the cost of a significantly weaker model —
-    // the best passing candidate wins for both roles.
-    const reviewerEntry = selectModelForMode("reviewer", mode, probeResults, process.env);
+    const auditorCandidates = selectFallbackModelsForMode("auditor", mode, probeResults, 3, process.env);
+    const reviewerCandidates = selectFallbackModelsForMode("reviewer", mode, probeResults, 3, process.env);
+    const auditorEntry = auditorCandidates[0];
+    const reviewerEntry = reviewerCandidates[0];
 
     await checkpoint("model_probe", "complete", pairs, modelHealth);
 
@@ -433,8 +433,20 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
           auditor: { model: auditorEntry.model, provider: auditorEntry.provider, costClass: auditorEntry.costClass },
           reviewer: { model: reviewerEntry.model, provider: reviewerEntry.provider, costClass: reviewerEntry.costClass }
         };
-        const auditorCaller = makeVisionCaller(auditorEntry, openRouterApiKey, nvidiaApiKey, nvidiaBaseUrl);
-        const reviewerCaller = makeVisionCaller(reviewerEntry, openRouterApiKey, nvidiaApiKey, nvidiaBaseUrl);
+        const auditorCaller = makeFallbackVisionCaller(
+          auditorCandidates.map(e => ({
+            caller: makeVisionCaller(e, openRouterApiKey, nvidiaApiKey, nvidiaBaseUrl),
+            provider: e.provider,
+            model: e.model
+          }))
+        );
+        const reviewerCaller = makeFallbackVisionCaller(
+          reviewerCandidates.map(e => ({
+            caller: makeVisionCaller(e, openRouterApiKey, nvidiaApiKey, nvidiaBaseUrl),
+            provider: e.provider,
+            model: e.model
+          }))
+        );
 
         visualClassificationStatus = "incomplete";
         const auditedDiffs: DiffRecord[] = [];
