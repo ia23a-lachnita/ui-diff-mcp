@@ -431,13 +431,33 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
       {
         const recoveryCandidates = selectFallbackModelsForMode("target_recovery", mode, probeResults, 3, process.env);
         const recoveryEntry = recoveryCandidates[0];
+        const toRouteEntry = (e: ModelEntry) => ({ model: e.model, provider: e.provider, costClass: e.costClass });
         modelSelection = {
-          auditor: { model: auditorEntry.model, provider: auditorEntry.provider, costClass: auditorEntry.costClass },
-          reviewer: { model: reviewerEntry.model, provider: reviewerEntry.provider, costClass: reviewerEntry.costClass },
-          ...(recoveryEntry
-            ? { targetRecovery: { model: recoveryEntry.model, provider: recoveryEntry.provider, costClass: recoveryEntry.costClass } }
-            : {})
+          auditor: toRouteEntry(auditorEntry),
+          reviewer: toRouteEntry(reviewerEntry),
+          ...(recoveryEntry ? { targetRecovery: toRouteEntry(recoveryEntry) } : {}),
+          auditorRoutes: auditorCandidates.map(toRouteEntry),
+          reviewerRoutes: reviewerCandidates.map(toRouteEntry),
+          ...(recoveryCandidates.length > 0 ? { targetRecoveryRoutes: recoveryCandidates.map(toRouteEntry) } : {})
         };
+        // Warn when the primary is NVIDIA but OpenRouter fallbacks exist in free mode — the run may
+        // silently switch providers mid-flight and that change should be observable in the report.
+        for (const [role, primary, routes] of [
+          ["auditor", auditorEntry, auditorCandidates],
+          ["reviewer", reviewerEntry, reviewerCandidates],
+          ["target_recovery", recoveryEntry, recoveryCandidates]
+        ] as const) {
+          if (
+            primary?.provider === "nvidia" &&
+            routes.some(r => r.provider === "openrouter") &&
+            (mode === "free")
+          ) {
+            warnings.push(
+              `${role} primary route is NVIDIA (${primary.model}); OpenRouter fallback routes are available ` +
+              `and will activate automatically on NVIDIA rate-limit or malformed-JSON failures in free mode.`
+            );
+          }
+        }
         const auditorCaller = makeFallbackVisionCaller(
           auditorCandidates.map(e => ({
             caller: makeVisionCaller(e, openRouterApiKey, nvidiaApiKey, nvidiaBaseUrl),

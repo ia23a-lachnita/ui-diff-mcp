@@ -180,22 +180,19 @@ export const AuditScopeSchema = z.object({
 });
 export type AuditScope = z.infer<typeof AuditScopeSchema>;
 
+const ModelRouteEntrySchema = z.object({
+  model: z.string().min(1),
+  provider: z.string().min(1),
+  costClass: z.enum(["free", "paid"])
+});
+
 export const ModelSelectionSchema = z.object({
-  auditor: z.object({
-    model: z.string().min(1),
-    provider: z.string().min(1),
-    costClass: z.enum(["free", "paid"])
-  }).optional(),
-  reviewer: z.object({
-    model: z.string().min(1),
-    provider: z.string().min(1),
-    costClass: z.enum(["free", "paid"])
-  }).optional(),
-  targetRecovery: z.object({
-    model: z.string().min(1),
-    provider: z.string().min(1),
-    costClass: z.enum(["free", "paid"])
-  }).optional()
+  auditor: ModelRouteEntrySchema.optional(),
+  reviewer: ModelRouteEntrySchema.optional(),
+  targetRecovery: ModelRouteEntrySchema.optional(),
+  auditorRoutes: z.array(ModelRouteEntrySchema).optional(),
+  reviewerRoutes: z.array(ModelRouteEntrySchema).optional(),
+  targetRecoveryRoutes: z.array(ModelRouteEntrySchema).optional()
 });
 export type ModelSelection = z.infer<typeof ModelSelectionSchema>;
 
