@@ -42,16 +42,16 @@ That last hop changed provider but not model family. OpenRouter activity also sh
 - `tests/unit/model-registry.test.ts`
 - `docs/superpowers/plans/2026-06-14-free-first-ui-diff-hardening.md` if the route policy table needs clarification
 
-- [ ] Add a `modelFamilyKey` helper for route comparison. It should normalize provider suffixes and known router aliases, including:
+- [x] Add a `modelFamilyKey` helper for route comparison. It should normalize provider suffixes and known router aliases, including:
   - OpenRouter `:free` suffixes,
   - dated OpenRouter permaslug suffixes when present in trace/report metadata,
   - native-vs-router copies of the same family such as Nemotron 3 Nano Omni.
-- [ ] Extend `selectFallbackModelsForMode` or replace it with a route-list selector that can append more than one OpenRouter fallback in `free` mode.
-- [ ] Preserve NVIDIA-first ordering for default `free` mode.
-- [ ] When appending OpenRouter fallbacks, prefer passing routes whose `modelFamilyKey` is not already present in the selected NVIDIA routes.
-- [ ] Allow a same-family OpenRouter route only after all different-family passing OpenRouter routes have been considered, or when it is the only passing OpenRouter route.
-- [ ] Keep `free_nvidia`, `free_openrouter`, and `paid` mode boundaries exact.
-- [ ] Add tests proving:
+- [x] Extend `selectFallbackModelsForMode` or replace it with a route-list selector that can append more than one OpenRouter fallback in `free` mode.
+- [x] Preserve NVIDIA-first ordering for default `free` mode.
+- [x] When appending OpenRouter fallbacks, prefer passing routes whose `modelFamilyKey` is not already present in the selected NVIDIA routes.
+- [x] Allow a same-family OpenRouter route only after all different-family passing OpenRouter routes have been considered, or when it is the only passing OpenRouter route.
+- [x] Keep `free_nvidia`, `free_openrouter`, and `paid` mode boundaries exact.
+- [x] Add tests proving:
   - NVIDIA primaries stay first in `free`,
   - multiple passing OpenRouter auditor routes can be returned,
   - same-family OpenRouter Nemotron is not the only OpenRouter hop when Nex/Gemma/Qwen-style alternatives pass,
@@ -75,7 +75,7 @@ npm run typecheck
 - `tests/unit/run-debug.test.ts`
 - `tests/unit/schemas.test.ts`
 
-- [ ] Define a metadata-only provider trace event schema with fields similar to:
+- [x] Define a metadata-only provider trace event schema with fields similar to:
   - `eventId`
   - `phase`: `probe | audit | reviewer | recovery | quota_preflight`
   - `event`: `call_start | call_success | call_error | route_unhealthy | fallback | route_exhausted | probe_result | quota_result`
@@ -89,11 +89,11 @@ npm run typecheck
   - `status`
   - `errorKind`, `httpStatus`, `retryable`, `reason`
   - optional safe usage metadata such as token counts, time to first token, and finish reason when available.
-- [ ] Explicitly exclude prompt text, image data URLs/base64, raw provider response bodies, API keys, and local crop payloads from the schema.
-- [ ] Write `artifacts/provider-trace.json` alongside `audit-trace.json`, `coverage-trace.json`, and `recovery-trace.json`.
-- [ ] Add `provider_trace` to `runArtifacts` roles.
-- [ ] Keep `report.json` compact: include only the artifact pointer and high-level warnings, not the whole provider trace inline.
-- [ ] Add tests proving the writer emits valid JSON and rejects/omits unsafe fields.
+- [x] Explicitly exclude prompt text, image data URLs/base64, raw provider response bodies, API keys, and local crop payloads from the schema.
+- [x] Write `artifacts/provider-trace.json` alongside `audit-trace.json`, `coverage-trace.json`, and `recovery-trace.json`.
+- [x] Add `provider_trace` to `runArtifacts` roles.
+- [x] Keep `report.json` compact: include only the artifact pointer and high-level warnings, not the whole provider trace inline.
+- [x] Add tests proving the writer emits valid JSON and rejects/omits unsafe fields.
 
 **Verification:**
 
@@ -115,13 +115,13 @@ npm run typecheck
 - `src/pipeline/run-ui-diff.ts`
 - model-client and fallback-caller tests
 
-- [ ] Add an optional trace sink or callback that model probes can call for each provider/model/role probe result.
-- [ ] Record why repeated same-model probe calls occurred by including role and phase. Example: the same model family can be probed once as auditor and once as reviewer.
-- [ ] Record quota preflight results without storing API key data.
-- [ ] Add trace hooks to the OpenRouter and NVIDIA vision callers for `call_start`, `call_success`, and `call_error`.
-- [ ] Make fallback-caller emit `route_unhealthy`, `fallback`, and `route_exhausted` events with the reason used to advance the sticky route index.
-- [ ] Preserve current user-facing warnings for NVIDIA to OpenRouter fallback, but use provider trace as the detailed source of truth.
-- [ ] Make sure exceptions thrown before a provider generation is created still produce local trace events, because provider dashboards may omit those failed attempts.
+- [x] Add an optional trace sink or callback that model probes can call for each provider/model/role probe result.
+- [x] Record why repeated same-model probe calls occurred by including role and phase. Example: the same model family can be probed once as auditor and once as reviewer.
+- [x] Record quota preflight results without storing API key data.
+- [x] Add trace hooks to the OpenRouter and NVIDIA vision callers for `call_start`, `call_success`, and `call_error`.
+- [x] Make fallback-caller emit `route_unhealthy`, `fallback`, and `route_exhausted` events with the reason used to advance the sticky route index.
+- [x] Preserve current user-facing warnings for NVIDIA to OpenRouter fallback, but use provider trace as the detailed source of truth.
+- [x] Make sure exceptions thrown before a provider generation is created still produce local trace events, because provider dashboards may omit those failed attempts.
 
 **Verification:**
 
@@ -140,19 +140,19 @@ npm run typecheck
 - `src/recovery/target-recovery.ts`
 - fallback and audit/recovery tests
 
-- [ ] Keep retryable provider failures sticky-skipped for the rest of the role/run.
-- [ ] Treat these as route-health failures:
+- [x] Keep retryable provider failures sticky-skipped for the rest of the role/run.
+- [x] Treat these as route-health failures:
   - HTTP 429 or provider quota exhaustion,
   - provider timeout,
   - transport/network failure,
   - malformed/truncated provider JSON,
   - strict schema parse failure caused by invalid provider output.
-- [ ] Do not mark a route unhealthy for valid negative decisions:
+- [x] Do not mark a route unhealthy for valid negative decisions:
   - auditor `hasDiff: false`,
   - recovery `classified: false`,
   - reviewer rejection with a valid schema.
-- [ ] Distinguish provider failure from model judgment in trace fields and debug summaries.
-- [ ] Keep `free_nvidia` exhaustion explicit: no OpenRouter fallback, status incomplete/model-unavailable as appropriate, and provider trace shows route exhaustion.
+- [x] Distinguish provider failure from model judgment in trace fields and debug summaries.
+- [x] Keep `free_nvidia` exhaustion explicit: no OpenRouter fallback, status incomplete/model-unavailable as appropriate, and provider trace shows route exhaustion.
 
 **Verification:**
 
@@ -170,12 +170,12 @@ npm run typecheck
 - `tests/live/openrouter.live.test.ts`
 - `docs/release/production-readiness-checklist.md`
 
-- [ ] Require `provider_trace` artifact presence in Calorix bounded and full gates.
-- [ ] Assert `provider-trace.json` has at least probe events and runtime events for the selected auditor/reviewer routes.
-- [ ] If a provider fallback warning appears, assert the trace contains a matching `fallback` event.
-- [ ] If at least two different-family OpenRouter auditor routes pass probes, assert the auditor fallback chain includes more than one OpenRouter family.
-- [ ] If the fallback chain contains same-family native+OpenRouter routes, log a clear diagnostic warning rather than treating it as a silent success.
-- [ ] Update production-readiness checklist so release sign-off requires provider trace alongside audit, coverage, and recovery traces.
+- [x] Require `provider_trace` artifact presence in Calorix bounded and full gates.
+- [x] Assert `provider-trace.json` has at least probe events and runtime events for the selected auditor/reviewer routes.
+- [x] If a provider fallback warning appears, assert the trace contains a matching `fallback` event.
+- [x] If at least two different-family OpenRouter auditor routes pass probes, assert the auditor fallback chain includes more than one OpenRouter family.
+- [x] If the fallback chain contains same-family native+OpenRouter routes, log a clear diagnostic warning rather than treating it as a silent success.
+- [x] Update production-readiness checklist so release sign-off requires provider trace alongside audit, coverage, and recovery traces.
 
 **Verification:**
 
@@ -195,15 +195,15 @@ Live tests require the environment variables documented in `AGENTS.md`.
 - `docs/release/production-readiness-checklist.md`
 - `docs/implementation-status.md`
 
-- [ ] Document what `provider-trace.json` contains and what it deliberately omits.
-- [ ] Document that OpenRouter activity exports show OpenRouter-routed generations only; native NVIDIA API calls are not expected there.
-- [ ] Document that failed HTTP/probe attempts may be absent from provider dashboards but must appear in local provider trace.
-- [ ] Add a short triage recipe:
+- [x] Document what `provider-trace.json` contains and what it deliberately omits.
+- [x] Document that OpenRouter activity exports show OpenRouter-routed generations only; native NVIDIA API calls are not expected there.
+- [x] Document that failed HTTP/probe attempts may be absent from provider dashboards but must appear in local provider trace.
+- [x] Add a short triage recipe:
   - check `report.json` warnings,
   - open `provider-trace.json`,
   - group by `role/provider/modelFamilyKey/event`,
   - compare with `audit-trace.json` only after route health is understood.
-- [ ] Update `docs/implementation-status.md` with the active plan, intended verification, and latest known Calorix blocker.
+- [x] Update `docs/implementation-status.md` with the active plan, intended verification, and latest known Calorix blocker.
 
 **Verification:**
 
@@ -218,13 +218,13 @@ git diff --check
 - `docs/implementation-status.md`
 - optionally `docs/release/*.md` if a fresh readiness report is written
 
-- [ ] Run deterministic verification:
+- [x] Run deterministic verification:
 
 ```powershell
 npm run verify
 ```
 
-- [ ] Run live gates in this order:
+- [x] Run live gates in this order:
 
 ```powershell
 npm run verify:nvidia-live
@@ -234,14 +234,14 @@ npm run verify:calorix-live
 npm run verify:calorix-full-live
 ```
 
-- [ ] For the fresh Calorix reports, record:
+- [x] For the fresh Calorix reports, record:
   - `locatorActualMode`,
   - `visualClassificationStatus`,
   - selected auditor/reviewer/recovery routes,
   - provider-trace artifact path,
   - fallback events by role,
   - route exhaustion reasons if the gate still fails.
-- [ ] Update plan checkboxes and implementation status before committing the sign-off or failure report.
+- [x] Update plan checkboxes and implementation status before committing the sign-off or failure report.
 
 **Verification:**
 
