@@ -4,15 +4,15 @@ This file is the persistent handoff state for implementation agents. Read it bef
 
 ## Current State
 
-- Status: **Debug-insight plan drafted before next live gate run.** Current HEAD before this docs update: `3d38e4f`. The latest Calorix run artifacts show target and recovery evidence exists, but the report cannot explain why individual audited targets or recovery candidates did not become final classified diffs. New plan: `docs/superpowers/plans/2026-06-16-run-debug-insights.md`.
+- Status: **Provider-fallback hardening needed after traced Calorix live-gate failure.** Current HEAD before this docs update: `9ca9459`. The run-debug trace system is implemented and the June 17 live gates proved it can explain loss points. Fresh Calorix bounded/full gates failed because the selected native NVIDIA free audit route often returned truncated/non-JSON content under high call volume, then recovery exhausted the same NVIDIA free quota and received HTTP 429 on all recovery calls.
 - Branch: `master`.
 - Approved spec: `docs/superpowers/specs/2026-06-12-ui-diff-mcp-research-design.md`.
 - Active implementation plan: `docs/superpowers/plans/2026-06-12-ui-diff-mcp-mvp-implementation.md`.
 - Production-readiness test plan: `docs/superpowers/plans/2026-06-13-production-readiness-tests.md`.
-- Current task: Review and approve `docs/superpowers/plans/2026-06-16-run-debug-insights.md` before running new Calorix live gates.
-- Next task: Implement run debug traces, then re-run Calorix live gates with trace artifacts enabled.
-- Last verification: `npm test` and `npm run typecheck` passed during code-review cycle at `a1343d2`; later documentation/status commits did not change runtime code. A fresh `npm run verify` is required after implementing the debug-insight plan.
-- Open blockers: Fresh Calorix bounded/full live gates should not be used for production sign-off until the report includes audit, coverage, and recovery trace artifacts explaining lost candidates.
+- Current task: Plan/implement role-aware provider fallback for high-volume audit and target recovery.
+- Next task: Select `target_recovery` independently from `auditor`, add ordered fallback callers for provider/runtime failures, then re-run deterministic verification and all live gates.
+- Last verification: Reported live gates at `9ca9459`: NVIDIA free probes passed 4/4, OpenRouter free passed 2/2, MCP full live passed 1/1, Calorix bounded failed after 341s with `visualClassificationStatus=incomplete`, and Calorix full failed after 71s with the same provider failure pattern. A fresh `npm run verify` is required before the provider-fallback implementation commit.
+- Open blockers: Calorix production sign-off is blocked until audit and recovery can fall back away from unreliable/rate-limited native NVIDIA free routes, and bounded/full Calorix live gates pass at HEAD with debug artifacts present.
 
 ## Standing Implementation Rules
 
@@ -109,6 +109,9 @@ This file is the persistent handoff state for implementation agents. Read it bef
 | 2026-06-16 | `6f11d00` | Calorix live test fix + all gates re-run | All 5 live gates PASSED at HEAD `6f11d00` | Fixed calorix-smoke.live.test.ts to accept "projected" actual coverage status in single-pass mode. Gates: NVIDIA 4/4 (46s), OpenRouter 2/2 (127s), MCP 1/1 (55s), Calorix bounded 1/1 (492s, 619 diffs, 81 projected pairs), Calorix full 1/1 (101s, 507 diffs, auditLimited=false). |
 | 2026-06-16 | `fa5265a` | Pixel-diff mask visibility fix + containment NMS | 274 unit tests PASS | Fixed pixel-diff mask encoding 0/1→0/255 so mask PNGs are visible instead of solid black. Added `suppressContainedElements()` after IoU NMS to remove small elements ≥85% covered by a moderately-larger element (area ratio <6×), reducing redundant crops. Fixed unit test to count non-zero mask pixels instead of summing values. |
 | 2026-06-16 | this commit | Run debug-insight implementation plan | Plan self-review complete; Gemini 3.1 Pro Preview review: agree, MUST_FIX none, SHOULD_FIX none | Added `docs/superpowers/plans/2026-06-16-run-debug-insights.md`. The plan adds audit, coverage, and recovery trace artifacts so the next Calorix live run can explain why target-pair and recovery candidates did or did not become final classified diffs. |
+| 2026-06-17 | `fc6e269` | Run debug trace implementation | Verification not recorded in this status file before this update | Implemented audit, coverage, and recovery traces; added debug-summary/report fields; tightened Calorix live assertions to require trace artifacts. |
+| 2026-06-17 | `9ca9459` | Launch script update | Not applicable; scripts only | Added `launch-ui-diff-claude.bat` and `launch-ui-diff-claude.ps1` with optional prompt parameter. |
+| 2026-06-17 | this commit | Provider-fallback handoff update | Review only; no tests run | Recorded June 17 live-gate failure at `9ca9459`: audit saw widespread native NVIDIA invalid/truncated JSON, recovery saw NVIDIA HTTP 429 on all 12 calls, and the next task is audit/recovery fallback to alternate passing routes such as OpenRouter free. |
 
 ## Screen Parser Locator Hardening Plan - 2026-06-15
 
