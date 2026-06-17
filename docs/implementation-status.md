@@ -4,15 +4,15 @@ This file is the persistent handoff state for implementation agents. Read it bef
 
 ## Current State
 
-- Status: **Debug-insight plan drafted before next live gate run.** Current HEAD before this docs update: `3d38e4f`. The latest Calorix run artifacts show target and recovery evidence exists, but the report cannot explain why individual audited targets or recovery candidates did not become final classified diffs. New plan: `docs/superpowers/plans/2026-06-16-run-debug-insights.md`.
+- Status: **Provider-fallback and projection-gate hardening planned.** The run-debug trace system is implemented and the June 17 live gates proved it can explain loss points. Fresh Calorix bounded/full gates failed because the selected native NVIDIA free audit route often returned truncated/non-JSON content under high call volume, then recovery exhausted the same NVIDIA free quota and received HTTP 429 on all recovery calls. A follow-up implementation plan now also corrects the accidental use of the legacy dual locator in Calorix gates.
 - Branch: `master`.
 - Approved spec: `docs/superpowers/specs/2026-06-12-ui-diff-mcp-research-design.md`.
-- Active implementation plan: `docs/superpowers/plans/2026-06-12-ui-diff-mcp-mvp-implementation.md`.
+- Active implementation plan: `docs/superpowers/plans/2026-06-17-provider-fallback-and-projection-gates.md`.
 - Production-readiness test plan: `docs/superpowers/plans/2026-06-13-production-readiness-tests.md`.
-- Current task: Review and approve `docs/superpowers/plans/2026-06-16-run-debug-insights.md` before running new Calorix live gates.
-- Next task: Implement run debug traces, then re-run Calorix live gates with trace artifacts enabled.
-- Last verification: `npm test` and `npm run typecheck` passed during code-review cycle at `a1343d2`; later documentation/status commits did not change runtime code. A fresh `npm run verify` is required after implementing the debug-insight plan.
-- Open blockers: Fresh Calorix bounded/full live gates should not be used for production sign-off until the report includes audit, coverage, and recovery trace artifacts explaining lost candidates.
+- Current task: Implement Task 1 from the provider fallback/projection plan: lock Calorix bounded/full gates to projection.
+- Next task: Guard the legacy dual locator behind `UI_DIFF_ALLOW_DUAL_LOCATOR=1` plus `UI_DIFF_DUAL_LOCATOR_REASON`, then add ordered provider fallback and independent target-recovery route selection.
+- Last verification: Planning-only update. Gemini 3.1 Pro Preview review was attempted but blocked by HTTP 429 / `MODEL_CAPACITY_EXHAUSTED`; fallback attempts with Gemini 3 Pro Preview and Gemini 2.5 Pro returned malformed streams; Gemini 2.5 Flash completed review with `AGREEMENT_STATUS: agree`, `MUST_FIX: none`, `SHOULD_FIX: none`. A fresh `npm run verify` is required before the provider-fallback implementation commit.
+- Open blockers: Calorix production sign-off is blocked until default Calorix gates run in projection mode, audit/reviewer/recovery can fall back away from unhealthy native NVIDIA free routes in `free` mode, explicit `free_nvidia` stays NVIDIA-only, and bounded/full Calorix live gates pass at HEAD with debug artifacts present.
 
 ## Standing Implementation Rules
 
@@ -109,6 +109,11 @@ This file is the persistent handoff state for implementation agents. Read it bef
 | 2026-06-16 | `6f11d00` | Calorix live test fix + all gates re-run | All 5 live gates PASSED at HEAD `6f11d00` | Fixed calorix-smoke.live.test.ts to accept "projected" actual coverage status in single-pass mode. Gates: NVIDIA 4/4 (46s), OpenRouter 2/2 (127s), MCP 1/1 (55s), Calorix bounded 1/1 (492s, 619 diffs, 81 projected pairs), Calorix full 1/1 (101s, 507 diffs, auditLimited=false). |
 | 2026-06-16 | `fa5265a` | Pixel-diff mask visibility fix + containment NMS | 274 unit tests PASS | Fixed pixel-diff mask encoding 0/1→0/255 so mask PNGs are visible instead of solid black. Added `suppressContainedElements()` after IoU NMS to remove small elements ≥85% covered by a moderately-larger element (area ratio <6×), reducing redundant crops. Fixed unit test to count non-zero mask pixels instead of summing values. |
 | 2026-06-16 | this commit | Run debug-insight implementation plan | Plan self-review complete; Gemini 3.1 Pro Preview review: agree, MUST_FIX none, SHOULD_FIX none | Added `docs/superpowers/plans/2026-06-16-run-debug-insights.md`. The plan adds audit, coverage, and recovery trace artifacts so the next Calorix live run can explain why target-pair and recovery candidates did or did not become final classified diffs. |
+| 2026-06-17 | `fc6e269` | Run debug trace implementation | Verification not recorded in this status file before this update | Implemented audit, coverage, and recovery traces; added debug-summary/report fields; tightened Calorix live assertions to require trace artifacts. |
+| 2026-06-17 | `9ca9459` | Launch script update | Not applicable; scripts only | Added `launch-ui-diff-claude.bat` and `launch-ui-diff-claude.ps1` with optional prompt parameter. |
+| 2026-06-17 | this commit | Provider-fallback handoff update | Review only; no tests run | Recorded June 17 live-gate failure at `9ca9459`: audit saw widespread native NVIDIA invalid/truncated JSON, recovery saw NVIDIA HTTP 429 on all 12 calls, and the next task is audit/recovery fallback to alternate passing routes such as OpenRouter free. |
+| 2026-06-17 | this commit | Provider fallback and projection gate plan | Gemini 3.1 Pro Preview review attempted, blocked by HTTP 429 / `MODEL_CAPACITY_EXHAUSTED`; `git diff --check` clean with CRLF warning only | Added `docs/superpowers/plans/2026-06-17-provider-fallback-and-projection-gates.md`. The plan makes projection the default Calorix gate path, guards the legacy dual locator, keeps `free_nvidia` NVIDIA-only, adds NVIDIA-first/OpenRouter-free fallback for `free`, and selects target recovery independently. |
+| 2026-06-17 | this commit | Provider fallback plan fallback review | Gemini 3.1 Pro Preview blocked by capacity; Gemini 3 Pro Preview and Gemini 2.5 Pro returned malformed streams; Gemini 2.5 Flash agreed with no MUST_FIX/SHOULD_FIX | Updated the plan review section with the strongest-first reviewer attempts and the successful Gemini 2.5 Flash review result. |
 
 ## Screen Parser Locator Hardening Plan - 2026-06-15
 
