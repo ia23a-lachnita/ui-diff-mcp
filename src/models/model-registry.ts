@@ -326,6 +326,28 @@ export const CANONICAL_MODEL_RANKING: readonly (Omit<ModelEntry, "required" | "p
     capabilities: { maxImages: 4, supportsJsonSchema: true, supportsJsonObject: true, supportsStreaming: true, allowedRoles: ["target_recovery"] }
   },
   {
+    role: "target_recovery", // Nex N2 Pro — OpenRouter free fallback for target recovery
+    provider: "openrouter",
+    model: "nex-agi/nex-n2-pro:free",
+    costClass: "free",
+    eligibleFreeProviderRoutes: [
+      { provider: "openrouter", model: "nex-agi/nex-n2-pro:free" }
+    ],
+    defaultFreeModeHandling: "OpenRouter free fallback for target recovery when native NVIDIA cosmos3 is unavailable.",
+    capabilities: { maxImages: 4, supportsJsonSchema: true, supportsJsonObject: true, supportsStreaming: true, allowedRoles: ["target_recovery"] }
+  },
+  {
+    role: "target_recovery", // Gemma 4 31B IT — OpenRouter free fallback for target recovery
+    provider: "openrouter",
+    model: "google/gemma-4-31b-it:free",
+    costClass: "free",
+    eligibleFreeProviderRoutes: [
+      { provider: "openrouter", model: "google/gemma-4-31b-it:free" }
+    ],
+    defaultFreeModeHandling: "OpenRouter free fallback for target recovery.",
+    capabilities: { maxImages: 4, supportsJsonSchema: true, supportsJsonObject: true, supportsStreaming: true, allowedRoles: ["target_recovery"] }
+  },
+  {
     role: "auditor", // PaliGemma
     provider: "nvidia",
     model: "google/google-paligemma",

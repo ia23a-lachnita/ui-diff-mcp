@@ -90,10 +90,12 @@ describe.skipIf(!liveEnabled)("live full MCP discover_ui_diffs (default free mod
     expect(Array.isArray(providerTraceEvents)).toBe(true);
     // Probe events must be present (probes always run in free mode)
     expect(providerTraceEvents.some(e => e.event === "probe_result"), "provider trace must contain probe_result events").toBe(true);
-    // If fallback warnings appear in report, a matching fallback event must be in the trace
-    const fallbackWarnings = report.warnings.filter(w => /fallback|switched/i.test(w));
-    if (fallbackWarnings.length > 0) {
-      expect(providerTraceEvents.some(e => e.event === "fallback"), "trace must contain fallback event when fallback warning is present").toBe(true);
+    // If a runtime fallback actually fired ("[provider-fallback] ... switched from ..."),
+    // a matching fallback event must be in the trace. Proactive availability warnings
+    // ("OpenRouter fallback routes are available...") do not count.
+    const runtimeFallbackWarnings = report.warnings.filter(w => /\[provider-fallback\].*switched from/i.test(w));
+    if (runtimeFallbackWarnings.length > 0) {
+      expect(providerTraceEvents.some(e => e.event === "fallback"), "trace must contain fallback event when runtime fallback warning is present").toBe(true);
     }
 
     const reportText = JSON.stringify(report).toLowerCase();

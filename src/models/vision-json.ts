@@ -1,5 +1,13 @@
 export type VisionMode = "free" | "free_openrouter" | "free_nvidia" | "paid" | "deterministic_only";
 
+// Some models (e.g. Gemma) wrap JSON in ```json ... ``` markdown code blocks.
+// Strip the wrapper before parsing so those models don't fail schema probes.
+function extractJsonFromMarkdown(raw: string): string {
+  const trimmed = raw.trim();
+  const m = trimmed.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/);
+  return m?.[1] !== undefined ? m[1].trim() : trimmed;
+}
+
 export interface VisionJsonRequest {
   prompt: string;
   images: string[];
@@ -130,7 +138,7 @@ export function makeOpenRouterVisionCaller(apiKey: string, model: string): Visio
 
     let parsed: unknown;
     try {
-      parsed = JSON.parse(fullContent);
+      parsed = JSON.parse(extractJsonFromMarkdown(fullContent));
     } catch {
       throw new Error(`OpenRouter response content is not valid JSON: ${fullContent.slice(0, 200)}`);
     }
@@ -252,7 +260,7 @@ export function makeNvidiaVisionCaller(apiKey: string, model: string, baseUrl?: 
 
     let parsed: unknown;
     try {
-      parsed = JSON.parse(fullContent);
+      parsed = JSON.parse(extractJsonFromMarkdown(fullContent));
     } catch {
       throw new Error(`NVIDIA response content is not valid JSON: ${fullContent.slice(0, 200)}`);
     }

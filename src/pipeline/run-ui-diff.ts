@@ -611,6 +611,16 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
         if (uncoveredComponents.length > 0 && !recoveryCaller) {
           warnings.push("Target recovery skipped: no passing target_recovery route available for current mode. Uncovered pixel regions will not be classified.");
           visualClassificationStatus = "incomplete";
+          providerTrace.emit({
+            phase: "recovery",
+            event: "route_exhausted",
+            role: "target_recovery",
+            provider: "all",
+            model: "none",
+            modelFamilyKey: "none",
+            status: "error",
+            reason: "all target_recovery probes failed — no caller created"
+          });
         } else if (uncoveredComponents.length > 0 && recoveryCaller) {
           const recoveryResult = await runTargetRecovery(uncoveredComponents, {
             expectedRgba: { data: expectedImg.rgba, width: expectedImg.width, height: expectedImg.height },
