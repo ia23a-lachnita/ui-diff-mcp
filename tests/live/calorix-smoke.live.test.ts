@@ -29,8 +29,9 @@ describe.skipIf(!calorixLive)("Calorix live UI diff smoke", () => {
     const projectRoot = "C:/Users/xursc/projects/calorix";
     await expect(fs.access(projectRoot)).resolves.toBeUndefined();
 
-    // 10-min locator timeout for large phone screenshots (1200+ px tall)
-    const started = await startUiDiffMcpClient({ LOCATEANYTHING_TIMEOUT_MS: "600000", UI_DIFF_DUAL_LOCATOR: "1" });
+    // 10-min locator timeout for large phone screenshots (1200+ px tall).
+    // No UI_DIFF_DUAL_LOCATOR: projection is the required default for release gates.
+    const started = await startUiDiffMcpClient({ LOCATEANYTHING_TIMEOUT_MS: "600000" });
     try {
       const startResult = await started.client.callTool({
         name: "start_ui_diff_run",
@@ -40,7 +41,7 @@ describe.skipIf(!calorixLive)("Calorix live UI diff smoke", () => {
       const { runId } = startResult.structuredContent as { runId: string };
       expect(runId).toBeTruthy();
 
-      // Poll for up to 20 minutes (increased from 15 to account for locator processing large images)
+      // Poll for up to 20 minutes
       let statusOut: { status: string; reportPath?: string } | undefined;
       for (let i = 0; i < 120; i++) {
         await new Promise(r => setTimeout(r, 10000));
@@ -67,17 +68,14 @@ describe.skipIf(!calorixLive)("Calorix live UI diff smoke", () => {
       expect(report.auditScope?.totalPairs ?? 0, "at least one element pair must be available for audit").toBeGreaterThan(0);
 
       // At least one diff must have gone through model review, not only pixel noise or deterministic checks.
-      // Deterministic records use reviewerStatus="accepted", so model must also be non-deterministic.
       expect(report.diffs.length, "at least one diff must be reported").toBeGreaterThan(0);
       const reviewedDiffs = report.diffs.filter(d => d.reviewerStatus !== "not_reviewed" && d.model !== "deterministic");
       expect(reviewedDiffs.length, "at least one diff must be accepted or rejected by the VLM reviewer (not deterministic-only)").toBeGreaterThan(0);
 
-      // Per-image locator coverage must be complete for both images.
-      // Gate runs with UI_DIFF_DUAL_LOCATOR=1 so actual is independently located — "projected" is a gate failure.
+      // Projection mode: expected locator must be complete; actual is projected (not independently located).
       expect(report.locatorMetadata?.expected?.status, "expected image locator coverage must be complete").toBe("complete");
-      expect(report.locatorMetadata?.actual?.status, "actual image locator coverage must be complete (not projected)").toBe("complete");
-      expect(report.locatorMetadata?.actual?.usefulElementCount ?? 0, "actual useful elements must be sufficient").toBeGreaterThanOrEqual(12);
-      expect(report.locatorMetadata?.actual?.reasons ?? [], "actual locator coverage has weakness reasons").toEqual([]);
+      expect(report.locatorMetadata?.actual?.status, "actual image locator coverage must be projected in single-pass mode").toBe("projected");
+      expect(report.locatorMetadata?.locatorActualMode, "locatorActualMode must be projected").toBe("projected");
 
       // Target-map artifacts must be written for both images
       expect(report.runArtifacts.some(a => a.role === "target_map_expected"), "target_map_expected artifact must be present").toBe(true);
@@ -117,8 +115,9 @@ describe.skipIf(!calorixFullLive)("verify:calorix-full-live unbounded all-target
     const projectRoot = "C:/Users/xursc/projects/calorix";
     await expect(fs.access(projectRoot)).resolves.toBeUndefined();
 
-    // 10-min locator timeout for large phone screenshots
-    const started = await startUiDiffMcpClient({ LOCATEANYTHING_TIMEOUT_MS: "600000", UI_DIFF_DUAL_LOCATOR: "1" });
+    // 10-min locator timeout for large phone screenshots.
+    // No UI_DIFF_DUAL_LOCATOR: projection is the required default for release gates.
+    const started = await startUiDiffMcpClient({ LOCATEANYTHING_TIMEOUT_MS: "600000" });
     try {
       const startResult = await started.client.callTool({
         name: "start_ui_diff_run",
@@ -158,12 +157,10 @@ describe.skipIf(!calorixFullLive)("verify:calorix-full-live unbounded all-target
       const reviewedDiffs = report.diffs.filter(d => d.reviewerStatus !== "not_reviewed" && d.model !== "deterministic");
       expect(reviewedDiffs.length, "at least one diff must be accepted or rejected by the VLM reviewer (not deterministic-only)").toBeGreaterThan(0);
 
-      // Per-image locator coverage must be complete for both images.
-      // Gate runs with UI_DIFF_DUAL_LOCATOR=1 so actual is independently located — "projected" is a gate failure.
+      // Projection mode: expected locator must be complete; actual is projected (not independently located).
       expect(report.locatorMetadata?.expected?.status, "expected image locator coverage must be complete").toBe("complete");
-      expect(report.locatorMetadata?.actual?.status, "actual image locator coverage must be complete (not projected)").toBe("complete");
-      expect(report.locatorMetadata?.actual?.usefulElementCount ?? 0, "actual useful elements must be sufficient").toBeGreaterThanOrEqual(12);
-      expect(report.locatorMetadata?.actual?.reasons ?? [], "actual locator coverage has weakness reasons").toEqual([]);
+      expect(report.locatorMetadata?.actual?.status, "actual image locator coverage must be projected in single-pass mode").toBe("projected");
+      expect(report.locatorMetadata?.locatorActualMode, "locatorActualMode must be projected").toBe("projected");
 
       // Target-map artifacts must be written for both images
       expect(report.runArtifacts.some(a => a.role === "target_map_expected"), "target_map_expected artifact must be present").toBe(true);

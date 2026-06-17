@@ -9,10 +9,11 @@ export interface FallbackCandidate {
 export function isRetryableProviderError(err: unknown): boolean {
   if (!(err instanceof Error)) return false;
   const msg = err.message;
-  // Retry on rate limit, server errors, and network-level failures.
-  // Do NOT retry on 400 (bad request), 401 (auth), or JSON parse errors
-  // from the provider — those indicate a non-transient problem.
-  return /HTTP 429|HTTP 5\d{2}|request failed|ECONNRESET|ETIMEDOUT|ENOTFOUND|timeout/i.test(msg);
+  // Retry on rate limit, server errors, network failures, and malformed/truncated
+  // provider JSON — all indicate a transient provider-side issue.
+  // Do NOT retry on HTTP 400 (bad request schema) or 401 (auth) — those are
+  // caller-side problems that will recur on every candidate.
+  return /HTTP 429|HTTP 5\d{2}|request failed|ECONNRESET|ETIMEDOUT|ENOTFOUND|timeout|not valid JSON/i.test(msg);
 }
 
 export function makeFallbackVisionCaller(candidates: FallbackCandidate[]): VisionJsonCaller {

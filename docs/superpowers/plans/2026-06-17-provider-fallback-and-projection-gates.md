@@ -228,3 +228,9 @@ Gemini 2.5 Flash review result:
 - `MUST_FIX: none`
 - `SHOULD_FIX: none`
 - `RATIONALE: The plan comprehensively addresses all specified requirements. It clearly outlines how projection will remain the default, how the dual locator will be restricted, the fallback logic for free mode (NVIDIA-first to OpenRouter), the strict NVIDIA-only behavior for free_nvidia, independent selection for target_recovery, and explicit reporting of mixed provider usage. The tasks are well-defined with clear verification steps.`
+
+## Implementation Notes (deviations documented here per plan rules)
+
+**Task 3 deviation — JSON parse retry:** The plan lists "malformed/truncated JSON" as a route-health failure that should trigger fallback. The initial `src/models/fallback-caller.ts` (committed at `8adb04f`) incorrectly treated "not valid JSON" errors as non-retryable (same class as HTTP 400). This was corrected in the follow-up commit: `isRetryableProviderError` now matches the `not valid JSON` message pattern so malformed provider responses fall through to the next candidate. The "small repeated-failure threshold" from the plan is simplified to "retry on first failure" — a threshold counter would require global mutable run state; the current approach is equivalent for a chain of 2–3 candidates per role, which is the expected usage.
+
+**Task 3 deviation — `selectFallbackModelsForMode` placement:** The new function was added to `src/models/model-registry.ts` rather than a separate routing module. This matches the existing pattern for `selectModelForMode` in that file and avoids a premature module split.

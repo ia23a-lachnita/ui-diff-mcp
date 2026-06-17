@@ -35,10 +35,11 @@ describe("makeFallbackVisionCaller", () => {
     await expect(makeFallbackVisionCaller([c1, c2])(dummyReq)).rejects.toThrow("400");
   });
 
-  it("does NOT fall back on JSON parse error", async () => {
+  it("falls back on malformed provider JSON (not valid JSON)", async () => {
     const c1 = cand(vi.fn().mockRejectedValue(new Error("OpenRouter response content is not valid JSON: abc")));
-    const c2 = cand(vi.fn().mockResolvedValue(ok2));
-    await expect(makeFallbackVisionCaller([c1, c2])(dummyReq)).rejects.toThrow("not valid JSON");
+    const c2 = cand(vi.fn().mockResolvedValue(ok2), "openrouter", "m2");
+    const result = await makeFallbackVisionCaller([c1, c2])(dummyReq);
+    expect(result.model).toBe("m2");
   });
 
   it("throws last error when all candidates exhausted", async () => {
@@ -60,7 +61,7 @@ describe("isRetryableProviderError", () => {
     ["OpenRouter request failed: ECONNRESET", true],
     ["OpenRouter HTTP 400: bad request", false],
     ["OpenRouter HTTP 401: unauthorized", false],
-    ["OpenRouter response content is not valid JSON: {}", false],
+    ["OpenRouter response content is not valid JSON: {}", true],
   ])("%s → %s", (msg, expected) => {
     expect(isRetryableProviderError(new Error(msg))).toBe(expected);
   });
