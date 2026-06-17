@@ -4,15 +4,15 @@ This file is the persistent handoff state for implementation agents. Read it bef
 
 ## Current State
 
-- Status: **Provider-fallback hardening needed after traced Calorix live-gate failure.** Current HEAD before this docs update: `9ca9459`. The run-debug trace system is implemented and the June 17 live gates proved it can explain loss points. Fresh Calorix bounded/full gates failed because the selected native NVIDIA free audit route often returned truncated/non-JSON content under high call volume, then recovery exhausted the same NVIDIA free quota and received HTTP 429 on all recovery calls.
+- Status: **Provider-fallback and projection-gate hardening planned.** The run-debug trace system is implemented and the June 17 live gates proved it can explain loss points. Fresh Calorix bounded/full gates failed because the selected native NVIDIA free audit route often returned truncated/non-JSON content under high call volume, then recovery exhausted the same NVIDIA free quota and received HTTP 429 on all recovery calls. A follow-up implementation plan now also corrects the accidental use of the legacy dual locator in Calorix gates.
 - Branch: `master`.
 - Approved spec: `docs/superpowers/specs/2026-06-12-ui-diff-mcp-research-design.md`.
-- Active implementation plan: `docs/superpowers/plans/2026-06-12-ui-diff-mcp-mvp-implementation.md`.
+- Active implementation plan: `docs/superpowers/plans/2026-06-17-provider-fallback-and-projection-gates.md`.
 - Production-readiness test plan: `docs/superpowers/plans/2026-06-13-production-readiness-tests.md`.
-- Current task: Plan/implement role-aware provider fallback for high-volume audit and target recovery.
-- Next task: Select `target_recovery` independently from `auditor`, add ordered fallback callers for provider/runtime failures, then re-run deterministic verification and all live gates.
-- Last verification: Reported live gates at `9ca9459`: NVIDIA free probes passed 4/4, OpenRouter free passed 2/2, MCP full live passed 1/1, Calorix bounded failed after 341s with `visualClassificationStatus=incomplete`, and Calorix full failed after 71s with the same provider failure pattern. A fresh `npm run verify` is required before the provider-fallback implementation commit.
-- Open blockers: Calorix production sign-off is blocked until audit and recovery can fall back away from unreliable/rate-limited native NVIDIA free routes, and bounded/full Calorix live gates pass at HEAD with debug artifacts present.
+- Current task: Implement Task 1 from the provider fallback/projection plan: lock Calorix bounded/full gates to projection.
+- Next task: Guard the legacy dual locator behind `UI_DIFF_ALLOW_DUAL_LOCATOR=1` plus `UI_DIFF_DUAL_LOCATOR_REASON`, then add ordered provider fallback and independent target-recovery route selection.
+- Last verification: Planning-only update. Gemini 3.1 Pro Preview review was attempted but blocked by HTTP 429 / `MODEL_CAPACITY_EXHAUSTED`. A fresh `npm run verify` is required before the provider-fallback implementation commit.
+- Open blockers: Calorix production sign-off is blocked until default Calorix gates run in projection mode, audit/reviewer/recovery can fall back away from unhealthy native NVIDIA free routes in `free` mode, explicit `free_nvidia` stays NVIDIA-only, and bounded/full Calorix live gates pass at HEAD with debug artifacts present.
 
 ## Standing Implementation Rules
 
@@ -112,6 +112,7 @@ This file is the persistent handoff state for implementation agents. Read it bef
 | 2026-06-17 | `fc6e269` | Run debug trace implementation | Verification not recorded in this status file before this update | Implemented audit, coverage, and recovery traces; added debug-summary/report fields; tightened Calorix live assertions to require trace artifacts. |
 | 2026-06-17 | `9ca9459` | Launch script update | Not applicable; scripts only | Added `launch-ui-diff-claude.bat` and `launch-ui-diff-claude.ps1` with optional prompt parameter. |
 | 2026-06-17 | this commit | Provider-fallback handoff update | Review only; no tests run | Recorded June 17 live-gate failure at `9ca9459`: audit saw widespread native NVIDIA invalid/truncated JSON, recovery saw NVIDIA HTTP 429 on all 12 calls, and the next task is audit/recovery fallback to alternate passing routes such as OpenRouter free. |
+| 2026-06-17 | this commit | Provider fallback and projection gate plan | Gemini 3.1 Pro Preview review attempted, blocked by HTTP 429 / `MODEL_CAPACITY_EXHAUSTED`; `git diff --check` clean with CRLF warning only | Added `docs/superpowers/plans/2026-06-17-provider-fallback-and-projection-gates.md`. The plan makes projection the default Calorix gate path, guards the legacy dual locator, keeps `free_nvidia` NVIDIA-only, adds NVIDIA-first/OpenRouter-free fallback for `free`, and selects target recovery independently. |
 
 ## Screen Parser Locator Hardening Plan - 2026-06-15
 
