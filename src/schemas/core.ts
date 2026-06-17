@@ -190,6 +190,11 @@ export const ModelSelectionSchema = z.object({
     model: z.string().min(1),
     provider: z.string().min(1),
     costClass: z.enum(["free", "paid"])
+  }).optional(),
+  targetRecovery: z.object({
+    model: z.string().min(1),
+    provider: z.string().min(1),
+    costClass: z.enum(["free", "paid"])
   }).optional()
 });
 export type ModelSelection = z.infer<typeof ModelSelectionSchema>;

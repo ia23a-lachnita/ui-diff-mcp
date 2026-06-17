@@ -429,9 +429,14 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
       }
     } else {
       {
+        const recoveryCandidates = selectFallbackModelsForMode("target_recovery", mode, probeResults, 3, process.env);
+        const recoveryEntry = recoveryCandidates[0];
         modelSelection = {
           auditor: { model: auditorEntry.model, provider: auditorEntry.provider, costClass: auditorEntry.costClass },
-          reviewer: { model: reviewerEntry.model, provider: reviewerEntry.provider, costClass: reviewerEntry.costClass }
+          reviewer: { model: reviewerEntry.model, provider: reviewerEntry.provider, costClass: reviewerEntry.costClass },
+          ...(recoveryEntry
+            ? { targetRecovery: { model: recoveryEntry.model, provider: recoveryEntry.provider, costClass: recoveryEntry.costClass } }
+            : {})
         };
         const auditorCaller = makeFallbackVisionCaller(
           auditorCandidates.map(e => ({
@@ -447,6 +452,15 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
             model: e.model
           }))
         );
+        const recoveryCaller = recoveryCandidates.length > 0
+          ? makeFallbackVisionCaller(
+              recoveryCandidates.map(e => ({
+                caller: makeVisionCaller(e, openRouterApiKey, nvidiaApiKey, nvidiaBaseUrl),
+                provider: e.provider,
+                model: e.model
+              }))
+            )
+          : auditorCaller;
 
         visualClassificationStatus = "incomplete";
         const auditedDiffs: DiffRecord[] = [];
@@ -541,7 +555,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
             pixelDiffMask: pixelDiff.diffMask,
             directionalOverlayPath,
             artifactDir: artifactRoot,
-            recoveryCaller: auditorCaller,
+            recoveryCaller,
             reviewerCaller
           });
           debugTrace.recovery.push(...recoveryResult.trace);
