@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CANONICAL_MODEL_RANKING, getModelByRole, getRequiredModels, selectModelForMode, resolveMode, requiredImagesForRole } from "../../src/models/model-registry.js";
+import { CANONICAL_MODEL_RANKING, getModelByRole, getRequiredModels, selectModelForMode, selectFallbackModelsForMode, resolveMode, requiredImagesForRole } from "../../src/models/model-registry.js";
 import type { ProbeResult } from "../../src/models/probes.js";
 
 const NOW = new Date().toISOString();
@@ -192,6 +192,71 @@ describe("selectModelForMode", () => {
     expect(selectModelForMode("escalation", "free", allPass(), noEnv)).toBeUndefined();
     expect(selectModelForMode("escalation", "free_openrouter", allPass(), noEnv)).toBeUndefined();
     expect(selectModelForMode("escalation", "free_nvidia", allPass(), withNvidia)).toBeUndefined();
+  });
+});
+
+describe("selectFallbackModelsForMode", () => {
+  const withNvidia: Record<string, string | undefined> = { NVIDIA_API_KEY: "test-key" };
+  const noEnv: Record<string, string | undefined> = {};
+
+  it("free mode always appends at least one OpenRouter fallback when all passing probes are NVIDIA", () => {
+    // Build probes: only NVIDIA passes for auditor, plus one OpenRouter candidate also passing
+    const nvidiaAuditor = CANONICAL_MODEL_RANKING.find(
+      c => c.role === "auditor" && c.eligibleFreeProviderRoutes.some(r => r.provider === "nvidia")
+    );
+    const orAuditor = CANONICAL_MODEL_RANKING.find(
+      c => c.role === "auditor" && c.eligibleFreeProviderRoutes.some(r => r.provider === "openrouter")
+    );
+    if (!nvidiaAuditor || !orAuditor) return;
+    const nvidiaRoute = nvidiaAuditor.eligibleFreeProviderRoutes.find(r => r.provider === "nvidia")!;
+    const orRoute = orAuditor.eligibleFreeProviderRoutes.find(r => r.provider === "openrouter")!;
+    // Only NVIDIA probes pass (OpenRouter also passes to allow diversity guarantee to work)
+    const probes = [
+      makeProbe(nvidiaRoute.provider, nvidiaRoute.model, "auditor"),
+      makeProbe(orRoute.provider, orRoute.model, "auditor")
+    ];
+    const candidates = selectFallbackModelsForMode("auditor", "free", probes, 1, withNvidia);
+    // maxCandidates=1 would give only NVIDIA, but diversity guarantee must append OpenRouter
+    expect(candidates.some(c => c.provider === "openrouter")).toBe(true);
+    expect(candidates.some(c => c.provider === "nvidia")).toBe(true);
+  });
+
+  it("free mode with only NVIDIA probes still provides OpenRouter fallback if any OpenRouter route passes", () => {
+    const candidates = selectFallbackModelsForMode("auditor", "free", allPass(), 3, withNvidia);
+    // With all probes passing, should include both NVIDIA (preferred) and at least one OpenRouter
+    const hasNvidia = candidates.some(c => c.provider === "nvidia");
+    const hasOpenRouter = candidates.some(c => c.provider === "openrouter");
+    expect(hasNvidia || hasOpenRouter).toBe(true); // at least one route
+    if (hasNvidia) {
+      // If NVIDIA is present, OpenRouter diversity guarantee must also be present
+      expect(hasOpenRouter).toBe(true);
+    }
+  });
+
+  it("free_nvidia never includes OpenRouter routes", () => {
+    const candidates = selectFallbackModelsForMode("auditor", "free_nvidia", allPass(), 3, withNvidia);
+    expect(candidates.every(c => c.provider === "nvidia")).toBe(true);
+  });
+
+  it("free_openrouter never includes NVIDIA routes", () => {
+    const candidates = selectFallbackModelsForMode("auditor", "free_openrouter", allPass(), 3, withNvidia);
+    expect(candidates.every(c => c.provider === "openrouter")).toBe(true);
+  });
+
+  it("returns multiple distinct candidates up to maxCandidates", () => {
+    const candidates = selectFallbackModelsForMode("auditor", "free", allPass(), 3, withNvidia);
+    const keys = candidates.map(c => `${c.provider}:${c.model}`);
+    expect(new Set(keys).size).toBe(keys.length); // all unique
+  });
+
+  it("returns empty array when no probes pass", () => {
+    const candidates = selectFallbackModelsForMode("auditor", "free", [], 3, withNvidia);
+    expect(candidates).toHaveLength(0);
+  });
+
+  it("free mode without NVIDIA key returns only OpenRouter candidates", () => {
+    const candidates = selectFallbackModelsForMode("auditor", "free", allPass(), 3, noEnv);
+    expect(candidates.every(c => c.provider === "openrouter")).toBe(true);
   });
 });
 

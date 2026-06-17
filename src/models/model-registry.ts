@@ -459,6 +459,17 @@ export function selectFallbackModelsForMode(
     excluded.push({ provider: next.provider, model: next.model });
   }
 
+  // In free mode, guarantee at least one OpenRouter :free fallback candidate exists
+  // after NVIDIA-preferred routes. Without this, if all passing probes are NVIDIA the
+  // route list is NVIDIA-only and a NVIDIA 429 exhausts all candidates with no fallback.
+  if (mode === "free" && results.length > 0 && !results.some(r => r.provider === "openrouter")) {
+    const orCandidate = selectModelForMode(
+      logicalRole, "free_openrouter", probeResults, env,
+      results.map(r => ({ provider: r.provider, model: r.model }))
+    );
+    if (orCandidate) results.push(orCandidate);
+  }
+
   return results;
 }
 

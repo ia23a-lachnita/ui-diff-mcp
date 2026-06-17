@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { makeFallbackVisionCaller, isRetryableProviderError, type FallbackCandidate } from "../../src/models/fallback-caller.js";
+import { makeFallbackVisionCaller, isRetryableProviderError, type FallbackCandidate, type FallbackEvent } from "../../src/models/fallback-caller.js";
 
 const dummyReq = { prompt: "test", images: [], jsonSchema: { name: "t", schema: {} }, timeoutMs: 5000 };
 const ok1 = { parsed: {}, rawContent: "", model: "m1", provider: "nvidia" };
@@ -50,6 +50,51 @@ describe("makeFallbackVisionCaller", () => {
 
   it("throws when constructed with empty candidates", () => {
     expect(() => makeFallbackVisionCaller([])).toThrow("at least one candidate");
+  });
+
+  it("calls onFallback with from/to/reason when first candidate fails retryably", async () => {
+    const events: FallbackEvent[] = [];
+    const c1 = cand(vi.fn().mockRejectedValue(new Error("NVIDIA HTTP 429: rate limited")), "nvidia", "m1");
+    const c2 = cand(vi.fn().mockResolvedValue(ok2), "openrouter", "m2");
+    await makeFallbackVisionCaller([c1, c2], ev => events.push(ev))(dummyReq);
+    expect(events).toHaveLength(1);
+    expect(events[0]!.fromProvider).toBe("nvidia");
+    expect(events[0]!.fromModel).toBe("m1");
+    expect(events[0]!.toProvider).toBe("openrouter");
+    expect(events[0]!.toModel).toBe("m2");
+    expect(events[0]!.reason).toMatch(/429/);
+    expect(events[0]!.timestamp).toMatch(/^\d{4}-/);
+  });
+
+  it("sticky health: second call skips already-failed candidate without re-trying it", async () => {
+    const failFn = vi.fn().mockRejectedValue(new Error("NVIDIA HTTP 429: rate limited"));
+    const okFn = vi.fn().mockResolvedValue(ok2);
+    const caller = makeFallbackVisionCaller([cand(failFn, "nvidia", "m1"), cand(okFn, "openrouter", "m2")]);
+    await caller(dummyReq); // call 1: fails on m1, switches to m2
+    await caller(dummyReq); // call 2: should start at m2 directly
+    expect(failFn).toHaveBeenCalledTimes(1); // m1 not retried on call 2
+    expect(okFn).toHaveBeenCalledTimes(2);
+  });
+
+  it("sticky health: onFallback fires only once even across multiple calls", async () => {
+    const events: FallbackEvent[] = [];
+    const failFn = vi.fn().mockRejectedValue(new Error("HTTP 503"));
+    const okFn = vi.fn().mockResolvedValue(ok2);
+    const caller = makeFallbackVisionCaller([cand(failFn), cand(okFn, "openrouter", "m2")], ev => events.push(ev));
+    await caller(dummyReq);
+    await caller(dummyReq);
+    await caller(dummyReq);
+    expect(events).toHaveLength(1); // event fires once at the transition, not per-call
+  });
+
+  it("two separate caller instances have independent health state", async () => {
+    const failFn = vi.fn().mockRejectedValue(new Error("HTTP 429"));
+    const okFn = vi.fn().mockResolvedValue(ok2);
+    const callerA = makeFallbackVisionCaller([cand(failFn), cand(okFn, "openrouter", "m2")]);
+    const callerB = makeFallbackVisionCaller([cand(failFn), cand(okFn, "openrouter", "m2")]);
+    await callerA(dummyReq); // callerA switches to m2
+    await callerB(dummyReq); // callerB switches independently; failFn called again
+    expect(failFn).toHaveBeenCalledTimes(2); // each caller tried m1 once
   });
 });
 

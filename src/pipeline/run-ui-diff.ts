@@ -458,19 +458,27 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
             );
           }
         }
+        const makeFallbackWarning = (role: string) => (ev: import("../models/fallback-caller.js").FallbackEvent) => {
+          warnings.push(
+            `[provider-fallback] ${role} switched from ${ev.fromProvider}/${ev.fromModel} ` +
+            `to ${ev.toProvider}/${ev.toModel}: ${ev.reason.slice(0, 120)} (at ${ev.timestamp})`
+          );
+        };
         const auditorCaller = makeFallbackVisionCaller(
           auditorCandidates.map(e => ({
             caller: makeVisionCaller(e, openRouterApiKey, nvidiaApiKey, nvidiaBaseUrl),
             provider: e.provider,
             model: e.model
-          }))
+          })),
+          makeFallbackWarning("auditor")
         );
         const reviewerCaller = makeFallbackVisionCaller(
           reviewerCandidates.map(e => ({
             caller: makeVisionCaller(e, openRouterApiKey, nvidiaApiKey, nvidiaBaseUrl),
             provider: e.provider,
             model: e.model
-          }))
+          })),
+          makeFallbackWarning("reviewer")
         );
         const recoveryCaller = recoveryCandidates.length > 0
           ? makeFallbackVisionCaller(
@@ -478,9 +486,10 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
                 caller: makeVisionCaller(e, openRouterApiKey, nvidiaApiKey, nvidiaBaseUrl),
                 provider: e.provider,
                 model: e.model
-              }))
+              })),
+              makeFallbackWarning("target_recovery")
             )
-          : auditorCaller;
+          : undefined;
 
         visualClassificationStatus = "incomplete";
         const auditedDiffs: DiffRecord[] = [];
@@ -568,7 +577,10 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
         const significantComponents = pixelDiff.components.filter(c => c.pixelCount >= 50);
         debugTrace.coverage = traceCoverageDecisions(significantComponents, allDiffs, 50);
         const uncoveredComponents = significantComponents.filter((_, index) => debugTrace.coverage[index]?.status === "uncovered");
-        if (uncoveredComponents.length > 0) {
+        if (uncoveredComponents.length > 0 && !recoveryCaller) {
+          warnings.push("Target recovery skipped: no passing target_recovery route available for current mode. Uncovered pixel regions will not be classified.");
+          visualClassificationStatus = "incomplete";
+        } else if (uncoveredComponents.length > 0 && recoveryCaller) {
           const recoveryResult = await runTargetRecovery(uncoveredComponents, {
             expectedRgba: { data: expectedImg.rgba, width: expectedImg.width, height: expectedImg.height },
             actualRgba: { data: actualImg.rgba, width: actualImg.width, height: actualImg.height },
