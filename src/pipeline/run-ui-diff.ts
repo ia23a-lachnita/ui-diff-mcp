@@ -245,6 +245,16 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     });
     const keyInfo = await lookupOpenRouterQuota(openRouterApiKey);
     const quotaCheck = checkFreeQuotaSufficiency(budget, keyInfo);
+    providerTrace.emit({
+      phase: "quota_preflight",
+      event: "quota_result",
+      role: "quota",
+      provider: "openrouter",
+      model: "openrouter-free-quota",
+      modelFamilyKey: "openrouter-free-quota",
+      status: quotaCheck.available ? "ok" : "error",
+      reason: quotaCheck.available ? undefined : quotaCheck.detail?.slice(0, 500)
+    });
     if (!quotaCheck.available) {
       status = "insufficient_free_quota";
       visualClassificationStatus = "incomplete";
@@ -428,6 +438,19 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
         status = "model_unavailable";
         visualClassificationStatus = "incomplete";
         warnings.push(`No model available for mode "${mode}". Set NVIDIA_API_KEY or OPENROUTER_API_KEY with passing probes.`);
+        // Emit route_exhausted for the role(s) that had no passing candidates.
+        // In free_nvidia mode this is explicit: no OpenRouter fallback is available.
+        const exhaustedRole = !auditorEntry ? "auditor" as const : "reviewer" as const;
+        providerTrace.emit({
+          phase: "audit",
+          event: "route_exhausted",
+          role: exhaustedRole,
+          provider: mode === "free_nvidia" ? "nvidia" : "any",
+          model: "none",
+          modelFamilyKey: "none",
+          reason: `No passing probes for ${exhaustedRole} in mode "${mode}". ${mode === "free_nvidia" ? "No OpenRouter fallback in free_nvidia mode." : ""}`.trim(),
+          status: "error"
+        });
       }
     } else {
       {

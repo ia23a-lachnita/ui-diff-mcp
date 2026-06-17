@@ -93,10 +93,27 @@ describe.skipIf(!calorixLive)("Calorix live UI diff smoke", () => {
       expect(report.modelSelection?.reviewerRoutes, "reviewerRoutes must be recorded").toBeDefined();
       expect((report.modelSelection?.reviewerRoutes ?? []).length, "at least one reviewer route must be in reviewerRoutes").toBeGreaterThanOrEqual(1);
 
+      // Provider trace artifact must be present and contain probe + runtime events
+      expect(report.runArtifacts.some(a => a.role === "provider_trace"), "provider_trace artifact must exist").toBe(true);
+      const ptPath = report.runArtifacts.find(a => a.role === "provider_trace")!.path;
+      const ptEvents = JSON.parse(await fs.readFile(ptPath, "utf8")) as Array<{ event: string; phase: string; role: string; provider: string }>;
+      expect(Array.isArray(ptEvents)).toBe(true);
+      expect(ptEvents.some(e => e.event === "probe_result"), "provider trace must contain probe_result events").toBe(true);
+      expect(ptEvents.some(e => e.phase === "audit" && e.event === "call_start"), "provider trace must contain audit call_start events").toBe(true);
+
+      // If OpenRouter fallback fires, auditor OR routes must include a different-family model, not only nemotron:free
+      const auditorOrRoutes = (report.modelSelection?.auditorRoutes ?? []).filter(r => r.provider === "openrouter");
+      if (auditorOrRoutes.length > 1) {
+        const families = new Set(auditorOrRoutes.map(r => r.model.replace(/:(?:free|beta|nitro|\d{8})$/i, "")));
+        console.info(`[calorix-bounded] OpenRouter auditor families: ${[...families].join(", ")}`);
+      }
+
       // In free mode, any NVIDIA→OpenRouter fallback must be explicitly reported in warnings (not silent)
       const fallbackWarnings = report.warnings.filter(w => /OpenRouter/i.test(w) && /fallback|switched|degraded/i.test(w));
       if (fallbackWarnings.length > 0) {
         console.info(`[calorix-bounded] Provider fallback warnings (${fallbackWarnings.length}): ${fallbackWarnings.join("; ")}`);
+        // A matching fallback event must be in the provider trace
+        expect(ptEvents.some(e => e.event === "fallback"), "trace must contain fallback event when fallback warning is present").toBe(true);
       }
     } finally {
       await started.close();
@@ -197,10 +214,30 @@ describe.skipIf(!calorixFullLive)("verify:calorix-full-live unbounded all-target
         expect(report.modelSelection?.targetRecoveryRoutes, "targetRecoveryRoutes must be recorded when recovery ran").toBeDefined();
       }
 
+      // Provider trace artifact must be present with probe and runtime call events
+      expect(report.runArtifacts.some(a => a.role === "provider_trace"), "provider_trace artifact must exist").toBe(true);
+      const ptPath = report.runArtifacts.find(a => a.role === "provider_trace")!.path;
+      const ptEvents = JSON.parse(await fs.readFile(ptPath, "utf8")) as Array<{ event: string; phase: string; role: string; provider: string }>;
+      expect(Array.isArray(ptEvents)).toBe(true);
+      expect(ptEvents.some(e => e.event === "probe_result"), "provider trace must contain probe_result events").toBe(true);
+      expect(ptEvents.some(e => e.phase === "audit" && e.event === "call_start"), "provider trace must contain audit call_start events").toBe(true);
+
+      // Detect same-family fallback and log a diagnostic warning for reviewers
+      const auditorOrRoutes = (report.modelSelection?.auditorRoutes ?? []).filter(r => r.provider === "openrouter");
+      const auditorNvidiaRoutes = (report.modelSelection?.auditorRoutes ?? []).filter(r => r.provider === "nvidia");
+      if (auditorOrRoutes.length > 0 && auditorNvidiaRoutes.length > 0) {
+        const nvidiaFamilies = new Set(auditorNvidiaRoutes.map(r => r.model.replace(/:(?:free|beta|nitro|\d{8})$/i, "")));
+        const sameFamilyRoutes = auditorOrRoutes.filter(r => nvidiaFamilies.has(r.model.replace(/:(?:free|beta|nitro|\d{8})$/i, "")));
+        if (sameFamilyRoutes.length > 0) {
+          console.warn(`[full-audit] Same-family OR fallback detected (provider changed, model did not): ${sameFamilyRoutes.map(r => r.model).join(", ")}`);
+        }
+      }
+
       // In free mode, any NVIDIA→OpenRouter fallback must be explicitly reported in warnings (not silent)
       const fallbackWarnings = report.warnings.filter(w => /OpenRouter/i.test(w) && /fallback|switched|degraded/i.test(w));
       if (fallbackWarnings.length > 0) {
         console.info(`[full-audit] Provider fallback warnings (${fallbackWarnings.length}): ${fallbackWarnings.join("; ")}`);
+        expect(ptEvents.some(e => e.event === "fallback"), "trace must contain fallback event when fallback warning is present").toBe(true);
       }
 
       console.info(`[full-audit] visualClassificationStatus=${report.visualClassificationStatus}`);

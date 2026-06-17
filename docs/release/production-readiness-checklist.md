@@ -151,6 +151,33 @@ A production sign-off run must include `debugSummary`, `audit-trace.json`,
 auditor/reviewer/recovery loss point using structured statuses. A run that only
 reports final diff counts without these traces is not acceptable for Calorix sign-off.
 
+## Provider Trace Gate
+
+Every run writes `artifacts/provider-trace.json` alongside the audit, coverage,
+and recovery traces. Release sign-off is **blocked** if `visualClassificationStatus`
+is `incomplete` without a `provider-trace.json` that explains route exhaustion or
+fallback decisions.
+
+**Triage recipe:**
+
+1. Check `report.json` → `warnings` for provider fallback or quota messages.
+2. Open `provider-trace.json` and filter by `role/event`:
+   - `event === "probe_result"` → which models passed/failed role probes at startup.
+   - `event === "call_start"` / `call_success"` / `call_error"` → per-call latency and errors.
+   - `event === "route_unhealthy"` → which route triggered sticky-skip and why.
+   - `event === "fallback"` → which route the caller switched to.
+   - `event === "route_exhausted"` → all candidates failed; run is incomplete.
+3. Cross-reference `audit-trace.json` for `auditor_error` / `auditor_schema_error` entries only after the provider-level route health is understood.
+
+**What `provider-trace.json` contains:**
+- Metadata-only events: provider, model, modelFamilyKey, routeIndex, attempt, timing, errorKind, httpStatus, retryable, reason, and safe usage stats (token counts, ttftMs, finishReason).
+
+**What `provider-trace.json` deliberately omits:**
+- Prompt text, image data URLs or base64, raw provider response bodies, API keys, and local crop payloads.
+
+**Why OpenRouter activity export may not match:**
+- Native NVIDIA API calls are not routed through OpenRouter and will not appear in OpenRouter's activity export. Failed HTTP attempts that never reached the provider may also be absent from provider dashboards. The local `provider-trace.json` is the authoritative source for all call attempts and route-health decisions.
+
 ## Sign-Off Record
 
 Append a dated note to `docs/implementation-status.md` with:

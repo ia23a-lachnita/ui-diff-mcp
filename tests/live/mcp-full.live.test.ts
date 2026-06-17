@@ -83,6 +83,19 @@ describe.skipIf(!liveEnabled)("live full MCP discover_ui_diffs (default free mod
     expect(report.elements.expected.length).toBeGreaterThan(0);
     expect(report.elements.actual.length).toBeGreaterThan(0);
 
+    // provider-trace artifact must be written every run
+    expect(report.runArtifacts.some(a => a.role === "provider_trace"), "provider_trace artifact must exist").toBe(true);
+    const providerTracePath = report.runArtifacts.find(a => a.role === "provider_trace")!.path;
+    const providerTraceEvents = JSON.parse(await fs.readFile(providerTracePath, "utf8")) as Array<{ event: string; phase: string; role: string; provider: string; model: string }>;
+    expect(Array.isArray(providerTraceEvents)).toBe(true);
+    // Probe events must be present (probes always run in free mode)
+    expect(providerTraceEvents.some(e => e.event === "probe_result"), "provider trace must contain probe_result events").toBe(true);
+    // If fallback warnings appear in report, a matching fallback event must be in the trace
+    const fallbackWarnings = report.warnings.filter(w => /fallback|switched/i.test(w));
+    if (fallbackWarnings.length > 0) {
+      expect(providerTraceEvents.some(e => e.event === "fallback"), "trace must contain fallback event when fallback warning is present").toBe(true);
+    }
+
     const reportText = JSON.stringify(report).toLowerCase();
     for (const forbidden of ["root cause", "change the code", "edit config", "acceptance passed"]) {
       expect(reportText.includes(forbidden)).toBe(false);

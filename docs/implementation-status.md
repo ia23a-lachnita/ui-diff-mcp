@@ -9,10 +9,9 @@ This file is the persistent handoff state for implementation agents. Read it bef
 - Approved spec: `docs/superpowers/specs/2026-06-12-ui-diff-mcp-research-design.md`.
 - Active implementation plan: `docs/superpowers/plans/2026-06-17-provider-route-diversity-and-tracing.md`.
 - Production-readiness test plan: `docs/superpowers/plans/2026-06-13-production-readiness-tests.md`.
-- Current task: Start Task 1 of `docs/superpowers/plans/2026-06-17-provider-route-diversity-and-tracing.md` (route family identity and diversity rules).
-- Next task: Implement route-family identity plus multi-OpenRouter fallback selection, then add `provider-trace.json` in the following task.
-- Last verification: `npx vitest run tests/unit` — 323 unit tests passed; `npm run verify` — 22 integration tests passed; typecheck clean, build clean (recorded at `bc6bf10`). This planning-only update did not rerun the test suite.
-- Open blockers: Calorix bounded/full live sign-off remains blocked until default `free` mode has diverse fallback routes and provider-trace diagnostics. Current failure is model availability/route policy at Calorix scale, not locator mode.
+- Current task: Task 7 — full verification and fresh gate sign-off (`docs/superpowers/plans/2026-06-17-provider-route-diversity-and-tracing.md`).
+- Last verification: `npx vitest run tests/unit` — 342 unit tests passed; typecheck clean (at `3cd2031`). Tasks 1–6 complete. Task 7 (live gates) running next.
+- Open blockers: Calorix bounded/full live sign-off pending Task 7 live gate run. With diverse OpenRouter fallbacks (Nex, Gemma) now queued before same-family Nemotron:free, the previous route-exhaustion failure at Calorix scale should be resolved.
 
 ## Standing Implementation Rules
 
