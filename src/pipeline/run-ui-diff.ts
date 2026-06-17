@@ -53,6 +53,26 @@ export interface RunOutput {
 
 type ProbeOverride = (entries: ModelEntry[], openRouterApiKey: string, nvidiaApiKey?: string, nvidiaBaseUrl?: string) => Promise<ProbeResult[]>;
 
+export function resolveDualLocatorMode(env: Record<string, string | undefined>): {
+  enabled: boolean;
+  warning?: string;
+} {
+  const requested = env["UI_DIFF_DUAL_LOCATOR"] === "1";
+  if (!requested) return { enabled: false };
+  const allowed = env["UI_DIFF_ALLOW_DUAL_LOCATOR"] === "1";
+  const reason = env["UI_DIFF_DUAL_LOCATOR_REASON"];
+  if (!allowed || !reason) {
+    return {
+      enabled: false,
+      warning:
+        "UI_DIFF_DUAL_LOCATOR=1 was set but dual-locator mode requires " +
+        "UI_DIFF_ALLOW_DUAL_LOCATOR=1 and UI_DIFF_DUAL_LOCATOR_REASON. " +
+        "Falling back to single-pass projection mode."
+    };
+  }
+  return { enabled: true, warning: `Dual-locator diagnostic mode active. Reason: ${reason}` };
+}
+
 export function selectAuditPairsForRun(
   pairs: ElementPair[],
   env: Record<string, string | undefined>
@@ -232,7 +252,9 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     }
   }
 
-  const dualLocatorEnabled = process.env["UI_DIFF_DUAL_LOCATOR"] === "1";
+  const dualLocatorMode = resolveDualLocatorMode(process.env);
+  if (dualLocatorMode.warning) warnings.push(dualLocatorMode.warning);
+  const dualLocatorEnabled = dualLocatorMode.enabled;
 
   if (mode !== "deterministic_only" && status !== "insufficient_free_quota") {
     try {
@@ -276,7 +298,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
           width: actualImg.width,
           height: actualImg.height
         }));
-        warnings.push("Single-pass locator active (projection mode). Set UI_DIFF_DUAL_LOCATOR=1 for legacy dual-pass mode.");
+        warnings.push("Single-pass locator active (projection mode). Set UI_DIFF_DUAL_LOCATOR=1 + UI_DIFF_ALLOW_DUAL_LOCATOR=1 + UI_DIFF_DUAL_LOCATOR_REASON for diagnostic dual-pass mode.");
       }
 
       expectedCoverage = computeImageLocatorCoverage({
