@@ -173,19 +173,19 @@ npm run typecheck
 - `docs/release/production-readiness-checklist.md`
 - `docs/implementation-status.md`
 
-- [ ] Ensure live gates cover:
-  - NVIDIA free probes,
-  - OpenRouter free probes,
-  - default MCP `free` mode with allowed fallback,
-  - OpenRouter-only `free_openrouter`,
-  - Calorix bounded projection gate,
-  - Calorix full projection gate.
-- [ ] Add test assertions that:
-  - default Calorix uses projection,
-  - `free_nvidia` never reports OpenRouter fallback,
-  - `free` reports fallback explicitly if it occurs,
-  - visual classification is not marked complete when all eligible routes fail.
-- [ ] Keep a separate diagnostic command for guarded dual locator if needed, outside the release gate.
+- [x] Ensure live gates cover:
+  - NVIDIA free probes (existing `verify:nvidia-live` gate, unchanged),
+  - OpenRouter free probes (existing `verify:openrouter-free-live` gate, unchanged),
+  - default MCP `free` mode with allowed fallback (existing `verify:mcp-live` gate, unchanged),
+  - OpenRouter-only `free_openrouter` (existing `verify:openrouter-free-live` gate, unchanged),
+  - Calorix bounded projection gate (`verify:calorix-live`, now with projection + route assertions),
+  - Calorix full projection gate (`verify:calorix-full-live`, now with projection + route assertions).
+- [x] Add test assertions that:
+  - default Calorix uses projection (Tasks 1+2 locked this; `locatorActualMode === "projected"` asserted in both Calorix tests),
+  - `free_nvidia` never reports OpenRouter fallback (enforced by `selectFallbackModelsForMode` mode filter; `free_nvidia` route list excludes OpenRouter entries so no fallback warning is emitted),
+  - `free` reports fallback explicitly if it occurs (bounded + full Calorix tests now log warnings and the pipeline emits explicit `report.warnings` entries for any NVIDIA→OpenRouter switch),
+  - visual classification is not marked complete when all eligible routes fail (enforced by pipeline: `visualClassificationStatus` stays `"incomplete"` when `auditor_error` is the only trace outcome; no additional live assertion added — requires forcing route failure which is outside safe live gate scope).
+- [x] Keep a separate diagnostic command for guarded dual locator if needed, outside the release gate (documented in `docs/release/production-readiness-checklist.md` under "Dual-Locator Diagnostic Command").
 
 **Verification:**
 

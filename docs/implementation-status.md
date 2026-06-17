@@ -9,10 +9,10 @@ This file is the persistent handoff state for implementation agents. Read it bef
 - Approved spec: `docs/superpowers/specs/2026-06-12-ui-diff-mcp-research-design.md`.
 - Active implementation plan: `docs/superpowers/plans/2026-06-17-provider-fallback-and-projection-gates.md`.
 - Production-readiness test plan: `docs/superpowers/plans/2026-06-13-production-readiness-tests.md`.
-- Current task: Implement Task 1 from the provider fallback/projection plan: lock Calorix bounded/full gates to projection.
-- Next task: Guard the legacy dual locator behind `UI_DIFF_ALLOW_DUAL_LOCATOR=1` plus `UI_DIFF_DUAL_LOCATOR_REASON`, then add ordered provider fallback and independent target-recovery route selection.
-- Last verification: Planning-only update. Gemini 3.1 Pro Preview review was attempted but blocked by HTTP 429 / `MODEL_CAPACITY_EXHAUSTED`; fallback attempts with Gemini 3 Pro Preview and Gemini 2.5 Pro returned malformed streams; Gemini 2.5 Flash completed review with `AGREEMENT_STATUS: agree`, `MUST_FIX: none`, `SHOULD_FIX: none`. A fresh `npm run verify` is required before the provider-fallback implementation commit.
-- Open blockers: Calorix production sign-off is blocked until default Calorix gates run in projection mode, audit/reviewer/recovery can fall back away from unhealthy native NVIDIA free routes in `free` mode, explicit `free_nvidia` stays NVIDIA-only, and bounded/full Calorix live gates pass at HEAD with debug artifacts present.
+- Current task: All 6 tasks of `docs/superpowers/plans/2026-06-17-provider-fallback-and-projection-gates.md` complete.
+- Next task: Run `npm run verify:calorix-live` and `npm run verify:calorix-full-live` for full production sign-off. No pending code tasks.
+- Last verification: `npm run verify` — 22 integration tests passed, typecheck clean, build clean (2026-06-17).
+- Open blockers: Live Calorix gate sign-off requires a fresh `verify:calorix-live` + `verify:calorix-full-live` run with the sidecar active and OPENROUTER_API_KEY set. No code blockers remain.
 
 ## Standing Implementation Rules
 
@@ -114,6 +114,7 @@ This file is the persistent handoff state for implementation agents. Read it bef
 | 2026-06-17 | this commit | Provider-fallback handoff update | Review only; no tests run | Recorded June 17 live-gate failure at `9ca9459`: audit saw widespread native NVIDIA invalid/truncated JSON, recovery saw NVIDIA HTTP 429 on all 12 calls, and the next task is audit/recovery fallback to alternate passing routes such as OpenRouter free. |
 | 2026-06-17 | this commit | Provider fallback and projection gate plan | Gemini 3.1 Pro Preview review attempted, blocked by HTTP 429 / `MODEL_CAPACITY_EXHAUSTED`; `git diff --check` clean with CRLF warning only | Added `docs/superpowers/plans/2026-06-17-provider-fallback-and-projection-gates.md`. The plan makes projection the default Calorix gate path, guards the legacy dual locator, keeps `free_nvidia` NVIDIA-only, adds NVIDIA-first/OpenRouter-free fallback for `free`, and selects target recovery independently. |
 | 2026-06-17 | this commit | Provider fallback plan fallback review | Gemini 3.1 Pro Preview blocked by capacity; Gemini 3 Pro Preview and Gemini 2.5 Pro returned malformed streams; Gemini 2.5 Flash agreed with no MUST_FIX/SHOULD_FIX | Updated the plan review section with the strongest-first reviewer attempts and the successful Gemini 2.5 Flash review result. |
+| 2026-06-17 | this commit | Tasks 1–6 of provider-fallback/projection-gate plan | `npm run verify` — 22 integration tests pass, typecheck clean, build clean | T1: Calorix gates locked to projection (no UI_DIFF_DUAL_LOCATOR). T2: dual-locator guard (requires ALLOW+REASON). T3: `makeFallbackVisionCaller` + `selectFallbackModelsForMode`; JSON retried. T4: independent `target_recovery` fallback caller. T5: `auditorRoutes`/`reviewerRoutes`/`targetRecoveryRoutes` in report + NVIDIA→OpenRouter warning in `free` mode. T6: Calorix live tests assert route arrays + fallback warnings; checklist updated with projection + fallback requirements + dual-locator diagnostic doc. |
 
 ## Screen Parser Locator Hardening Plan - 2026-06-15
 

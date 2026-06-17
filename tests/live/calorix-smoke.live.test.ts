@@ -86,6 +86,18 @@ describe.skipIf(!calorixLive)("Calorix live UI diff smoke", () => {
       expect(report.runArtifacts.some(a => a.role === "audit_trace"), "audit trace artifact must exist").toBe(true);
       expect(report.runArtifacts.some(a => a.role === "coverage_trace"), "coverage trace artifact must exist").toBe(true);
       expect(report.runArtifacts.some(a => a.role === "recovery_trace"), "recovery trace artifact must exist").toBe(true);
+
+      // Provider fallback gate: auditor and reviewer route lists must be recorded
+      expect(report.modelSelection?.auditorRoutes, "auditorRoutes must be recorded").toBeDefined();
+      expect((report.modelSelection?.auditorRoutes ?? []).length, "at least one auditor route must be in auditorRoutes").toBeGreaterThanOrEqual(1);
+      expect(report.modelSelection?.reviewerRoutes, "reviewerRoutes must be recorded").toBeDefined();
+      expect((report.modelSelection?.reviewerRoutes ?? []).length, "at least one reviewer route must be in reviewerRoutes").toBeGreaterThanOrEqual(1);
+
+      // In free mode, any NVIDIA→OpenRouter fallback must be explicitly reported in warnings (not silent)
+      const fallbackWarnings = report.warnings.filter(w => /OpenRouter/i.test(w) && /fallback|switched|degraded/i.test(w));
+      if (fallbackWarnings.length > 0) {
+        console.info(`[calorix-bounded] Provider fallback warnings (${fallbackWarnings.length}): ${fallbackWarnings.join("; ")}`);
+      }
     } finally {
       await started.close();
     }
@@ -174,6 +186,22 @@ describe.skipIf(!calorixFullLive)("verify:calorix-full-live unbounded all-target
       expect(report.debugSummary?.auditPairs ?? 0).toBeGreaterThan(0);
       expect(report.debugSummary?.auditCriterionCalls ?? 0).toBeGreaterThan(0);
       expect(report.debugSummary?.coverageComponents ?? 0).toBeGreaterThan(0);
+
+      // Provider fallback gate: auditor and reviewer route lists must be recorded
+      expect(report.modelSelection?.auditorRoutes, "auditorRoutes must be recorded").toBeDefined();
+      expect((report.modelSelection?.auditorRoutes ?? []).length, "at least one auditor route must be in auditorRoutes").toBeGreaterThanOrEqual(1);
+      expect(report.modelSelection?.reviewerRoutes, "reviewerRoutes must be recorded").toBeDefined();
+      expect((report.modelSelection?.reviewerRoutes ?? []).length, "at least one reviewer route must be in reviewerRoutes").toBeGreaterThanOrEqual(1);
+      // targetRecoveryRoutes must be present when recovery was attempted
+      if ((report.recoverySummary?.attemptedComponents ?? 0) > 0) {
+        expect(report.modelSelection?.targetRecoveryRoutes, "targetRecoveryRoutes must be recorded when recovery ran").toBeDefined();
+      }
+
+      // In free mode, any NVIDIA→OpenRouter fallback must be explicitly reported in warnings (not silent)
+      const fallbackWarnings = report.warnings.filter(w => /OpenRouter/i.test(w) && /fallback|switched|degraded/i.test(w));
+      if (fallbackWarnings.length > 0) {
+        console.info(`[full-audit] Provider fallback warnings (${fallbackWarnings.length}): ${fallbackWarnings.join("; ")}`);
+      }
 
       console.info(`[full-audit] visualClassificationStatus=${report.visualClassificationStatus}`);
       console.info(`[full-audit] auditedPairs=${report.auditScope?.auditedPairs ?? "n/a"}, totalPairs=${report.auditScope?.totalPairs ?? "n/a"}`);

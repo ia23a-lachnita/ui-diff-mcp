@@ -99,6 +99,9 @@ Required result:
 - Result is not `failed`.
 - If visual classification is incomplete, the release note records the exact reason, including whether `UI_DIFF_MAX_AUDIT_PAIRS` bounded the smoke run.
 - `auditLimited` is `true` and `visualClassificationStatus` is `incomplete` when pairs are limited.
+- `locatorActualMode` is `"projected"` — dual-locator must not be active in the release gate.
+- `modelSelection.auditorRoutes` and `modelSelection.reviewerRoutes` are present with at least one entry each.
+- If any provider fallback occurred during the run, `report.warnings` must contain explicit fallback text (never silent).
 
 ## Full Calorix All-Target Audit Gate
 
@@ -123,6 +126,23 @@ Required result:
 - `visualClassificationStatus` is recorded (complete or incomplete with reason).
 - `modelSelection` is present in `report.json` with auditor and reviewer model/provider.
 - All diffs have at least one evidence string.
+- `locatorActualMode` is `"projected"` — dual-locator must not be active in the release gate.
+- `modelSelection.auditorRoutes` and `modelSelection.reviewerRoutes` are present with at least one entry each.
+- If recovery ran (`recoverySummary.attemptedComponents > 0`), `modelSelection.targetRecoveryRoutes` is present.
+- Any NVIDIA→OpenRouter provider fallback in `free` mode is recorded explicitly in `report.warnings`.
+
+## Dual-Locator Diagnostic Command
+
+Dual-locator mode is **not** part of any release gate and must not be enabled without an explicit guard:
+
+```powershell
+# Only for diagnostics — must NOT be used in release gate runs
+$env:UI_DIFF_DUAL_LOCATOR="1"
+$env:UI_DIFF_ALLOW_DUAL_LOCATOR="1"
+$env:UI_DIFF_DUAL_LOCATOR_REASON="investigating lane coverage discrepancy on <date>"
+```
+
+Without all three variables, `UI_DIFF_DUAL_LOCATOR=1` alone is silently ignored and the run falls back to projection mode with a warning in `report.warnings`.
 
 ## Debug Insight Gate
 
