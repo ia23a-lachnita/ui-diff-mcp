@@ -144,6 +144,13 @@ export async function auditElementPair(
   const refEl = expectedEl ?? actualEl;
   if (!refEl) return { accepted, rejected, trace };
 
+  const pairId = pair.id;
+  const idxStr = String(ctx.auditIndex).padStart(3, "0");
+  const totalStr = String(ctx.auditTotal).padStart(3, "0");
+  const shortId = pairId.slice(0, 12);
+  const baseFileName = (role: string) =>
+    path.join(ctx.artifactDir, `audit-${idxStr}-of-${totalStr}-pair-${shortId}-${ctx.elementSlug}-${role}.png`);
+
   if (actualEl?.source === "projected" && expectedEl) {
     const expCropData = extractImageCrop(ctx.expectedRgba.data, ctx.expectedRgba.width, ctx.expectedRgba.height, expectedEl.box);
     const actCropData = extractImageCrop(ctx.actualRgba.data, ctx.actualRgba.width, ctx.actualRgba.height, actualEl.box);
@@ -153,6 +160,20 @@ export async function auditElementPair(
       expectedEl.text
     );
     if (mismatchResult?.mismatched) {
+      const detArtifacts: UiArtifact[] = [];
+      const { artifact: expArtifact } = await extractCropAndEncode(
+        ctx.expectedRgba.data, ctx.expectedRgba.width, ctx.expectedRgba.height, expectedEl.box,
+        "expected_crop", baseFileName("expected-crop"), pairId
+      );
+      detArtifacts.push(expArtifact);
+      const { artifact: actArtifact } = await extractCropAndEncode(
+        ctx.actualRgba.data, ctx.actualRgba.width, ctx.actualRgba.height, actualEl.box,
+        "actual_crop", baseFileName("actual-crop"), pairId
+      );
+      detArtifacts.push(actArtifact);
+      const detArtifactPaths = detArtifacts.map(a => a.path);
+      const detImageRoles = detArtifacts.map(a => a.role);
+
       const allCriteria = UiCriterionSchema.options.filter(
         (c): c is Exclude<UiCriterion, "unclassified_visual_change"> => c !== "unclassified_visual_change"
       );
@@ -165,9 +186,9 @@ export async function auditElementPair(
           targetType: refEl.type,
           criterion,
           status: "deterministic_projected_mismatch",
-          evidenceCount: 0,
-          imageRoles: [],
-          artifactPaths: []
+          evidenceCount: detArtifacts.length,
+          imageRoles: detImageRoles,
+          artifactPaths: detArtifactPaths
         });
       }
       const record: DiffRecord = {
@@ -179,7 +200,7 @@ export async function auditElementPair(
         location: actualEl.box,
         evidence: [`deterministic_projected_mismatch: ${mismatchResult.reason}, changedPercent=${mismatchResult.changedPercent.toFixed(1)}`],
         measurements: ctx.measurements,
-        artifactPaths: [],
+        artifactPaths: detArtifactPaths,
         reviewerStatus: "accepted",
         model: "deterministic"
       };
@@ -195,14 +216,6 @@ export async function auditElementPair(
 
   let expectedCropB64: string | null = null;
   let actualCropB64: string | null = null;
-
-  const pairId = pair.id; // Use pair.id for artifact naming and linking
-
-  const idxStr = String(ctx.auditIndex).padStart(3, "0");
-  const totalStr = String(ctx.auditTotal).padStart(3, "0");
-  const shortId = pairId.slice(0, 12);
-  const baseFileName = (role: string) =>
-    path.join(ctx.artifactDir, `audit-${idxStr}-of-${totalStr}-pair-${shortId}-${ctx.elementSlug}-${role}.png`);
 
   // Extract Expected Crop
   if (expectedEl) {

@@ -19,7 +19,7 @@ export function summarizeRunDebug(trace: RunDebugTrace): RunDebugSummary {
   const summary: RunDebugSummary = {
     auditPairs: new Set(trace.audit.map(t => t.pairId)).size,
     auditCriterionCalls: trace.audit.filter(t => t.status !== "criterion_not_triggered").length,
-    auditAccepted: trace.audit.filter(t => t.status === "reviewer_accepted" || t.status === "reviewer_needs_escalation").length,
+    auditAccepted: trace.audit.filter(t => t.status === "reviewer_accepted" || t.status === "reviewer_needs_escalation" || t.status === "deterministic_projected_mismatch").length,
     auditRejected: trace.audit.filter(t => t.status === "reviewer_rejected").length,
     auditNoDiff: trace.audit.filter(t => t.status === "auditor_no_diff").length,
     auditErrors: trace.audit.filter(t =>
