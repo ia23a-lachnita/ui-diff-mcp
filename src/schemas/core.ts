@@ -110,6 +110,18 @@ export const DeterministicMeasurementSchema = z.object({
 });
 export type DeterministicMeasurement = z.infer<typeof DeterministicMeasurementSchema>;
 
+export const ProviderFailureDiagnosticSchema = z.object({
+  kind: z.enum(["invalid_json", "http_error", "timeout", "stream_error"]),
+  rawContentLength: z.number().int().min(0).optional(),
+  firstChars: z.string().max(500).optional(),
+  lastChars: z.string().max(500).optional(),
+  startsWithJson: z.boolean().optional(),
+  endsWithJson: z.boolean().optional(),
+  streamCompleted: z.boolean().optional(),
+  httpStatus: z.number().int().min(100).max(599).optional()
+});
+export type ProviderFailureDiagnostic = z.infer<typeof ProviderFailureDiagnosticSchema>;
+
 export const ProviderTraceEventSchema = z.object({
   eventId: z.string().min(1),
   phase: z.enum(["probe", "audit", "reviewer", "recovery", "quota_preflight"]),
@@ -136,7 +148,8 @@ export const ProviderTraceEventSchema = z.object({
   inputTokens: z.number().int().min(0).optional(),
   outputTokens: z.number().int().min(0).optional(),
   ttftMs: z.number().min(0).optional(),
-  finishReason: z.string().max(64).optional()
+  finishReason: z.string().max(64).optional(),
+  diagnostic: ProviderFailureDiagnosticSchema.optional()
 }).strict(); // strict() rejects unknown fields to prevent accidental leakage of sensitive data
 export type ProviderTraceEvent = z.infer<typeof ProviderTraceEventSchema>;
 

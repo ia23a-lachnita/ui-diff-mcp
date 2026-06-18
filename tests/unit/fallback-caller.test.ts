@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { makeFallbackVisionCaller, isRetryableProviderError, type FallbackCandidate, type FallbackEvent } from "../../src/models/fallback-caller.js";
+import { ProviderJsonParseError } from "../../src/models/vision-json.js";
+import type { ProviderTraceEvent } from "../../src/schemas/core.js";
 
 const dummyReq = { prompt: "test", images: [], jsonSchema: { name: "t", schema: {} }, timeoutMs: 5000 };
 const ok1 = { parsed: {}, rawContent: "", model: "m1", provider: "nvidia" };
@@ -110,6 +112,46 @@ describe("makeFallbackVisionCaller", () => {
     await callerA(dummyReq); // callerA switches to m2
     await callerB(dummyReq); // callerB switches independently; failFn called again
     expect(failFn).toHaveBeenCalledTimes(2); // each caller tried m1 once
+  });
+});
+
+describe("diagnostic field on trace events", () => {
+  it("includes diagnostic.kind=invalid_json on ProviderJsonParseError without full raw body", async () => {
+    const rawBody = "x".repeat(2000);
+    const parseErr = new ProviderJsonParseError("nvidia", {
+      kind: "invalid_json",
+      rawContentLength: rawBody.length,
+      firstChars: rawBody.slice(0, 300),
+      lastChars: rawBody.slice(-300),
+      startsWithJson: false,
+      endsWithJson: false,
+      streamCompleted: false
+    });
+    const c1 = cand(vi.fn().mockRejectedValue(parseErr), "nvidia", "m1");
+    const c2 = cand(vi.fn().mockResolvedValue(ok2), "openrouter", "m2");
+
+    const events: ProviderTraceEvent[] = [];
+    const traceSink = (e: Omit<ProviderTraceEvent, "eventId">) => events.push({ eventId: "x", ...e } as ProviderTraceEvent);
+    await makeFallbackVisionCaller([c1, c2], undefined, traceSink)(dummyReq);
+
+    const errorEvent = events.find(e => e.event === "call_error");
+    expect(errorEvent?.diagnostic?.kind).toBe("invalid_json");
+    // raw body must not be in any trace field
+    const serialized = JSON.stringify(events);
+    expect(serialized).not.toContain(rawBody);
+  });
+
+  it("includes diagnostic.kind=http_error with httpStatus=429 on rate-limit error", async () => {
+    const c1 = cand(vi.fn().mockRejectedValue(new Error("OpenRouter HTTP 429: rate limited")), "openrouter", "m1");
+    const c2 = cand(vi.fn().mockResolvedValue(ok2), "nvidia", "m2");
+
+    const events: ProviderTraceEvent[] = [];
+    const traceSink = (e: Omit<ProviderTraceEvent, "eventId">) => events.push({ eventId: "x", ...e } as ProviderTraceEvent);
+    await makeFallbackVisionCaller([c1, c2], undefined, traceSink)(dummyReq);
+
+    const errorEvent = events.find(e => e.event === "call_error");
+    expect(errorEvent?.diagnostic?.kind).toBe("http_error");
+    expect(errorEvent?.diagnostic?.httpStatus).toBe(429);
   });
 });
 

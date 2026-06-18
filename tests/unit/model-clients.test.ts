@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { callOpenRouterVisionJson } from "../../src/models/openrouter-client.js";
 import { callNvidiaVisionJson } from "../../src/models/nvidia-client.js";
+import { makeOpenRouterVisionCaller, makeNvidiaVisionCaller, ProviderJsonParseError } from "../../src/models/vision-json.js";
 
 const FAKE_API_KEY = "sk-test-key";
 const FAKE_MODEL = "qwen/qwen3-vl-30b-a3b-instruct";
@@ -231,5 +232,99 @@ describe("callNvidiaVisionJson", () => {
       jsonSchema: { name: "s", schema: {} },
       timeoutMs: 5000
     })).rejects.toThrow("500");
+  });
+});
+
+// Helpers for streaming SSE mock
+function makeSseStreamFetch(chunks: string[], status = 200) {
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    start(controller) {
+      for (const chunk of chunks) controller.enqueue(encoder.encode(chunk));
+      controller.close();
+    }
+  });
+  return vi.fn().mockResolvedValue({
+    ok: status >= 200 && status < 300,
+    status,
+    body: stream,
+    text: () => Promise.resolve("")
+  });
+}
+
+function sseChunk(content: string, model = "test-model") {
+  return `data: ${JSON.stringify({ choices: [{ delta: { content } }], model })}\n\n`;
+}
+
+const STREAM_REQ = {
+  prompt: "test",
+  images: [] as string[],
+  jsonSchema: { name: "s", schema: {} },
+  timeoutMs: 5000
+};
+
+describe("makeOpenRouterVisionCaller — streaming diagnostics", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("throws ProviderJsonParseError with endsWithJson=false on truncated JSON", async () => {
+    const caller = makeOpenRouterVisionCaller("sk-test", "openrouter/model");
+    vi.stubGlobal("fetch", makeSseStreamFetch([
+      sseChunk('{"partial":'),
+      `data: [DONE]\n\n`
+    ]));
+
+    const err = await caller(STREAM_REQ).catch(e => e);
+    expect(err).toBeInstanceOf(ProviderJsonParseError);
+    const parseErr = err as ProviderJsonParseError;
+    expect(parseErr.diagnostic.kind).toBe("invalid_json");
+    expect(parseErr.diagnostic.endsWithJson).toBe(false);
+    expect(parseErr.diagnostic.startsWithJson).toBe(true);
+    expect(parseErr.message).not.toContain('{"partial":'); // no raw body in message
+  });
+
+  it("sets streamCompleted=true when stream finishes before JSON parse fails", async () => {
+    const caller = makeOpenRouterVisionCaller("sk-test", "openrouter/model");
+    vi.stubGlobal("fetch", makeSseStreamFetch([
+      sseChunk("not-json-at-all"),
+      `data: [DONE]\n\n`
+    ]));
+
+    const err = await caller(STREAM_REQ).catch(e => e);
+    expect(err).toBeInstanceOf(ProviderJsonParseError);
+    expect((err as ProviderJsonParseError).diagnostic.streamCompleted).toBe(true);
+  });
+});
+
+describe("makeNvidiaVisionCaller — streaming diagnostics", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("throws ProviderJsonParseError with endsWithJson=false on truncated NVIDIA stream", async () => {
+    const caller = makeNvidiaVisionCaller("nv-test", "nvidia/model");
+    vi.stubGlobal("fetch", makeSseStreamFetch([
+      sseChunk('{"result":'),
+      `data: [DONE]\n\n`
+    ]));
+
+    const err = await caller(STREAM_REQ).catch(e => e);
+    expect(err).toBeInstanceOf(ProviderJsonParseError);
+    const parseErr = err as ProviderJsonParseError;
+    expect(parseErr.diagnostic.kind).toBe("invalid_json");
+    expect(parseErr.diagnostic.endsWithJson).toBe(false);
+    expect(parseErr.message).not.toContain('{"result":');
+  });
+
+  it("includes rawContentLength in diagnostic", async () => {
+    const caller = makeNvidiaVisionCaller("nv-test", "nvidia/model");
+    const truncatedContent = '{"answer":42';
+    vi.stubGlobal("fetch", makeSseStreamFetch([
+      sseChunk(truncatedContent),
+      `data: [DONE]\n\n`
+    ]));
+
+    const err = await caller(STREAM_REQ).catch(e => e);
+    expect(err).toBeInstanceOf(ProviderJsonParseError);
+    const diag = (err as ProviderJsonParseError).diagnostic;
+    expect(diag.rawContentLength).toBe(truncatedContent.length);
+    expect(diag.firstChars).toBe(truncatedContent.trim());
   });
 });

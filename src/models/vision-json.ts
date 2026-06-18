@@ -1,4 +1,29 @@
+import type { ProviderFailureDiagnostic } from "../schemas/core.js";
+
 export type VisionMode = "free" | "free_openrouter" | "free_nvidia" | "paid" | "deterministic_only";
+
+export class ProviderJsonParseError extends Error {
+  readonly diagnostic: ProviderFailureDiagnostic;
+
+  constructor(provider: "openrouter" | "nvidia", diagnostic: ProviderFailureDiagnostic) {
+    super(`${provider} response content is not valid JSON`);
+    this.name = "ProviderJsonParseError";
+    this.diagnostic = diagnostic;
+  }
+}
+
+function buildInvalidJsonDiagnostic(rawContent: string, streamCompleted: boolean): ProviderFailureDiagnostic {
+  const trimmed = rawContent.trim();
+  return {
+    kind: "invalid_json",
+    rawContentLength: rawContent.length,
+    firstChars: trimmed.slice(0, 300),
+    lastChars: trimmed.slice(Math.max(0, trimmed.length - 300)),
+    startsWithJson: trimmed.startsWith("{") || trimmed.startsWith("["),
+    endsWithJson: trimmed.endsWith("}") || trimmed.endsWith("]"),
+    streamCompleted
+  };
+}
 
 // Some models (e.g. Gemma) wrap JSON in ```json ... ``` markdown code blocks.
 // Strip the wrapper before parsing so those models don't fail schema probes.
@@ -92,6 +117,7 @@ export function makeOpenRouterVisionCaller(apiKey: string, model: string): Visio
     let fullContent = "";
     let ttftMs: number | null = null;
     let completion: any = {}; // To accumulate the full completion object
+    let streamCompleted = false;
 
     try {
       while (true) {
@@ -132,6 +158,7 @@ export function makeOpenRouterVisionCaller(apiKey: string, model: string): Visio
           }
         }
       }
+      streamCompleted = true;
     } finally {
       reader.releaseLock();
     }
@@ -140,7 +167,7 @@ export function makeOpenRouterVisionCaller(apiKey: string, model: string): Visio
     try {
       parsed = JSON.parse(extractJsonFromMarkdown(fullContent));
     } catch {
-      throw new Error(`OpenRouter response content is not valid JSON: ${fullContent.slice(0, 200)}`);
+      throw new ProviderJsonParseError("openrouter", buildInvalidJsonDiagnostic(fullContent, streamCompleted));
     }
 
     return {
@@ -215,6 +242,7 @@ export function makeNvidiaVisionCaller(apiKey: string, model: string, baseUrl?: 
     let fullContent = "";
     let ttftMs: number | null = null;
     let completion: any = {}; // To accumulate the full completion object
+    let streamCompleted = false;
 
     try {
       while (true) {
@@ -254,6 +282,7 @@ export function makeNvidiaVisionCaller(apiKey: string, model: string, baseUrl?: 
           }
         }
       }
+      streamCompleted = true;
     } finally {
       reader.releaseLock();
     }
@@ -262,7 +291,7 @@ export function makeNvidiaVisionCaller(apiKey: string, model: string, baseUrl?: 
     try {
       parsed = JSON.parse(extractJsonFromMarkdown(fullContent));
     } catch {
-      throw new Error(`NVIDIA response content is not valid JSON: ${fullContent.slice(0, 200)}`);
+      throw new ProviderJsonParseError("nvidia", buildInvalidJsonDiagnostic(fullContent, streamCompleted));
     }
 
     return {

@@ -1,4 +1,5 @@
 import type { VisionJsonCaller } from "./vision-json.js";
+import { ProviderJsonParseError } from "./vision-json.js";
 import type { ProviderTraceSink } from "../debug/provider-trace.js";
 import { modelFamilyKey } from "./model-registry.js";
 
@@ -94,6 +95,11 @@ export function makeFallbackVisionCaller(
         const errMsg = err instanceof Error ? err.message : String(err);
         const retryable = isRetryableProviderError(err);
         const httpStatus = /HTTP (\d{3})/.exec(errMsg)?.[1];
+        const diagnostic = err instanceof ProviderJsonParseError
+          ? err.diagnostic
+          : httpStatus ? { kind: "http_error" as const, httpStatus: Number(httpStatus) }
+          : /timeout|ETIMEDOUT|AbortError/i.test(errMsg) ? { kind: "timeout" as const }
+          : undefined;
         traceSink?.({
           phase,
           event: "call_error",
@@ -107,7 +113,8 @@ export function makeFallbackVisionCaller(
           status: "error",
           retryable,
           reason: errMsg.slice(0, 500),
-          ...(httpStatus ? { httpStatus: Number(httpStatus) } : {})
+          ...(httpStatus ? { httpStatus: Number(httpStatus) } : {}),
+          ...(diagnostic !== undefined ? { diagnostic } : {})
         });
         if (!retryable) throw err;
         // Advance sticky index past this unhealthy candidate and emit trace + fallback event.
@@ -122,7 +129,8 @@ export function makeFallbackVisionCaller(
             routeIndex: i,
             retryable: true,
             reason: errMsg.slice(0, 500),
-            status: "error"
+            status: "error",
+            ...(diagnostic !== undefined ? { diagnostic } : {})
           });
           const next = candidates[i + 1];
           if (next) {
