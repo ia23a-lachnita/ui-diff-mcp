@@ -171,7 +171,6 @@ export async function auditElementPair(
         "actual_crop", baseFileName("actual-crop"), pairId
       );
       detArtifacts.push(actArtifact);
-      const detArtifactPaths = detArtifacts.map(a => a.path);
       const detImageRoles = detArtifacts.map(a => a.role);
 
       trace.push({
@@ -184,7 +183,7 @@ export async function auditElementPair(
         status: "deterministic_projected_mismatch",
         evidenceCount: detArtifacts.length,
         imageRoles: detImageRoles,
-        artifactPaths: detArtifactPaths
+        artifactPaths: detArtifacts
       });
       const record: DiffRecord = {
         id: diffId(),
@@ -195,7 +194,7 @@ export async function auditElementPair(
         location: actualEl.box,
         evidence: [`deterministic_projected_mismatch: ${mismatchResult.reason}, changedPercent=${mismatchResult.changedPercent.toFixed(1)}`],
         measurements: ctx.measurements,
-        artifactPaths: detArtifactPaths,
+        artifactPaths: detArtifacts,
         reviewerStatus: "accepted",
         model: "deterministic"
       };
