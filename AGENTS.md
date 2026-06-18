@@ -26,6 +26,13 @@ The implementation status file is the persistent source of truth for where the p
 - Every implementation commit should include the code/docs changed for that task plus the tracking updates for the same task.
 - The status file must not contain secrets, API keys, raw model credentials, or large generated artifact paths outside committed docs/examples.
 
+## External Review Tooling
+
+- Do not start new plan reviews with the deprecated Gemini CLI.
+- Use Google Antigravity via `agy` for Gemini-family external reviews.
+- If the current terminal session does not see `agy`, refresh PATH from the Windows user/machine environment or call `C:\Users\xursc\AppData\Local\agy\bin\agy.exe` directly.
+- As of 2026-06-18, `agy --print` can complete with exit code 0 but emit no stdout when launched from a non-TTY subprocess. Treat an empty captured response as a tooling failure, not a successful review. Prefer an interactive/TTY Antigravity session until upstream issue `google-antigravity/antigravity-cli#76` is fixed.
+
 ## Required Environment Variables
 
 These must be set in the shell before running live tests or the sidecar. They are never committed to the repo.

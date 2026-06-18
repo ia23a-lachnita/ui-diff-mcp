@@ -873,19 +873,31 @@ git push
 - Placeholder scan: No unresolved implementation placeholders remain.
 - Type consistency: `ProviderFailureDiagnostic`, `ImagePairTransform`, `classificationSource`, and `projectionMismatchReason` are named once and reused consistently.
 
-## Gemini Review
+## External Review
 
-Gemini 3.1 Pro Preview review attempt:
+Legacy Gemini CLI review attempts:
+
+- Tool status: deprecated for new reviews. Use Antigravity/`agy` instead.
+
+Gemini 3.1 Pro Preview review attempt through the legacy Gemini CLI:
 
 - Result: blocked by local Gemini CLI authentication.
 - Error class: `IneligibleTierError`.
 - Reason text: `This client is no longer supported for Gemini Code Assist for individuals.`
 - Review status: not completed.
 
-Gemini 3 Pro Preview fallback attempt:
+Gemini 3 Pro Preview fallback attempt through the legacy Gemini CLI:
 
 - Result: blocked by the same local Gemini CLI authentication error.
 - Error class: `IneligibleTierError`.
 - Review status: not completed.
 
-No Gemini feedback was incorporated because no Gemini review completed. The plan was self-reviewed against the requested scope and is committed for human review with this blocker recorded explicitly.
+Antigravity/`agy` replacement attempt:
+
+- `agy` location: `C:\Users\xursc\AppData\Local\agy\bin\agy.exe`.
+- `agy --help`: succeeded.
+- `agy --print`: exited 0 but emitted empty stdout for both a plan-review prompt and a trivial `AGY_OK` prompt from the non-TTY Codex subprocess.
+- Upstream issue: `https://github.com/google-antigravity/antigravity-cli/issues/76` documents the same non-TTY `--print` stdout loss.
+- Review status: not completed. Empty stdout must be treated as a tooling failure, not as an approving review.
+
+No external feedback was incorporated because no Gemini-family review completed. The plan was self-reviewed against the requested scope and is committed for human review with this blocker recorded explicitly. Next reviewer attempt should run Antigravity/`agy` from a real interactive TTY or after the non-TTY print bug is fixed.

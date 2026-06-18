@@ -1242,11 +1242,11 @@ The first implementation milestone is complete when:
 
 ## Gemini Review
 
-Status: reviewed with Gemini CLI on 2026-06-12, then re-reviewed with `gemini-3-pro-preview`.
+Status: reviewed with legacy Gemini CLI on 2026-06-12, then re-reviewed with `gemini-3-pro-preview`. For new reviews, use Antigravity/`agy` rather than the deprecated Gemini CLI.
 
 Requested model: `gemini-3-pro`.
 
-Result: the installed Gemini CLI rejected `gemini-3-pro` with `ModelNotFoundError`, so the review was run with `gemini-2.5-pro`, the available Pro model exposed by the local tool metadata. The exact limitation is preserved here so the review trail stays honest.
+Result: the installed legacy Gemini CLI rejected `gemini-3-pro` with `ModelNotFoundError`, so the review was run with `gemini-2.5-pro`, the available Pro model exposed by the local tool metadata. The exact limitation is preserved here so the review trail stays honest.
 
 Review summary:
 

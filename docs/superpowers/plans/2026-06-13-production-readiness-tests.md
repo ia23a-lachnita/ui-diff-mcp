@@ -1405,14 +1405,14 @@ Gemini 3 Pro Preview review attempt 1:
 
 - `AGREEMENT_STATUS: blocked`
 - Tool/model: `gemini-3-pro-preview` through `mcp__gemini_cli.brainstorm`
-- Result: Gemini CLI returned `QUOTA_EXHAUSTED`.
+- Result: legacy Gemini CLI returned `QUOTA_EXHAUSTED`.
 - Reported reset: about 4h20m after the attempt on 2026-06-13.
 - Required follow-up before executing this plan: retry `gemini-3-pro-preview` review and append its blocker-focused response here. If Gemini returns any `MUST_FIX`, revise this plan and repeat review until `AGREEMENT_STATUS: agree`.
 
 Gemini 3 Pro Preview review attempt 2 (post-implementation):
 
 - `AGREEMENT_STATUS: agree`
-- Tool/model: `gemini-3-pro-preview` through `mcp__gemini-cli.ask-gemini`
+- Historical tool/model: `gemini-3-pro-preview` through `mcp__gemini-cli.ask-gemini`. For new reviews, use Antigravity/`agy` rather than the deprecated Gemini CLI.
 - Date: 2026-06-13.
 - Scope: reviewed the implemented test gates (`tests/helpers/mcp-client.ts`, `src/server.ts`, `tests/unit/server-handlers.test.ts`, `tests/integration/mcp-tools.integration.test.ts`, `src/capture/mobile-capture.ts`, `tests/unit/mobile-capture.test.ts`, `tests/live/*.test.ts`, `package.json`, `vitest.config.ts`) for MUST_FIX correctness/reliability defects only.
 - Result: no MUST_FIX issues. Gemini confirmed deterministic/credential-free default tests, correct live-test env-gating and coverage exclusions, met thresholds (85/68/85/85), and accurate docs. Remaining step is running the live gates before production sign-off.
