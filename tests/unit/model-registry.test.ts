@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CANONICAL_MODEL_RANKING, getModelByRole, getRequiredModels, selectModelForMode, selectFallbackModelsForMode, resolveMode, requiredImagesForRole, modelFamilyKey } from "../../src/models/model-registry.js";
+import { CANONICAL_MODEL_RANKING, getModelByRole, getRequiredModels, selectModelForMode, selectFallbackModelsForMode, resolveMode, requiredImagesForRole, modelFamilyKey, candidateSupportsLogicalRole } from "../../src/models/model-registry.js";
 import type { ProbeResult } from "../../src/models/probes.js";
 
 const NOW = new Date().toISOString();
@@ -381,6 +381,81 @@ describe("selectFallbackModelsForMode — route diversity", () => {
     const candidates = selectFallbackModelsForMode("auditor", "free", allPass(), 3, noEnv);
     expect(candidates.length).toBeGreaterThan(0);
     expect(candidates.every(c => c.provider === "openrouter")).toBe(true);
+  });
+});
+
+describe("candidateSupportsLogicalRole", () => {
+  it("returns true when candidate.role matches logicalRole", () => {
+    const c = CANONICAL_MODEL_RANKING.find(c => c.role === "auditor")!;
+    expect(candidateSupportsLogicalRole(c, "auditor")).toBe(true);
+  });
+
+  it("returns true for target_recovery when capabilities allow it and maxImages>=4", () => {
+    const c = CANONICAL_MODEL_RANKING.find(c => c.role === "auditor" && c.capabilities?.allowedRoles.includes("target_recovery"))!;
+    expect(c).toBeDefined();
+    expect(candidateSupportsLogicalRole(c, "target_recovery")).toBe(true);
+  });
+
+  it("returns false for target_recovery on single-image Llama entries", () => {
+    const llama = CANONICAL_MODEL_RANKING.find(c => c.model.includes("llama-3.2") && c.capabilities?.maxImages === 1)!;
+    expect(llama).toBeDefined();
+    expect(candidateSupportsLogicalRole(llama, "target_recovery")).toBe(false);
+  });
+
+  it("returns false when capabilities are absent", () => {
+    const bare = { role: "auditor" as const };
+    expect(candidateSupportsLogicalRole(bare as never, "target_recovery")).toBe(false);
+  });
+});
+
+describe("strong auditor routes eligible for target recovery", () => {
+  const withNvidia: Record<string, string | undefined> = { NVIDIA_API_KEY: "test-key" };
+
+  it("kimi-k2.6 auditor with passing target_recovery probe is returned for selectFallbackModelsForMode target_recovery free", () => {
+    const probes: ProbeResult[] = [
+      makeProbe("nvidia", "moonshotai/kimi-k2.6", "target_recovery", "pass", 4)
+    ];
+    const candidates = selectFallbackModelsForMode("target_recovery", "free", probes, 3, withNvidia);
+    expect(candidates.some(c => c.model === "moonshotai/kimi-k2.6")).toBe(true);
+  });
+
+  it("qwen3.5-397b auditor with passing target_recovery probe is returned for target_recovery", () => {
+    const probes: ProbeResult[] = [
+      makeProbe("nvidia", "qwen/qwen3.5-397b-a17b", "target_recovery", "pass", 4)
+    ];
+    const candidates = selectFallbackModelsForMode("target_recovery", "free", probes, 3, withNvidia);
+    expect(candidates.some(c => c.model === "qwen/qwen3.5-397b-a17b")).toBe(true);
+  });
+
+  it("single-image llama reviewer is NOT returned for target_recovery even if probe passes", () => {
+    const probes: ProbeResult[] = [
+      makeProbe("nvidia", "meta/llama-3.2-90b-vision-instruct", "target_recovery", "pass", 4),
+      makeProbe("nvidia", "moonshotai/kimi-k2.6", "target_recovery", "pass", 4)
+    ];
+    const candidates = selectFallbackModelsForMode("target_recovery", "free", probes, 3, withNvidia);
+    expect(candidates.every(c => c.model !== "meta/llama-3.2-90b-vision-instruct")).toBe(true);
+  });
+
+  it("candidate with auditor-only probe pass but no target_recovery probe is not returned for target_recovery", () => {
+    const probes: ProbeResult[] = [
+      makeProbe("nvidia", "moonshotai/kimi-k2.6", "auditor", "pass", 5)
+      // no target_recovery probe
+    ];
+    const candidates = selectFallbackModelsForMode("target_recovery", "free", probes, 3, withNvidia);
+    expect(candidates.every(c => c.model !== "moonshotai/kimi-k2.6")).toBe(true);
+  });
+
+  it("free mode: NVIDIA target_recovery candidates come before OpenRouter in the result list", () => {
+    const probes: ProbeResult[] = [
+      makeProbe("nvidia", "moonshotai/kimi-k2.6", "target_recovery", "pass", 4),
+      makeProbe("openrouter", "nex-agi/nex-n2-pro:free", "target_recovery", "pass", 4)
+    ];
+    const candidates = selectFallbackModelsForMode("target_recovery", "free", probes, 3, withNvidia);
+    const nvidiaIdx = candidates.findIndex(c => c.provider === "nvidia");
+    const orIdx = candidates.findIndex(c => c.provider === "openrouter");
+    if (nvidiaIdx >= 0 && orIdx >= 0) {
+      expect(nvidiaIdx).toBeLessThan(orIdx);
+    }
   });
 });
 
