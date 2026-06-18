@@ -51,15 +51,11 @@ function overlapsExpanded(a: PixelComponent["box"], b: PixelComponent["box"], ga
 
 export function clusterUncoveredComponents(
   components: PixelComponent[],
-  options: { maxGapPx: number; maxClusterAreaRatio: number }
+  options: { maxGapPx: number; maxClusterAreaRatio: number; imageWidth: number; imageHeight: number }
 ): PixelComponent[] {
   if (components.length === 0) return [];
 
-  const screenXs = components.map(c => c.box.x + c.box.width);
-  const screenYs = components.map(c => c.box.y + c.box.height);
-  const screenW = Math.max(...screenXs);
-  const screenH = Math.max(...screenYs);
-  const screenArea = screenW * screenH;
+  const screenArea = options.imageWidth * options.imageHeight;
 
   const nodes: ClusterNode[] = components.map((c, i) => ({ parent: i, rank: 0, box: c.box }));
 

@@ -248,6 +248,9 @@ export async function handleCaptureMobileScreen(
     validationStatus: captureFields.validationStatus,
     warnings: captureFields.warnings
   };
+  if (captureFields.validationStatus !== "ok") {
+    throw new Error(`Capture validation failed (${captureFields.validationStatus}): ${captureFields.warnings.join("; ") || "no detail"}`);
+  }
   return {
     content: [{ type: "text" as const, text: `Screenshot captured to ${imagePath}` }],
     structuredContent: toRecord({ imagePath, capture })

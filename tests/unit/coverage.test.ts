@@ -124,13 +124,13 @@ describe("assignDiffComponentsToRecords", () => {
 
 describe("clusterUncoveredComponents", () => {
   it("returns empty array for empty input", () => {
-    expect(clusterUncoveredComponents([], { maxGapPx: 10, maxClusterAreaRatio: 0.5 })).toHaveLength(0);
+    expect(clusterUncoveredComponents([], { maxGapPx: 10, maxClusterAreaRatio: 0.5, imageWidth: 1000, imageHeight: 2000 })).toHaveLength(0);
   });
 
   it("does not merge components far apart", () => {
     const a = { box: { x: 0, y: 0, width: 10, height: 10 }, pixelCount: 100 };
     const b = { box: { x: 200, y: 200, width: 10, height: 10 }, pixelCount: 100 };
-    const result = clusterUncoveredComponents([a, b], { maxGapPx: 5, maxClusterAreaRatio: 0.5 });
+    const result = clusterUncoveredComponents([a, b], { maxGapPx: 5, maxClusterAreaRatio: 0.5, imageWidth: 1000, imageHeight: 1000 });
     expect(result).toHaveLength(2);
   });
 
@@ -139,7 +139,7 @@ describe("clusterUncoveredComponents", () => {
       box: { x: i * 12, y: 0, width: 10, height: 10 },
       pixelCount: 50
     }));
-    const result = clusterUncoveredComponents(components, { maxGapPx: 5, maxClusterAreaRatio: 0.9 });
+    const result = clusterUncoveredComponents(components, { maxGapPx: 5, maxClusterAreaRatio: 0.9, imageWidth: 1000, imageHeight: 1000 });
     expect(result.length).toBeLessThan(components.length);
     const totalPixels = result.reduce((s, c) => s + c.pixelCount, 0);
     expect(totalPixels).toBe(250);
@@ -150,7 +150,7 @@ describe("clusterUncoveredComponents", () => {
       box: { x: i * 5, y: 0, width: 4, height: 4 },
       pixelCount: 10
     }));
-    const result = clusterUncoveredComponents(components, { maxGapPx: 3, maxClusterAreaRatio: 0.9 });
+    const result = clusterUncoveredComponents(components, { maxGapPx: 3, maxClusterAreaRatio: 0.9, imageWidth: 1000, imageHeight: 1000 });
     expect(result.length).toBeLessThan(5);
     const totalPixels = result.reduce((s, c) => s + c.pixelCount, 0);
     expect(totalPixels).toBe(300);
@@ -160,8 +160,8 @@ describe("clusterUncoveredComponents", () => {
     // Two components far enough apart that their merged bounding box is huge
     const a = { box: { x: 0, y: 0, width: 100, height: 100 }, pixelCount: 100 };
     const b = { box: { x: 110, y: 0, width: 100, height: 100 }, pixelCount: 100 };
-    // Screen extent is 210x100=21000; merged 210x100=21000 → ratio=1.0 ≥ 0.5
-    const result = clusterUncoveredComponents([a, b], { maxGapPx: 20, maxClusterAreaRatio: 0.5 });
+    // imageWidth=210, imageHeight=100 → screenArea=21000; merged 210x100=21000 → ratio=1.0 ≥ 0.5, not merged
+    const result = clusterUncoveredComponents([a, b], { maxGapPx: 20, maxClusterAreaRatio: 0.5, imageWidth: 210, imageHeight: 100 });
     expect(result).toHaveLength(2);
   });
 });

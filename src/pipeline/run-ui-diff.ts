@@ -622,13 +622,23 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
         debugTrace.coverage = traceCoverageDecisions(significantComponents, allDiffs, 50);
         const rawUncoveredComponents = significantComponents.filter((_, index) => debugTrace.coverage[index]?.status === "uncovered");
         const uncoveredComponents = rawUncoveredComponents.length > 0
-          ? clusterUncoveredComponents(rawUncoveredComponents, { maxGapPx: 12, maxClusterAreaRatio: 0.5 })
+          ? clusterUncoveredComponents(rawUncoveredComponents, { maxGapPx: 12, maxClusterAreaRatio: 0.5, imageWidth: actualImg.width, imageHeight: actualImg.height })
           : rawUncoveredComponents;
         const preClusterUncoveredComponents = rawUncoveredComponents.length;
         const postClusterUncoveredComponents = uncoveredComponents.length;
         if (uncoveredComponents.length > 0 && !recoveryCaller) {
           warnings.push("Target recovery skipped: no passing target_recovery route available for current mode. Uncovered pixel regions will not be classified.");
           visualClassificationStatus = "incomplete";
+          recoverySummary = {
+            totalUncoveredComponents: uncoveredComponents.length,
+            attemptedComponents: 0,
+            skippedComponents: uncoveredComponents.length,
+            recoveredDiffs: 0,
+            unclassifiedCount: uncoveredComponents.length,
+            stoppedReason: "caller_unavailable",
+            preClusterUncoveredComponents,
+            postClusterUncoveredComponents
+          };
           providerTrace.emit({
             phase: "recovery",
             event: "route_exhausted",

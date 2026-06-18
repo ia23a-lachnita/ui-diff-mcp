@@ -64,7 +64,7 @@ describe.skipIf(!calorixLive)("Calorix live UI diff smoke", () => {
 
       // Bounded smoke: audit was limited by UI_DIFF_MAX_AUDIT_PAIRS; classification is expected
       // incomplete because recovery cannot cover all uncovered components in a 3-pair bounded run.
-      // The full gate (verify:calorix-full-live) asserts complete.
+      // The full gate (verify:calorix-full-live) accepts incomplete-with-route_exhausted as a degraded diagnostic pass.
       expect(report.auditScope?.auditLimited, "bounded smoke gate: audit must be limited by UI_DIFF_MAX_AUDIT_PAIRS").toBe(true);
       expect(report.visualClassificationStatus, "classification expected incomplete when auditLimited").toBe("incomplete");
 
@@ -289,6 +289,7 @@ describe.skipIf(!calorixReleaseLive)("Calorix release sign-off gate", () => {
     expect(process.env["LOCATEANYTHING_SIDECAR_URL"], "LOCATEANYTHING_SIDECAR_URL must be set").toBeTruthy();
 
     await expect(fs.access(expectedImagePath!), "expected screenshot must exist on disk").resolves.toBeUndefined();
+    await expect(fs.access(actualImagePath!), "actual screenshot must exist on disk").resolves.toBeUndefined();
 
     const projectRoot = "C:/Users/xursc/projects/calorix";
     await expect(fs.access(projectRoot)).resolves.toBeUndefined();

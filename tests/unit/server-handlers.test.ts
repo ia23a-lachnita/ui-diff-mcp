@@ -199,6 +199,20 @@ describe("server tool handlers", () => {
     });
   });
 
+  it("capture handler throws when validationStatus is not ok", async () => {
+    const d = deps({
+      captureMobileScreen: vi.fn().mockResolvedValue({
+        path: "C:/tmp/screen.png",
+        width: 1080,
+        height: 1920,
+        blankPixelRatio: 0.99,
+        validationStatus: "blank",
+        warnings: ["Image appears blank (99.0% blank pixels)"]
+      })
+    });
+    await expect(handleCaptureMobileScreen({ target: "adb" }, d)).rejects.toThrow("blank");
+  });
+
   it("start_ui_diff_run returns queued status and a runId", async () => {
     const d = deps();
     const result = await handleStartUiDiffRun({
