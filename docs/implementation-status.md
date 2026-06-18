@@ -4,12 +4,12 @@ This file is the persistent handoff state for implementation agents. Read it bef
 
 ## Current State
 
-- Status: **Viewport/projection/capture hardening complete.** All 8 plan tasks implemented, Gemini-reviewed (no MUST_FIX), 366 unit + 22 integration tests pass, typecheck clean. Production release still blocked by free-tier auditor route exhaustion at Calorix scale (`visualClassificationStatus: incomplete`). The new `verify:calorix-release-live` gate enforces `visualClassificationStatus === "complete"` and `viewportCompatibilityStatus === "compatible"` for production sign-off.
+- Status: **New hardening plan drafted for review.** Viewport/projection/capture hardening remains complete: all 8 prior plan tasks implemented, Gemini-reviewed (no MUST_FIX), 367 unit/e2e + 22 integration tests pass, typecheck clean. Production release is still blocked by free-tier auditor route exhaustion at Calorix scale (`visualClassificationStatus: incomplete`). The new draft plan addresses provider failure diagnostics, stronger target-recovery routing, non-stretch coordinate projection, honest projected-mismatch records, crop-grounded model wording, and fresh live validation.
 - Branch: `master`.
 - Approved spec: `docs/superpowers/specs/2026-06-12-ui-diff-mcp-research-design.md`.
 - Completed plan: `docs/superpowers/plans/2026-06-17-viewport-projection-capture-hardening.md` (all 8 tasks done).
 - Production-readiness test plan: `docs/superpowers/plans/2026-06-13-production-readiness-tests.md`.
-- Current task: None (hardening plan complete). Next: identify paid or higher-quota auditor route to unblock full Calorix classification.
+- Current task: Plan review for `docs/superpowers/plans/2026-06-18-model-diagnostics-recovery-projection-hardening.md`. Gemini review was attempted with `gemini-3.1-pro-preview` and `gemini-3-pro-preview` but is blocked locally by `IneligibleTierError` from the Gemini CLI. Next: human review or retry Gemini from an updated/authenticated client.
 - Calorix live actual screenshot for new gates: `C:\Users\xursc\projects\calorix\docs\screenshots\today-screen-2026-06-17-adb-seeded-2.png`. Do not use the older `today-screen-2026-06-09-criterion-audit-validation.png` cutoff screenshot for fresh Calorix sign-off runs.
 - Last verification: `npm run verify` — 367 unit/e2e + 22 integration tests pass, typecheck clean, build clean (2026-06-18).
 - Open blockers: **Production release blocked** — full Calorix classification is incomplete due to free-tier auditor route exhaustion (all 3 free routes fail at Calorix scale). `verify:calorix-release-live` with `RUN_CALORIX_RELEASE_LIVE=1` is the new production gate. Next step: identify paid or higher-quota auditor route.
