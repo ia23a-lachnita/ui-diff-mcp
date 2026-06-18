@@ -88,7 +88,7 @@ $env:LOCATEANYTHING_MAX_NEW_TOKENS="512"
 $env:LOCATEANYTHING_TIMEOUT_MS="300000"
 $env:UI_DIFF_MAX_AUDIT_PAIRS="3"
 $env:UI_DIFF_LIVE_EXPECTED_IMAGE="C:\Users\xursc\projects\calorix\docs\mockups\image\dark\single\Today.png"
-$env:UI_DIFF_LIVE_ACTUAL_IMAGE="C:\Users\xursc\projects\calorix\docs\screenshots\today-screen-2026-06-09-criterion-audit-validation.png"
+$env:UI_DIFF_LIVE_ACTUAL_IMAGE="C:\Users\xursc\projects\calorix\docs\screenshots\today-screen-2026-06-17-adb-seeded-2.png"
 npm run verify:calorix-live
 ```
 
@@ -115,7 +115,7 @@ $env:LOCATEANYTHING_MAX_NEW_TOKENS="512"
 $env:LOCATEANYTHING_TIMEOUT_MS="300000"
 # Do NOT set UI_DIFF_MAX_AUDIT_PAIRS — unbounded audit required
 $env:UI_DIFF_LIVE_EXPECTED_IMAGE="C:\Users\xursc\projects\calorix\docs\mockups\image\dark\single\Today.png"
-$env:UI_DIFF_LIVE_ACTUAL_IMAGE="C:\Users\xursc\projects\calorix\docs\screenshots\today-screen-2026-06-09-criterion-audit-validation.png"
+$env:UI_DIFF_LIVE_ACTUAL_IMAGE="C:\Users\xursc\projects\calorix\docs\screenshots\today-screen-2026-06-17-adb-seeded-2.png"
 npm run verify:calorix-full-live
 ```
 
