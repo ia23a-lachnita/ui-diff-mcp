@@ -144,7 +144,8 @@ export { QUERY_ID_TYPE_MAP };
 
 export function projectElementsToActual(
   expectedElements: UiElement[],
-  actualImageSize: { width: number; height: number }
+  actualImageSize: { width: number; height: number },
+  projection?: { normalizedActualScaleX: number; normalizedActualScaleY: number }
 ): UiElement[] {
   return expectedElements.map(exp => {
     const x = Math.max(0, Math.min(exp.box.x, actualImageSize.width - 1));
@@ -158,7 +159,16 @@ export function projectElementsToActual(
       id: `proj-${exp.id}`,
       box: clampedBox,
       normalizedBox,
-      source: "projected" as const
+      source: "projected" as const,
+      projectionMetadata: projection
+        ? {
+            mode: "expected_coordinate_projection" as const,
+            coordinateSpace: "normalized_expected_image" as const,
+            sourceElementId: exp.id,
+            normalizedActualScaleX: projection.normalizedActualScaleX,
+            normalizedActualScaleY: projection.normalizedActualScaleY
+          }
+        : undefined
     };
   });
 }

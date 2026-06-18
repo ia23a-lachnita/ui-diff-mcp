@@ -7,6 +7,7 @@ import { ensureSidecarRunning, type SidecarHandle } from "../helpers/sidecar-man
 
 const calorixLive = process.env["RUN_CALORIX_UI_DIFF_LIVE"] === "1";
 const calorixFullLive = process.env["RUN_CALORIX_FULL_LIVE"] === "1";
+const calorixReleaseLive = process.env["RUN_CALORIX_RELEASE_LIVE"] === "1";
 
 describe.skipIf(!calorixLive)("Calorix live UI diff smoke", () => {
   let sidecarHandle: SidecarHandle | undefined;
@@ -262,6 +263,78 @@ describe.skipIf(!calorixFullLive)("verify:calorix-full-live unbounded all-target
       if (report.modelSelection) {
         console.info(`[full-audit] auditor=${report.modelSelection.auditor?.provider}/${report.modelSelection.auditor?.model}`);
         console.info(`[full-audit] reviewer=${report.modelSelection.reviewer?.provider}/${report.modelSelection.reviewer?.model}`);
+      }
+    } finally {
+      await started.close();
+    }
+  }, 2400000);
+});
+
+describe.skipIf(!calorixReleaseLive)("Calorix release sign-off gate", () => {
+  let sidecarHandle: SidecarHandle | undefined;
+
+  beforeAll(async () => {
+    const url = process.env["LOCATEANYTHING_SIDECAR_URL"] ?? "http://127.0.0.1:39731";
+    sidecarHandle = await ensureSidecarRunning(url);
+  }, 130000);
+
+  afterAll(() => { sidecarHandle?.close(); });
+
+  test("production sign-off: complete classification, no viewport mismatch, audit not limited", async () => {
+    const expectedImagePath = process.env["UI_DIFF_LIVE_EXPECTED_IMAGE"];
+    const actualImagePath = process.env["UI_DIFF_LIVE_ACTUAL_IMAGE"];
+    expect(expectedImagePath, "UI_DIFF_LIVE_EXPECTED_IMAGE must be set").toBeTruthy();
+    expect(actualImagePath, "UI_DIFF_LIVE_ACTUAL_IMAGE must be set").toBeTruthy();
+    expect(process.env["OPENROUTER_API_KEY"], "OPENROUTER_API_KEY must be set").toBeTruthy();
+    expect(process.env["LOCATEANYTHING_SIDECAR_URL"], "LOCATEANYTHING_SIDECAR_URL must be set").toBeTruthy();
+
+    await expect(fs.access(expectedImagePath!), "expected screenshot must exist on disk").resolves.toBeUndefined();
+
+    const projectRoot = "C:/Users/xursc/projects/calorix";
+    await expect(fs.access(projectRoot)).resolves.toBeUndefined();
+
+    const started = await startUiDiffMcpClient({ LOCATEANYTHING_TIMEOUT_MS: "600000" });
+    try {
+      const startResult = await started.client.callTool({
+        name: "start_ui_diff_run",
+        arguments: { expectedImagePath: expectedImagePath!, actualImagePath: actualImagePath!, projectRoot, mode: "free" }
+      }, undefined, { timeout: 600000 });
+      expect(startResult.isError).not.toBe(true);
+      const { runId } = startResult.structuredContent as { runId: string };
+
+      let statusOut: { status: string; reportPath?: string } | undefined;
+      for (let i = 0; i < 144; i++) {
+        await new Promise(r => setTimeout(r, 10000));
+        const statusResult = await started.client.callTool({ name: "get_ui_diff_run_status", arguments: { projectRoot, runId } }, undefined, { timeout: 600000 });
+        statusOut = statusResult.structuredContent as { status: string; reportPath?: string };
+        if (statusOut.status !== "running") break;
+      }
+      expect(statusOut?.status, "run must terminate — not hang").not.toBe("running");
+      expect(statusOut?.status, `release gate requires complete status, got: ${statusOut?.status}`).toBe("complete");
+
+      const report = UiDiffReportSchema.parse(JSON.parse(await fs.readFile(statusOut!.reportPath!, "utf8")));
+
+      expect(
+        report.visualClassificationStatus,
+        "release gate requires complete visual classification — incomplete means free auditor routes were exhausted"
+      ).toBe("complete");
+
+      expect(
+        report.auditScope?.auditLimited ?? false,
+        "release gate requires auditLimited=false"
+      ).toBe(false);
+
+      expect(
+        report.viewportCompatibilityStatus ?? "compatible",
+        "release gate requires no viewport distortion"
+      ).toBe("compatible");
+
+      console.info(`[release-gate] diffs=${report.diffs.length}`);
+      console.info(`[release-gate] locatorCoverageStatus=${report.locatorCoverageStatus}`);
+      if (report.imageNormalization) {
+        console.info(`[release-gate] expected=${report.imageNormalization.expected.source.width}x${report.imageNormalization.expected.source.height}`);
+        console.info(`[release-gate] actual=${report.imageNormalization.actual.source.width}x${report.imageNormalization.actual.source.height}`);
+        console.info(`[release-gate] anisotropicDelta=${report.imageNormalization.actual.anisotropicScaleDeltaPercent.toFixed(2)}%`);
       }
     } finally {
       await started.close();

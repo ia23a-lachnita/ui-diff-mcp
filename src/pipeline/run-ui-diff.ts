@@ -3,6 +3,8 @@ import path from "node:path";
 import sharp from "sharp";
 import { resolveInputImagePath, createRunDirectory } from "../security/paths.js";
 import { loadNormalizedImage } from "../images/normalize.js";
+import { computeViewportCompatibility } from "../images/viewport.js";
+import { clusterUncoveredComponents } from "../report/component-clustering.js";
 import { writeOverlay, writeJsonArtifact } from "../images/artifacts.js";
 import { computePixelDiff } from "../signals/pixel-diff.js";
 import { extractEdgeMask } from "../signals/edge.js";
@@ -128,6 +130,11 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     height: expectedImg.height
   });
 
+  const viewportCompatibility = computeViewportCompatibility(expectedImg.metadata, actualImg.metadata);
+  if (viewportCompatibility.status === "mismatch") {
+    warnings.push(`[viewport-mismatch] ${viewportCompatibility.reasons.join("; ")}`);
+  }
+
   const pixelDiff = computePixelDiff(normalizedExpPath, normalizedActPath);
   const pixelDiffPngPath = path.join(runDir, "pixel-diff.png");
   await sharp(Buffer.from(pixelDiff.diffBuffer), {
@@ -187,6 +194,9 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
       ...(auditScope !== undefined ? { auditScope } : {}),
       ...(modelSelection !== undefined ? { modelSelection } : {}),
       ...(recoverySummary !== undefined ? { recoverySummary } : {}),
+      imageNormalization: { expected: expectedImg.metadata, actual: actualImg.metadata },
+      viewportCompatibilityStatus: viewportCompatibility.status,
+      viewportCompatibilityReasons: viewportCompatibility.reasons,
       expectedImagePath: expectedAbs,
       actualImagePath: actualAbs,
       artifactRoot,
@@ -310,6 +320,9 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
         actualElements.push(...projectElementsToActual(expectedElements, {
           width: actualImg.width,
           height: actualImg.height
+        }, {
+          normalizedActualScaleX: actualImg.metadata.scaleX,
+          normalizedActualScaleY: actualImg.metadata.scaleY
         }));
         warnings.push("Single-pass locator active (projection mode). Set UI_DIFF_DUAL_LOCATOR=1 + UI_DIFF_ALLOW_DUAL_LOCATOR=1 + UI_DIFF_DUAL_LOCATOR_REASON for diagnostic dual-pass mode.");
       }
@@ -607,7 +620,12 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
         // Target recovery: classify uncovered changed-pixel regions
         const significantComponents = pixelDiff.components.filter(c => c.pixelCount >= 50);
         debugTrace.coverage = traceCoverageDecisions(significantComponents, allDiffs, 50);
-        const uncoveredComponents = significantComponents.filter((_, index) => debugTrace.coverage[index]?.status === "uncovered");
+        const rawUncoveredComponents = significantComponents.filter((_, index) => debugTrace.coverage[index]?.status === "uncovered");
+        const uncoveredComponents = rawUncoveredComponents.length > 0
+          ? clusterUncoveredComponents(rawUncoveredComponents, { maxGapPx: 12, maxClusterAreaRatio: 0.5 })
+          : rawUncoveredComponents;
+        const preClusterUncoveredComponents = rawUncoveredComponents.length;
+        const postClusterUncoveredComponents = uncoveredComponents.length;
         if (uncoveredComponents.length > 0 && !recoveryCaller) {
           warnings.push("Target recovery skipped: no passing target_recovery route available for current mode. Uncovered pixel regions will not be classified.");
           visualClassificationStatus = "incomplete";
@@ -639,7 +657,9 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
             skippedComponents: recoveryResult.skippedComponents,
             recoveredDiffs: recoveryResult.recovered.length,
             unclassifiedCount: recoveryResult.unclassifiedCount,
-            stoppedReason: recoveryResult.stoppedReason
+            stoppedReason: recoveryResult.stoppedReason,
+            preClusterUncoveredComponents,
+            postClusterUncoveredComponents
           };
           if (recoveryResult.stoppedReason !== "none" || recoveryResult.unclassifiedCount > 0) {
             visualClassificationStatus = "incomplete";
@@ -691,6 +711,9 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     ...(auditScope !== undefined ? { auditScope } : {}),
     ...(modelSelection !== undefined ? { modelSelection } : {}),
     ...(recoverySummary !== undefined ? { recoverySummary } : {}),
+    imageNormalization: { expected: expectedImg.metadata, actual: actualImg.metadata },
+    viewportCompatibilityStatus: viewportCompatibility.status,
+    viewportCompatibilityReasons: viewportCompatibility.reasons,
     expectedImagePath: expectedAbs,
     actualImagePath: actualAbs,
     artifactRoot,

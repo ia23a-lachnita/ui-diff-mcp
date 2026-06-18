@@ -195,3 +195,29 @@ describe("runUiDiff with mock sidecar and models (full mode)", () => {
     expect(report.visualClassificationStatus).toBe("incomplete");
   });
 });
+
+describe("runUiDiff viewport mismatch detection", () => {
+  it("reports mismatch status and warning when actual image has different aspect ratio", async () => {
+    const { writeMismatchedDimensionFixture } = await import("../../src/testing/fixture-images.js");
+    const { expected, actual } = await writeMismatchedDimensionFixture(
+      tmpDir, "expected-dim.png", "actual-dim.png"
+    );
+
+    const result = await runUiDiff({
+      expectedImagePath: expected,
+      actualImagePath: actual,
+      projectRoot: tmpDir,
+      mode: "deterministic_only"
+    });
+
+    expect(result.status).toBe("complete");
+    const reportRaw = await fs.readFile(result.reportPath, "utf8");
+    const report = JSON.parse(reportRaw) as {
+      viewportCompatibilityStatus?: string;
+      viewportCompatibilityReasons?: string[];
+      warnings: string[];
+    };
+    expect(report.viewportCompatibilityStatus).toBe("mismatch");
+    expect(report.warnings.some(w => w.includes("[viewport-mismatch]"))).toBe(true);
+  });
+});

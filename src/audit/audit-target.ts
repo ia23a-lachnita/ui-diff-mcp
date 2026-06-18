@@ -10,6 +10,7 @@ import { buildAuditorPrompt, buildReviewerPrompt } from "./prompts.js";
 import type { VisionJsonCaller } from "../models/vision-json.js";
 import { computePixelDiff } from "../signals/pixel-diff.js";
 import { createDirectionalDiffOverlay, type Rgba } from "../images/directional-diff.js";
+import { detectProjectedCropMismatch } from "./projected-mismatch.js";
 
 const ReviewDecisionSchema = z.object({
   decision: z.enum(["accepted", "rejected", "needs_escalation"]),
@@ -142,6 +143,50 @@ export async function auditElementPair(
 
   const refEl = expectedEl ?? actualEl;
   if (!refEl) return { accepted, rejected, trace };
+
+  if (actualEl?.source === "projected" && expectedEl) {
+    const expCropData = extractImageCrop(ctx.expectedRgba.data, ctx.expectedRgba.width, ctx.expectedRgba.height, expectedEl.box);
+    const actCropData = extractImageCrop(ctx.actualRgba.data, ctx.actualRgba.width, ctx.actualRgba.height, actualEl.box);
+    const mismatchResult = detectProjectedCropMismatch(
+      { data: expCropData, width: Math.max(1, Math.round(expectedEl.box.width)), height: Math.max(1, Math.round(expectedEl.box.height)) },
+      { data: actCropData, width: Math.max(1, Math.round(actualEl.box.width)), height: Math.max(1, Math.round(actualEl.box.height)) },
+      expectedEl.text
+    );
+    if (mismatchResult?.mismatched) {
+      const allCriteria = UiCriterionSchema.options.filter(
+        (c): c is Exclude<UiCriterion, "unclassified_visual_change"> => c !== "unclassified_visual_change"
+      );
+      for (const criterion of allCriteria) {
+        trace.push({
+          pairId: pair.id,
+          ...(pair.expectedId !== undefined ? { expectedId: pair.expectedId } : {}),
+          ...(pair.actualId !== undefined ? { actualId: pair.actualId } : {}),
+          targetLabel: refEl.label,
+          targetType: refEl.type,
+          criterion,
+          status: "deterministic_projected_mismatch",
+          evidenceCount: 0,
+          imageRoles: [],
+          artifactPaths: []
+        });
+      }
+      const record: DiffRecord = {
+        id: diffId(),
+        pairId: pair.id,
+        criterion: "color_appearance",
+        severity: "high",
+        title: `Projected element crop mismatch: ${refEl.label}`,
+        location: actualEl.box,
+        evidence: [`deterministic_projected_mismatch: ${mismatchResult.reason}, changedPercent=${mismatchResult.changedPercent.toFixed(1)}`],
+        measurements: ctx.measurements,
+        artifactPaths: [],
+        reviewerStatus: "accepted",
+        model: "deterministic"
+      };
+      accepted.push(record);
+      return { accepted, rejected, trace };
+    }
+  }
 
   const criteria = selectTriggeredCriteria(ctx.triggerCtx);
 

@@ -65,7 +65,14 @@ function report(): UiDiffReport {
 function deps(overrides: Partial<ServerDeps> = {}): ServerDeps {
   return {
     runUiDiff: vi.fn().mockResolvedValue(runOutput()),
-    captureMobileScreen: vi.fn().mockResolvedValue("C:/tmp/screen.png"),
+    captureMobileScreen: vi.fn().mockResolvedValue({
+      path: "C:/tmp/screen.png",
+      width: 1080,
+      height: 1920,
+      blankPixelRatio: 0.01,
+      validationStatus: "ok",
+      warnings: []
+    }),
     probeRequiredModels: vi.fn().mockResolvedValue([
       { role: "auditor", provider: "openrouter", model: "qwen/qwen3-vl-30b-a3b-instruct", status: "not_checked", checkedAt: new Date().toISOString(), detail: "No API key provided" },
       { role: "reviewer", provider: "openrouter", model: "google/gemini-2.5-flash-lite", status: "not_checked", checkedAt: new Date().toISOString(), detail: "No API key provided" }
@@ -180,7 +187,16 @@ describe("server tool handlers", () => {
     const d = deps();
     const result = await handleCaptureMobileScreen({ target: "adb" }, d);
     expect(d.captureMobileScreen).toHaveBeenCalledWith("adb");
-    expect(result.structuredContent).toEqual({ imagePath: "C:/tmp/screen.png" });
+    expect(result.structuredContent).toEqual({
+      imagePath: "C:/tmp/screen.png",
+      capture: {
+        width: 1080,
+        height: 1920,
+        blankPixelRatio: 0.01,
+        validationStatus: "ok",
+        warnings: []
+      }
+    });
   });
 
   it("start_ui_diff_run returns queued status and a runId", async () => {

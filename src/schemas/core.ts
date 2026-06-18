@@ -16,6 +16,28 @@ export const NormalizedBoxSchema = z.object({
 });
 export type NormalizedBox = z.infer<typeof NormalizedBoxSchema>;
 
+export const ImageNormalizationMetadataSchema = z.object({
+  source: z.object({
+    width: z.number().int().nonnegative(),
+    height: z.number().int().nonnegative(),
+    aspectRatio: z.number().nonnegative()
+  }),
+  normalized: z.object({
+    width: z.number().int().nonnegative(),
+    height: z.number().int().nonnegative(),
+    aspectRatio: z.number().nonnegative()
+  }),
+  resizeMode: z.enum(["none", "fill"]),
+  scaleX: z.number().positive(),
+  scaleY: z.number().positive(),
+  aspectRatioDeltaPercent: z.number().min(0),
+  anisotropicScaleDeltaPercent: z.number().min(0)
+});
+export type ImageNormalizationMetadata = z.infer<typeof ImageNormalizationMetadataSchema>;
+
+export const ViewportCompatibilityStatusSchema = z.enum(["compatible", "mismatch"]);
+export type ViewportCompatibilityStatus = z.infer<typeof ViewportCompatibilityStatusSchema>;
+
 export const UiElementTypeSchema = z.enum([
   "text",
   "button",
@@ -43,6 +65,15 @@ export const UiCriterionSchema = z.enum([
 ]);
 export type UiCriterion = z.infer<typeof UiCriterionSchema>;
 
+export const ProjectionMetadataSchema = z.object({
+  mode: z.literal("expected_coordinate_projection"),
+  coordinateSpace: z.literal("normalized_expected_image"),
+  sourceElementId: z.string().min(1),
+  normalizedActualScaleX: z.number().positive(),
+  normalizedActualScaleY: z.number().positive()
+});
+export type ProjectionMetadata = z.infer<typeof ProjectionMetadataSchema>;
+
 export const UiElementSchema = z.object({
   id: z.string().min(1),
   label: z.string().min(1),
@@ -53,6 +84,7 @@ export const UiElementSchema = z.object({
   text: z.string().optional(),
   confidence: z.number().finite().min(0).max(1),
   source: z.enum(["locator", "ocr", "deterministic", "merged", "projected"]),
+  projectionMetadata: ProjectionMetadataSchema.optional(),
   parentId: z.string().optional(),
   childIds: z.array(z.string()).default([])
 });
@@ -239,6 +271,8 @@ export type StageStatus = z.infer<typeof StageStatusSchema>;
 
 export const RecoverySummarySchema = z.object({
   totalUncoveredComponents: z.number().int().min(0),
+  preClusterUncoveredComponents: z.number().int().min(0).optional(),
+  postClusterUncoveredComponents: z.number().int().min(0).optional(),
   attemptedComponents: z.number().int().min(0),
   skippedComponents: z.number().int().min(0),
   recoveredDiffs: z.number().int().min(0),
@@ -258,7 +292,8 @@ export const AuditDecisionStatusSchema = z.enum([
   "reviewer_accepted",
   "reviewer_rejected",
   "reviewer_needs_escalation",
-  "reviewer_error"
+  "reviewer_error",
+  "deterministic_projected_mismatch"
 ]);
 
 export const AuditCriterionTraceSchema = z.object({
@@ -384,6 +419,12 @@ export const UiDiffReportSchema = z.object({
   })),
   runArtifacts: z.array(UiArtifactSchema).default([]),
   warnings: z.array(z.string()).default([]),
+  imageNormalization: z.object({
+    expected: ImageNormalizationMetadataSchema,
+    actual: ImageNormalizationMetadataSchema
+  }).optional(),
+  viewportCompatibilityStatus: ViewportCompatibilityStatusSchema.optional(),
+  viewportCompatibilityReasons: z.array(z.string()).optional(),
   recoverySummary: RecoverySummarySchema.optional(),
   stages: z.array(StageStatusSchema).default([]),
   debugSummary: RunDebugSummarySchema.optional()

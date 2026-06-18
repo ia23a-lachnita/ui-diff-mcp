@@ -146,6 +146,34 @@ describe("projectElementsToActual", () => {
     expect(projected[0]?.normalizedBox.width).toBeCloseTo(0.25);
     expect(projected[0]?.normalizedBox.height).toBeCloseTo(0.25);
   });
+
+  it("attaches projectionMetadata when projection scales are provided", () => {
+    const expected = buildElementMap(
+      [makeEl("buttons", "Submit", 10, 20, 80, 40)],
+      { width: 200, height: 400 }
+    );
+    const sourceId = expected[0]!.id;
+    const projected = projectElementsToActual(expected, { width: 240, height: 480 }, {
+      normalizedActualScaleX: 1.11,
+      normalizedActualScaleY: 1.09
+    });
+    const meta = projected[0]?.projectionMetadata;
+    expect(meta).toBeDefined();
+    expect(meta?.mode).toBe("expected_coordinate_projection");
+    expect(meta?.coordinateSpace).toBe("normalized_expected_image");
+    expect(meta?.sourceElementId).toBe(sourceId);
+    expect(meta?.normalizedActualScaleX).toBeCloseTo(1.11, 3);
+    expect(meta?.normalizedActualScaleY).toBeCloseTo(1.09, 3);
+  });
+
+  it("omits projectionMetadata when no projection argument given", () => {
+    const expected = buildElementMap(
+      [makeEl("icons", "back", 5, 5, 30, 30)],
+      { width: 200, height: 400 }
+    );
+    const projected = projectElementsToActual(expected, { width: 200, height: 400 });
+    expect(projected[0]?.projectionMetadata).toBeUndefined();
+  });
 });
 
 describe("mergeLocatorLanes", () => {

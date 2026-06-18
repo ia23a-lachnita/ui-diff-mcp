@@ -15,7 +15,7 @@ import {
 } from "./schemas/tool-schemas.js";
 import { putRun, getRun } from "./pipeline/run-store.js";
 import { runUiDiff, type RunInput, type RunOutput } from "./pipeline/run-ui-diff.js";
-import { captureMobileScreen } from "./capture/mobile-capture.js";
+import { captureMobileScreen, type CaptureResult } from "./capture/mobile-capture.js";
 import { probeRequiredModels, type ProbeResult } from "./models/probes.js";
 import { getRequiredModels, type ModelEntry } from "./models/model-registry.js";
 import { UiDiffReportSchema } from "./schemas/core.js";
@@ -42,7 +42,7 @@ function buildRunInput(input: {
 
 export interface ServerDeps {
   runUiDiff: (input: RunInput) => Promise<RunOutput>;
-  captureMobileScreen: (target: "adb" | "ios-simctl") => Promise<string>;
+  captureMobileScreen: (target: "adb" | "ios-simctl") => Promise<CaptureResult>;
   probeRequiredModels: (entries: ModelEntry[], openRouterApiKey: string) => Promise<ProbeResult[]>;
   getRequiredModels: () => ModelEntry[];
   readFile: typeof fs.readFile;
@@ -239,10 +239,18 @@ export async function handleCaptureMobileScreen(
   input: { target: "adb" | "ios-simctl" },
   deps: ServerDeps
 ) {
-  const imagePath = await deps.captureMobileScreen(input.target);
+  const captureResult = await deps.captureMobileScreen(input.target);
+  const { path: imagePath, ...captureFields } = captureResult;
+  const capture = {
+    width: captureFields.width,
+    height: captureFields.height,
+    blankPixelRatio: captureFields.blankPixelRatio,
+    validationStatus: captureFields.validationStatus,
+    warnings: captureFields.warnings
+  };
   return {
     content: [{ type: "text" as const, text: `Screenshot captured to ${imagePath}` }],
-    structuredContent: toRecord({ imagePath })
+    structuredContent: toRecord({ imagePath, capture })
   };
 }
 

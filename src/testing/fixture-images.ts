@@ -56,6 +56,17 @@ export async function writeRectPng(
   return outPath;
 }
 
+export async function writeMismatchedDimensionFixture(
+  dir: string,
+  filenameExpected: string,
+  filenameActual: string
+): Promise<{ expected: string; actual: string }> {
+  // expected 120x262, actual 108x240 — different aspect ratios trigger viewport mismatch
+  const expected = await writeSolidPng(dir, filenameExpected, 120, 262, 220, 220, 220);
+  const actual = await writeSolidPng(dir, filenameActual, 108, 240, 220, 220, 220);
+  return { expected, actual };
+}
+
 export async function writeTwoButtonFixture(
   dir: string,
   filenameExpected: string,

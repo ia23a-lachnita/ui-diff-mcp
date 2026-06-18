@@ -52,6 +52,28 @@ describe("loadNormalizedImage", () => {
   });
 });
 
+describe("loadNormalizedImage metadata", () => {
+  it("records resizeMode=none when no targetSize given", async () => {
+    const srcPath = await writeSolidPng(tmpDir, "src.png", 100, 100, 100, 100, 100);
+    const outPath = path.join(tmpDir, "out.png");
+    const result = await loadNormalizedImage(srcPath, outPath);
+    expect(result.metadata.resizeMode).toBe("none");
+    expect(result.metadata.scaleX).toBeCloseTo(1, 5);
+    expect(result.metadata.scaleY).toBeCloseTo(1, 5);
+    expect(result.metadata.anisotropicScaleDeltaPercent).toBeCloseTo(0, 5);
+  });
+
+  it("detects anisotropic scale when resizing 108x240 to 120x262", async () => {
+    const srcPath = await writeSolidPng(tmpDir, "actual.png", 108, 240, 180, 180, 180);
+    const outPath = path.join(tmpDir, "actual-norm.png");
+    const result = await loadNormalizedImage(srcPath, outPath, { width: 120, height: 262 });
+    expect(result.metadata.resizeMode).toBe("fill");
+    expect(result.metadata.scaleX).toBeCloseTo(120 / 108, 3);
+    expect(result.metadata.scaleY).toBeCloseTo(262 / 240, 3);
+    expect(result.metadata.anisotropicScaleDeltaPercent).toBeGreaterThan(1.5);
+  });
+});
+
 describe("writeCrop", () => {
   it("extracts a 40x40 region", async () => {
     const srcPath = await writeSolidPng(tmpDir, "src.png", 100, 100, 200, 100, 50);

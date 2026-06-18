@@ -22,6 +22,7 @@
     "verify:nvidia-live": "node scripts/require-live-env.js RUN_NVIDIA_LIVE && npm run build && vitest run tests/live/nvidia-live.test.ts --testTimeout 300000",
     "verify:calorix-live": "node scripts/require-live-env.js RUN_CALORIX_UI_DIFF_LIVE && npm run build && vitest run tests/live/calorix-smoke.live.test.ts --testTimeout 900000",
     "verify:calorix-full-live": "node scripts/require-live-env.js RUN_CALORIX_FULL_LIVE && npm run build && vitest run tests/live/calorix-smoke.live.test.ts --testTimeout 2400000",
+    "verify:calorix-release-live": "node scripts/require-live-env.js RUN_CALORIX_RELEASE_LIVE && npm run build && vitest run tests/live/calorix-smoke.live.test.ts --testTimeout 2400000",
     "start": "node dist/src/index.js",
     "benchmark:models": "tsx scripts/benchmark-free-models.ts",
     "benchmark:locator": "tsx scripts/benchmark-locator-lanes.ts"

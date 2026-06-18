@@ -42,7 +42,14 @@ export const ReadUiDiffReportOutputSchema = {
 };
 
 export const CaptureScreenOutputSchema = {
-  imagePath: z.string().min(1)
+  imagePath: z.string().min(1),
+  capture: z.object({
+    width: z.number().int().nonnegative(),
+    height: z.number().int().nonnegative(),
+    blankPixelRatio: z.number().min(0).max(1),
+    validationStatus: z.enum(["ok", "blank", "invalid_dimensions", "parse_error"]),
+    warnings: z.array(z.string())
+  })
 };
 
 export const StartUiDiffRunInputSchema = {
