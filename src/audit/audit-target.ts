@@ -174,23 +174,18 @@ export async function auditElementPair(
       const detArtifactPaths = detArtifacts.map(a => a.path);
       const detImageRoles = detArtifacts.map(a => a.role);
 
-      const allCriteria = UiCriterionSchema.options.filter(
-        (c): c is Exclude<UiCriterion, "unclassified_visual_change"> => c !== "unclassified_visual_change"
-      );
-      for (const criterion of allCriteria) {
-        trace.push({
-          pairId: pair.id,
-          ...(pair.expectedId !== undefined ? { expectedId: pair.expectedId } : {}),
-          ...(pair.actualId !== undefined ? { actualId: pair.actualId } : {}),
-          targetLabel: refEl.label,
-          targetType: refEl.type,
-          criterion,
-          status: "deterministic_projected_mismatch",
-          evidenceCount: detArtifacts.length,
-          imageRoles: detImageRoles,
-          artifactPaths: detArtifactPaths
-        });
-      }
+      trace.push({
+        pairId: pair.id,
+        ...(pair.expectedId !== undefined ? { expectedId: pair.expectedId } : {}),
+        ...(pair.actualId !== undefined ? { actualId: pair.actualId } : {}),
+        targetLabel: refEl.label,
+        targetType: refEl.type,
+        criterion: "color_appearance",
+        status: "deterministic_projected_mismatch",
+        evidenceCount: detArtifacts.length,
+        imageRoles: detImageRoles,
+        artifactPaths: detArtifactPaths
+      });
       const record: DiffRecord = {
         id: diffId(),
         pairId: pair.id,
