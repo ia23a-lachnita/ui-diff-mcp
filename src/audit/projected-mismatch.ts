@@ -1,6 +1,6 @@
 export interface ProjectedMismatchResult {
   mismatched: boolean;
-  reason: "low_visual_overlap" | "high_diff_mass" | "text_absent" | "dimension_mismatch";
+  reason: "projected_crop_low_overlap" | "projected_crop_high_diff_mass" | "expected_target_absent_at_projected_location" | "projection_dimension_mismatch";
   changedPercent: number;
   expectedDominant: string;
   actualDominant: string;
@@ -136,7 +136,7 @@ export function detectProjectedCropMismatch(
   if (expected.width !== actual.width || expected.height !== actual.height) {
     return {
       mismatched: true,
-      reason: "dimension_mismatch",
+      reason: "projection_dimension_mismatch",
       changedPercent: 100,
       expectedDominant,
       actualDominant,
@@ -152,7 +152,7 @@ export function detectProjectedCropMismatch(
 
   // If edge structure is well-preserved, it's a genuine element diff, not a projection miss
   if (edgeOverlap >= 30) {
-    return { mismatched: false, reason: "high_diff_mass", changedPercent, expectedDominant, actualDominant };
+    return { mismatched: false, reason: "projected_crop_high_diff_mass", changedPercent, expectedDominant, actualDominant };
   }
 
   const highDiffMass = changedPercent > 70;
@@ -164,14 +164,14 @@ export function detectProjectedCropMismatch(
   const mismatched = signals >= 2 || textAbsent;
 
   if (!mismatched) {
-    return { mismatched: false, reason: "high_diff_mass", changedPercent, expectedDominant, actualDominant };
+    return { mismatched: false, reason: "projected_crop_high_diff_mass", changedPercent, expectedDominant, actualDominant };
   }
 
   const reason: ProjectedMismatchResult["reason"] = textAbsent
-    ? "text_absent"
+    ? "expected_target_absent_at_projected_location"
     : lowPaletteIntersection
-    ? "low_visual_overlap"
-    : "high_diff_mass";
+    ? "projected_crop_low_overlap"
+    : "projected_crop_high_diff_mass";
 
   return { mismatched: true, reason, changedPercent, expectedDominant, actualDominant };
 }

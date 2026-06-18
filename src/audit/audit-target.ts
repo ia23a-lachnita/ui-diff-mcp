@@ -179,7 +179,7 @@ export async function auditElementPair(
         ...(pair.actualId !== undefined ? { actualId: pair.actualId } : {}),
         targetLabel: refEl.label,
         targetType: refEl.type,
-        criterion: "color_appearance",
+        criterion: "presence",
         status: "deterministic_projected_mismatch",
         evidenceCount: detArtifacts.length,
         imageRoles: detImageRoles,
@@ -188,15 +188,20 @@ export async function auditElementPair(
       const record: DiffRecord = {
         id: diffId(),
         pairId: pair.id,
-        criterion: "color_appearance",
+        criterion: "presence",
         severity: "high",
-        title: `Projected element crop mismatch: ${refEl.label}`,
+        title: `Expected target absent or mismatched at projected location: ${refEl.label}`,
         location: actualEl.box,
-        evidence: [`deterministic_projected_mismatch: ${mismatchResult.reason}, changedPercent=${mismatchResult.changedPercent.toFixed(1)}`],
+        evidence: [
+          `Projected expected crop did not match the actual source crop at the transformed coordinate.`,
+          `reason=${mismatchResult.reason}, changedPercent=${mismatchResult.changedPercent.toFixed(1)}`
+        ],
         measurements: ctx.measurements,
         artifactPaths: detArtifacts,
         reviewerStatus: "accepted",
-        model: "deterministic"
+        model: "deterministic",
+        classificationSource: "deterministic_projected_mismatch",
+        projectionMismatchReason: mismatchResult.reason
       };
       accepted.push(record);
       return { accepted, rejected, trace };

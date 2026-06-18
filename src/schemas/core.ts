@@ -207,7 +207,20 @@ export const DiffRecordSchema = z.object({
   measurements: z.array(DeterministicMeasurementSchema).default([]),
   artifactPaths: z.array(UiArtifactSchema).default([]),
   reviewerStatus: z.enum(["accepted", "rejected", "needs_escalation", "not_reviewed"]),
-  model: z.string().optional()
+  model: z.string().optional(),
+  classificationSource: z.enum([
+    "vlm_reviewed",
+    "deterministic_projected_mismatch",
+    "target_recovery",
+    "unclassified",
+    "deterministic_geometry"
+  ]).optional(),
+  projectionMismatchReason: z.enum([
+    "expected_target_absent_at_projected_location",
+    "projected_crop_low_overlap",
+    "projected_crop_high_diff_mass",
+    "projection_dimension_mismatch"
+  ]).optional()
 });
 export type DiffRecord = z.infer<typeof DiffRecordSchema>;
 
