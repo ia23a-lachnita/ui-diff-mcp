@@ -67,10 +67,10 @@ export type UiCriterion = z.infer<typeof UiCriterionSchema>;
 
 export const ProjectionMetadataSchema = z.object({
   mode: z.literal("expected_coordinate_projection"),
-  coordinateSpace: z.literal("normalized_expected_image"),
+  coordinateSpace: z.literal("actual_source_image"),
   sourceElementId: z.string().min(1),
-  normalizedActualScaleX: z.number().positive(),
-  normalizedActualScaleY: z.number().positive()
+  scaleExpectedToActualX: z.number().positive(),
+  scaleExpectedToActualY: z.number().positive()
 });
 export type ProjectionMetadata = z.infer<typeof ProjectionMetadataSchema>;
 
@@ -438,6 +438,12 @@ export const UiDiffReportSchema = z.object({
   }).optional(),
   viewportCompatibilityStatus: ViewportCompatibilityStatusSchema.optional(),
   viewportCompatibilityReasons: z.array(z.string()).optional(),
+  comparisonSpace: z.object({
+    width: z.number().int().positive(),
+    height: z.number().int().positive(),
+    actualResizeMode: z.literal("fill"),
+    sourceCropsPreserveOriginalPixels: z.boolean()
+  }).optional(),
   recoverySummary: RecoverySummarySchema.optional(),
   stages: z.array(StageStatusSchema).default([]),
   debugSummary: RunDebugSummarySchema.optional()

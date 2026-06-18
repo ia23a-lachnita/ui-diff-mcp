@@ -3,6 +3,7 @@ import path from "node:path";
 import sharp from "sharp";
 import { resolveInputImagePath, createRunDirectory } from "../security/paths.js";
 import { loadNormalizedImage } from "../images/normalize.js";
+import { createImagePairTransform } from "../images/coordinates.js";
 import { computeViewportCompatibility } from "../images/viewport.js";
 import { clusterUncoveredComponents } from "../report/component-clustering.js";
 import { writeOverlay, writeJsonArtifact } from "../images/artifacts.js";
@@ -125,17 +126,30 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
   const normalizedActPath = path.join(runDir, "actual-normalized.png");
 
   const expectedImg = await loadNormalizedImage(expectedAbs, normalizedExpPath);
-  const actualImg = await loadNormalizedImage(actualAbs, normalizedActPath, {
-    width: expectedImg.width,
-    height: expectedImg.height
-  });
+  const actualImg = await loadNormalizedImage(actualAbs, normalizedActPath);
+
+  const imagePairTransform = createImagePairTransform(
+    { width: expectedImg.width, height: expectedImg.height },
+    { width: actualImg.width, height: actualImg.height }
+  );
+
+  // Resize actual to expected dimensions for pixel diff and overlay only.
+  // Source images (actualImg) are kept at their native resolution for crops.
+  const actualComparisonPath = path.join(runDir, "actual-comparison-space.png");
+  await sharp(normalizedActPath)
+    .resize(expectedImg.width, expectedImg.height, { fit: "fill" })
+    .toFile(actualComparisonPath);
+  const { data: actualComparisonRgba } = await sharp(actualComparisonPath)
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
 
   const viewportCompatibility = computeViewportCompatibility(expectedImg.metadata, actualImg.metadata);
   if (viewportCompatibility.status === "mismatch") {
     warnings.push(`[viewport-mismatch] ${viewportCompatibility.reasons.join("; ")}`);
   }
 
-  const pixelDiff = computePixelDiff(normalizedExpPath, normalizedActPath);
+  const pixelDiff = computePixelDiff(normalizedExpPath, actualComparisonPath);
   const pixelDiffPngPath = path.join(runDir, "pixel-diff.png");
   await sharp(Buffer.from(pixelDiff.diffBuffer), {
     raw: { width: pixelDiff.width, height: pixelDiff.height, channels: 4 }
@@ -149,7 +163,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
   const directionalOverlayPath = path.join(runDir, "directional-diff-overlay.png");
   await createDirectionalDiffOverlay(
     { data: expectedImg.rgba, width: expectedImg.width, height: expectedImg.height },
-    { data: actualImg.rgba, width: actualImg.width, height: actualImg.height },
+    { data: actualComparisonRgba, width: expectedImg.width, height: expectedImg.height },
     pixelDiff.diffMask,
     expectedImg.width,
     expectedImg.height,
@@ -317,13 +331,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
         // Single-pass default: project expected element boxes onto the actual image.
         // The auditor VLM compares crops at the same coordinates; recovery handles
         // elements that moved or appeared outside those locations.
-        actualElements.push(...projectElementsToActual(expectedElements, {
-          width: actualImg.width,
-          height: actualImg.height
-        }, {
-          normalizedActualScaleX: actualImg.metadata.scaleX,
-          normalizedActualScaleY: actualImg.metadata.scaleY
-        }));
+        actualElements.push(...projectElementsToActual(expectedElements, imagePairTransform));
         warnings.push("Single-pass locator active (projection mode). Set UI_DIFF_DUAL_LOCATOR=1 + UI_DIFF_ALLOW_DUAL_LOCATOR=1 + UI_DIFF_DUAL_LOCATOR_REASON for diagnostic dual-pass mode.");
       }
 
@@ -622,7 +630,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
         debugTrace.coverage = traceCoverageDecisions(significantComponents, allDiffs, 50);
         const rawUncoveredComponents = significantComponents.filter((_, index) => debugTrace.coverage[index]?.status === "uncovered");
         const uncoveredComponents = rawUncoveredComponents.length > 0
-          ? clusterUncoveredComponents(rawUncoveredComponents, { maxGapPx: 12, maxClusterAreaRatio: 0.5, imageWidth: actualImg.width, imageHeight: actualImg.height })
+          ? clusterUncoveredComponents(rawUncoveredComponents, { maxGapPx: 12, maxClusterAreaRatio: 0.5, imageWidth: expectedImg.width, imageHeight: expectedImg.height })
           : rawUncoveredComponents;
         const preClusterUncoveredComponents = rawUncoveredComponents.length;
         const postClusterUncoveredComponents = uncoveredComponents.length;
@@ -653,6 +661,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
           const recoveryResult = await runTargetRecovery(uncoveredComponents, {
             expectedRgba: { data: expectedImg.rgba, width: expectedImg.width, height: expectedImg.height },
             actualRgba: { data: actualImg.rgba, width: actualImg.width, height: actualImg.height },
+            imagePairTransform,
             pixelDiffMask: pixelDiff.diffMask,
             directionalOverlayPath,
             artifactDir: artifactRoot,
@@ -722,6 +731,12 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     ...(modelSelection !== undefined ? { modelSelection } : {}),
     ...(recoverySummary !== undefined ? { recoverySummary } : {}),
     imageNormalization: { expected: expectedImg.metadata, actual: actualImg.metadata },
+    comparisonSpace: {
+      width: expectedImg.width,
+      height: expectedImg.height,
+      actualResizeMode: "fill" as const,
+      sourceCropsPreserveOriginalPixels: true
+    },
     viewportCompatibilityStatus: viewportCompatibility.status,
     viewportCompatibilityReasons: viewportCompatibility.reasons,
     expectedImagePath: expectedAbs,

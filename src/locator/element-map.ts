@@ -4,6 +4,7 @@ import type { LocateAnythingElement } from "./locateanything-client.js";
 import { suppressDuplicateElements } from "./nms.js";
 import { iou, toNormalizedBox, containsCenter, area } from "../signals/geometry.js";
 import type { EdgeComponent } from "../signals/edge.js";
+import { type ImagePairTransform, projectExpectedBoxToActualSource } from "../images/coordinates.js";
 
 interface ImageSize {
   width: number;
@@ -144,31 +145,29 @@ export { QUERY_ID_TYPE_MAP };
 
 export function projectElementsToActual(
   expectedElements: UiElement[],
-  actualImageSize: { width: number; height: number },
-  projection?: { normalizedActualScaleX: number; normalizedActualScaleY: number }
+  transform: ImagePairTransform
 ): UiElement[] {
   return expectedElements.map(exp => {
-    const x = Math.max(0, Math.min(exp.box.x, actualImageSize.width - 1));
-    const y = Math.max(0, Math.min(exp.box.y, actualImageSize.height - 1));
-    const width = Math.max(1, Math.min(exp.box.width, actualImageSize.width - x));
-    const height = Math.max(1, Math.min(exp.box.height, actualImageSize.height - y));
+    const scaledBox = projectExpectedBoxToActualSource(exp.box, transform);
+    const x = Math.max(0, Math.min(scaledBox.x, transform.actualSize.width - 1));
+    const y = Math.max(0, Math.min(scaledBox.y, transform.actualSize.height - 1));
+    const width = Math.max(1, Math.min(scaledBox.width, transform.actualSize.width - x));
+    const height = Math.max(1, Math.min(scaledBox.height, transform.actualSize.height - y));
     const clampedBox = { x, y, width, height };
-    const normalizedBox = toNormalizedBox(clampedBox, actualImageSize.width, actualImageSize.height);
+    const normalizedBox = toNormalizedBox(clampedBox, transform.actualSize.width, transform.actualSize.height);
     return {
       ...exp,
       id: `proj-${exp.id}`,
       box: clampedBox,
       normalizedBox,
       source: "projected" as const,
-      projectionMetadata: projection
-        ? {
-            mode: "expected_coordinate_projection" as const,
-            coordinateSpace: "normalized_expected_image" as const,
-            sourceElementId: exp.id,
-            normalizedActualScaleX: projection.normalizedActualScaleX,
-            normalizedActualScaleY: projection.normalizedActualScaleY
-          }
-        : undefined
+      projectionMetadata: {
+        mode: "expected_coordinate_projection" as const,
+        coordinateSpace: "actual_source_image" as const,
+        sourceElementId: exp.id,
+        scaleExpectedToActualX: transform.scaleExpectedToActualX,
+        scaleExpectedToActualY: transform.scaleExpectedToActualY
+      }
     };
   });
 }

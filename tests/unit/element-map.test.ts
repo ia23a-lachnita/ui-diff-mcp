@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildElementMap, projectElementsToActual, mergeLocatorLanes } from "../../src/locator/element-map.js";
+import { createImagePairTransform } from "../../src/images/coordinates.js";
 import type { LocateAnythingElement } from "../../src/locator/locateanything-client.js";
 
 function makeEl(id: string, label: string, x: number, y: number, w: number, h: number): LocateAnythingElement {
@@ -95,7 +96,7 @@ describe("buildElementMap", () => {
 
 describe("projectElementsToActual", () => {
   it("returns empty array for empty input", () => {
-    expect(projectElementsToActual([], { width: 400, height: 800 })).toHaveLength(0);
+    expect(projectElementsToActual([], createImagePairTransform({ width: 400, height: 800 }, { width: 400, height: 800 }))).toHaveLength(0);
   });
 
   it("creates projected elements with source=projected and proj- id prefix", () => {
@@ -103,7 +104,7 @@ describe("projectElementsToActual", () => {
       [makeEl("buttons", "Submit", 10, 10, 80, 40)],
       { width: 200, height: 400 }
     );
-    const projected = projectElementsToActual(expected, { width: 200, height: 400 });
+    const projected = projectElementsToActual(expected, createImagePairTransform({ width: 200, height: 400 }, { width: 200, height: 400 }));
     expect(projected).toHaveLength(1);
     expect(projected[0]?.source).toBe("projected");
     expect(projected[0]?.id).toMatch(/^proj-/);
@@ -115,17 +116,17 @@ describe("projectElementsToActual", () => {
       [makeEl("buttons", "Save", 20, 30, 60, 25)],
       { width: 300, height: 600 }
     );
-    const projected = projectElementsToActual(expected, { width: 300, height: 600 });
+    const projected = projectElementsToActual(expected, createImagePairTransform({ width: 300, height: 600 }, { width: 300, height: 600 }));
     expect(projected[0]?.box).toEqual(expected[0]?.box);
   });
 
-  it("clamps box to actual image bounds when actual is smaller", () => {
+  it("scales and clamps box to actual image bounds when actual is smaller", () => {
     const expected = buildElementMap(
       [makeEl("buttons", "Footer button", 150, 350, 100, 50)],
       { width: 300, height: 400 }
     );
-    // Actual is narrower — box should be clamped
-    const projected = projectElementsToActual(expected, { width: 200, height: 400 });
+    // Actual is narrower — box should be scaled to actual coordinates
+    const projected = projectElementsToActual(expected, createImagePairTransform({ width: 300, height: 400 }, { width: 200, height: 400 }));
     const box = projected[0]?.box;
     expect(box).toBeDefined();
     if (box) {
@@ -136,43 +137,58 @@ describe("projectElementsToActual", () => {
     }
   });
 
-  it("recomputes normalizedBox for actual image size", () => {
+  it("scales box proportionally when actual is twice the expected size", () => {
     const expected = buildElementMap(
       [makeEl("buttons", "OK", 0, 0, 100, 100)],
       { width: 200, height: 200 }
     );
-    const projected = projectElementsToActual(expected, { width: 400, height: 400 });
-    // Same pixel box but normalized differently
-    expect(projected[0]?.normalizedBox.width).toBeCloseTo(0.25);
-    expect(projected[0]?.normalizedBox.height).toBeCloseTo(0.25);
+    const projected = projectElementsToActual(expected, createImagePairTransform({ width: 200, height: 200 }, { width: 400, height: 400 }));
+    // Box at (0,0,100,100) in 200x200 expected scales to (0,0,200,200) in 400x400 actual
+    expect(projected[0]?.box.width).toBeCloseTo(200);
+    expect(projected[0]?.box.height).toBeCloseTo(200);
+    // normalizedBox: 200/400 = 0.5
+    expect(projected[0]?.normalizedBox.width).toBeCloseTo(0.5);
+    expect(projected[0]?.normalizedBox.height).toBeCloseTo(0.5);
   });
 
-  it("attaches projectionMetadata when projection scales are provided", () => {
+  it("attaches projectionMetadata with scale factors from transform", () => {
     const expected = buildElementMap(
       [makeEl("buttons", "Submit", 10, 20, 80, 40)],
       { width: 200, height: 400 }
     );
     const sourceId = expected[0]!.id;
-    const projected = projectElementsToActual(expected, { width: 240, height: 480 }, {
-      normalizedActualScaleX: 1.11,
-      normalizedActualScaleY: 1.09
-    });
+    const transform = createImagePairTransform({ width: 200, height: 400 }, { width: 240, height: 480 });
+    const projected = projectElementsToActual(expected, transform);
     const meta = projected[0]?.projectionMetadata;
     expect(meta).toBeDefined();
     expect(meta?.mode).toBe("expected_coordinate_projection");
-    expect(meta?.coordinateSpace).toBe("normalized_expected_image");
+    expect(meta?.coordinateSpace).toBe("actual_source_image");
     expect(meta?.sourceElementId).toBe(sourceId);
-    expect(meta?.normalizedActualScaleX).toBeCloseTo(1.11, 3);
-    expect(meta?.normalizedActualScaleY).toBeCloseTo(1.09, 3);
+    expect(meta?.scaleExpectedToActualX).toBeCloseTo(240 / 200, 3);
+    expect(meta?.scaleExpectedToActualY).toBeCloseTo(480 / 400, 3);
   });
 
-  it("omits projectionMetadata when no projection argument given", () => {
+  it("always attaches projectionMetadata (transform is always present)", () => {
     const expected = buildElementMap(
       [makeEl("icons", "back", 5, 5, 30, 30)],
       { width: 200, height: 400 }
     );
-    const projected = projectElementsToActual(expected, { width: 200, height: 400 });
-    expect(projected[0]?.projectionMetadata).toBeUndefined();
+    const projected = projectElementsToActual(expected, createImagePairTransform({ width: 200, height: 400 }, { width: 200, height: 400 }));
+    expect(projected[0]?.projectionMetadata).toBeDefined();
+    expect(projected[0]?.projectionMetadata?.scaleExpectedToActualX).toBeCloseTo(1.0, 5);
+  });
+
+  it("halves box dimensions when actual is half the expected size", () => {
+    const expected = buildElementMap(
+      [makeEl("buttons", "Search", 100, 200, 80, 40)],
+      { width: 1200, height: 2400 }
+    );
+    const projected = projectElementsToActual(expected, createImagePairTransform({ width: 1200, height: 2400 }, { width: 600, height: 1200 }));
+    const box = projected[0]?.box;
+    expect(box?.x).toBeCloseTo(50);
+    expect(box?.y).toBeCloseTo(100);
+    expect(box?.width).toBeCloseTo(40);
+    expect(box?.height).toBeCloseTo(20);
   });
 });
 

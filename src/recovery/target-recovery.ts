@@ -9,6 +9,7 @@ import type { PixelComponent } from "../signals/pixel-diff.js";
 import type { VisionJsonCaller } from "../models/vision-json.js";
 import { buildRecoveryPrompt, buildReviewerPrompt } from "../audit/prompts.js";
 import { intersect } from "../signals/geometry.js";
+import { type ImagePairTransform, projectExpectedBoxToActualSource } from "../images/coordinates.js";
 
 const CLASSIFIABLE_CRITERIA = UiCriterionSchema.exclude(["unclassified_visual_change"]);
 
@@ -94,6 +95,7 @@ function makeDefaultBudget(): RecoveryBudget {
 export interface RecoveryContext {
   expectedRgba: { data: Uint8Array; width: number; height: number };
   actualRgba: { data: Uint8Array; width: number; height: number };
+  imagePairTransform?: ImagePairTransform;
   pixelDiffMask: Uint8Array;
   directionalOverlayPath: string;
   artifactDir: string;
@@ -292,8 +294,12 @@ export async function runTargetRecovery(
     const box = component.box;
 
     // Crop expected, actual, overlay, mask
+    // Expected and overlay use comparison/expected-space box; actual uses projected box in source space.
+    const actBox = ctx.imagePairTransform
+      ? projectExpectedBoxToActualSource(box, ctx.imagePairTransform)
+      : box;
     const expCrop = extractRgbaCrop(ctx.expectedRgba.data, imageWidth, imageHeight, box);
-    const actCrop = extractRgbaCrop(ctx.actualRgba.data, imageWidth, imageHeight, box);
+    const actCrop = extractRgbaCrop(ctx.actualRgba.data, ctx.actualRgba.width, ctx.actualRgba.height, actBox);
     const overlayCrop = extractRgbaCrop(overlayData, overlayRawResult.info.width, overlayRawResult.info.height, box);
     const maskCrop = extractMaskCrop(ctx.pixelDiffMask, imageWidth, imageHeight, box);
 
