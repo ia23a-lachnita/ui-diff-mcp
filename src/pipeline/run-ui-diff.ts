@@ -730,6 +730,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     ...(auditScope !== undefined ? { auditScope } : {}),
     ...(modelSelection !== undefined ? { modelSelection } : {}),
     ...(recoverySummary !== undefined ? { recoverySummary } : {}),
+    providerDiagnosticsPresent: providerTrace.getEvents().some(e => e.diagnostic !== undefined),
     imageNormalization: { expected: expectedImg.metadata, actual: actualImg.metadata },
     comparisonSpace: {
       width: expectedImg.width,

@@ -457,6 +457,7 @@ export const UiDiffReportSchema = z.object({
     actualResizeMode: z.literal("fill"),
     sourceCropsPreserveOriginalPixels: z.boolean()
   }).optional(),
+  providerDiagnosticsPresent: z.boolean().optional(),
   recoverySummary: RecoverySummarySchema.optional(),
   stages: z.array(StageStatusSchema).default([]),
   debugSummary: RunDebugSummarySchema.optional()

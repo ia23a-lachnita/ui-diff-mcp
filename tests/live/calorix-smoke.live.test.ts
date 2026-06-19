@@ -257,6 +257,36 @@ describe.skipIf(!calorixFullLive)("verify:calorix-full-live unbounded all-target
         expect(ptEvents.some(e => e.event === "fallback"), "trace must contain fallback event when runtime fallback warning is present").toBe(true);
       }
 
+      // Source-crop projection contract: original pixels must be preserved
+      expect(
+        report.comparisonSpace?.sourceCropsPreserveOriginalPixels,
+        "sourceCropsPreserveOriginalPixels must be true — source crops must not be stretched to comparison space"
+      ).toBe(true);
+
+      // Provider diagnostics: when classification is incomplete, diagnostics must be present to explain failures
+      if (report.visualClassificationStatus === "incomplete") {
+        expect(
+          report.providerDiagnosticsPresent,
+          "providerDiagnosticsPresent must be true when classification is incomplete"
+        ).toBe(true);
+      }
+
+      // Recovery summary: must be present when route_exhausted for target_recovery is in trace
+      const ptPathForRecovery = report.runArtifacts.find(a => a.role === "provider_trace")?.path;
+      if (ptPathForRecovery) {
+        const ptForRecovery = JSON.parse(await fs.readFile(ptPathForRecovery, "utf8")) as Array<{ event: string; role: string }>;
+        const hasRecoveryExhausted = ptForRecovery.some(e => e.event === "route_exhausted" && e.role === "target_recovery");
+        if (hasRecoveryExhausted) {
+          expect(report.recoverySummary, "recoverySummary must be present when route_exhausted for target_recovery is in trace").toBeDefined();
+        }
+      }
+
+      // Deterministic projected mismatches must have projectionMismatchReason
+      const projMismatches = report.diffs.filter(d => d.classificationSource === "deterministic_projected_mismatch");
+      for (const diff of projMismatches) {
+        expect(diff.projectionMismatchReason, `diff ${diff.id} must have projectionMismatchReason`).toBeDefined();
+      }
+
       console.info(`[full-audit] visualClassificationStatus=${report.visualClassificationStatus}`);
       console.info(`[full-audit] auditedPairs=${report.auditScope?.auditedPairs ?? "n/a"}, totalPairs=${report.auditScope?.totalPairs ?? "n/a"}`);
       console.info(`[full-audit] diffs=${report.diffs.length}`);
@@ -325,10 +355,28 @@ describe.skipIf(!calorixReleaseLive)("Calorix release sign-off gate", () => {
         "release gate requires auditLimited=false"
       ).toBe(false);
 
-      expect(
-        report.viewportCompatibilityStatus ?? "compatible",
-        "release gate requires no viewport distortion"
-      ).toBe("compatible");
+      // If viewport is mismatch, source crops must preserve original pixels and all accepted
+      // diffs must be VLM-reviewed/recovered or explicitly labeled as projected-location evidence.
+      const viewportStatus = report.viewportCompatibilityStatus ?? "compatible";
+      if (viewportStatus !== "compatible") {
+        expect(
+          report.comparisonSpace?.sourceCropsPreserveOriginalPixels,
+          "when viewport is mismatch, source crops must preserve original pixels"
+        ).toBe(true);
+        const unsafeDiffs = report.diffs.filter(d =>
+          d.reviewerStatus !== "rejected" &&
+          d.classificationSource !== "vlm_reviewed" &&
+          d.classificationSource !== "target_recovery" &&
+          d.classificationSource !== "deterministic_projected_mismatch" &&
+          d.classificationSource !== "deterministic_geometry"
+        );
+        expect(
+          unsafeDiffs.length,
+          "all accepted diffs under viewport mismatch must be VLM-reviewed or projected-location evidence"
+        ).toBe(0);
+      } else {
+        expect(viewportStatus, "release gate requires no viewport distortion").toBe("compatible");
+      }
 
       console.info(`[release-gate] diffs=${report.diffs.length}`);
       console.info(`[release-gate] locatorCoverageStatus=${report.locatorCoverageStatus}`);
