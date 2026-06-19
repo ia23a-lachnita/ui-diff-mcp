@@ -484,7 +484,8 @@ export async function runTargetRecovery(
       ],
       artifactPaths: artifacts,
       reviewerStatus: reviewDecision === "needs_escalation" ? "needs_escalation" : "accepted",
-      model: componentRecoveryModel
+      model: componentRecoveryModel,
+      classificationSource: "target_recovery"
     };
 
     recovered.push(record);

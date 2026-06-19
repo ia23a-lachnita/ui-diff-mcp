@@ -414,6 +414,8 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
   if (mode !== "deterministic_only" && status !== "insufficient_free_quota") {
     const probe = opts?.probeOverride ?? probeRequiredModels;
     const probeEntries: ModelEntry[] = CANONICAL_MODEL_RANKING.flatMap(c => {
+      const supportsRecovery = c.role !== "target_recovery" &&
+        c.capabilities?.allowedRoles.includes("target_recovery") === true;
       const freeEntries = c.eligibleFreeProviderRoutes.map(r => ({
         role: c.role,
         provider: r.provider,
@@ -422,6 +424,16 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
         probeTtlMs: 15 * 60 * 1000,
         required: false
       }));
+      const freeRecoveryEntries: ModelEntry[] = supportsRecovery
+        ? c.eligibleFreeProviderRoutes.map(r => ({
+            role: "target_recovery" as const,
+            provider: r.provider,
+            model: r.model,
+            costClass: c.costClass,
+            probeTtlMs: 15 * 60 * 1000,
+            required: false
+          }))
+        : [];
       const paidEntries = (mode === "paid" && paidModeEnabled && c.paidRoutes)
         ? c.paidRoutes.map(r => ({
             role: c.role,
@@ -432,7 +444,17 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
             required: false
           }))
         : [];
-      return [...freeEntries, ...paidEntries];
+      const paidRecoveryEntries: ModelEntry[] = (supportsRecovery && mode === "paid" && paidModeEnabled && c.paidRoutes)
+        ? c.paidRoutes.map(r => ({
+            role: "target_recovery" as const,
+            provider: r.provider,
+            model: r.model,
+            costClass: "paid" as const,
+            probeTtlMs: 24 * 60 * 60 * 1000,
+            required: false
+          }))
+        : [];
+      return [...freeEntries, ...freeRecoveryEntries, ...paidEntries, ...paidRecoveryEntries];
     });
 
     const probeResults = await probe(probeEntries, openRouterApiKey, nvidiaApiKey, nvidiaBaseUrl, providerTrace.sink);

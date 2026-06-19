@@ -81,7 +81,7 @@
 - Produces: `ProviderJsonParseError extends Error` with `diagnostic: ProviderFailureDiagnostic`.
 - Consumes: existing `ProviderTraceWriter.emit(...)` in fallback caller and probes.
 
-- [ ] **Step 1: Add provider diagnostic schema**
+- [x] **Step 1: Add provider diagnostic schema**
 
 Add to `src/schemas/core.ts`:
 
@@ -101,7 +101,7 @@ export type ProviderFailureDiagnostic = z.infer<typeof ProviderFailureDiagnostic
 
 Expected test command after implementation: `npx vitest run tests/unit/model-clients.test.ts tests/unit/fallback-caller.test.ts`
 
-- [ ] **Step 2: Add typed parse errors**
+- [x] **Step 2: Add typed parse errors**
 
 In `src/models/vision-json.ts`, define:
 
@@ -136,11 +136,11 @@ function buildInvalidJsonDiagnostic(rawContent: string, streamCompleted: boolean
 
 Replace invalid JSON throws with `ProviderJsonParseError`. Do not include full raw content in the error message.
 
-- [ ] **Step 3: Track stream completion**
+- [x] **Step 3: Track stream completion**
 
 In both OpenRouter and NVIDIA streaming readers, set `let streamCompleted = false;` before the loop and set it to `true` only after the stream loop exits without throwing. Pass it into `buildInvalidJsonDiagnostic(...)`.
 
-- [ ] **Step 4: Add diagnostics to trace events**
+- [x] **Step 4: Add diagnostics to trace events**
 
 In `src/debug/provider-trace.ts`, extend `ProviderTraceEventSchema` with:
 
@@ -160,7 +160,7 @@ For abort/timeout errors, include:
 diagnostic: { kind: "timeout" }
 ```
 
-- [ ] **Step 5: Add unit tests**
+- [x] **Step 5: Add unit tests**
 
 Add tests that:
 
@@ -176,7 +176,7 @@ npx vitest run tests/unit/model-clients.test.ts tests/unit/fallback-caller.test.
 
 Expected: all selected tests pass.
 
-- [ ] **Step 6: Verify and commit**
+- [x] **Step 6: Verify and commit**
 
 Run:
 
@@ -208,7 +208,7 @@ git push
 - Produces: target recovery candidates selected from any route whose `capabilities.maxImages >= 4` and whose `allowedRoles` contains `"target_recovery"`.
 - Consumes: existing `probeRecoveryCapability(entry, ...)` with 4 images.
 
-- [ ] **Step 1: Make strong VLM candidates recovery-eligible**
+- [x] **Step 1: Make strong VLM candidates recovery-eligible**
 
 For every auditor/reviewer candidate that can accept at least 4 images and is not single-image-only, add `"target_recovery"` to `capabilities.allowedRoles`. This includes:
 
@@ -226,7 +226,7 @@ For every auditor/reviewer candidate that can accept at least 4 images and is no
 
 Do not add target recovery eligibility to models with `maxImages: 1`.
 
-- [ ] **Step 2: Select by capability, not only entry role**
+- [x] **Step 2: Select by capability, not only entry role**
 
 Change `selectModelForMode` and `selectFallbackModelsForMode` candidate filtering from `candidate.role !== logicalRole` to:
 
@@ -250,13 +250,13 @@ export function candidateSupportsLogicalRole(
 }
 ```
 
-- [ ] **Step 3: Preserve role-specific probes**
+- [x] **Step 3: Preserve role-specific probes**
 
 When selecting a route for `logicalRole === "target_recovery"`, require a passing `ProbeResult` whose `role === "target_recovery"`, even if the candidate entry originally has `role: "auditor"` or `role: "reviewer"`.
 
 Keep `requiredImagesForRole("target_recovery") === 4`.
 
-- [ ] **Step 4: Record expanded recovery routes**
+- [x] **Step 4: Record expanded recovery routes**
 
 Ensure `report.modelSelection.targetRecoveryRoutes` is populated with the selected recovery candidate list when any recovery candidate passes. The report must distinguish:
 
@@ -266,7 +266,7 @@ Ensure `report.modelSelection.targetRecoveryRoutes` is populated with the select
 
 No target recovery route may be inferred by reading `auditorRoutes`.
 
-- [ ] **Step 5: Add route selection tests**
+- [x] **Step 5: Add route selection tests**
 
 Add tests:
 
@@ -283,7 +283,7 @@ npx vitest run tests/unit/model-registry.test.ts tests/unit/model-probes.test.ts
 
 Expected: all selected tests pass.
 
-- [ ] **Step 6: Verify and commit**
+- [x] **Step 6: Verify and commit**
 
 Run:
 
@@ -332,7 +332,7 @@ git push
   ```
 - Consumes: original normalized expected and actual images, not stretched source images.
 
-- [ ] **Step 1: Stop normalizing actual with `fit: "fill"` for source images**
+- [x] **Step 1: Stop normalizing actual with `fit: "fill"` for source images**
 
 In `run-ui-diff.ts`, change:
 
@@ -353,7 +353,7 @@ const actualImg = await loadNormalizedImage(actualAbs, normalizedActPath);
 
 Keep any comparison-sized image strictly as a separate artifact named `actual-comparison-space.png`, not as the source image used for crops.
 
-- [ ] **Step 2: Add coordinate transform helpers**
+- [x] **Step 2: Add coordinate transform helpers**
 
 Create `src/images/coordinates.ts`:
 
@@ -402,7 +402,7 @@ export function projectActualBoxToExpectedSource(box: Box, transform: ImagePairT
 }
 ```
 
-- [ ] **Step 3: Move global pixel diff to comparison space**
+- [x] **Step 3: Move global pixel diff to comparison space**
 
 For global pixel diff and coverage, create comparison-space copies:
 
@@ -422,11 +422,11 @@ Only these comparison-space artifacts may use `fit: "fill"`. The report must rec
 }
 ```
 
-- [ ] **Step 4: Audit crops use source-space boxes**
+- [x] **Step 4: Audit crops use source-space boxes**
 
 When the actual element is projected, set `actualEl.box` to `projectExpectedBoxToActualSource(expectedEl.box, transform)` in actual source coordinates. The expected crop remains expected source coordinates. Local overlay/mask crops may be created by projecting masks between spaces, but model input expected/actual crops must come from source images.
 
-- [ ] **Step 5: Recovery crops use source-space boxes**
+- [x] **Step 5: Recovery crops use source-space boxes**
 
 Recovery components originate from comparison-space pixel diff. Before cropping source images:
 
@@ -436,7 +436,7 @@ Recovery components originate from comparison-space pixel diff. Before cropping 
 
 Record `coordinateFrame: "comparison_expected_space"` on recovery trace entries.
 
-- [ ] **Step 6: Add tests**
+- [x] **Step 6: Add tests**
 
 Add tests with expected `1200x2400` and actual `600x1200`:
 
@@ -453,7 +453,7 @@ npx vitest run tests/unit/images.test.ts tests/unit/element-map.test.ts tests/e2
 
 Expected: selected tests pass.
 
-- [ ] **Step 7: Verify and commit**
+- [x] **Step 7: Verify and commit**
 
 Run:
 
@@ -483,7 +483,7 @@ git push
 - Produces `DiffRecord.classificationSource?: "vlm_reviewed" | "deterministic_projected_mismatch" | "target_recovery" | "unclassified" | "deterministic_geometry"`.
 - Produces `projectionMismatchReason?: "expected_target_absent_at_projected_location" | "projected_crop_low_overlap" | "projected_crop_high_diff_mass" | "projection_dimension_mismatch"`.
 
-- [ ] **Step 1: Add classification source fields**
+- [x] **Step 1: Add classification source fields**
 
 In `DiffRecordSchema`, add:
 
@@ -505,7 +505,7 @@ projectionMismatchReason: z.enum([
 
 Do not make these required for older reports.
 
-- [ ] **Step 2: Rename deterministic projected mismatch semantics**
+- [x] **Step 2: Rename deterministic projected mismatch semantics**
 
 In `detectProjectedCropMismatch`, map reasons:
 
@@ -514,7 +514,7 @@ In `detectProjectedCropMismatch`, map reasons:
 - `text_absent` -> `expected_target_absent_at_projected_location`
 - `dimension_mismatch` -> `projection_dimension_mismatch`
 
-- [ ] **Step 3: Emit honest records**
+- [x] **Step 3: Emit honest records**
 
 In `auditElementPair`, deterministic projected mismatch records must use:
 
@@ -534,7 +534,7 @@ Projected expected crop did not match the actual source crop at the transformed 
 
 Do not claim exact semantic content such as “wrong icon” or “wrong text” unless VLM/recovery classified it.
 
-- [ ] **Step 4: Keep artifacts attached**
+- [x] **Step 4: Keep artifacts attached**
 
 Each projected mismatch record must include at least:
 
@@ -543,7 +543,7 @@ Each projected mismatch record must include at least:
 
 If local overlay/mask exists for that pair, attach those as well. Tests must assert artifact roles, not only file paths.
 
-- [ ] **Step 5: Add tests**
+- [x] **Step 5: Add tests**
 
 Tests must assert:
 
@@ -559,7 +559,7 @@ Run:
 npx vitest run tests/unit/projected-mismatch.test.ts tests/unit/audit.test.ts
 ```
 
-- [ ] **Step 6: Verify and commit**
+- [x] **Step 6: Verify and commit**
 
 Run:
 
@@ -587,7 +587,7 @@ git push
 - Produces prompt section `Evidence Discipline` in auditor and reviewer prompts.
 - Produces reviewer rejection for evidence that describes a crop-boundary artifact as an element-level fact without qualification.
 
-- [ ] **Step 1: Tighten auditor prompt**
+- [x] **Step 1: Tighten auditor prompt**
 
 In `buildAuditorPrompt`, add this exact instruction block:
 
@@ -600,7 +600,7 @@ Evidence discipline:
 - If the evidence is only a projected-location mismatch, classify it as presence/geometry only when visible evidence supports that label.
 ```
 
-- [ ] **Step 2: Tighten reviewer prompt**
+- [x] **Step 2: Tighten reviewer prompt**
 
 In `buildReviewerPrompt`, add:
 
@@ -609,7 +609,7 @@ Reject the diff if its title or evidence claims content that is not visible in t
 Accept crop-boundary evidence only when the record explicitly calls it a crop/position mismatch.
 ```
 
-- [ ] **Step 3: Add evidence validation before merge**
+- [x] **Step 3: Add evidence validation before merge**
 
 In `review-findings.ts`, add a deterministic guard:
 
@@ -621,7 +621,7 @@ It returns `true` when evidence contains phrases like `left half`, `right half`,
 
 When true, set `reviewerStatus: "rejected"` before final merge.
 
-- [ ] **Step 4: Add tests**
+- [x] **Step 4: Add tests**
 
 Add tests:
 
@@ -635,7 +635,7 @@ Run:
 npx vitest run tests/unit/audit.test.ts
 ```
 
-- [ ] **Step 5: Verify and commit**
+- [x] **Step 5: Verify and commit**
 
 Run:
 
@@ -664,35 +664,35 @@ git push
 - Produces report fields:
   ```ts
   providerDiagnosticsPresent: boolean;
-  sourceCropsPreserveOriginalPixels: boolean;
-  comparisonSpace?: { width: number; height: number; actualResizeMode: "fill"; };
+  comparisonSpace?: { width: number; height: number; actualResizeMode: "fill"; sourceCropsPreserveOriginalPixels: boolean; };
   ```
 
-- [ ] **Step 1: Add report booleans**
+> **Implementation note:** `sourceCropsPreserveOriginalPixels` is placed inside `comparisonSpace` (not as a separate top-level boolean) so it is co-located with the space dimensions. Consumers must read `report.comparisonSpace?.sourceCropsPreserveOriginalPixels`.
+
+- [x] **Step 1: Add report booleans**
 
 Add optional report fields:
 
 ```ts
 providerDiagnosticsPresent: z.boolean().optional(),
-sourceCropsPreserveOriginalPixels: z.boolean().optional(),
 comparisonSpace: z.object({
   width: z.number().int().positive(),
   height: z.number().int().positive(),
-  actualResizeMode: z.literal("fill")
+  actualResizeMode: z.literal("fill"),
+  sourceCropsPreserveOriginalPixels: z.boolean()
 }).optional()
 ```
 
-- [ ] **Step 2: Populate report booleans**
+- [x] **Step 2: Populate report booleans**
 
 In `run-ui-diff.ts`, set:
 
 ```ts
-providerDiagnosticsPresent = providerTrace.events.some(e => e.diagnostic !== undefined)
-sourceCropsPreserveOriginalPixels = true
-comparisonSpace = { width: expectedImg.width, height: expectedImg.height, actualResizeMode: "fill" }
+providerDiagnosticsPresent = providerTrace.getEvents().some(e => e.diagnostic !== undefined)
+comparisonSpace = { width: expectedImg.width, height: expectedImg.height, actualResizeMode: "fill", sourceCropsPreserveOriginalPixels: true }
 ```
 
-- [ ] **Step 3: Harden diagnostic Calorix gate**
+- [x] **Step 3: Harden diagnostic Calorix gate**
 
 In `verify:calorix-full-live`, assert:
 
@@ -701,7 +701,7 @@ In `verify:calorix-full-live`, assert:
 - `report.recoverySummary` exists when `route_exhausted` for `target_recovery` is present
 - every `deterministic_projected_mismatch` diff has `projectionMismatchReason`
 
-- [ ] **Step 4: Keep release gate strict**
+- [x] **Step 4: Keep release gate strict**
 
 `verify:calorix-release-live` must still require:
 
@@ -711,7 +711,7 @@ In `verify:calorix-full-live`, assert:
 
 If viewport compatibility remains `mismatch`, release may pass only when `sourceCropsPreserveOriginalPixels === true` and all final accepted diffs are either VLM-reviewed/recovered or explicitly projected-location evidence. Add an assertion with that exact predicate.
 
-- [ ] **Step 5: Document new environment flags**
+- [x] **Step 5: Document new environment flags**
 
 Update `.env.example` and checklist with:
 
@@ -722,7 +722,7 @@ UI_DIFF_MAX_RECOVERY_MODEL_CALLS=24
 UI_DIFF_RECOVERY_BUDGET_MS=120000
 ```
 
-- [ ] **Step 6: Verify and commit**
+- [x] **Step 6: Verify and commit**
 
 Run:
 
@@ -748,7 +748,7 @@ git push
 **Interfaces:**
 - Produces a committed release-readiness report that records exact run IDs, exact selected model routes, target-recovery route outcomes, viewport/projection metadata, and final diff quality.
 
-- [ ] **Step 1: Run deterministic verification**
+- [x] **Step 1: Run deterministic verification**
 
 Run:
 
@@ -759,7 +759,7 @@ npm run test:coverage
 
 Expected: both pass or the report records the exact failure.
 
-- [ ] **Step 2: Run provider live probes**
+- [x] **Step 2: Run provider live probes**
 
 Run:
 
@@ -772,7 +772,7 @@ npm run verify:openrouter-free-live
 
 Expected: results are recorded with pass/fail counts and model IDs.
 
-- [ ] **Step 3: Run Calorix diagnostic gates**
+- [x] **Step 3: Run Calorix diagnostic gates**
 
 Run with:
 
@@ -797,7 +797,7 @@ Record:
 - final diff count by `classificationSource`
 - count of unclassified diffs
 
-- [ ] **Step 4: Run release gate**
+- [x] **Step 4: Run release gate**
 
 Run:
 
@@ -808,7 +808,7 @@ npm run verify:calorix-release-live
 
 Expected: either pass and mark release-ready, or fail and keep production blocked with exact failing predicate.
 
-- [ ] **Step 5: Write release-readiness report**
+- [x] **Step 5: Write release-readiness report**
 
 Create `docs/release/2026-06-18-model-diagnostics-recovery-projection-report.md` with:
 
@@ -840,7 +840,7 @@ Create `docs/release/2026-06-18-model-diagnostics-recovery-projection-report.md`
 - Only concrete blockers observed in the fresh run.
 ```
 
-- [ ] **Step 6: Commit and push**
+- [x] **Step 6: Commit and push**
 
 Run:
 

@@ -435,7 +435,8 @@ export async function auditElementPair(
       measurements: [...(auditResult.measurements ?? []), ...ctx.measurements],
       artifactPaths: auditArtifacts,
       reviewerStatus: reviewDecision === "needs_escalation" ? "needs_escalation" : reviewDecision,
-      model: auditModel
+      model: auditModel,
+      classificationSource: "vlm_reviewed"
     };
 
     if (reviewDecision === "rejected") {
