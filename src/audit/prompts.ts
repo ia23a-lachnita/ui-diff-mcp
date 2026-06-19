@@ -89,6 +89,13 @@ export function buildAuditorPrompt(ctx: AuditorPromptContext): string {
     `- Do NOT speculate about implementation details.`,
     `- Evidence must be specific and measurable (e.g., "actual y=45px, expected y=30px").`,
     ``,
+    `Evidence discipline:`,
+    `- Describe only visible differences supported by the supplied crops, overlay, mask, and measurements.`,
+    `- If a crop appears clipped or only partially contains the expected target, say "crop/position mismatch" instead of claiming hidden content.`,
+    `- Do not infer implementation cause, app code cause, or config cause.`,
+    `- Do not recommend fixes.`,
+    `- If the evidence is only a projected-location mismatch, classify it as presence/geometry only when visible evidence supports that label.`,
+    ``,
     `Respond with JSON only matching the schema provided. No prose before or after the JSON.`
   ].join("\n");
 }
@@ -123,6 +130,8 @@ export function buildReviewerPrompt(
     `- Reject the diff if the evidence is vague, unverifiable, or contradicted by the images.`,
     `- Mark needs_escalation if the images are ambiguous or the diff requires deeper analysis.`,
     `- Do NOT explain causality. Do NOT suggest code changes. Do NOT judge correctness.`,
+    `- Reject the diff if its title or evidence claims content that is not visible in the supplied images.`,
+    `- Accept crop-boundary evidence only when the record explicitly calls it a crop/position mismatch.`,
     ``,
     `Respond with JSON only: { "decision": "accepted" | "rejected" | "needs_escalation", "reason": "<one sentence>" }`
   ].join("\n");

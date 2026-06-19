@@ -1,5 +1,14 @@
 import type { DiffRecord } from "../schemas/core.js";
 
+const CROP_BOUNDARY_PHRASES = /\b(left half|right half|cut off|cut short|cropped)\b/i;
+const CROP_QUALIFIED_PHRASES = /\b(crop|position|projected)\b/i;
+
+export function hasUnsupportedCropBoundaryClaim(diff: DiffRecord): boolean {
+  const searchable = [diff.title, ...diff.evidence].join(" ");
+  if (!CROP_BOUNDARY_PHRASES.test(searchable)) return false;
+  return !CROP_QUALIFIED_PHRASES.test(searchable);
+}
+
 export function deduplicateDiffs(diffs: DiffRecord[]): DiffRecord[] {
   const seen = new Map<string, DiffRecord>();
   for (const diff of diffs) {
@@ -22,6 +31,9 @@ export function filterAcceptedDiffs(diffs: DiffRecord[]): DiffRecord[] {
 }
 
 export function reviewAndMergeFindings(rawDiffs: DiffRecord[]): DiffRecord[] {
-  const filtered = filterAcceptedDiffs(rawDiffs);
+  const guarded = rawDiffs.map(d =>
+    hasUnsupportedCropBoundaryClaim(d) ? { ...d, reviewerStatus: "rejected" as const } : d
+  );
+  const filtered = filterAcceptedDiffs(guarded);
   return deduplicateDiffs(filtered);
 }

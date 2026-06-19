@@ -6,7 +6,7 @@ import sharp from "sharp";
 import { rubrics, selectTriggeredCriteria } from "../../src/audit/criteria.js";
 import { buildAuditorPrompt, buildReviewerPrompt } from "../../src/audit/prompts.js";
 import { auditElementPair } from "../../src/audit/audit-target.js";
-import { reviewAndMergeFindings } from "../../src/audit/review-findings.js";
+import { reviewAndMergeFindings, hasUnsupportedCropBoundaryClaim } from "../../src/audit/review-findings.js";
 import { UiCriterionSchema } from "../../src/schemas/core.js";
 import type { ElementPair, UiElement, DiffRecord } from "../../src/schemas/core.js";
 import type { VisionJsonCaller } from "../../src/models/vision-json.js";
@@ -500,6 +500,76 @@ describe("reviewAndMergeFindings", () => {
     ];
     const result = reviewAndMergeFindings(diffs);
     expect(result.every(d => d.reviewerStatus !== "rejected")).toBe(true);
+    expect(result).toHaveLength(1);
+  });
+});
+
+describe("prompt builders — Evidence discipline", () => {
+  it("auditor prompt contains Evidence discipline block", () => {
+    const prompt = buildAuditorPrompt({
+      criterion: "geometry",
+      rubric: rubrics["geometry"],
+      elementLabel: "Header",
+      elementType: "text",
+      pairingStatus: "matched",
+      measurements: []
+    });
+    expect(prompt).toContain("Evidence discipline");
+    expect(prompt).toContain("crop/position mismatch");
+  });
+
+  it("reviewer prompt rejects crop-boundary evidence without explicit qualification", () => {
+    const prompt = buildReviewerPrompt("geometry", "Header", "Text is cut off", ["left half of text is cut"]);
+    expect(prompt).toContain("crop/position mismatch");
+    expect(prompt).toMatch(/reject.*title.*evidence.*not visible/i);
+  });
+});
+
+describe("hasUnsupportedCropBoundaryClaim", () => {
+  const base: DiffRecord = {
+    id: "d1", criterion: "typography_content", severity: "medium",
+    title: "Element visual difference", location: { x: 0, y: 0, width: 100, height: 30 },
+    evidence: [], measurements: [], artifactPaths: [], reviewerStatus: "accepted"
+  };
+
+  it("flags diff whose evidence describes 'left half' without crop/position/projected qualifier", () => {
+    const diff: DiffRecord = { ...base, evidence: ["left half of text is cut"] };
+    expect(hasUnsupportedCropBoundaryClaim(diff)).toBe(true);
+  });
+
+  it("does not flag diff when evidence explicitly says crop/position mismatch", () => {
+    const diff: DiffRecord = { ...base, evidence: ["left half of text is cut — crop/position mismatch"] };
+    expect(hasUnsupportedCropBoundaryClaim(diff)).toBe(false);
+  });
+
+  it("does not flag diff with no crop-boundary phrase at all", () => {
+    const diff: DiffRecord = { ...base, evidence: ["background color changed from dark to light"] };
+    expect(hasUnsupportedCropBoundaryClaim(diff)).toBe(false);
+  });
+});
+
+describe("reviewAndMergeFindings — crop-boundary guard", () => {
+  const base: DiffRecord = {
+    id: "d1", criterion: "typography_content", severity: "medium",
+    title: "Text appears cut", location: { x: 0, y: 0, width: 100, height: 30 },
+    evidence: [], measurements: [], artifactPaths: [], reviewerStatus: "accepted"
+  };
+
+  it("rejects diff with unsupported 'left half' crop claim", () => {
+    const diff: DiffRecord = { ...base, evidence: ["left half of text is cut off"] };
+    const result = reviewAndMergeFindings([diff]);
+    expect(result).toHaveLength(0);
+  });
+
+  it("keeps diff when evidence qualifies the claim as crop/position mismatch", () => {
+    const diff: DiffRecord = { ...base, evidence: ["right half cropped — crop/position mismatch"] };
+    const result = reviewAndMergeFindings([diff]);
+    expect(result).toHaveLength(1);
+  });
+
+  it("keeps diff with 'projected' qualifier", () => {
+    const diff: DiffRecord = { ...base, evidence: ["left half cut — projected location mismatch"] };
+    const result = reviewAndMergeFindings([diff]);
     expect(result).toHaveLength(1);
   });
 });
