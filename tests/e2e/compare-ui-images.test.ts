@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runUiDiff } from "../../src/pipeline/run-ui-diff.js";
-import { writeTwoButtonFixture } from "../../src/testing/fixture-images.js";
+import { writeTwoButtonFixture, writeSolidPng } from "../../src/testing/fixture-images.js";
 import { startMockSidecar } from "../fixtures/mock-sidecar.js";
 import { makeMockFetch } from "../fixtures/mock-models.js";
 import type { MockSidecar } from "../fixtures/mock-sidecar.js";
@@ -193,6 +193,66 @@ describe("runUiDiff with mock sidecar and models (full mode)", () => {
     const reportRaw = await import("node:fs/promises").then(fs => fs.readFile(result.reportPath, "utf8"));
     const report = JSON.parse(reportRaw) as { visualClassificationStatus: string };
     expect(report.visualClassificationStatus).toBe("incomplete");
+  });
+});
+
+describe("runUiDiff auditScope.vlmAuditedPairs pipeline accounting", () => {
+  it("populates vlmAuditedPairs and preAuditDeterministicPairs that account for all paired elements", async () => {
+    // Both images are identical solid gray — detectProjectedCropMismatch finds no mismatches, so
+    // all projected pairs pass pre-audit and reach the VLM auditor. This directly exercises the
+    // accounting that sets report.auditScope.vlmAuditedPairs and preAuditDeterministicPairs.
+    const expected = await writeSolidPng(tmpDir, "e.png", 200, 400, 200, 200, 200);
+    const actual = await writeSolidPng(tmpDir, "a.png", 200, 400, 200, 200, 200);
+
+    sidecar = await startMockSidecar({ imageWidth: 200, imageHeight: 400 });
+
+    const mockFetch = makeMockFetch([
+      { criterion: "geometry", hasDiff: true, severity: "medium", title: "Button shifted",
+        evidence: ["visible shift"], reviewerDecision: "accepted" }
+    ], { sidecarImageWidth: 200, sidecarImageHeight: 400 });
+    vi.stubGlobal("fetch", mockFetch);
+    vi.stubEnv("LOCATEANYTHING_SIDECAR_URL", sidecar.url);
+    vi.stubEnv("OPENROUTER_API_KEY", "sk-test-accounting");
+
+    const probeOverride = async () => [
+      { role: "auditor", provider: "openrouter", model: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+        status: "pass" as const, checkedAt: new Date().toISOString(), schemaValid: true, contentAccurate: true, maxImagesSupported: 5 },
+      { role: "reviewer", provider: "openrouter", model: "nex-agi/nex-n2-pro:free",
+        status: "pass" as const, checkedAt: new Date().toISOString(), schemaValid: true, contentAccurate: true, maxImagesSupported: 5 }
+    ];
+
+    const result = await runUiDiff({
+      expectedImagePath: expected,
+      actualImagePath: actual,
+      projectRoot: tmpDir,
+      mode: "full"
+    }, { probeOverride });
+
+    const report = JSON.parse(await fs.readFile(result.reportPath, "utf8")) as {
+      auditScope?: {
+        vlmAuditedPairs?: number;
+        preAuditDeterministicPairs?: number;
+        totalPairs: number;
+      };
+      projectedPreAudit?: {
+        projectedPairsChecked: number;
+        deterministicProjectedDiffs: number;
+        sentToVlmPairs: number;
+      };
+    };
+
+    const vlm = report.auditScope?.vlmAuditedPairs ?? 0;
+    const preAudit = report.auditScope?.preAuditDeterministicPairs ?? 0;
+    const total = report.auditScope?.totalPairs ?? 0;
+
+    expect(vlm).toBeGreaterThan(0);
+    expect(report.auditScope?.preAuditDeterministicPairs).toBeDefined();
+    // Pre-audit + VLM must exhaust all paired candidates
+    expect(vlm + preAudit).toBe(total);
+    expect(report.projectedPreAudit).toBeDefined();
+    // Identical-content crops produce 0 pre-audit mismatches; all pairs forwarded to VLM
+    expect(report.projectedPreAudit?.deterministicProjectedDiffs).toBe(0);
+    expect(report.projectedPreAudit?.sentToVlmPairs).toBe(total);
   });
 });
 
