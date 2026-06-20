@@ -1,53 +1,72 @@
-# Projection Pre-Audit Hardening — Live Gate Results (2026-06-20)
+# Projection Pre-Audit Live Gate Results - 2026-06-21
 
 **Plan:** `docs/superpowers/plans/2026-06-20-projection-preaudit-full-gate-hardening.md`
-**Tasks completed:** 1–6 (code), 7 (partial — provider gates run, Calorix blocked by sidecar)
+**Code under test:** `7b9787c`
+**Sidecar:** healthy at `http://127.0.0.1:39731`; multi-lane local parser with heavyweight LocateAnything checkpoint skipped on this machine
 
-## Gate Results
+## Summary
 
-| Gate | Command | Result | Duration | Notes |
-|------|---------|--------|----------|-------|
-| Deterministic verify | `npm run verify` | PASS | ~45s | 410 unit/e2e + 22 integration tests, typecheck clean, build clean |
-| Coverage | `npm run test:coverage` | PASS | ~20s | 88.91% stmts / 71.34% branches / 90.87% funcs — all thresholds met |
-| NVIDIA free live | `verify:nvidia-live` | **4/4 PASS** | ~15s | All 4 NVIDIA probe targets healthy |
-| OpenRouter free live | `verify:openrouter-free-live` | SKIP | — | `LOCATEANYTHING_SIDECAR_URL` not set — sidecar not running |
-| Default MCP live | `verify:mcp-live` | SKIP | — | `LOCATEANYTHING_SIDECAR_URL` not set — sidecar not running |
-| Calorix bounded smoke | `verify:calorix-live` | SKIP | — | Sidecar not running |
-| Calorix full audit | `verify:calorix-full-live` | SKIP | — | Sidecar not running |
-| Calorix release gate | `verify:calorix-release-live` | SKIP | — | Sidecar not running |
+| Gate | Result | Duration | Evidence |
+| --- | --- | ---: | --- |
+| deterministic verify | PASS | 53.1s including coverage | 416 unit/e2e, 22 integration, 16 Python parser tests; typecheck/build clean |
+| coverage | PASS | 4.9s | 88.71% statements / 71.56% branches / 90.90% functions / 90.84% lines |
+| npm audit | PASS |  | 0 vulnerabilities |
+| NVIDIA free live | PASS | 38.7s | 4/4 tests |
+| OpenRouter free live | PASS | 26.1s | 2 passed, 3 intentionally skipped |
+| default MCP live | PASS | 35.2s | 1/1 passed |
+| Calorix bounded | PASS | 226.4s | `run-1781995401714-d1ccda` |
+| Calorix full | FAIL | 419.1s | `run-1781995654661-a86c16`; incomplete classification and a gate-predicate defect |
+| Calorix release attempt 1 | ABORTED | 281.7s | `run-1781996099339-37129e`; checkpoint only, process exit 1 without Vitest assertion output |
+| Calorix release attempt 2 | ABORTED | 146.9s | `run-1781996435518-9de09d`; checkpoint only, process exit -1 with 8 GB Node heap |
 
-## Production Readiness Decision
+## Bounded Evidence
 
-**BLOCKED.** Calorix gates require the LocateAnything sidecar running at `LOCATEANYTHING_SIDECAR_URL`. The NVIDIA provider gates pass. MCP, OpenRouter, and Calorix gates require the sidecar to be started first.
+Run `run-1781995401714-d1ccda`:
 
-### To complete Task 7
+- report status: `complete`
+- locator coverage: `complete`
+- viewport compatibility: `mismatch`
+- audit scope: 3 VLM-audited / 79 total, `auditLimited:true`
+- projected pre-audit: 79 checked, 8 deterministic mismatches, 71 eligible for VLM
+- visual classification: `incomplete`, expected for the three-pair bounded diagnostic
+- recovery: 90 unclassified, stopped at deadline; 83 components skipped by cap
+- selected auditor/reviewer: native NVIDIA `moonshotai/kimi-k2.6`; recovery: native NVIDIA `qwen/qwen3.5-397b-a17b`
 
-Start the sidecar:
+The bounded gate proves the projection-preaudit regression is fixed: all three bounded slots reached the VLM instead of being consumed by dimension-only checks.
 
-```powershell
-# From the ui-diff-mcp project root:
-$env:LOCATEANYTHING_SKIP_MODEL = "1"  # skip model load for bounded run
-.\scripts\start-locateanything-sidecar.ps1
-```
+## Full Evidence
 
-Then run:
+Run `run-1781995654661-a86c16`:
 
-```powershell
-$env:LOCATEANYTHING_SIDECAR_URL = "http://127.0.0.1:39731"
-$env:RUN_OPENROUTER_FREE_LIVE = "1"
-npm run verify:openrouter-free-live
+- report status: `complete`
+- locator coverage: `complete`
+- audit scope: 71 VLM-audited + 8 deterministic pre-audit = 79 total; `auditLimited:false`
+- visual classification: `incomplete`
+- recovery: 93 unclassified; stopped at deadline; 83 components skipped by cap
+- 716 diff records:
+  - 706 `not_reviewed` `unclassified_visual_change` records with no `classificationSource`
+  - 8 `deterministic_projected_mismatch` records
+  - 1 accepted `vlm_reviewed` spacing/alignment record
+  - 1 accepted `target_recovery` typography/content record
+- primary auditor/reviewer/recovery route: native NVIDIA `qwen/qwen3.5-397b-a17b`
+- runtime fallback reached NVIDIA Nemotron and OpenRouter Nex after malformed NVIDIA JSON
 
-$env:RUN_UI_DIFF_LIVE = "1"
-npm run verify:mcp-live
+The full gate failed at `all accepted diffs must have classificationSource`, reporting 706. That assertion is itself too broad: it uses `reviewerStatus !== "rejected"`, which includes `not_reviewed` unclassified records. It should restrict the accepted-diff source check to accepted/escalated records. This predicate defect does not make the report release-ready: classification is independently incomplete and recovery has 93 leftovers.
 
-$env:RUN_CALORIX_UI_DIFF_LIVE = "1"
-$env:UI_DIFF_MAX_AUDIT_PAIRS = "3"
-$env:UI_DIFF_LIVE_EXPECTED_IMAGE = "C:\Users\xursc\projects\calorix\docs\mockups\image\dark\single\Today.png"
-$env:UI_DIFF_LIVE_ACTUAL_IMAGE = "C:\Users\xursc\projects\calorix\docs\screenshots\today-screen-2026-06-17-adb-seeded-2.png"
-npm run verify:calorix-live
-```
+## Release Attempts
 
-Expected bounded smoke assertions that were failing before this plan:
-- `projectedPreAudit` defined ✓ (added in Task 4)
-- `vlmAuditedPairs > 0` ✓ (pre-audit now only skips definite mismatches, not all projected pairs)
-- `auditLimited: true` (expected with `UI_DIFF_MAX_AUDIT_PAIRS=3`)
+Both strict release commands terminated before producing a final report or assertion summary:
+
+- `run-1781996099339-37129e`: checkpoint after eight audit artifact groups, then process exit 1.
+- `run-1781996435518-9de09d`: checkpoint immediately after model probes, then process exit -1 despite `NODE_OPTIONS=--max-old-space-size=8192`.
+
+Both checkpoint reports have `status:"complete"`, `visualClassificationStatus:"not_run"`, no final `auditScope`, and no provider/audit/recovery trace artifacts. The checkpoint `status:"complete"` value is misleading for an interrupted run and must not be treated as release evidence. Windows recorded no application crash, and the machine retained about 12 GB free memory, so heap exhaustion was not demonstrated.
+
+## Production Decision
+
+**BLOCKED.** Required fixes before another sign-off attempt:
+
+1. Correct the full/release gate predicate so `not_reviewed` records are not described as accepted diffs.
+2. Remove the Calorix-scale classification gap: no recovery cap/deadline leftovers and `visualClassificationStatus:"complete"`.
+3. Diagnose the release-run process termination and make interrupted checkpoints report an honest non-complete status.
+4. Rerun full and release gates successfully with final reports and traces.

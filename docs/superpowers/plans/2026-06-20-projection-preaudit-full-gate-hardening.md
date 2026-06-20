@@ -762,7 +762,7 @@ npm run test:coverage
 
 Expected: both pass.
 
-- [ ] **Step 2: Run provider and generic live gates**
+- [x] **Step 2: Run provider and generic live gates** *(attempted 2026-06-21; managed-shell outbound networking denied all provider fetches, so this is not passing release evidence)*
 
 Run:
 
@@ -779,7 +779,7 @@ npm run verify:mcp-live
 
 Expected: record pass/fail, selected models, and route diagnostics. If a free provider rate-limits, record it as provider availability evidence, not as a code failure.
 
-- [ ] **Step 3: Run bounded Calorix diagnostic**
+- [x] **Step 3: Run bounded Calorix diagnostic** *(attempted 2026-06-21; blocked before run creation by sandbox `EPERM` writing `calorix/.ui-diff/generated/run-state`)*
 
 Run:
 
@@ -802,7 +802,7 @@ Record:
 - `recoverySummary`
 - diff count by `classificationSource`
 
-- [ ] **Step 4: Run full Calorix diagnostic**
+- [x] **Step 4: Run full Calorix diagnostic** *(attempted 2026-06-21; same sibling-repository write denial, so no report was produced)*
 
 Run with no `UI_DIFF_MAX_AUDIT_PAIRS` in the environment:
 
@@ -814,7 +814,7 @@ npm run verify:calorix-full-live
 
 Expected: all 79 pairs are eligible for VLM audit unless pre-audit emits true deterministic projected mismatches after normalized comparison.
 
-- [ ] **Step 5: Run release gate**
+- [x] **Step 5: Run release gate** *(attempted 2026-06-21; same sibling-repository write denial, so production sign-off remains blocked)*
 
 Run:
 
@@ -825,7 +825,7 @@ npm run verify:calorix-release-live
 
 Expected: pass only if `visualClassificationStatus:"complete"`, `auditLimited:false`, `unclassifiedCount:0`, no escalation, and every accepted diff has `classificationSource`.
 
-- [ ] **Step 6: Write release result document**
+- [x] **Step 6: Write release result document**
 
 Create `docs/release/2026-06-20-projection-preaudit-live-results.md` with:
 
@@ -863,7 +863,7 @@ Blocking predicates:
 - list exact failing assertion or state "none"
 ```
 
-- [ ] **Step 7: Update status, commit, and push**
+- [x] **Step 7: Update status, commit, and push** *(fresh unrestricted results recorded on 2026-06-21; production remains blocked by the failures documented in the release-results file)*
 
 Update `docs/implementation-status.md` with exact commands and results.
 
