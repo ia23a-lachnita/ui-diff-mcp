@@ -111,6 +111,28 @@ describe("buildDeterministicDiffs", () => {
     expect(diffs).toHaveLength(0);
   });
 
+  it("geometry diffs have classificationSource deterministic_geometry", () => {
+    const expected = makeElement("e1", 0, 0, 100, 30);
+    const actual = makeElement("a1", 0, 20, 100, 30);
+    const pair = makePair("p1", "matched", "e1", "a1");
+    const diffs = buildDeterministicDiffs({ pairs: [pair], expectedElements: [expected], actualElements: [actual], minMovePx: 4 });
+    expect(diffs[0]!.classificationSource).toBe("deterministic_geometry");
+  });
+
+  it("missing element diffs have classificationSource deterministic_presence", () => {
+    const expected = makeElement("e1", 10, 10, 80, 30);
+    const pair = makePair("p1", "missing", "e1", undefined);
+    const diffs = buildDeterministicDiffs({ pairs: [pair], expectedElements: [expected], actualElements: [], minMovePx: 4 });
+    expect(diffs[0]!.classificationSource).toBe("deterministic_presence");
+  });
+
+  it("extra element diffs have classificationSource deterministic_presence", () => {
+    const actual = makeElement("a1", 10, 10, 80, 30);
+    const pair = makePair("p1", "extra", undefined, "a1");
+    const diffs = buildDeterministicDiffs({ pairs: [pair], expectedElements: [], actualElements: [actual], minMovePx: 4 });
+    expect(diffs[0]!.classificationSource).toBe("deterministic_presence");
+  });
+
   it("each diff has unique id and at least one evidence string", () => {
     const expected = makeElement("e1", 0, 0, 100, 30);
     const actual = makeElement("a1", 0, 20, 100, 30);

@@ -45,7 +45,8 @@ export function buildDeterministicDiffs(input: {
           ],
           artifactPaths: [],
           reviewerStatus: "accepted",
-          model: "deterministic"
+          model: "deterministic",
+          classificationSource: "deterministic_geometry"
         });
       }
     }
@@ -61,7 +62,8 @@ export function buildDeterministicDiffs(input: {
         measurements: [],
         artifactPaths: [],
         reviewerStatus: "accepted",
-        model: "deterministic"
+        model: "deterministic",
+        classificationSource: "deterministic_presence"
       });
     }
     if (pair.status === "extra" && actual) {
@@ -76,7 +78,8 @@ export function buildDeterministicDiffs(input: {
         measurements: [],
         artifactPaths: [],
         reviewerStatus: "accepted",
-        model: "deterministic"
+        model: "deterministic",
+        classificationSource: "deterministic_presence"
       });
     }
   }

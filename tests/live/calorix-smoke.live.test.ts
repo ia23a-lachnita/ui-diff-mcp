@@ -361,6 +361,21 @@ describe.skipIf(!calorixReleaseLive)("Calorix release sign-off gate", () => {
         "release gate must not pass with unresolved review escalations (needs_escalation)"
       ).toBe(0);
 
+      // Every accepted diff must have a classificationSource — no untagged diffs allowed at release.
+      const untaggedAcceptedDiffs = report.diffs.filter(d =>
+        d.reviewerStatus !== "rejected" && !d.classificationSource
+      );
+      expect(
+        untaggedAcceptedDiffs.length,
+        "release gate must not pass with accepted diffs missing classificationSource"
+      ).toBe(0);
+
+      // Unclassified recovery leftovers must be zero for production release.
+      expect(
+        report.recoverySummary?.unclassifiedCount ?? 0,
+        "release gate requires zero unclassified recovery leftovers"
+      ).toBe(0);
+
       // If viewport is mismatch, source crops must preserve original pixels and all accepted
       // diffs must be VLM-reviewed/recovered or explicitly labeled as projected-location evidence.
       const viewportStatus = report.viewportCompatibilityStatus ?? "compatible";
@@ -374,7 +389,8 @@ describe.skipIf(!calorixReleaseLive)("Calorix release sign-off gate", () => {
           d.classificationSource !== "vlm_reviewed" &&
           d.classificationSource !== "target_recovery" &&
           d.classificationSource !== "deterministic_projected_mismatch" &&
-          d.classificationSource !== "deterministic_geometry"
+          d.classificationSource !== "deterministic_geometry" &&
+          d.classificationSource !== "deterministic_presence"
         );
         expect(
           unsafeDiffs.length,

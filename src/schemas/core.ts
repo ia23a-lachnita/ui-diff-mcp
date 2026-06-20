@@ -213,7 +213,8 @@ export const DiffRecordSchema = z.object({
     "deterministic_projected_mismatch",
     "target_recovery",
     "unclassified",
-    "deterministic_geometry"
+    "deterministic_geometry",
+    "deterministic_presence"
   ]).optional(),
   projectionMismatchReason: z.enum([
     "expected_target_absent_at_projected_location",
