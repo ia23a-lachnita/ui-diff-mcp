@@ -262,11 +262,21 @@ export const LocatorMetadataSchema = z.object({
   lanes: z.record(z.string(), LocatorLaneMetadataSchema).optional()
 });
 
+export const ProjectedPreAuditSummarySchema = z.object({
+  projectedPairsChecked: z.number().int().nonnegative(),
+  deterministicProjectedDiffs: z.number().int().nonnegative(),
+  sentToVlmPairs: z.number().int().nonnegative(),
+  skippedFromVlmPairIds: z.array(z.string()).default([])
+});
+export type ProjectedPreAuditSummary = z.infer<typeof ProjectedPreAuditSummarySchema>;
+
 export const AuditScopeSchema = z.object({
   auditedPairs: z.number().int().nonnegative(),
   totalPairs: z.number().int().nonnegative(),
   auditLimited: z.boolean(),
-  limitReason: z.string().optional()
+  limitReason: z.string().optional(),
+  vlmAuditedPairs: z.number().int().nonnegative().optional(),
+  preAuditDeterministicPairs: z.number().int().nonnegative().optional()
 });
 export type AuditScope = z.infer<typeof AuditScopeSchema>;
 
@@ -305,7 +315,8 @@ export const RecoverySummarySchema = z.object({
   recoveredDiffs: z.number().int().min(0),
   unclassifiedCount: z.number().int().min(0),
   stoppedReason: z.enum(["none", "component_cap", "model_call_cap", "deadline_exceeded", "caller_unavailable"]).default("none"),
-  model: z.string().optional()
+  model: z.string().optional(),
+  statusCounts: z.record(z.string(), z.number().int().nonnegative()).default({})
 });
 export type RecoverySummary = z.infer<typeof RecoverySummarySchema>;
 
@@ -426,6 +437,7 @@ export const UiDiffReportSchema = z.object({
   locatorCoverageStatus: LocatorCoverageStatusSchema.default("not_run"),
   locatorMetadata: LocatorMetadataSchema.optional(),
   auditScope: AuditScopeSchema.optional(),
+  projectedPreAudit: ProjectedPreAuditSummarySchema.optional(),
   modelSelection: ModelSelectionSchema.optional(),
   expectedImagePath: z.string().min(1),
   actualImagePath: z.string().min(1),

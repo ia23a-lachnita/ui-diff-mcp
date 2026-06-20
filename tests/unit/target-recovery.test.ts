@@ -357,4 +357,25 @@ describe("runTargetRecovery", () => {
     const { model } = await runTargetRecovery([component], ctx, unlimitedBudget);
     expect(model).toBe("test-model-123");
   });
+
+  it("records statusCounts for each component outcome", async () => {
+    const belowThresholdComponent: PixelComponent = { box: { x: 0, y: 0, width: 5, height: 5 }, pixelCount: 2 };
+    const classifiedFalseComponent: PixelComponent = { box: { x: 10, y: 10, width: 80, height: 60 }, pixelCount: 500 };
+    const missingFieldsComponent: PixelComponent = { box: { x: 10, y: 10, width: 80, height: 60 }, pixelCount: 600 };
+
+    const recoveryCaller: VisionJsonCaller = vi.fn()
+      .mockResolvedValueOnce({ parsed: { classified: false }, rawContent: "", model: "m1", provider: "openrouter" })
+      .mockResolvedValueOnce({ parsed: { classified: true, criterion: "geometry", label: "Button", box: { x: 10, y: 10, width: 80, height: 60 }, evidence: ["shifted"] }, rawContent: "", model: "m1", provider: "openrouter" });
+
+    const budget: RecoveryBudget = { maxComponents: 100, maxModelCalls: 100, deadlineMs: Date.now() + 60000, minComponentPixels: 10 };
+    const result = await runTargetRecovery(
+      [belowThresholdComponent, classifiedFalseComponent, missingFieldsComponent],
+      makeCtx({ recoveryCaller }),
+      budget
+    );
+
+    expect(result.statusCounts["below_threshold"]).toBe(1);
+    expect(result.statusCounts["classified_false"]).toBe(1);
+    expect(result.statusCounts["missing_required_fields"]).toBe(1);
+  });
 });

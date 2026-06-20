@@ -684,7 +684,8 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
             unclassifiedCount: uncoveredComponents.length,
             stoppedReason: "caller_unavailable",
             preClusterUncoveredComponents,
-            postClusterUncoveredComponents
+            postClusterUncoveredComponents,
+            statusCounts: {}
           };
           providerTrace.emit({
             phase: "recovery",
@@ -717,7 +718,8 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
             unclassifiedCount: recoveryResult.unclassifiedCount,
             stoppedReason: recoveryResult.stoppedReason,
             preClusterUncoveredComponents,
-            postClusterUncoveredComponents
+            postClusterUncoveredComponents,
+            statusCounts: recoveryResult.statusCounts
           };
           if (recoveryResult.stoppedReason !== "none" || recoveryResult.unclassifiedCount > 0) {
             visualClassificationStatus = "incomplete";

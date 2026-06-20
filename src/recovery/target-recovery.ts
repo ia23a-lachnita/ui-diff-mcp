@@ -206,6 +206,7 @@ export interface RecoveryResult {
   stoppedReason: "none" | "component_cap" | "model_call_cap" | "deadline_exceeded";
   trace: RecoveryComponentTrace[];
   model?: string;
+  statusCounts: Record<string, number>;
 }
 
 export async function runTargetRecovery(
@@ -215,9 +216,14 @@ export async function runTargetRecovery(
 ): Promise<RecoveryResult> {
   const recovered: DiffRecord[] = [];
   const trace: RecoveryComponentTrace[] = [];
+  const statusCounts: Record<string, number> = {};
   let unclassifiedCount = 0;
   let modelCallsUsed = 0;
   let stoppedReason: RecoveryResult["stoppedReason"] = "none";
+
+  function countStatus(status: string): void {
+    statusCounts[status] = (statusCounts[status] ?? 0) + 1;
+  }
   const imageWidth = ctx.expectedRgba.width;
   const imageHeight = ctx.expectedRgba.height;
   let recoveryModel: string | undefined;
@@ -239,6 +245,7 @@ export async function runTargetRecovery(
 
   // Push below-threshold traces
   for (const entry of ranked.filter(e => e.component.pixelCount < budget.minComponentPixels)) {
+    countStatus("below_threshold");
     trace.push({
       componentId: entry.componentId,
       rank: 0,
@@ -257,6 +264,7 @@ export async function runTargetRecovery(
   // Push skipped_component_cap traces
   for (let i = 0; i < cappedEntries.length; i++) {
     const entry = cappedEntries[i]!;
+    countStatus("skipped_component_cap");
     trace.push({
       componentId: entry.componentId,
       rank: budget.maxComponents + i,
@@ -367,6 +375,7 @@ export async function runTargetRecovery(
       vlmResponse = RecoveryVlmResponseSchema.parse(res.parsed);
     } catch (err) {
       const traceStatus = err instanceof z.ZodError ? "recovery_schema_error" as const : "recovery_error" as const;
+      countStatus(traceStatus);
       trace.push({
         ...baseTrace,
         status: traceStatus,
@@ -384,6 +393,7 @@ export async function runTargetRecovery(
 
     // VLM explicitly determined no regression in this region — valid verdict, not a failure.
     if (!vlmResponse.classified) {
+      countStatus("classified_false");
       trace.push({ ...baseTrace, status: "classified_false", model: componentRecoveryModel, recoveryDurationMs });
       continue;
     }
@@ -395,6 +405,7 @@ export async function runTargetRecovery(
       !vlmResponse.evidence ||
       !vlmResponse.coordinateFrame
     ) {
+      countStatus("missing_required_fields");
       trace.push({ ...baseTrace, status: "missing_required_fields", model: componentRecoveryModel, recoveryDurationMs });
       unclassifiedCount++;
       continue;
@@ -404,12 +415,14 @@ export async function runTargetRecovery(
     const rawBox = vlmResponse.box;
     if (!isBoxInBounds(rawBox, imageWidth, imageHeight)) {
       console.warn(`Recovery: box out of bounds for component ${evidenceId}, skipping`);
+      countStatus("box_out_of_bounds");
       trace.push({ ...baseTrace, status: "box_out_of_bounds", model: componentRecoveryModel, recoveryDurationMs, criterion: vlmResponse.criterion });
       unclassifiedCount++;
       continue;
     }
     if (!boxOverlapsComponent(rawBox, component)) {
       console.warn(`Recovery: box does not overlap component ${evidenceId}, skipping`);
+      countStatus("box_no_component_overlap");
       trace.push({ ...baseTrace, status: "box_no_component_overlap", model: componentRecoveryModel, recoveryDurationMs, criterion: vlmResponse.criterion });
       unclassifiedCount++;
       continue;
@@ -460,6 +473,7 @@ export async function runTargetRecovery(
     const reviewerDurationMs = Date.now() - reviewerStarted;
 
     if (reviewDecision === "rejected") {
+      countStatus("recovery_rejected");
       trace.push({ ...baseTrace, status: "recovery_rejected", model: componentRecoveryModel, reviewerModel, recoveryDurationMs, reviewerDurationMs, criterion: vlmResponse.criterion });
       unclassifiedCount++;
       continue;
@@ -489,9 +503,11 @@ export async function runTargetRecovery(
     };
 
     recovered.push(record);
+    const finalStatus = reviewDecision === "needs_escalation" ? "recovery_needs_escalation" as const : "recovery_accepted" as const;
+    countStatus(finalStatus);
     trace.push({
       ...baseTrace,
-      status: reviewDecision === "needs_escalation" ? "recovery_needs_escalation" : "recovery_accepted",
+      status: finalStatus,
       model: componentRecoveryModel,
       reviewerModel,
       recoveryDurationMs,
@@ -507,6 +523,7 @@ export async function runTargetRecovery(
     const skippedStatus = stoppedReason === "deadline_exceeded" ? "skipped_deadline" as const : "skipped_model_call_cap" as const;
     for (let i = loopStoppedAt; i < toProcess.length; i++) {
       const entry = toProcess[i]!;
+      countStatus(skippedStatus);
       trace.push({
         componentId: entry.componentId,
         rank: i,
@@ -525,6 +542,7 @@ export async function runTargetRecovery(
     skippedComponents,
     stoppedReason,
     trace,
+    statusCounts,
     ...(recoveryModel !== undefined ? { model: recoveryModel } : {})
   };
 }
