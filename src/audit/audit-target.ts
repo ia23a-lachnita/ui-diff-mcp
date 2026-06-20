@@ -11,7 +11,6 @@ import type { VisionJsonCaller } from "../models/vision-json.js";
 import { computePixelDiff } from "../signals/pixel-diff.js";
 import { createDirectionalDiffOverlay, type Rgba } from "../images/directional-diff.js";
 import { extractImageCrop } from "../images/crop.js";
-import { detectProjectedCropMismatch } from "./projected-mismatch.js";
 
 const ReviewDecisionSchema = z.object({
   decision: z.enum(["accepted", "rejected", "needs_escalation"]),
@@ -122,63 +121,6 @@ export async function auditElementPair(
   const shortId = pairId.slice(0, 12);
   const baseFileName = (role: string) =>
     path.join(ctx.artifactDir, `audit-${idxStr}-of-${totalStr}-pair-${shortId}-${ctx.elementSlug}-${role}.png`);
-
-  if (actualEl?.source === "projected" && expectedEl) {
-    const expCropData = extractImageCrop(ctx.expectedRgba.data, ctx.expectedRgba.width, ctx.expectedRgba.height, expectedEl.box);
-    const actCropData = extractImageCrop(ctx.actualRgba.data, ctx.actualRgba.width, ctx.actualRgba.height, actualEl.box);
-    const mismatchResult = await detectProjectedCropMismatch(
-      { data: expCropData, width: Math.max(1, Math.round(expectedEl.box.width)), height: Math.max(1, Math.round(expectedEl.box.height)) },
-      { data: actCropData, width: Math.max(1, Math.round(actualEl.box.width)), height: Math.max(1, Math.round(actualEl.box.height)) },
-      expectedEl.text
-    );
-    if (mismatchResult?.mismatched) {
-      const detArtifacts: UiArtifact[] = [];
-      const { artifact: expArtifact } = await extractCropAndEncode(
-        ctx.expectedRgba.data, ctx.expectedRgba.width, ctx.expectedRgba.height, expectedEl.box,
-        "expected_crop", baseFileName("expected-crop"), pairId
-      );
-      detArtifacts.push(expArtifact);
-      const { artifact: actArtifact } = await extractCropAndEncode(
-        ctx.actualRgba.data, ctx.actualRgba.width, ctx.actualRgba.height, actualEl.box,
-        "actual_crop", baseFileName("actual-crop"), pairId
-      );
-      detArtifacts.push(actArtifact);
-      const detImageRoles = detArtifacts.map(a => a.role);
-
-      trace.push({
-        pairId: pair.id,
-        ...(pair.expectedId !== undefined ? { expectedId: pair.expectedId } : {}),
-        ...(pair.actualId !== undefined ? { actualId: pair.actualId } : {}),
-        targetLabel: refEl.label,
-        targetType: refEl.type,
-        criterion: "presence",
-        status: "deterministic_projected_mismatch",
-        evidenceCount: detArtifacts.length,
-        imageRoles: detImageRoles,
-        artifactPaths: detArtifacts
-      });
-      const record: DiffRecord = {
-        id: diffId(),
-        pairId: pair.id,
-        criterion: "presence",
-        severity: "high",
-        title: `Expected target absent or mismatched at projected location: ${refEl.label}`,
-        location: actualEl.box,
-        evidence: [
-          `Projected expected crop did not match the actual source crop at the transformed coordinate.`,
-          `reason=${mismatchResult.reason}, changedPercent=${mismatchResult.changedPercent.toFixed(1)}`
-        ],
-        measurements: ctx.measurements,
-        artifactPaths: detArtifacts,
-        reviewerStatus: "accepted",
-        model: "deterministic",
-        classificationSource: "deterministic_projected_mismatch",
-        projectionMismatchReason: mismatchResult.reason
-      };
-      accepted.push(record);
-      return { accepted, rejected, trace };
-    }
-  }
 
   const criteria = selectTriggeredCriteria(ctx.triggerCtx);
 
