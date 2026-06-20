@@ -155,22 +155,27 @@ export async function auditElementPair(
   let localPixelDiffMaskB64 = "";
 
   if (expectedEl && actualEl && expectedCropB64 && actualCropB64) {
+    // Write a single resized comparison crop so the pixel mask and the directional overlay
+    // both describe the same comparison. computePixelDiff's internal zero-padding and
+    // Sharp's Lanczos resize differ; using one file for both operations eliminates the mismatch.
+    const expCropMeta = await sharp(Buffer.from(expectedCropB64, "base64")).metadata();
+    const cmpW = expCropMeta.width ?? Math.max(1, Math.round(expectedEl.box.width));
+    const cmpH = expCropMeta.height ?? Math.max(1, Math.round(expectedEl.box.height));
+    const actualComparisonCropPath = baseFileName("actual-crop-comparison");
+    await sharp(Buffer.from(actualCropB64, "base64"))
+      .resize(cmpW, cmpH, { fit: "fill" })
+      .toFile(actualComparisonCropPath);
+
     const localPixelDiff = computePixelDiff(
       baseFileName("expected-crop"),
-      baseFileName("actual-crop")
+      actualComparisonCropPath
     );
     await writeCropArtifact(localPixelDiff.diffMask, localPixelDiff.width, localPixelDiff.height, localPixelDiffMaskPath, 1);
     localPixelDiffMaskB64 = (await sharp(Buffer.from(localPixelDiff.diffMask.buffer, localPixelDiff.diffMask.byteOffset, localPixelDiff.diffMask.byteLength), { raw: { width: localPixelDiff.width, height: localPixelDiff.height, channels: 1 } }).png().toBuffer()).toString("base64");
     auditArtifacts.push({ role: "local_pixel_diff_mask", path: localPixelDiffMaskPath, pairId });
 
     const expRaw = await sharp(Buffer.from(expectedCropB64, "base64")).ensureAlpha().raw().toBuffer();
-    // Resize actual crop to expected-crop dimensions so both buffers share the same stride.
-    // computePixelDiff already pads actual to expected size; the overlay must match.
-    const actRaw = await sharp(Buffer.from(actualCropB64, "base64"))
-      .resize(localPixelDiff.width, localPixelDiff.height, { fit: "fill" })
-      .ensureAlpha()
-      .raw()
-      .toBuffer();
+    const actRaw = await sharp(actualComparisonCropPath).ensureAlpha().raw().toBuffer();
     await createDirectionalDiffOverlay(
       { data: expRaw, width: localPixelDiff.width, height: localPixelDiff.height },
       { data: actRaw, width: localPixelDiff.width, height: localPixelDiff.height },

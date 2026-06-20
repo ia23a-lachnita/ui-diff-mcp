@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildDeterministicDiffs, unionBox } from "../../src/diff/deterministic-diffs.js";
+import { createImagePairTransform } from "../../src/images/coordinates.js";
 import type { ElementPair, UiElement } from "../../src/schemas/core.js";
 
 function makeElement(id: string, x: number, y: number, w: number, h: number): UiElement {
@@ -152,5 +153,39 @@ describe("buildDeterministicDiffs", () => {
     expect(names).toContain("deltaX");
     expect(names).toContain("deltaY");
     expect(measurements.find(m => m.name === "deltaY")?.value).toBe(20);
+  });
+
+  it("with transform: normalizes actual.box to expected-space for delta, location, and evidence", () => {
+    // Expected image 500×1000; actual image 1000×2000 (2× scale).
+    const transform = createImagePairTransform({ width: 500, height: 1000 }, { width: 1000, height: 2000 });
+    // Element at same relative position but 10px offset in expected-space.
+    // In actual-image pixels that is 20px offset (2× scale).
+    const expected = makeElement("e1", 0, 0, 100, 50);
+    const actual = makeElement("a1", 20, 20, 200, 100); // 2× scale + 20px actual offset → 10px in expected space
+    const pair = makePair("p1", "matched", "e1", "a1");
+
+    const diffs = buildDeterministicDiffs({
+      pairs: [pair], expectedElements: [expected], actualElements: [actual],
+      minMovePx: 4, transform
+    });
+    expect(diffs).toHaveLength(1);
+    const diff = diffs[0]!;
+
+    // Delta must be in expected-space (10px), not raw actual-space (20px).
+    expect(diff.measurements.find(m => m.name === "deltaX")?.value).toBe(10);
+    expect(diff.measurements.find(m => m.name === "deltaY")?.value).toBe(10);
+
+    // location must use normalised actual box so the union is in expected-space.
+    // unionBox({0,0,100,50}, {10,10,100,50}) = {0,0,110,60}
+    expect(diff.location.x).toBe(0);
+    expect(diff.location.y).toBe(0);
+    expect(diff.location.width).toBe(110);
+    expect(diff.location.height).toBe(60);
+
+    // Evidence must not report raw actual-space coordinates (20, 20, 200, 100).
+    const evidenceText = diff.evidence.join(" ");
+    expect(evidenceText).toContain("expected-space");
+    expect(evidenceText).not.toContain("x=20");
+    expect(evidenceText).not.toContain("w=200");
   });
 });

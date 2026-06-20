@@ -38,10 +38,11 @@ export function buildDeterministicDiffs(input: {
           criterion: "geometry",
           severity: Math.abs(dx) + Math.abs(dy) >= 12 ? "high" : "medium",
           title: `${expected.label} geometry differs`,
-          location: unionBox(expected.box, actual.box),
+          // Both boxes in expected-image coordinate space so the union covers the right region.
+          location: unionBox(expected.box, actualBoxNorm),
           evidence: [
-            `Expected box x=${expected.box.x}, y=${expected.box.y}, w=${expected.box.width}, h=${expected.box.height}.`,
-            `Actual box x=${actual.box.x}, y=${actual.box.y}, w=${actual.box.width}, h=${actual.box.height}.`,
+            `Expected box (expected-space) x=${expected.box.x}, y=${expected.box.y}, w=${expected.box.width}, h=${expected.box.height}.`,
+            `Actual box (expected-space, normalized) x=${Math.round(actualBoxNorm.x)}, y=${Math.round(actualBoxNorm.y)}, w=${Math.round(actualBoxNorm.width)}, h=${Math.round(actualBoxNorm.height)}.`,
             `Delta dx=${dx}px, dy=${dy}px, dw=${dw}px, dh=${dh}px.`
           ],
           measurements: [

@@ -498,6 +498,49 @@ describe("auditElementPair", () => {
       expect(img).toMatch(/^data:image\/png;base64,/);
     }
   });
+
+  it("succeeds without throwing when actual crop is smaller than expected crop", async () => {
+    // Regression: pixel mask used zero-padded actual while overlay used sharp-resized actual,
+    // producing mask/overlay mismatch and incorrect diff mass for size-mismatched crops.
+    const smallActualEl: UiElement = { ...expectedEl, id: "a1", box: { x: 10, y: 50, width: 40, height: 20 } };
+    const auditorCaller: VisionJsonCaller = vi.fn().mockResolvedValue({
+      parsed: { hasDiff: false }, rawContent: "", model: "m", provider: "nvidia"
+    });
+    const ctx = {
+      ...makeAuditContext({ auditorCaller }),
+      actualElements: [smallActualEl]
+    };
+    // Must complete without throwing; mask and overlay both derive from the same resized crop.
+    await expect(auditElementPair(pair, ctx)).resolves.toBeDefined();
+  });
+
+  it("trace predicate for vlmAuditedPairs: matched pair always triggers geometry fallback", async () => {
+    // selectTriggeredCriteria adds geometry as a fallback for any matched pair with no other signals.
+    // The pipeline counts vlmAuditedPairs via trace.some(t => t.status !== "criterion_not_triggered").
+    // For matched pairs this is always true, so vlmCallCount equals the number of pairs that
+    // actually enter auditElementPair — not just the selection count (fixing the pre-audit case
+    // where auditTotal could be 3 but refEl=undefined for all, producing no real calls).
+    const auditorCaller = vi.fn().mockResolvedValue({ parsed: { hasDiff: false }, rawContent: "", model: "m", provider: "nvidia" });
+    const result = await auditElementPair(pair, makeAuditContext({ auditorCaller, boxDeltaPx: 0 }));
+    expect(result.trace.length).toBeGreaterThan(0);
+    // Geometry fallback fires → predicate is true → pipeline increments vlmCallCount
+    expect(result.trace.some(t => t.status !== "criterion_not_triggered")).toBe(true);
+    // Other criteria with no signals are not_triggered
+    expect(result.trace.some(t => t.status === "criterion_not_triggered")).toBe(true);
+  });
+
+  it("trace predicate for vlmAuditedPairs: explicit criterion trigger also satisfies predicate", async () => {
+    const auditorCaller = vi.fn().mockResolvedValue({
+      parsed: { hasDiff: true, severity: "high", title: "Shift", evidence: ["y offset"] },
+      rawContent: "", model: "m", provider: "nvidia"
+    });
+    const reviewerCaller = vi.fn().mockResolvedValue({
+      parsed: { decision: "accepted", reason: "confirmed" }, rawContent: "", model: "r", provider: "nvidia"
+    });
+    const result = await auditElementPair(pair, makeAuditContext({ auditorCaller, reviewerCaller, boxDeltaPx: 15 }));
+    // Geometry and spacing_alignment both fire with 15px delta; predicate must be true.
+    expect(result.trace.some(t => t.status !== "criterion_not_triggered")).toBe(true);
+  });
 });
 
 describe("reviewAndMergeFindings", () => {
