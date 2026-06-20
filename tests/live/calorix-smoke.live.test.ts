@@ -71,6 +71,14 @@ describe.skipIf(!calorixLive)("Calorix live UI diff smoke", () => {
       // There must be paired targets available for audit
       expect(report.auditScope?.totalPairs ?? 0, "at least one element pair must be available for audit").toBeGreaterThan(0);
 
+      // Pre-audit summary must be present — confirms the projection pre-audit stage ran
+      expect(report.projectedPreAudit, "projectedPreAudit summary must be present").toBeDefined();
+
+      // At least one pair must have reached the VLM auditor. If vlmAuditedPairs=0 it means all
+      // bounded slots were consumed by deterministic pre-audit (the exact June-20 failure mode).
+      const vlmAuditedBounded = report.auditScope?.vlmAuditedPairs ?? report.auditScope?.auditedPairs ?? 0;
+      expect(vlmAuditedBounded, "bounded smoke must have at least one VLM-audited pair — all-pre-audit means projection short-circuited the budget").toBeGreaterThan(0);
+
       // The bounded smoke gate does not require VLM-reviewed diffs — 3 pairs may yield none.
       // The full gate (verify:calorix-full-live) asserts at least one VLM-reviewed diff.
       expect(report.diffs.length, "at least one diff must be reported").toBeGreaterThan(0);
@@ -172,6 +180,24 @@ describe.skipIf(!calorixFullLive)("verify:calorix-full-live unbounded all-target
 
       const report = UiDiffReportSchema.parse(JSON.parse(await fs.readFile(statusOut!.reportPath!, "utf8")));
       expect(report.auditScope?.auditLimited ?? false).toBe(false);
+
+      // Pair accounting: every pair must be handled by exactly one path (pre-audit or VLM).
+      // This catches projection-precheck bugs or accounting drift.
+      if (report.auditScope?.totalPairs !== undefined) {
+        const vlmAuditedFull = report.auditScope.vlmAuditedPairs ?? report.auditScope.auditedPairs ?? 0;
+        const preAuditDetFull = report.auditScope.preAuditDeterministicPairs ?? 0;
+        expect(
+          vlmAuditedFull + preAuditDetFull,
+          "vlmAuditedPairs + preAuditDeterministicPairs must equal totalPairs"
+        ).toBe(report.auditScope.totalPairs);
+      }
+
+      // All accepted diffs must have classificationSource — no untagged diffs allowed
+      const untaggedFullDiffs = report.diffs.filter(d => d.reviewerStatus !== "rejected" && !d.classificationSource);
+      expect(
+        untaggedFullDiffs.length,
+        "all accepted diffs must have classificationSource"
+      ).toBe(0);
 
       // Locator must have found elements with adequate coverage — weak or failed is a gate failure
       expect(report.locatorCoverageStatus, "locator coverage must not be weak or failed").not.toMatch(/^(failed|weak)$/);
@@ -345,6 +371,7 @@ describe.skipIf(!calorixReleaseLive)("Calorix release sign-off gate", () => {
 
       const report = UiDiffReportSchema.parse(JSON.parse(await fs.readFile(statusOut!.reportPath!, "utf8")));
 
+      expect(report.status, "release gate requires report status=complete").toBe("complete");
       expect(
         report.visualClassificationStatus,
         "release gate requires complete visual classification — incomplete means free auditor routes were exhausted"

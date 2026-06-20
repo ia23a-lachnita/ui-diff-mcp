@@ -103,6 +103,18 @@ Required result:
 - `modelSelection.auditorRoutes` and `modelSelection.reviewerRoutes` are present with at least one entry each.
 - If any provider fallback occurred during the run, `report.warnings` must contain explicit fallback text (never silent).
 
+## Before Running Full Or Release Calorix Gates
+
+Before running `verify:calorix-full-live` or `verify:calorix-release-live`, confirm all of the following from the most recent bounded smoke report:
+
+- `locatorCoverageStatus` is `"complete"` — not `"weak"` or `"failed"`
+- `auditScope.vlmAuditedPairs > 0` — at least one pair reached the VLM auditor (if zero, the projection pre-audit consumed all bounded slots, which means the bounded smoke itself is a code-path failure)
+- `projectedPreAudit` exists in the report — confirms the pre-audit stage ran
+- Every accepted diff has `classificationSource` — no untagged diffs
+- `recoverySummary.statusCounts` exists when recovery ran
+
+If any of these fail in the bounded smoke, fix the underlying code issue before proceeding to the full or release gate.
+
 ## Full Calorix All-Target Audit Gate
 
 ```powershell
