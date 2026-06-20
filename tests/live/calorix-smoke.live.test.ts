@@ -355,6 +355,12 @@ describe.skipIf(!calorixReleaseLive)("Calorix release sign-off gate", () => {
         "release gate requires auditLimited=false"
       ).toBe(false);
 
+      const escalatedDiffs = report.diffs.filter(d => d.reviewerStatus === "needs_escalation");
+      expect(
+        escalatedDiffs.length,
+        "release gate must not pass with unresolved review escalations (needs_escalation)"
+      ).toBe(0);
+
       // If viewport is mismatch, source crops must preserve original pixels and all accepted
       // diffs must be VLM-reviewed/recovered or explicitly labeled as projected-location evidence.
       const viewportStatus = report.viewportCompatibilityStatus ?? "compatible";

@@ -772,7 +772,7 @@ npm run verify:openrouter-free-live
 
 Expected: results are recorded with pass/fail counts and model IDs.
 
-- [x] **Step 3: Run Calorix diagnostic gates**
+- [ ] **Step 3: Run Calorix diagnostic gates** *(not yet run — sidecar unavailable at last Task 7 attempt)*
 
 Run with:
 
@@ -797,7 +797,7 @@ Record:
 - final diff count by `classificationSource`
 - count of unclassified diffs
 
-- [x] **Step 4: Run release gate**
+- [ ] **Step 4: Run release gate** *(not yet run — blocked pending Step 3)*
 
 Run:
 
