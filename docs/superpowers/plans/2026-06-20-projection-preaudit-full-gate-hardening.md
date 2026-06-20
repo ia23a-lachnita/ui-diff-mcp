@@ -45,7 +45,8 @@ The current status file incorrectly says the bounded run failed because no audit
 
 - Modify `docs/implementation-status.md`: correct June 20 run facts and current blockers.
 - Modify `docs/superpowers/plans/2026-06-18-model-diagnostics-recovery-projection-hardening.md`: mark bounded Calorix diagnostic as run with the correct result; keep full/release unchecked.
-- Modify `src/diff/deterministic-diffs.ts`: add `classificationSource: "deterministic_geometry"` to deterministic geometry records.
+- Modify `src/diff/deterministic-diffs.ts`: add `classificationSource: "deterministic_geometry"` to geometry records and `classificationSource: "deterministic_presence"` to missing/extra records.
+- Create `src/images/crop.ts`: own shared RGBA crop extraction and Sharp/Lanczos comparison resizing.
 - Modify `src/audit/projected-mismatch.ts`: normalize different-sized projected crops before comparison; remove dimension-only mismatch behavior.
 - Create `src/diff/projected-preaudit.ts`: deterministic projected-pair classifier that runs before VLM audit selection.
 - Modify `src/audit/audit-target.ts`: remove projected-mismatch early return and keep it focused on VLM criteria.
@@ -56,7 +57,7 @@ The current status file incorrectly says the bounded run failed because no audit
 - Modify `tests/unit/projected-mismatch.test.ts`: cover resized comparison for projected crops.
 - Modify `tests/unit/audit.test.ts`: assert projected mismatch no longer happens inside `auditElementPair()`.
 - Modify or create `tests/unit/projected-preaudit.test.ts`: cover pre-audit classification and budget accounting input.
-- Modify `tests/unit/deterministic-diffs.test.ts` or existing deterministic diff tests: assert `deterministic_geometry`.
+- Modify `tests/unit/deterministic-diffs.test.ts` or existing deterministic diff tests: assert `deterministic_geometry` and `deterministic_presence`.
 - Modify `tests/live/calorix-smoke.live.test.ts`: harden gate assertions around pre-audit counts, VLM-audited counts, and classification sources.
 - Modify `docs/release/production-readiness-checklist.md`: clarify the required sequence for the next full live gates.
 
@@ -134,7 +135,7 @@ git push
 
 **Interfaces:**
 - Consumes: `DiffRecordSchema.classificationSource`
-- Produces: all deterministic geometry records carry `classificationSource: "deterministic_geometry"`
+- Produces: geometry records carry `deterministic_geometry`; missing/extra records carry `deterministic_presence`
 
 - [ ] **Step 1: Write the failing unit test**
 
@@ -147,6 +148,13 @@ expect(diffs).toContainEqual(expect.objectContaining({
   reviewerStatus: "accepted",
   classificationSource: "deterministic_geometry"
 }));
+
+expect(diffs).toContainEqual(expect.objectContaining({
+  criterion: "presence",
+  model: "deterministic",
+  reviewerStatus: "accepted",
+  classificationSource: "deterministic_presence"
+}));
 ```
 
 Run:
@@ -157,7 +165,13 @@ npx vitest run tests/unit --runInBand
 
 Expected: the new assertion fails because geometry records currently have no `classificationSource`.
 
-- [ ] **Step 2: Implement the source tag**
+- [ ] **Step 2: Extend the source enum and implement precise source tags**
+
+In `src/schemas/core.ts`, add the new source value:
+
+```ts
+"deterministic_presence",
+```
 
 In `src/diff/deterministic-diffs.ts`, add this property to deterministic geometry `DiffRecord` objects:
 
@@ -165,13 +179,13 @@ In `src/diff/deterministic-diffs.ts`, add this property to deterministic geometr
 classificationSource: "deterministic_geometry",
 ```
 
-If the file emits deterministic presence records outside projected mismatch, tag them as:
+Tag missing/extra deterministic presence records as:
 
 ```ts
-classificationSource: "deterministic_geometry",
+classificationSource: "deterministic_presence",
 ```
 
-until a more specific source enum is introduced. Do not leave deterministic records untagged.
+Do not leave deterministic records untagged or classify presence records as geometry.
 
 - [ ] **Step 3: Harden the live release assertion**
 
@@ -186,6 +200,14 @@ expect(
   "release gate must not pass with accepted diffs missing classificationSource"
 ).toBe(0);
 ```
+
+Extend the viewport-mismatch `unsafeDiffs` allowlist with:
+
+```ts
+d.classificationSource !== "deterministic_presence"
+```
+
+so correctly tagged missing/extra records are accepted by the same release contract as deterministic geometry records.
 
 - [ ] **Step 4: Verify and commit**
 
@@ -208,34 +230,35 @@ git push
 ## Task 3: Normalize Projected Crop Comparison
 
 **Files:**
+- Create: `src/images/crop.ts`
 - Modify: `src/audit/projected-mismatch.ts`
 - Modify: `tests/unit/projected-mismatch.test.ts`
 - Modify: `src/schemas/core.ts` only if measurement names or reasons need schema updates
 - Modify: `docs/implementation-status.md`
 
 **Interfaces:**
-- Consumes: `detectProjectedCropMismatch(expected, actual, expectedText?)`
-- Produces: dimension differences become comparison metadata; mismatch is decided from normalized pixel, edge, color, and optional text signals
+- Consumes: `await detectProjectedCropMismatch(expected, actual, expectedText?)`
+- Produces: dimension differences become comparison metadata; mismatch is decided from Sharp/Lanczos-normalized pixel, edge, color, and optional text signals
 
 - [ ] **Step 1: Write failing tests for projected size differences**
 
 Add tests that prove crop size difference alone does not create a mismatch:
 
 ```ts
-it("does not treat projected crop dimension difference as mismatch by itself", () => {
+it("does not treat projected crop dimension difference as mismatch by itself", async () => {
   const expected = makeSolidCrop(100, 100, [30, 40, 50, 255]);
   const actual = makeSolidCrop(50, 50, [30, 40, 50, 255]);
 
-  const result = detectProjectedCropMismatch(expected, actual);
+  const result = await detectProjectedCropMismatch(expected, actual);
 
   expect(result?.mismatched ?? false).toBe(false);
 });
 
-it("detects real content mismatch after resizing projected crop for comparison", () => {
+it("detects real content mismatch after resizing projected crop for comparison", async () => {
   const expected = makeCropWithCenteredRect(100, 100, [30, 40, 50, 255], [0, 220, 220, 255]);
   const actual = makeSolidCrop(50, 50, [30, 40, 50, 255]);
 
-  const result = detectProjectedCropMismatch(expected, actual);
+  const result = await detectProjectedCropMismatch(expected, actual);
 
   expect(result?.mismatched).toBe(true);
   expect(result?.reason).not.toBe("projection_dimension_mismatch");
@@ -245,7 +268,20 @@ it("detects real content mismatch after resizing projected crop for comparison",
 
 Use local helper functions in the test file to create RGBA buffers. Do not use image files for these unit tests.
 
-- [ ] **Step 2: Replace dimension-only mismatch**
+- [ ] **Step 2: Create shared crop helpers and replace dimension-only mismatch**
+
+Move the existing local `extractImageCrop` implementation from `src/audit/audit-target.ts` into a new focused module, `src/images/crop.ts`. Export it with the existing signature:
+
+```ts
+export function extractImageCrop(
+  imageData: Uint8Array,
+  imageWidth: number,
+  imageHeight: number,
+  box: Box
+): Uint8Array;
+```
+
+Update `src/audit/audit-target.ts` to import this helper from `../images/crop.js`. Add a unit test using a 4x4 RGBA buffer and a 2x2 box to prove the moved helper preserves the exact source pixels.
 
 In `src/audit/projected-mismatch.ts`, remove this behavior:
 
@@ -261,34 +297,31 @@ if (expected.width !== actual.width || expected.height !== actual.height) {
 }
 ```
 
-Replace it with deterministic nearest-neighbor resizing for comparison:
+Add a Sharp-based comparison resize to `src/images/crop.ts`:
 
 ```ts
-function resizeRgbaNearest(input: CropInput, width: number, height: number): Uint8Array {
-  const out = new Uint8Array(width * height * 4);
-  for (let y = 0; y < height; y++) {
-    const srcY = Math.min(input.height - 1, Math.floor((y / height) * input.height));
-    for (let x = 0; x < width; x++) {
-      const srcX = Math.min(input.width - 1, Math.floor((x / width) * input.width));
-      const src = (srcY * input.width + srcX) * 4;
-      const dst = (y * width + x) * 4;
-      out[dst] = input.data[src] ?? 0;
-      out[dst + 1] = input.data[src + 1] ?? 0;
-      out[dst + 2] = input.data[src + 2] ?? 0;
-      out[dst + 3] = input.data[src + 3] ?? 255;
-    }
-  }
-  return out;
+export async function resizeRgbaForComparison(
+  input: { data: Uint8Array; width: number; height: number },
+  width: number,
+  height: number
+): Promise<Uint8Array> {
+  const resized = await sharp(Buffer.from(input.data), {
+    raw: { width: input.width, height: input.height, channels: 4 }
+  })
+    .resize(width, height, { fit: "fill", kernel: sharp.kernel.lanczos3 })
+    .raw()
+    .toBuffer();
+  return new Uint8Array(resized);
 }
 ```
 
-Inside `detectProjectedCropMismatch`, compare at expected crop dimensions:
+Make `detectProjectedCropMismatch` asynchronous and compare at expected crop dimensions:
 
 ```ts
 const comparisonActualData =
   expected.width === actual.width && expected.height === actual.height
     ? actual.data
-    : resizeRgbaNearest(actual, expected.width, expected.height);
+    : await resizeRgbaForComparison(actual, expected.width, expected.height);
 
 const comparisonActual = {
   data: comparisonActualData,
@@ -298,6 +331,8 @@ const comparisonActual = {
 ```
 
 Then run `computeChangedPercent`, edge overlap, and palette comparison against `expected` and `comparisonActual`.
+
+Sharp/Lanczos is required here because nearest-neighbor downscaling can create artificial edge and pixel differences in UI text, rings, and icons. Original expected/actual crop artifacts remain untouched; resizing is comparison-only.
 
 - [ ] **Step 3: Rename dimension reason use**
 
@@ -332,6 +367,7 @@ git push
 
 **Files:**
 - Create: `src/diff/projected-preaudit.ts`
+- Modify: `src/images/crop.ts`
 - Modify: `src/audit/audit-target.ts`
 - Modify: `src/pipeline/run-ui-diff.ts`
 - Modify: `src/schemas/core.ts`
@@ -351,7 +387,6 @@ In `src/schemas/core.ts`, add:
 export const ProjectedPreAuditSummarySchema = z.object({
   projectedPairsChecked: z.number().int().nonnegative(),
   deterministicProjectedDiffs: z.number().int().nonnegative(),
-  equivalentProjectedPairs: z.number().int().nonnegative(),
   sentToVlmPairs: z.number().int().nonnegative(),
   skippedFromVlmPairIds: z.array(z.string()).default([])
 });
@@ -376,10 +411,10 @@ preAuditDeterministicPairs: z.number().int().nonnegative().optional(),
 Create `src/diff/projected-preaudit.ts`:
 
 ```ts
+import crypto from "node:crypto";
 import type { DiffRecord, ElementPair, UiElement } from "../schemas/core.js";
 import { detectProjectedCropMismatch } from "../audit/projected-mismatch.js";
-import { extractImageCrop } from "../images/artifacts.js";
-import { diffId } from "../audit/audit-target.js";
+import { extractImageCrop } from "../images/crop.js";
 
 export interface RgbaImage {
   data: Uint8Array;
@@ -393,25 +428,23 @@ export interface ProjectedPreAuditResult {
   summary: {
     projectedPairsChecked: number;
     deterministicProjectedDiffs: number;
-    equivalentProjectedPairs: number;
     sentToVlmPairs: number;
     skippedFromVlmPairIds: string[];
   };
 }
 
-export function runProjectedPreAudit(input: {
+export async function runProjectedPreAudit(input: {
   pairs: ElementPair[];
   expectedElements: UiElement[];
   actualElements: UiElement[];
   expectedRgba: RgbaImage;
   actualRgba: RgbaImage;
-}): ProjectedPreAuditResult {
+}): Promise<ProjectedPreAuditResult> {
   const expectedById = new Map(input.expectedElements.map(e => [e.id, e]));
   const actualById = new Map(input.actualElements.map(e => [e.id, e]));
   const diffs: DiffRecord[] = [];
   const skipVlmPairIds = new Set<string>();
   let projectedPairsChecked = 0;
-  let equivalentProjectedPairs = 0;
   let sentToVlmPairs = 0;
 
   for (const pair of input.pairs) {
@@ -423,7 +456,7 @@ export function runProjectedPreAudit(input: {
     projectedPairsChecked += 1;
     const expectedCrop = extractImageCrop(input.expectedRgba.data, input.expectedRgba.width, input.expectedRgba.height, expected.box);
     const actualCrop = extractImageCrop(input.actualRgba.data, input.actualRgba.width, input.actualRgba.height, actual.box);
-    const result = detectProjectedCropMismatch(
+    const result = await detectProjectedCropMismatch(
       { data: expectedCrop, width: Math.max(1, Math.round(expected.box.width)), height: Math.max(1, Math.round(expected.box.height)) },
       { data: actualCrop, width: Math.max(1, Math.round(actual.box.width)), height: Math.max(1, Math.round(actual.box.height)) },
       expected.text
@@ -432,7 +465,7 @@ export function runProjectedPreAudit(input: {
     if (result?.mismatched) {
       skipVlmPairIds.add(pair.id);
       diffs.push({
-        id: diffId(),
+        id: crypto.randomBytes(6).toString("hex"),
         pairId: pair.id,
         criterion: "presence",
         severity: "high",
@@ -450,7 +483,6 @@ export function runProjectedPreAudit(input: {
         projectionMismatchReason: result.reason
       });
     } else {
-      equivalentProjectedPairs += 1;
       sentToVlmPairs += 1;
     }
   }
@@ -461,7 +493,6 @@ export function runProjectedPreAudit(input: {
     summary: {
       projectedPairsChecked,
       deterministicProjectedDiffs: diffs.length,
-      equivalentProjectedPairs,
       sentToVlmPairs,
       skippedFromVlmPairIds: [...skipVlmPairIds]
     }
@@ -469,7 +500,7 @@ export function runProjectedPreAudit(input: {
 }
 ```
 
-If `extractImageCrop` is not exported from `src/images/artifacts.ts`, export it or move the shared crop extraction helper to a focused module. Do not duplicate crop math.
+Task 3 already moves and exports `extractImageCrop` from `src/images/crop.ts`. This task must import that shared helper and must not duplicate crop math.
 
 - [ ] **Step 3: Remove audit-path projected early return**
 
@@ -482,7 +513,7 @@ Add a unit test asserting a projected actual element still invokes the mocked au
 In `src/pipeline/run-ui-diff.ts`, after deterministic geometry diffs and before audit pair selection, add:
 
 ```ts
-const projectedPreAudit = runProjectedPreAudit({
+const projectedPreAudit = await runProjectedPreAudit({
   pairs,
   expectedElements,
   actualElements,
@@ -500,12 +531,12 @@ When writing `auditScope`, set:
 
 ```ts
 auditScope = {
-  auditedPairs: selectedVlmPairs.length,
-  vlmAuditedPairs: selectedVlmPairs.length,
+  auditedPairs: auditSelection.pairs.length,
+  vlmAuditedPairs: auditSelection.pairs.length,
   totalPairs: pairs.length,
-  auditLimited,
+  auditLimited: auditSelection.limited,
   preAuditDeterministicPairs: projectedPreAudit.diffs.length,
-  limitReason
+  ...(auditSelection.warning ? { limitReason: auditSelection.warning } : {})
 };
 ```
 
@@ -516,15 +547,15 @@ Write `projectedPreAudit: projectedPreAudit.summary` into `UiDiffReport`.
 Create `tests/unit/projected-preaudit.test.ts` with these cases:
 
 ```ts
-it("does not consume VLM budget for a definite projected mismatch", () => {
-  const result = runProjectedPreAudit(makeProjectedMismatchFixture());
+it("does not consume VLM budget for a definite projected mismatch", async () => {
+  const result = await runProjectedPreAudit(makeProjectedMismatchFixture());
   expect(result.diffs).toHaveLength(1);
   expect(result.skipVlmPairIds).toContain("pair-1");
   expect(result.summary.deterministicProjectedDiffs).toBe(1);
 });
 
-it("sends dimension-only projected pairs to VLM instead of creating absence diffs", () => {
-  const result = runProjectedPreAudit(makeSameContentDifferentScaleFixture());
+it("sends dimension-only projected pairs to VLM instead of creating absence diffs", async () => {
+  const result = await runProjectedPreAudit(makeSameContentDifferentScaleFixture());
   expect(result.diffs).toHaveLength(0);
   expect(result.skipVlmPairIds.size).toBe(0);
   expect(result.summary.sentToVlmPairs).toBe(1);
@@ -652,11 +683,15 @@ In the full live test, assert:
 
 ```ts
 expect(report.auditScope?.auditLimited ?? false).toBe(false);
-expect(report.auditScope?.vlmAuditedPairs ?? report.auditScope?.auditedPairs ?? 0)
+const vlmAuditedPairs = report.auditScope?.vlmAuditedPairs ?? report.auditScope?.auditedPairs ?? 0;
+const preAuditDeterministicPairs = report.auditScope?.preAuditDeterministicPairs ?? 0;
+expect(vlmAuditedPairs + preAuditDeterministicPairs)
   .toBe(report.auditScope?.totalPairs);
 expect(report.diffs.filter(d => d.reviewerStatus !== "rejected" && !d.classificationSource))
   .toHaveLength(0);
 ```
+
+This accounting proves every pair was handled by exactly one path: deterministic pre-audit or VLM audit. A true projected deterministic mismatch must not make the full gate fail merely because it correctly bypassed VLM review.
 
 The full diagnostic gate may still allow `visualClassificationStatus: "incomplete"` only when provider diagnostics explain model unavailability. It must not pass if incompleteness is caused by accounting or projection-precheck bugs.
 
@@ -845,8 +880,10 @@ git push
 - `projection_dimension_mismatch` is no longer emitted as a final diff only because crop dimensions differ.
 - The three June 20 crop examples would not become automatic high-severity presence diffs from dimension mismatch alone.
 - Deterministic geometry diffs have `classificationSource: "deterministic_geometry"`.
+- Deterministic missing/extra diffs have `classificationSource: "deterministic_presence"`.
 - Projected deterministic decisions happen before VLM audit selection and do not consume VLM budget.
 - `auditScope.auditedPairs` and `auditScope.vlmAuditedPairs` count pairs that actually entered the VLM auditor path.
+- Full-run pair accounting satisfies `vlmAuditedPairs + preAuditDeterministicPairs === totalPairs`.
 - Bounded smoke gate fails if zero pairs reach VLM audit.
 - Full gate requires no audit limit and no accepted untagged diffs.
 - Release gate requires complete visual classification and zero unclassified recovery leftovers.
@@ -871,8 +908,9 @@ Placeholder scan:
 Type consistency:
 
 - `ProjectedPreAuditSummarySchema` and `projectedPreAudit` are named consistently.
-- `classificationSource: "deterministic_geometry"` matches the existing enum.
+- `classificationSource: "deterministic_geometry"` matches the existing enum; Task 2 adds `deterministic_presence` for missing/extra records.
 - `vlmAuditedPairs` and `preAuditDeterministicPairs` are optional additions to `AuditScopeSchema`.
+- `detectProjectedCropMismatch` and `runProjectedPreAudit` are both asynchronous because comparison resizing uses Sharp/Lanczos.
 
 ## External Review Prompt
 
@@ -909,3 +947,17 @@ QUESTIONS:
 RATIONALE:
 - concise explanation
 ```
+
+## Gemini Review Result - 2026-06-20
+
+Interactive Antigravity review conversation: `0f86fef2-0357-456d-aab0-45ecaefe9238`
+
+Result:
+
+- `AGREEMENT_STATUS: agree`
+- Must-fix accounting: corrected full-gate coverage to require `vlmAuditedPairs + preAuditDeterministicPairs === totalPairs`.
+- Must-fix crop helper ownership: Task 3 now moves `extractImageCrop` from `audit-target.ts` into `src/images/crop.ts`; Task 4 imports it from that module.
+- Must-fix variable mismatch: Task 4 uses the real pipeline variable `auditSelection.pairs.length`.
+- Should-fix source precision: Task 2 adds `deterministic_presence` instead of labeling missing/extra records as geometry.
+- Should-fix interpolation quality: comparison resizing now uses existing Sharp with Lanczos3 instead of custom nearest-neighbor scaling.
+- Additional self-review fix: projected pre-audit no longer imports the non-exported `diffId()` from `audit-target.ts`.
