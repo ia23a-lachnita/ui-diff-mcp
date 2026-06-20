@@ -499,19 +499,38 @@ describe("auditElementPair", () => {
     }
   });
 
-  it("succeeds without throwing when actual crop is smaller than expected crop", async () => {
+  it("identical content at different scale produces near-empty pixel diff mask", async () => {
     // Regression: pixel mask used zero-padded actual while overlay used sharp-resized actual,
     // producing mask/overlay mismatch and incorrect diff mass for size-mismatched crops.
+    // The fix: a single Sharp-resized comparison crop is used for both operations.
+    // Verify by checking that same solid-gray content at different scale → <5% changed pixels.
+    function makeSolidGrayRgba(w: number, h: number): Uint8Array {
+      const buf = new Uint8Array(w * h * 4);
+      for (let i = 0; i < w * h; i++) {
+        buf[i * 4] = 128; buf[i * 4 + 1] = 128; buf[i * 4 + 2] = 128; buf[i * 4 + 3] = 255;
+      }
+      return buf;
+    }
+
     const smallActualEl: UiElement = { ...expectedEl, id: "a1", box: { x: 10, y: 50, width: 40, height: 20 } };
     const auditorCaller: VisionJsonCaller = vi.fn().mockResolvedValue({
       parsed: { hasDiff: false }, rawContent: "", model: "m", provider: "nvidia"
     });
     const ctx = {
       ...makeAuditContext({ auditorCaller }),
-      actualElements: [smallActualEl]
+      actualElements: [smallActualEl],
+      expectedRgba: { data: makeSolidGrayRgba(200, 400), width: 200, height: 400 },
+      actualRgba: { data: makeSolidGrayRgba(200, 400), width: 200, height: 400 }
     };
-    // Must complete without throwing; mask and overlay both derive from the same resized crop.
-    await expect(auditElementPair(pair, ctx)).resolves.toBeDefined();
+    await auditElementPair(pair, ctx);
+
+    // After Sharp/Lanczos3 resize the actual crop matches the expected crop exactly.
+    const maskFiles = (await fs.readdir(tmpDir)).filter(f => f.endsWith("-local-pixel-diff-mask.png"));
+    expect(maskFiles.length).toBeGreaterThanOrEqual(1);
+    const { data: maskData, info: maskInfo } = await sharp(path.join(tmpDir, maskFiles[0]!)).raw().toBuffer({ resolveWithObject: true });
+    const nonZero = [...maskData].filter(v => v > 0).length;
+    const total = maskInfo.width * maskInfo.height * maskInfo.channels;
+    expect(nonZero / total).toBeLessThan(0.05);
   });
 
   it("trace predicate for vlmAuditedPairs: matched pair always triggers geometry fallback", async () => {

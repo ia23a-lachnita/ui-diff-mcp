@@ -62,6 +62,40 @@ describe("runProjectedPreAudit", () => {
     expect(result.summary.projectedPairsChecked).toBe(1);
   });
 
+  it("accounting: deterministicProjectedDiffs + sentToVlmPairs equals projectedPairsChecked", async () => {
+    // This directly validates the numbers that flow into report.auditScope.vlmAuditedPairs and
+    // report.auditScope.preAuditDeterministicPairs. One pair is a definite mismatch (consumed
+    // by pre-audit), two are clear matches (forwarded to VLM).
+    (detectProjectedCropMismatch as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({ mismatched: true, reason: "changed_pixels", changedPercent: 85 })
+      .mockResolvedValueOnce({ mismatched: false, reason: "not_mismatched", changedPercent: 3 })
+      .mockResolvedValueOnce({ mismatched: false, reason: "not_mismatched", changedPercent: 1 });
+
+    const pairs = [
+      makePair("p10", "e10", "a10"),
+      makePair("p11", "e11", "a11"),
+      makePair("p12", "e12", "a12"),
+    ];
+    const expectedEls = [makeExpected("e10"), makeExpected("e11"), makeExpected("e12")];
+    const actualEls = [makeActualProjected("a10"), makeActualProjected("a11"), makeActualProjected("a12")];
+
+    const result = await runProjectedPreAudit({
+      pairs,
+      expectedElements: expectedEls,
+      actualElements: actualEls,
+      expectedRgba: makeRgba(200, 400),
+      actualRgba: makeRgba(150, 300, 10)
+    });
+
+    expect(result.summary.projectedPairsChecked).toBe(3);
+    expect(result.summary.deterministicProjectedDiffs).toBe(1);
+    expect(result.summary.sentToVlmPairs).toBe(2);
+    expect(result.summary.deterministicProjectedDiffs + result.summary.sentToVlmPairs)
+      .toBe(result.summary.projectedPairsChecked);
+    expect(result.diffs).toHaveLength(1);
+    expect(result.skipVlmPairIds.size).toBe(1);
+  });
+
   it("sends dimension-only projected pairs to VLM instead of creating absence diffs", async () => {
     (detectProjectedCropMismatch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       mismatched: false,

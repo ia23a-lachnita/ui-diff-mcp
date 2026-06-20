@@ -73,7 +73,7 @@ The current status file incorrectly says the bounded run failed because no audit
 - Consumes: factual run evidence from `run-1781962032076-14decb`
 - Produces: handoff state that does not claim sidecar unavailable or all auditor probes failed for the June 20 bounded run
 
-- [ ] **Step 1: Update current-state text**
+- [x] **Step 1: Update current-state text**
 
 Replace the stale Current State bullets in `docs/implementation-status.md` with text equivalent to:
 
@@ -84,7 +84,7 @@ Replace the stale Current State bullets in `docs/implementation-status.md` with 
 - Open blockers: **Production release blocked** - projected crop dimension mismatch currently creates false deterministic presence diffs before VLM review, deterministic geometry diffs lack `classificationSource`, and full/release Calorix gates must be re-run after this plan.
 ```
 
-- [ ] **Step 2: Add a progress-log entry**
+- [x] **Step 2: Add a progress-log entry**
 
 Append this row near the newest June 20 entries:
 
@@ -92,7 +92,7 @@ Append this row near the newest June 20 entries:
 | 2026-06-20 | this commit | Projection pre-audit hardening plan | Plan only; no code verification required beyond `git diff --check` | Corrects the interpretation of `run-1781962032076-14decb`: sidecar and locator worked, auditor routes were selected, bounded smoke was limited to 3/79 pairs, projected dimension-only mismatch short-circuited all 3 VLM audit slots, recovery left 5 unclassified components. |
 ```
 
-- [ ] **Step 3: Update the older hardening plan checkboxes**
+- [x] **Step 3: Update the older hardening plan checkboxes**
 
 In `docs/superpowers/plans/2026-06-18-model-diagnostics-recovery-projection-hardening.md`, change Task 7 Step 3 from "not yet run" to a checked diagnostic result:
 
@@ -106,7 +106,7 @@ Keep Step 4 unchecked:
 - [ ] **Step 4: Run release gate** *(not yet run successfully after projection pre-audit hardening)*
 ```
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 Run:
 
@@ -137,7 +137,7 @@ git push
 - Consumes: `DiffRecordSchema.classificationSource`
 - Produces: geometry records carry `deterministic_geometry`; missing/extra records carry `deterministic_presence`
 
-- [ ] **Step 1: Write the failing unit test**
+- [x] **Step 1: Write the failing unit test**
 
 Add or update a unit test so it asserts every geometry diff from `buildDeterministicDiffs()` has the source:
 
@@ -165,7 +165,7 @@ npx vitest run tests/unit --runInBand
 
 Expected: the new assertion fails because geometry records currently have no `classificationSource`.
 
-- [ ] **Step 2: Extend the source enum and implement precise source tags**
+- [x] **Step 2: Extend the source enum and implement precise source tags**
 
 In `src/schemas/core.ts`, add the new source value:
 
@@ -187,7 +187,7 @@ classificationSource: "deterministic_presence",
 
 Do not leave deterministic records untagged or classify presence records as geometry.
 
-- [ ] **Step 3: Harden the live release assertion**
+- [x] **Step 3: Harden the live release assertion**
 
 In `tests/live/calorix-smoke.live.test.ts`, add an unconditional check before viewport-specific checks:
 
@@ -209,7 +209,7 @@ d.classificationSource !== "deterministic_presence"
 
 so correctly tagged missing/extra records are accepted by the same release contract as deterministic geometry records.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 Run:
 
@@ -240,7 +240,7 @@ git push
 - Consumes: `await detectProjectedCropMismatch(expected, actual, expectedText?)`
 - Produces: dimension differences become comparison metadata; mismatch is decided from Sharp/Lanczos-normalized pixel, edge, color, and optional text signals
 
-- [ ] **Step 1: Write failing tests for projected size differences**
+- [x] **Step 1: Write failing tests for projected size differences**
 
 Add tests that prove crop size difference alone does not create a mismatch:
 
@@ -268,7 +268,7 @@ it("detects real content mismatch after resizing projected crop for comparison",
 
 Use local helper functions in the test file to create RGBA buffers. Do not use image files for these unit tests.
 
-- [ ] **Step 2: Create shared crop helpers and replace dimension-only mismatch**
+- [x] **Step 2: Create shared crop helpers and replace dimension-only mismatch**
 
 Move the existing local `extractImageCrop` implementation from `src/audit/audit-target.ts` into a new focused module, `src/images/crop.ts`. Export it with the existing signature:
 
@@ -334,7 +334,7 @@ Then run `computeChangedPercent`, edge overlap, and palette comparison against `
 
 Sharp/Lanczos is required here because nearest-neighbor downscaling can create artificial edge and pixel differences in UI text, rings, and icons. Original expected/actual crop artifacts remain untouched; resizing is comparison-only.
 
-- [ ] **Step 3: Rename dimension reason use**
+- [x] **Step 3: Rename dimension reason use**
 
 Keep `projection_dimension_mismatch` in the schema for backward compatibility with old reports, but do not emit it for new deterministic mismatches. If dimensions differ and normalized comparison is inconclusive, return:
 
@@ -344,7 +344,7 @@ return { mismatched: false, reason: "projected_crop_high_diff_mass", changedPerc
 
 The reason value in a non-mismatch return is diagnostic only and must not become a final diff.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 Run:
 
@@ -379,7 +379,7 @@ git push
 - Consumes: `ElementPair[]`, expected/actual element maps, expected/actual RGBA buffers, `detectProjectedCropMismatch`
 - Produces: `ProjectedPreAuditResult` and deterministic projected diff records before VLM audit selection
 
-- [ ] **Step 1: Add pre-audit schema fields**
+- [x] **Step 1: Add pre-audit schema fields**
 
 In `src/schemas/core.ts`, add:
 
@@ -406,7 +406,7 @@ vlmAuditedPairs: z.number().int().nonnegative().optional(),
 preAuditDeterministicPairs: z.number().int().nonnegative().optional(),
 ```
 
-- [ ] **Step 2: Create projected pre-audit module**
+- [x] **Step 2: Create projected pre-audit module**
 
 Create `src/diff/projected-preaudit.ts`:
 
@@ -502,13 +502,13 @@ export async function runProjectedPreAudit(input: {
 
 Task 3 already moves and exports `extractImageCrop` from `src/images/crop.ts`. This task must import that shared helper and must not duplicate crop math.
 
-- [ ] **Step 3: Remove audit-path projected early return**
+- [x] **Step 3: Remove audit-path projected early return**
 
 In `src/audit/audit-target.ts`, remove the block that checks `actualEl?.source === "projected"` and returns before auditor/reviewer calls. Keep crop artifact writing for normal audit calls.
 
 Add a unit test asserting a projected actual element still invokes the mocked auditor when pre-audit has not removed the pair.
 
-- [ ] **Step 4: Wire pre-audit before audit selection**
+- [x] **Step 4: Wire pre-audit before audit selection**
 
 In `src/pipeline/run-ui-diff.ts`, after deterministic geometry diffs and before audit pair selection, add:
 
@@ -542,7 +542,7 @@ auditScope = {
 
 Write `projectedPreAudit: projectedPreAudit.summary` into `UiDiffReport`.
 
-- [ ] **Step 5: Add pre-audit unit tests**
+- [x] **Step 5: Add pre-audit unit tests**
 
 Create `tests/unit/projected-preaudit.test.ts` with these cases:
 
@@ -562,7 +562,7 @@ it("sends dimension-only projected pairs to VLM instead of creating absence diff
 });
 ```
 
-- [ ] **Step 6: Verify and commit**
+- [x] **Step 6: Verify and commit**
 
 Run:
 
@@ -594,7 +594,7 @@ git push
 - Consumes: recovery trace statuses such as `missing_required_fields`, `box_no_component_overlap`, `classified_false`, `below_threshold`
 - Produces: machine-readable status counts in `report.recoverySummary`
 
-- [ ] **Step 1: Extend recovery summary schema**
+- [x] **Step 1: Extend recovery summary schema**
 
 In `src/schemas/core.ts`, extend `RecoverySummarySchema` with:
 
@@ -604,7 +604,7 @@ statusCounts: z.record(z.string(), z.number().int().nonnegative()).default({})
 
 Keep existing fields unchanged.
 
-- [ ] **Step 2: Populate status counts**
+- [x] **Step 2: Populate status counts**
 
 In the recovery implementation, increment counts for every component outcome:
 
@@ -629,11 +629,11 @@ The latest run should become expressible as:
 
 The exact counts in tests can use a fixture; they do not need to match Calorix.
 
-- [ ] **Step 3: Add recovery summary tests**
+- [x] **Step 3: Add recovery summary tests**
 
 Add a unit test that feeds mocked recovery outcomes and asserts the summary includes all outcome counts.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 Run:
 
@@ -663,7 +663,7 @@ git push
 - Consumes: `auditScope`, `projectedPreAudit`, `visualClassificationStatus`, `classificationSource`, `recoverySummary.statusCounts`
 - Produces: gates that distinguish bounded diagnostics from full/release evidence
 
-- [ ] **Step 1: Update bounded smoke assertions**
+- [x] **Step 1: Update bounded smoke assertions**
 
 In the bounded smoke test, assert:
 
@@ -677,7 +677,7 @@ expect(report.auditScope?.vlmAuditedPairs ?? report.auditScope?.auditedPairs ?? 
 
 If `UI_DIFF_MAX_AUDIT_PAIRS=3`, the smoke gate must fail when all 3 slots are consumed by pre-audit deterministic records without a VLM audit. This catches the exact June 20 issue.
 
-- [ ] **Step 2: Update full gate assertions**
+- [x] **Step 2: Update full gate assertions**
 
 In the full live test, assert:
 
@@ -695,7 +695,7 @@ This accounting proves every pair was handled by exactly one path: deterministic
 
 The full diagnostic gate may still allow `visualClassificationStatus: "incomplete"` only when provider diagnostics explain model unavailability. It must not pass if incompleteness is caused by accounting or projection-precheck bugs.
 
-- [ ] **Step 3: Update release gate assertions**
+- [x] **Step 3: Update release gate assertions**
 
 In the release gate, require:
 
@@ -708,7 +708,7 @@ expect(report.diffs.filter(d => d.reviewerStatus === "needs_escalation")).toHave
 expect(report.diffs.filter(d => d.reviewerStatus !== "rejected" && !d.classificationSource)).toHaveLength(0);
 ```
 
-- [ ] **Step 4: Update checklist wording**
+- [x] **Step 4: Update checklist wording**
 
 In `docs/release/production-readiness-checklist.md`, add a "Before running full/release Calorix gates" section:
 
@@ -722,7 +722,7 @@ Before running `verify:calorix-full-live` or `verify:calorix-release-live`, conf
 - `recoverySummary.statusCounts` exists when recovery ran
 ```
 
-- [ ] **Step 5: Verify and commit**
+- [x] **Step 5: Verify and commit**
 
 Run:
 
@@ -751,7 +751,7 @@ git push
 - Consumes: fixed code from Tasks 1-6 and live environment variables from `AGENTS.md`
 - Produces: current live gate evidence for production readiness decision
 
-- [ ] **Step 1: Run deterministic verification**
+- [x] **Step 1: Run deterministic verification**
 
 Run:
 
