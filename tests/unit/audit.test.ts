@@ -12,6 +12,24 @@ import type { ElementPair, UiElement, DiffRecord } from "../../src/schemas/core.
 import type { VisionJsonCaller } from "../../src/models/vision-json.js";
 import { writeSolidPng } from "../../src/testing/fixture-images.js";
 
+// Creates an RGBA buffer with 2-row white/blue stripes — produces real edges so
+// the content-based projected-mismatch logic can distinguish it from a solid actual.
+function makeStripedRgba(width: number, height: number): Uint8Array {
+  const data = new Uint8Array(width * height * 4);
+  for (let y = 0; y < height; y++) {
+    const isWhiteRow = Math.floor(y / 2) % 2 === 0;
+    for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * 4;
+      if (isWhiteRow) {
+        data[i] = 255; data[i + 1] = 255; data[i + 2] = 255; data[i + 3] = 255;
+      } else {
+        data[i] = 0; data[i + 1] = 0; data[i + 2] = 255; data[i + 3] = 255;
+      }
+    }
+  }
+  return data;
+}
+
 describe("criteria rubrics", () => {
   it("has a rubric for every criterion", () => {
     for (const criterion of UiCriterionSchema.options) {
@@ -625,7 +643,7 @@ describe("deterministic projected mismatch record honesty", () => {
   it("emits criterion=presence for deterministic projected mismatch", async () => {
     const auditorCaller: VisionJsonCaller = vi.fn();
     const reviewerCaller: VisionJsonCaller = vi.fn();
-    const expRgba = new Uint8Array(200 * 400 * 4).fill(200);
+    const expRgba = makeStripedRgba(200, 400);
     const actRgba = new Uint8Array(200 * 400 * 4).fill(10);
 
     const result = await auditElementPair(pair, {
@@ -675,7 +693,7 @@ describe("deterministic projected mismatch record honesty", () => {
       artifactDir: tmpDir,
       auditorCaller: vi.fn(),
       reviewerCaller: vi.fn(),
-      expectedRgba: { data: new Uint8Array(200 * 400 * 4).fill(200), width: 200, height: 400 },
+      expectedRgba: { data: makeStripedRgba(200, 400), width: 200, height: 400 },
       actualRgba: { data: new Uint8Array(200 * 400 * 4).fill(10), width: 200, height: 400 },
       measurements: [],
       auditIndex: 1,
@@ -702,7 +720,7 @@ describe("deterministic projected mismatch record honesty", () => {
       artifactDir: tmpDir,
       auditorCaller: vi.fn(),
       reviewerCaller: vi.fn(),
-      expectedRgba: { data: new Uint8Array(200 * 400 * 4).fill(200), width: 200, height: 400 },
+      expectedRgba: { data: makeStripedRgba(200, 400), width: 200, height: 400 },
       actualRgba: { data: new Uint8Array(200 * 400 * 4).fill(10), width: 200, height: 400 },
       measurements: [],
       auditIndex: 1,
@@ -730,7 +748,7 @@ describe("deterministic projected mismatch record honesty", () => {
       artifactDir: tmpDir,
       auditorCaller: vi.fn(),
       reviewerCaller: vi.fn(),
-      expectedRgba: { data: new Uint8Array(200 * 400 * 4).fill(200), width: 200, height: 400 },
+      expectedRgba: { data: makeStripedRgba(200, 400), width: 200, height: 400 },
       actualRgba: { data: new Uint8Array(200 * 400 * 4).fill(10), width: 200, height: 400 },
       measurements: [],
       auditIndex: 1,
@@ -745,7 +763,7 @@ describe("deterministic projected mismatch record honesty", () => {
 
     const record = result.accepted[0]!;
     expect(record.projectionMismatchReason).toBeDefined();
-    expect(["expected_target_absent_at_projected_location", "projected_crop_low_overlap", "projected_crop_high_diff_mass", "projection_dimension_mismatch"])
+    expect(["expected_target_absent_at_projected_location", "projected_crop_low_overlap", "projected_crop_high_diff_mass"])
       .toContain(record.projectionMismatchReason);
   });
 });

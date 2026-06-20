@@ -10,6 +10,7 @@ import { buildAuditorPrompt, buildReviewerPrompt } from "./prompts.js";
 import type { VisionJsonCaller } from "../models/vision-json.js";
 import { computePixelDiff } from "../signals/pixel-diff.js";
 import { createDirectionalDiffOverlay, type Rgba } from "../images/directional-diff.js";
+import { extractImageCrop } from "../images/crop.js";
 import { detectProjectedCropMismatch } from "./projected-mismatch.js";
 
 const ReviewDecisionSchema = z.object({
@@ -40,35 +41,6 @@ export function makeElementSlug(label: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 20);
-}
-
-function extractImageCrop(
-  imageData: Uint8Array,
-  imageWidth: number,
-  imageHeight: number,
-  box: Box
-): Uint8Array {
-  const x = Math.max(0, Math.round(box.x));
-  const y = Math.max(0, Math.round(box.y));
-  const w = Math.min(Math.round(box.width), imageWidth - x);
-  const h = Math.min(Math.round(box.height), imageHeight - y);
-
-  if (w <= 0 || h <= 0) {
-    return new Uint8Array(4);
-  }
-
-  const croppedData = new Uint8Array(w * h * 4);
-  for (let row = 0; row < h; row++) {
-    for (let col = 0; col < w; col++) {
-      const srcIdx = ((y + row) * imageWidth + (x + col)) * 4;
-      const destIdx = (row * w + col) * 4;
-      croppedData[destIdx] = imageData[srcIdx] ?? 0;
-      croppedData[destIdx + 1] = imageData[srcIdx + 1] ?? 0;
-      croppedData[destIdx + 2] = imageData[srcIdx + 2] ?? 0;
-      croppedData[destIdx + 3] = imageData[srcIdx + 3] ?? 0;
-    }
-  }
-  return croppedData;
 }
 
 async function writeCropArtifact(
@@ -154,7 +126,7 @@ export async function auditElementPair(
   if (actualEl?.source === "projected" && expectedEl) {
     const expCropData = extractImageCrop(ctx.expectedRgba.data, ctx.expectedRgba.width, ctx.expectedRgba.height, expectedEl.box);
     const actCropData = extractImageCrop(ctx.actualRgba.data, ctx.actualRgba.width, ctx.actualRgba.height, actualEl.box);
-    const mismatchResult = detectProjectedCropMismatch(
+    const mismatchResult = await detectProjectedCropMismatch(
       { data: expCropData, width: Math.max(1, Math.round(expectedEl.box.width)), height: Math.max(1, Math.round(expectedEl.box.height)) },
       { data: actCropData, width: Math.max(1, Math.round(actualEl.box.width)), height: Math.max(1, Math.round(actualEl.box.height)) },
       expectedEl.text
