@@ -772,7 +772,7 @@ npm run verify:openrouter-free-live
 
 Expected: results are recorded with pass/fail counts and model IDs.
 
-- [ ] **Step 3: Run Calorix diagnostic gates** *(not yet run — sidecar unavailable at last Task 7 attempt)*
+- [x] **Step 3: Run Calorix diagnostic gates** *(bounded diagnostic ran on 2026-06-20 as `run-1781962032076-14decb`; result is not release evidence because `auditLimited:true`, `visualClassificationStatus:"incomplete"`, and projected dimension-only mismatch consumed all 3 VLM audit slots)*
 
 Run with:
 
@@ -797,7 +797,7 @@ Record:
 - final diff count by `classificationSource`
 - count of unclassified diffs
 
-- [ ] **Step 4: Run release gate** *(not yet run — blocked pending Step 3)*
+- [ ] **Step 4: Run release gate** *(not yet run successfully after projection pre-audit hardening)*
 
 Run:
 
