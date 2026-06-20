@@ -27,8 +27,9 @@ import { runTargetRecovery } from "../recovery/target-recovery.js";
 import { writeRunDebugArtifacts, type RunDebugTrace } from "../debug/run-debug.js";
 import { ProviderTraceWriter, writeProviderTrace } from "../debug/provider-trace.js";
 import { buildDeterministicDiffs } from "../diff/deterministic-diffs.js";
+import { runProjectedPreAudit } from "../diff/projected-preaudit.js";
 import { writeUiDiffReport, writeReportCheckpoint } from "../report/report-writer.js";
-import type { UiDiffReport, RunStatus, VisualClassificationStatus, LocatorCoverageStatus, DiffRecord, ElementPair, UiArtifact, AuditScope, ModelSelection, RecoverySummary, StageStatus, LocatorLaneMetadata, RunDebugSummary } from "../schemas/core.js";
+import type { UiDiffReport, RunStatus, VisualClassificationStatus, LocatorCoverageStatus, DiffRecord, ElementPair, UiArtifact, AuditScope, ModelSelection, RecoverySummary, StageStatus, LocatorLaneMetadata, RunDebugSummary, ProjectedPreAuditSummary } from "../schemas/core.js";
 import { computeColorEvidence } from "../signals/color.js";
 
 export interface RunInput {
@@ -408,6 +409,20 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
   });
   allDiffs.push(...deterministicDiffs);
 
+  let projectedPreAuditSummary: ProjectedPreAuditSummary | undefined;
+  const projectedPreAuditResult = await runProjectedPreAudit({
+    pairs,
+    expectedElements,
+    actualElements,
+    expectedRgba: { data: expectedImg.rgba, width: expectedImg.width, height: expectedImg.height },
+    actualRgba: { data: actualImg.rgba, width: actualImg.width, height: actualImg.height }
+  });
+  allDiffs.push(...projectedPreAuditResult.diffs);
+  projectedPreAuditSummary = projectedPreAuditResult.summary;
+
+  // VLM-eligible pairs are those not already resolved deterministically by pre-audit.
+  const vlmCandidatePairs = pairs.filter(p => !projectedPreAuditResult.skipVlmPairIds.has(p.id));
+
   const modelHealth: UiDiffReport["modelHealth"] = [];
   await checkpoint("locator_pairing_deterministic", "complete", pairs, modelHealth);
 
@@ -567,7 +582,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
 
         visualClassificationStatus = "incomplete";
         const auditedDiffs: DiffRecord[] = [];
-        const auditSelection = selectAuditPairsForRun(pairs, process.env);
+        const auditSelection = selectAuditPairsForRun(vlmCandidatePairs, process.env);
         if (auditSelection.warning) {
           warnings.push(auditSelection.warning);
         }
@@ -638,8 +653,10 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
 
         auditScope = {
           auditedPairs: auditTotal,
+          vlmAuditedPairs: auditTotal,
           totalPairs: pairs.length,
           auditLimited: auditSelection.limited,
+          preAuditDeterministicPairs: projectedPreAuditResult.diffs.length,
           ...(auditSelection.warning ? { limitReason: auditSelection.warning } : {})
         };
 
@@ -752,6 +769,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     ...(auditScope !== undefined ? { auditScope } : {}),
     ...(modelSelection !== undefined ? { modelSelection } : {}),
     ...(recoverySummary !== undefined ? { recoverySummary } : {}),
+    ...(projectedPreAuditSummary !== undefined ? { projectedPreAudit: projectedPreAuditSummary } : {}),
     providerDiagnosticsPresent: providerTrace.getEvents().some(e => e.diagnostic !== undefined),
     imageNormalization: { expected: expectedImg.metadata, actual: actualImg.metadata },
     comparisonSpace: {

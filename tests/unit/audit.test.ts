@@ -592,11 +592,13 @@ describe("reviewAndMergeFindings — crop-boundary guard", () => {
   });
 });
 
-describe("deterministic projected mismatch record honesty", () => {
+describe("projected actual element reaches VLM auditor after pre-audit stage", () => {
+  // Since Task 4 moved deterministic projected mismatch to the pre-audit stage,
+  // any projected pair that reaches auditElementPair must be audited by the VLM.
   let tmpDir: string;
 
   beforeEach(async () => {
-    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ui-diff-proj-mismatch-"));
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ui-diff-proj-vlm-"));
   });
 
   afterEach(async () => {
@@ -604,49 +606,28 @@ describe("deterministic projected mismatch record honesty", () => {
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
-  const baseEl: UiElement = {
-    id: "e1",
-    label: "Navigation Header",
-    type: "text",
-    box: { x: 0, y: 0, width: 80, height: 40 },
-    normalizedBox: { x: 0, y: 0, width: 0.4, height: 0.1 },
-    confidence: 0.9,
-    source: "locator",
-    childIds: []
-  };
+  it("invokes the VLM auditor for a projected actual element that pre-audit did not skip", async () => {
+    const baseEl: UiElement = {
+      id: "e1", label: "Nav Header", type: "text",
+      box: { x: 0, y: 0, width: 80, height: 40 },
+      normalizedBox: { x: 0, y: 0, width: 0.4, height: 0.1 },
+      confidence: 0.9, source: "locator", childIds: []
+    };
+    const projectedEl: UiElement = {
+      ...baseEl, id: "a1", source: "projected",
+      box: { x: 0, y: 0, width: 40, height: 20 },
+      normalizedBox: { x: 0, y: 0, width: 0.2, height: 0.05 }
+    };
+    const pair: ElementPair = { id: "pair-vlm-proj", expectedId: "e1", actualId: "a1", status: "matched", score: 1.0, reasons: [] };
 
-  const projectedEl: UiElement = {
-    ...baseEl,
-    id: "a1",
-    source: "projected",
-    // different box size → triggers projection_dimension_mismatch
-    box: { x: 0, y: 0, width: 40, height: 20 },
-    normalizedBox: { x: 0, y: 0, width: 0.2, height: 0.05 },
-    projectionMetadata: {
-      mode: "expected_coordinate_projection",
-      coordinateSpace: "actual_source_image",
-      sourceElementId: "e1",
-      scaleExpectedToActualX: 0.5,
-      scaleExpectedToActualY: 0.5
-    }
-  };
-
-  const pair: ElementPair = {
-    id: "pair-proj-1",
-    expectedId: "e1",
-    actualId: "a1",
-    status: "matched",
-    score: 1.0,
-    reasons: []
-  };
-
-  it("emits criterion=presence for deterministic projected mismatch", async () => {
-    const auditorCaller: VisionJsonCaller = vi.fn();
+    const auditorCaller: VisionJsonCaller = vi.fn().mockResolvedValue({
+      parsed: { hasDiff: false },
+      model: "test-model",
+      usage: { input_tokens: 1, output_tokens: 1 }
+    });
     const reviewerCaller: VisionJsonCaller = vi.fn();
-    const expRgba = makeStripedRgba(200, 400);
-    const actRgba = new Uint8Array(200 * 400 * 4).fill(10);
 
-    const result = await auditElementPair(pair, {
+    await auditElementPair(pair, {
       expectedImagePath: tmpDir,
       actualImagePath: tmpDir,
       expectedElements: [baseEl],
@@ -654,116 +635,19 @@ describe("deterministic projected mismatch record honesty", () => {
       artifactDir: tmpDir,
       auditorCaller,
       reviewerCaller,
-      expectedRgba: { data: expRgba, width: 200, height: 400 },
-      actualRgba: { data: actRgba, width: 200, height: 400 },
-      measurements: [],
-      auditIndex: 1,
-      auditTotal: 1,
-      elementSlug: "navigation-header",
-      triggerCtx: {
-        pairingStatus: "matched",
-        boxDeltaPx: 0,
-        textDelta: false,
-        colorDelta: false,
-        edgeMismatch: false,
-        overlapDetected: false,
-        stateWordsDiffer: false,
-        elementType: "text",
-        measurements: []
-      }
-    });
-
-    expect(result.accepted).toHaveLength(1);
-    const record = result.accepted[0]!;
-    expect(record.criterion).toBe("presence");
-    expect(record.classificationSource).toBe("deterministic_projected_mismatch");
-    expect(record.title).toMatch(/projected location/i);
-    expect(record.model).toBe("deterministic");
-    expect(record.reviewerStatus).toBe("accepted");
-    // VLM callers must not have been called — this is deterministic
-    expect(vi.mocked(auditorCaller)).not.toHaveBeenCalled();
-  });
-
-  it("title does not mention implementation cause or app code", async () => {
-    const result = await auditElementPair(pair, {
-      expectedImagePath: tmpDir,
-      actualImagePath: tmpDir,
-      expectedElements: [baseEl],
-      actualElements: [projectedEl],
-      artifactDir: tmpDir,
-      auditorCaller: vi.fn(),
-      reviewerCaller: vi.fn(),
       expectedRgba: { data: makeStripedRgba(200, 400), width: 200, height: 400 },
-      actualRgba: { data: new Uint8Array(200 * 400 * 4).fill(10), width: 200, height: 400 },
+      actualRgba: { data: new Uint8Array(200 * 400 * 4).fill(128), width: 200, height: 400 },
       measurements: [],
       auditIndex: 1,
       auditTotal: 1,
-      elementSlug: "navigation-header",
+      elementSlug: "nav-header",
       triggerCtx: {
-        pairingStatus: "matched", boxDeltaPx: 0, textDelta: false, colorDelta: false,
+        pairingStatus: "matched", boxDeltaPx: 20, textDelta: false, colorDelta: false,
         edgeMismatch: false, overlapDetected: false, stateWordsDiffer: false,
         elementType: "text", measurements: []
       }
     });
 
-    const record = result.accepted[0]!;
-    const combined = [record.title, ...record.evidence].join(" ");
-    expect(combined).not.toMatch(/fix|implement|config|root cause|app code/i);
-  });
-
-  it("record includes expected_crop and actual_crop artifacts", async () => {
-    const result = await auditElementPair(pair, {
-      expectedImagePath: tmpDir,
-      actualImagePath: tmpDir,
-      expectedElements: [baseEl],
-      actualElements: [projectedEl],
-      artifactDir: tmpDir,
-      auditorCaller: vi.fn(),
-      reviewerCaller: vi.fn(),
-      expectedRgba: { data: makeStripedRgba(200, 400), width: 200, height: 400 },
-      actualRgba: { data: new Uint8Array(200 * 400 * 4).fill(10), width: 200, height: 400 },
-      measurements: [],
-      auditIndex: 1,
-      auditTotal: 1,
-      elementSlug: "navigation-header",
-      triggerCtx: {
-        pairingStatus: "matched", boxDeltaPx: 0, textDelta: false, colorDelta: false,
-        edgeMismatch: false, overlapDetected: false, stateWordsDiffer: false,
-        elementType: "text", measurements: []
-      }
-    });
-
-    const record = result.accepted[0]!;
-    const roles = record.artifactPaths.map(a => a.role);
-    expect(roles).toContain("expected_crop");
-    expect(roles).toContain("actual_crop");
-  });
-
-  it("projectionMismatchReason is set on the record", async () => {
-    const result = await auditElementPair(pair, {
-      expectedImagePath: tmpDir,
-      actualImagePath: tmpDir,
-      expectedElements: [baseEl],
-      actualElements: [projectedEl],
-      artifactDir: tmpDir,
-      auditorCaller: vi.fn(),
-      reviewerCaller: vi.fn(),
-      expectedRgba: { data: makeStripedRgba(200, 400), width: 200, height: 400 },
-      actualRgba: { data: new Uint8Array(200 * 400 * 4).fill(10), width: 200, height: 400 },
-      measurements: [],
-      auditIndex: 1,
-      auditTotal: 1,
-      elementSlug: "navigation-header",
-      triggerCtx: {
-        pairingStatus: "matched", boxDeltaPx: 0, textDelta: false, colorDelta: false,
-        edgeMismatch: false, overlapDetected: false, stateWordsDiffer: false,
-        elementType: "text", measurements: []
-      }
-    });
-
-    const record = result.accepted[0]!;
-    expect(record.projectionMismatchReason).toBeDefined();
-    expect(["expected_target_absent_at_projected_location", "projected_crop_low_overlap", "projected_crop_high_diff_mass"])
-      .toContain(record.projectionMismatchReason);
+    expect(vi.mocked(auditorCaller)).toHaveBeenCalled();
   });
 });
