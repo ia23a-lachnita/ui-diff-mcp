@@ -405,7 +405,8 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     pairs,
     expectedElements,
     actualElements,
-    minMovePx: 4
+    minMovePx: 4,
+    transform: imagePairTransform
   });
   allDiffs.push(...deterministicDiffs);
 
@@ -588,6 +589,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
         }
 
         const auditTotal = auditSelection.pairs.length;
+        let vlmCallCount = 0;
         for (let auditIdx = 0; auditIdx < auditSelection.pairs.length; auditIdx++) {
           const pair = auditSelection.pairs[auditIdx]!;
           const expEl = expectedElements.find(e => e.id === pair.expectedId);
@@ -599,6 +601,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
             expectedImg.rgba,
             actualImg.rgba,
             expectedImg.width,
+            actualImg.width,
             expEl?.box ?? refEl.box,
             actEl?.box ?? refEl.box,
             refEl.type
@@ -649,11 +652,14 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
           const { accepted, trace } = await auditElementPair(pair, ctx);
           debugTrace.audit.push(...trace);
           auditedDiffs.push(...accepted);
+          if (trace.some(t => t.status !== "criterion_not_triggered")) {
+            vlmCallCount++;
+          }
         }
 
         auditScope = {
           auditedPairs: auditTotal,
-          vlmAuditedPairs: auditTotal,
+          vlmAuditedPairs: vlmCallCount,
           totalPairs: pairs.length,
           auditLimited: auditSelection.limited,
           preAuditDeterministicPairs: projectedPreAuditResult.diffs.length,

@@ -261,10 +261,15 @@ export async function runTargetRecovery(
   const cappedEntries = eligible.slice(budget.maxComponents);
   const toProcess = eligible.slice(0, budget.maxComponents);
 
-  // Push skipped_component_cap traces
+  // Push skipped_component_cap traces and count capped components as unclassified so
+  // visualClassificationStatus cannot be "complete" when regions were never examined.
+  if (cappedEntries.length > 0 && stoppedReason === "none") {
+    stoppedReason = "component_cap";
+  }
   for (let i = 0; i < cappedEntries.length; i++) {
     const entry = cappedEntries[i]!;
     countStatus("skipped_component_cap");
+    unclassifiedCount++;
     trace.push({
       componentId: entry.componentId,
       rank: budget.maxComponents + i,

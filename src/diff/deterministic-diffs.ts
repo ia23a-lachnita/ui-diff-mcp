@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import type { Box, DiffRecord, ElementPair, UiElement } from "../schemas/core.js";
+import { type ImagePairTransform, projectActualBoxToExpectedSource } from "../images/coordinates.js";
 
 export function unionBox(a: Box, b: Box): Box {
   const x1 = Math.min(a.x, b.x);
@@ -14,16 +15,22 @@ export function buildDeterministicDiffs(input: {
   expectedElements: UiElement[];
   actualElements: UiElement[];
   minMovePx: number;
+  transform?: ImagePairTransform;
 }): DiffRecord[] {
   const diffs: DiffRecord[] = [];
   for (const pair of input.pairs) {
     const expected = input.expectedElements.find(e => e.id === pair.expectedId);
     const actual = input.actualElements.find(e => e.id === pair.actualId);
     if (pair.status === "matched" && expected && actual) {
-      const dx = Math.round(actual.box.x - expected.box.x);
-      const dy = Math.round(actual.box.y - expected.box.y);
-      const dw = Math.round(actual.box.width - expected.box.width);
-      const dh = Math.round(actual.box.height - expected.box.height);
+      // Normalize actual.box to expected coordinate space before computing deltas.
+      // actual.box may be in native actual-image pixels; expected.box is always in expected-image pixels.
+      const actualBoxNorm = input.transform
+        ? projectActualBoxToExpectedSource(actual.box, input.transform)
+        : actual.box;
+      const dx = Math.round(actualBoxNorm.x - expected.box.x);
+      const dy = Math.round(actualBoxNorm.y - expected.box.y);
+      const dw = Math.round(actualBoxNorm.width - expected.box.width);
+      const dh = Math.round(actualBoxNorm.height - expected.box.height);
       if (Math.abs(dx) + Math.abs(dy) + Math.abs(dw) + Math.abs(dh) >= input.minMovePx) {
         diffs.push({
           id: crypto.randomBytes(6).toString("hex"),

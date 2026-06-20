@@ -69,7 +69,7 @@ describe("sampleColorStats", () => {
 describe("computeColorEvidence", () => {
   it("same color returns hasDiff false", () => {
     const buf = makeRgbaBuffer(100, 100, 100);
-    const ev = computeColorEvidence(buf, buf, 10, BOX, BOX, "button");
+    const ev = computeColorEvidence(buf, buf, 10, 10, BOX, BOX, "button");
     expect(ev.hasDiff).toBe(false);
     expect(ev.oklabDistance).toBe(0);
   });
@@ -77,7 +77,7 @@ describe("computeColorEvidence", () => {
   it("clearly different colors returns hasDiff true", () => {
     const expBuf = makeRgbaBuffer(255, 0, 0);   // red
     const actBuf = makeRgbaBuffer(0, 0, 255);   // blue
-    const ev = computeColorEvidence(expBuf, actBuf, 10, BOX, BOX, "button");
+    const ev = computeColorEvidence(expBuf, actBuf, 10, 10, BOX, BOX, "button");
     expect(ev.hasDiff).toBe(true);
     expect(ev.oklabDistance).toBeGreaterThan(0.1);
   });
@@ -85,14 +85,14 @@ describe("computeColorEvidence", () => {
   it("anti-alias level noise stays below threshold", () => {
     const expBuf = makeRgbaBuffer(128, 128, 128);
     const actBuf = makeRgbaBuffer(130, 130, 130);
-    const ev = computeColorEvidence(expBuf, actBuf, 10, BOX, BOX, "default");
+    const ev = computeColorEvidence(expBuf, actBuf, 10, 10, BOX, BOX, "default");
     expect(ev.hasDiff).toBe(false);
   });
 
   it("includes expected and actual avg colors", () => {
     const expBuf = makeRgbaBuffer(200, 100, 50);
     const actBuf = makeRgbaBuffer(50, 200, 100);
-    const ev = computeColorEvidence(expBuf, actBuf, 10, BOX, BOX, "icon");
+    const ev = computeColorEvidence(expBuf, actBuf, 10, 10, BOX, BOX, "icon");
     expect(ev.expectedAvg.r).toBe(200);
     expect(ev.actualAvg.r).toBe(50);
   });
@@ -101,7 +101,7 @@ describe("computeColorEvidence", () => {
     const ev = computeColorEvidence(
       makeRgbaBuffer(128, 128, 128),
       makeRgbaBuffer(128, 128, 128),
-      10, BOX, BOX, "chart_indicator"
+      10, 10, BOX, BOX, "chart_indicator"
     );
     expect(ev.threshold).toBe(COLOR_THRESHOLDS["chart_indicator"]);
   });
@@ -110,7 +110,7 @@ describe("computeColorEvidence", () => {
     const ev = computeColorEvidence(
       makeRgbaBuffer(0, 0, 0),
       makeRgbaBuffer(0, 0, 0),
-      10, BOX, BOX, "unknown_widget"
+      10, 10, BOX, BOX, "unknown_widget"
     );
     expect(ev.threshold).toBe(COLOR_THRESHOLDS["default"]);
   });
@@ -119,11 +119,11 @@ describe("computeColorEvidence", () => {
     // A small color diff that would trigger on opaque elements
     const expBuf = makeRgbaBuffer(100, 100, 100, 80);  // semi-transparent
     const actBuf = makeRgbaBuffer(130, 130, 130, 80);  // different but semi-transparent
-    const evTranslucent = computeColorEvidence(expBuf, actBuf, 10, BOX, BOX, "button");
+    const evTranslucent = computeColorEvidence(expBuf, actBuf, 10, 10, BOX, BOX, "button");
 
     const expBufOpaque = makeRgbaBuffer(100, 100, 100, 255);
     const actBufOpaque = makeRgbaBuffer(130, 130, 130, 255);
-    const evOpaque = computeColorEvidence(expBufOpaque, actBufOpaque, 10, BOX, BOX, "button");
+    const evOpaque = computeColorEvidence(expBufOpaque, actBufOpaque, 10, 10, BOX, BOX, "button");
 
     // Translucent should be stricter (less likely to flag) than opaque for the same pixel diff
     if (evOpaque.hasDiff) {
@@ -135,7 +135,7 @@ describe("computeColorEvidence", () => {
   it("records sampled region in evidence", () => {
     const buf = makeRgbaBuffer(0, 0, 0);
     const box = { x: 1, y: 1, width: 5, height: 5 };
-    const ev = computeColorEvidence(buf, buf, 10, box, box, "icon");
+    const ev = computeColorEvidence(buf, buf, 10, 10, box, box, "icon");
     expect(ev.sampledRegion).toEqual(box);
     expect(ev.elementType).toBe("icon");
   });
@@ -143,7 +143,7 @@ describe("computeColorEvidence", () => {
   it("includes dominant palettes for both sides", () => {
     const expBuf = makeRgbaBuffer(255, 0, 0);
     const actBuf = makeRgbaBuffer(0, 255, 0);
-    const ev = computeColorEvidence(expBuf, actBuf, 10, BOX, BOX, "image");
+    const ev = computeColorEvidence(expBuf, actBuf, 10, 10, BOX, BOX, "image");
     expect(ev.dominantExpected.length).toBeGreaterThan(0);
     expect(ev.dominantActual.length).toBeGreaterThan(0);
   });

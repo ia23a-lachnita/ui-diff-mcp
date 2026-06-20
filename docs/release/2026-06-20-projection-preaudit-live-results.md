@@ -25,9 +25,9 @@
 Start the sidecar:
 
 ```powershell
-cd C:\Users\xursc\projects\Eagle\Embodied
+# From the ui-diff-mcp project root:
 $env:LOCATEANYTHING_SKIP_MODEL = "1"  # skip model load for bounded run
-python -m uvicorn locateanything_sidecar:app --port 39731
+.\scripts\start-locateanything-sidecar.ps1
 ```
 
 Then run:

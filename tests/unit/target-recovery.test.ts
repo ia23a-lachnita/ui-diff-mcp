@@ -310,7 +310,10 @@ describe("runTargetRecovery", () => {
     const result = await runTargetRecovery(components, ctx, budget);
     expect(result.attemptedComponents).toBe(5);
     expect(result.skippedComponents).toBe(95);
-    expect(result.stoppedReason).toBe("none");
+    // Capped components are unexamined, so stoppedReason must not be "none"
+    // and unclassifiedCount must include all 95 capped entries.
+    expect(result.stoppedReason).toBe("component_cap");
+    expect(result.unclassifiedCount).toBeGreaterThanOrEqual(95);
   });
 
   it("marks needs_escalation when reviewer throws", async () => {

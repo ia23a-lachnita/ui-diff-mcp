@@ -164,7 +164,13 @@ export async function auditElementPair(
     auditArtifacts.push({ role: "local_pixel_diff_mask", path: localPixelDiffMaskPath, pairId });
 
     const expRaw = await sharp(Buffer.from(expectedCropB64, "base64")).ensureAlpha().raw().toBuffer();
-    const actRaw = await sharp(Buffer.from(actualCropB64, "base64")).ensureAlpha().raw().toBuffer();
+    // Resize actual crop to expected-crop dimensions so both buffers share the same stride.
+    // computePixelDiff already pads actual to expected size; the overlay must match.
+    const actRaw = await sharp(Buffer.from(actualCropB64, "base64"))
+      .resize(localPixelDiff.width, localPixelDiff.height, { fit: "fill" })
+      .ensureAlpha()
+      .raw()
+      .toBuffer();
     await createDirectionalDiffOverlay(
       { data: expRaw, width: localPixelDiff.width, height: localPixelDiff.height },
       { data: actRaw, width: localPixelDiff.width, height: localPixelDiff.height },

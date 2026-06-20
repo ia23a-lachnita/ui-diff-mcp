@@ -126,13 +126,14 @@ export function sampleColorStats(rgba: Uint8Array, imageWidth: number, box: Box)
 export function computeColorEvidence(
   expectedRgba: Uint8Array,
   actualRgba: Uint8Array,
-  imageWidth: number,
+  expectedImageWidth: number,
+  actualImageWidth: number,
   expectedBox: Box,
   actualBox: Box,
   elementType: string
 ): ColorEvidence {
-  const expStats = sampleColorStats(expectedRgba, imageWidth, expectedBox);
-  const actStats = sampleColorStats(actualRgba, imageWidth, actualBox);
+  const expStats = sampleColorStats(expectedRgba, expectedImageWidth, expectedBox);
+  const actStats = sampleColorStats(actualRgba, actualImageWidth, actualBox);
 
   const oklabDistance = computeOklabDistance(
     expStats.avgR, expStats.avgG, expStats.avgB,
