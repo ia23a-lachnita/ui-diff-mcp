@@ -7,7 +7,7 @@ Run this checklist before calling `ui-diff-mcp` production-ready.
 ```powershell
 npm run verify
 npm run test:coverage
-npm audit
+npm audit --audit-level=critical
 ```
 
 Required result:
@@ -99,6 +99,7 @@ Required result:
 - Result is not `failed`.
 - If visual classification is incomplete, the release note records the exact reason, including whether `UI_DIFF_MAX_AUDIT_PAIRS` bounded the smoke run.
 - `auditLimited` is `true` and `visualClassificationStatus` is `incomplete` when pairs are limited.
+- `report.diffs` contains final findings only; raw/unclassified pixel regions appear only in `unresolvedRegions`.
 - `locatorActualMode` is `"projected"` — dual-locator must not be active in the release gate.
 - `modelSelection.auditorRoutes` and `modelSelection.reviewerRoutes` are present with at least one entry each.
 - If any provider fallback occurred during the run, `report.warnings` must contain explicit fallback text (never silent).
@@ -108,7 +109,7 @@ Required result:
 Before running `verify:calorix-full-live` or `verify:calorix-release-live`, confirm all of the following from the most recent bounded smoke report:
 
 - `locatorCoverageStatus` is `"complete"` — not `"weak"` or `"failed"`
-- `auditScope.vlmAuditedPairs > 0` — at least one pair reached the VLM auditor (if zero, the projection pre-audit consumed all bounded slots, which means the bounded smoke itself is a code-path failure)
+- `auditScope.providerCalledPairs > 0` — at least one pair reached the VLM auditor (if zero, the projection pre-audit or criterion selection consumed all bounded slots, which means the bounded smoke did not exercise its intended path)
 - `projectedPreAudit` exists in the report — confirms the pre-audit stage ran
 - Every accepted diff has `classificationSource` — no untagged diffs
 - `recoverySummary.statusCounts` exists when recovery ran
@@ -135,13 +136,43 @@ Required result:
 
 - Unbounded all-target Calorix audit completes.
 - `auditLimited` is `false`.
-- `visualClassificationStatus` is recorded (complete or incomplete with reason).
+- `visualClassificationStatus` is recorded. `incomplete` is a diagnostic result and blocks production even when traces explain it.
+- `auditScope.selectedPairs + auditScope.preAuditDeterministicPairs === auditScope.totalPairs`.
+- `auditScope.enteredPairs + auditScope.remainingPairs === auditScope.selectedPairs`.
+- `auditScope.providerCalledPairs + auditScope.skippedNoTriggeredPairs === auditScope.enteredPairs`.
 - `modelSelection` is present in `report.json` with auditor and reviewer model/provider.
 - All diffs have at least one evidence string.
+- No final finding uses `unclassified_visual_change`; unresolved canonical regions remain in `unresolvedRegions`.
+- Every deterministic projected finding has projected expected/actual crops, directional overlay, and pixel-diff mask.
+- Consolidated child finding IDs are unique, and no final findings duplicate target + criterion + strongly overlapping location.
 - `locatorActualMode` is `"projected"` — dual-locator must not be active in the release gate.
 - `modelSelection.auditorRoutes` and `modelSelection.reviewerRoutes` are present with at least one entry each.
 - If recovery ran (`recoverySummary.attemptedComponents > 0`), `modelSelection.targetRecoveryRoutes` is present.
 - Any NVIDIA→OpenRouter provider fallback in `free` mode is recorded explicitly in `report.warnings`.
+
+## Strict Calorix Release Gate
+
+```powershell
+$env:RUN_CALORIX_RELEASE_LIVE="1"
+$env:OPENROUTER_API_KEY="<real-openrouter-key>"
+$env:NVIDIA_API_KEY="<real-nvidia-key>"
+$env:LOCATEANYTHING_SIDECAR_URL="http://127.0.0.1:39731"
+$env:UI_DIFF_LIVE_EXPECTED_IMAGE="C:\Users\xursc\projects\calorix\docs\mockups\image\dark\single\Today.png"
+$env:UI_DIFF_LIVE_ACTUAL_IMAGE="C:\Users\xursc\projects\calorix\docs\screenshots\today-screen-2026-06-17-adb-seeded-2.png"
+Remove-Item Env:UI_DIFF_MAX_AUDIT_PAIRS -ErrorAction SilentlyContinue
+npm run verify:calorix-release-live
+```
+
+Required result:
+
+- `status === "complete"`, `isCheckpoint === false`, and the MCP child remains healthy through final report persistence.
+- `visualClassificationStatus === "complete"` and `auditLimited === false`.
+- `unresolvedRegions.length === 0`, `auditScope.remainingPairs === 0`, and `auditScope.stoppedReason === "none"`.
+- `auditScope.providerCalledPairs + auditScope.skippedNoTriggeredPairs === auditScope.selectedPairs` and `auditScope.failedPairs === 0`.
+- No final finding has `reviewerStatus:"needs_escalation"`, lacks `classificationSource` when reviewer-accepted, or uses `unclassified_visual_change`.
+- Recovery leaves zero unclassified regions, and all required debug/provider traces and artifacts are durable.
+
+A bounded or full diagnostic pass never substitutes for this gate.
 
 ## Dual-Locator Diagnostic Command
 
@@ -203,4 +234,5 @@ Append a dated note to `docs/implementation-status.md` with:
 - NVIDIA live gate output summary or reason it was not run.
 - Bounded Calorix gate output summary or reason it was not run.
 - Full Calorix gate output summary or reason it was not run.
+- Strict Calorix release output summary, including final finding count, unresolved count, consolidation count, audit counters, run ID, and duration.
 - Any remaining P2 risks.

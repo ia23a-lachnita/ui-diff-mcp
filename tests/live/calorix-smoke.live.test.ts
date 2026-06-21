@@ -212,15 +212,24 @@ describe.skipIf(!calorixFullLive)("verify:calorix-full-live unbounded all-target
       started.recordRunStatus(report.status);
       expect(report.auditScope?.auditLimited ?? false).toBe(false);
 
-      // Pair accounting: every pair must be handled by exactly one path (pre-audit or VLM).
-      // This catches projection-precheck bugs or accounting drift.
+      // Pair accounting: pre-audit and audit selection partition all pairs, while entered
+      // and remaining partition selected work. Entered work is either provider-called or
+      // deterministically skipped because no criterion triggered.
       if (report.auditScope?.totalPairs !== undefined) {
-        const vlmAuditedFull = report.auditScope.vlmAuditedPairs ?? report.auditScope.auditedPairs ?? 0;
+        const selectedFull = report.auditScope.selectedPairs ?? report.auditScope.auditedPairs;
         const preAuditDetFull = report.auditScope.preAuditDeterministicPairs ?? 0;
         expect(
-          vlmAuditedFull + preAuditDetFull,
-          "vlmAuditedPairs + preAuditDeterministicPairs must equal totalPairs"
+          selectedFull + preAuditDetFull,
+          "selectedPairs + preAuditDeterministicPairs must equal totalPairs"
         ).toBe(report.auditScope.totalPairs);
+        expect(
+          (report.auditScope.enteredPairs ?? 0) + (report.auditScope.remainingPairs ?? 0),
+          "enteredPairs + remainingPairs must equal selectedPairs"
+        ).toBe(selectedFull);
+        expect(
+          (report.auditScope.providerCalledPairs ?? 0) + (report.auditScope.skippedNoTriggeredPairs ?? 0),
+          "providerCalledPairs + skippedNoTriggeredPairs must equal enteredPairs"
+        ).toBe(report.auditScope.enteredPairs ?? 0);
       }
 
       // All accepted diffs must have classificationSource — no untagged diffs allowed
@@ -237,11 +246,8 @@ describe.skipIf(!calorixFullLive)("verify:calorix-full-live unbounded all-target
       expect(report.elements.actual.length, "locator must find elements in actual image").toBeGreaterThan(0);
       expect(report.auditScope?.totalPairs ?? 0, "at least one element pair must be available for audit").toBeGreaterThan(0);
 
-      // Ideal: visualClassificationStatus === "complete". When incomplete, the provider trace
-      // must contain route_exhausted events for target_recovery explaining why recovery failed.
-      // This aligns with the plan acceptance criterion: "blocked if incomplete WITHOUT a trace."
-      // NOTE: a PASS here with incomplete status is a DIAGNOSTIC pass, not production-ready
-      // completion. Production release requires visualClassificationStatus === "complete".
+      // Incomplete classification is allowed only as a diagnostic pass with provider evidence.
+      // It always blocks production release, even when the trace explains the failure.
       if (report.visualClassificationStatus === "incomplete") {
         console.warn(
           "[DEGRADED PASS] visualClassificationStatus is incomplete — free-tier provider routes exhausted." +
