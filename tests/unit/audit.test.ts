@@ -197,7 +197,7 @@ describe("auditElementPair", () => {
 
   it("returns accepted diff when auditor and reviewer agree", async () => {
     const auditorCaller: VisionJsonCaller = vi.fn().mockResolvedValue({
-      parsed: { hasDiff: true, severity: "high", title: "Button shifted down", evidence: ["actual y=65px, expected y=50px"] },
+      parsed: { hasDiff: true, severity: "high", title: "Button shifted down", evidence: ["The actual button is visibly lower than the expected button."] },
       rawContent: "",
       model: "test-auditor",
       provider: "openrouter"
@@ -243,7 +243,7 @@ describe("auditElementPair", () => {
 
   it("removes diff when reviewer rejects it", async () => {
     const auditorCaller: VisionJsonCaller = vi.fn().mockResolvedValue({
-      parsed: { hasDiff: true, severity: "low", title: "Minor shift", evidence: ["actual y=52px, expected y=50px"] },
+      parsed: { hasDiff: true, severity: "low", title: "Minor shift", evidence: ["The actual button appears slightly lower than expected."] },
       rawContent: "",
       model: "test-auditor",
       provider: "openrouter"
@@ -336,7 +336,7 @@ describe("auditElementPair", () => {
 
   it("creates artifact files with correct naming and includes paths in DiffRecord", async () => {
     const auditorCaller: VisionJsonCaller = vi.fn().mockResolvedValue({
-      parsed: { hasDiff: true, severity: "high", title: "Button shifted down", evidence: ["actual y=65px, expected y=50px"] },
+      parsed: { hasDiff: true, severity: "high", title: "Button shifted down", evidence: ["The actual button is visibly lower than the expected button."] },
       rawContent: "",
       model: "test-auditor",
       provider: "openrouter"

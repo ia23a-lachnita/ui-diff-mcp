@@ -11,6 +11,7 @@ import type { VisionJsonCaller } from "../models/vision-json.js";
 import { computePixelDiff } from "../signals/pixel-diff.js";
 import { createDirectionalDiffOverlay, type Rgba } from "../images/directional-diff.js";
 import { extractImageCrop } from "../images/crop.js";
+import { hasUnsupportedQuantitativeClaim } from "./review-findings.js";
 
 const ReviewDecisionSchema = z.object({
   decision: z.enum(["accepted", "rejected", "needs_escalation"]),
@@ -303,11 +304,27 @@ export async function auditElementPair(
 
     const auditorDurationMs = Date.now() - started;
 
+    const visibleTexts = [expectedEl?.text, actualEl?.text].filter((text): text is string => text !== undefined);
+    if (hasUnsupportedQuantitativeClaim(
+      { title: auditResult.title ?? criterion, evidence },
+      ctx.measurements,
+      visibleTexts
+    )) {
+      pushTrace(criterion, "reviewer_rejected", {
+        auditorDurationMs,
+        model: auditModel,
+        evidenceCount: evidence.length,
+        rejectionReason: "Unsupported quantitative layout claim"
+      });
+      continue;
+    }
+
     const reviewerPrompt = buildReviewerPrompt(
       criterion,
       refEl.label,
       auditResult.title ?? criterion,
-      evidence
+      evidence,
+      ctx.measurements
     );
 
     let reviewDecision: "accepted" | "rejected" | "needs_escalation" = "accepted";
@@ -357,7 +374,7 @@ export async function auditElementPair(
       title: auditResult.title ?? `${criterion} difference in ${refEl.label}`,
       location: refEl.box,
       evidence,
-      measurements: [...(auditResult.measurements ?? []), ...ctx.measurements],
+      measurements: ctx.measurements,
       artifactPaths: auditArtifacts,
       reviewerStatus: reviewDecision === "needs_escalation" ? "needs_escalation" : reviewDecision,
       model: auditModel,

@@ -87,7 +87,8 @@ export function buildAuditorPrompt(ctx: AuditorPromptContext): string {
     `- Do NOT suggest how to resolve the difference in code or design.`,
     `- Do NOT comment on correctness or acceptability of the UI.`,
     `- Do NOT speculate about implementation details.`,
-    `- Evidence must be specific and measurable (e.g., "actual y=45px, expected y=30px").`,
+    `- Evidence must be visually specific but qualitative unless it cites a deterministic measurement listed above by name.`,
+    `- Do not invent pixel, spacing, font-size, percentage, or angle measurements.`,
     ``,
     `Evidence discipline:`,
     `- Describe only visible differences supported by the supplied crops, overlay, mask, and measurements.`,
@@ -104,9 +105,13 @@ export function buildReviewerPrompt(
   criterion: UiCriterion,
   elementLabel: string,
   auditorTitle: string,
-  evidence: string[]
+  evidence: string[],
+  measurements: DeterministicMeasurement[] = []
 ): string {
   const evidenceLines = evidence.map(e => `  - ${e}`).join("\n");
+  const measurementLines = measurements.length > 0
+    ? measurements.map(m => `  - ${m.name}: ${m.value}${m.unit ? " " + m.unit : ""}`).join("\n")
+    : "  (none)";
 
   return [
     `You are a UI diff reviewer. Evaluate whether the following reported diff is valid based solely on the supplied evidence.`,
@@ -117,6 +122,8 @@ export function buildReviewerPrompt(
     ``,
     `EVIDENCE:`,
     evidenceLines,
+    `DETERMINISTIC MEASUREMENTS:`,
+    measurementLines,
     ``,
     `EVIDENCE IMAGES (in order):`,
     `  1. EXPECTED crop — the expected mockup for this element`,
@@ -132,6 +139,7 @@ export function buildReviewerPrompt(
     `- Do NOT explain causality. Do NOT suggest code changes. Do NOT judge correctness.`,
     `- Reject the diff if its title or evidence claims content that is not visible in the supplied images.`,
     `- Accept crop-boundary evidence only when the record explicitly calls it a crop/position mismatch.`,
+    `- Reject unsupported quantitative layout claims. Exact dimensions, positions, spacing, font sizes, percentages, and angles are valid only when they cite a deterministic measurement listed above.`,
     ``,
     `Respond with JSON only: { "decision": "accepted" | "rejected" | "needs_escalation", "reason": "<one sentence>" }`
   ].join("\n");

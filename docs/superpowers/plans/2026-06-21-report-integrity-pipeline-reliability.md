@@ -251,25 +251,25 @@ Commit message: `feat(preaudit): preserve evidence and classify displacement`
 - Consumes: deterministic measurements supplied by pipeline code
 - Produces: qualitative VLM evidence plus deterministic measurement references; rejects unsupported `px`, `%`, degree, font-size, and spacing claims
 
-- [ ] **Step 1: Write failing prompt and guard tests**
+- [x] **Step 1: Write failing prompt and guard tests**
 
 Assert that `"shifted left by 3px"` is rejected when no deterministic `3 px` measurement exists, while quoted or OCR-backed literal UI content such as `"420"`, `"10%"`, and `"of 2,400"` remains allowed. Assert that a claim matching a supplied `horizontal_shift: 3 px` measurement is allowed.
 
-- [ ] **Step 2: Verify the tests fail**
+- [x] **Step 2: Verify the tests fail**
 
 Run: `npx vitest run tests/unit/prompts.test.ts tests/unit/review-findings.test.ts`
 
 Expected: FAIL because the current prompt explicitly encourages fabricated pixel coordinates.
 
-- [ ] **Step 3: Remove model-authored measurements**
+- [x] **Step 3: Remove model-authored measurements**
 
 Remove `measurements` from the auditor response schema. Attach only pipeline-computed `ctx.measurements` to final records. Rewrite the prompt to require qualitative descriptions unless it cites a supplied measurement by name.
 
-- [ ] **Step 4: Add `hasUnsupportedQuantitativeClaim()`**
+- [x] **Step 4: Add `hasUnsupportedQuantitativeClaim()`**
 
 Detect measurement language rather than arbitrary UI numbers. Treat numbers as content when they match expected/actual OCR text, appear inside quotes, or are explicitly introduced as visible text/value. Reject unsupported layout units (`px`, `dp`, degrees, font sizes), numeric movement/spacing comparisons, and percentages described as geometric change unless they match a supplied deterministic measurement. The reviewer prompt must enforce the same distinction.
 
-- [ ] **Step 5: Verify, update tracking, commit, and push**
+- [x] **Step 5: Verify, update tracking, commit, and push**
 
 Run: `npm run verify`
 

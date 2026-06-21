@@ -5,12 +5,7 @@ export const AuditResultSchema = z.object({
   hasDiff: z.boolean(),
   severity: z.enum(["low", "medium", "high"]).optional(),
   title: z.string().optional(),
-  evidence: z.array(z.string()).optional(),
-  measurements: z.array(z.object({
-    name: z.string(),
-    value: z.union([z.number(), z.string(), z.boolean()]),
-    unit: z.string().optional()
-  })).optional()
+  evidence: z.array(z.string()).optional()
 });
 export type AuditResult = z.infer<typeof AuditResultSchema>;
 
@@ -30,8 +25,7 @@ export const rubrics: Record<UiCriterion, CriterionRubric> = {
         hasDiff: { type: "boolean" },
         severity: { type: "string", enum: ["low", "medium", "high"] },
         title: { type: "string" },
-        evidence: { type: "array", items: { type: "string" } },
-        measurements: { type: "array", items: { type: "object" } }
+        evidence: { type: "array", items: { type: "string" } }
       },
       required: ["hasDiff"],
       additionalProperties: false
@@ -46,8 +40,7 @@ export const rubrics: Record<UiCriterion, CriterionRubric> = {
         hasDiff: { type: "boolean" },
         severity: { type: "string", enum: ["low", "medium", "high"] },
         title: { type: "string" },
-        evidence: { type: "array", items: { type: "string" } },
-        measurements: { type: "array", items: { type: "object" } }
+        evidence: { type: "array", items: { type: "string" } }
       },
       required: ["hasDiff"],
       additionalProperties: false
@@ -62,8 +55,7 @@ export const rubrics: Record<UiCriterion, CriterionRubric> = {
         hasDiff: { type: "boolean" },
         severity: { type: "string", enum: ["low", "medium", "high"] },
         title: { type: "string" },
-        evidence: { type: "array", items: { type: "string" } },
-        measurements: { type: "array", items: { type: "object" } }
+        evidence: { type: "array", items: { type: "string" } }
       },
       required: ["hasDiff"],
       additionalProperties: false
@@ -78,8 +70,7 @@ export const rubrics: Record<UiCriterion, CriterionRubric> = {
         hasDiff: { type: "boolean" },
         severity: { type: "string", enum: ["low", "medium", "high"] },
         title: { type: "string" },
-        evidence: { type: "array", items: { type: "string" } },
-        measurements: { type: "array", items: { type: "object" } }
+        evidence: { type: "array", items: { type: "string" } }
       },
       required: ["hasDiff"],
       additionalProperties: false
@@ -94,8 +85,7 @@ export const rubrics: Record<UiCriterion, CriterionRubric> = {
         hasDiff: { type: "boolean" },
         severity: { type: "string", enum: ["low", "medium", "high"] },
         title: { type: "string" },
-        evidence: { type: "array", items: { type: "string" } },
-        measurements: { type: "array", items: { type: "object" } }
+        evidence: { type: "array", items: { type: "string" } }
       },
       required: ["hasDiff"],
       additionalProperties: false
@@ -110,8 +100,7 @@ export const rubrics: Record<UiCriterion, CriterionRubric> = {
         hasDiff: { type: "boolean" },
         severity: { type: "string", enum: ["low", "medium", "high"] },
         title: { type: "string" },
-        evidence: { type: "array", items: { type: "string" } },
-        measurements: { type: "array", items: { type: "object" } }
+        evidence: { type: "array", items: { type: "string" } }
       },
       required: ["hasDiff"],
       additionalProperties: false
@@ -126,8 +115,7 @@ export const rubrics: Record<UiCriterion, CriterionRubric> = {
         hasDiff: { type: "boolean" },
         severity: { type: "string", enum: ["low", "medium", "high"] },
         title: { type: "string" },
-        evidence: { type: "array", items: { type: "string" } },
-        measurements: { type: "array", items: { type: "object" } }
+        evidence: { type: "array", items: { type: "string" } }
       },
       required: ["hasDiff"],
       additionalProperties: false
@@ -142,8 +130,7 @@ export const rubrics: Record<UiCriterion, CriterionRubric> = {
         hasDiff: { type: "boolean" },
         severity: { type: "string", enum: ["low", "medium", "high"] },
         title: { type: "string" },
-        evidence: { type: "array", items: { type: "string" } },
-        measurements: { type: "array", items: { type: "object" } }
+        evidence: { type: "array", items: { type: "string" } }
       },
       required: ["hasDiff"],
       additionalProperties: false
@@ -158,8 +145,7 @@ export const rubrics: Record<UiCriterion, CriterionRubric> = {
         hasDiff: { type: "boolean" },
         severity: { type: "string", enum: ["low", "medium", "high"] },
         title: { type: "string" },
-        evidence: { type: "array", items: { type: "string" } },
-        measurements: { type: "array", items: { type: "object" } }
+        evidence: { type: "array", items: { type: "string" } }
       },
       required: ["hasDiff"],
       additionalProperties: false
@@ -174,8 +160,7 @@ export const rubrics: Record<UiCriterion, CriterionRubric> = {
         hasDiff: { type: "boolean" },
         severity: { type: "string", enum: ["low", "medium", "high"] },
         title: { type: "string" },
-        evidence: { type: "array", items: { type: "string" } },
-        measurements: { type: "array", items: { type: "object" } }
+        evidence: { type: "array", items: { type: "string" } }
       },
       required: ["hasDiff"],
       additionalProperties: false

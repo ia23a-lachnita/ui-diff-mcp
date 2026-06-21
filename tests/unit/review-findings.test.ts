@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deduplicateDiffs, filterAcceptedDiffs, reviewAndMergeFindings } from "../../src/audit/review-findings.js";
+import { deduplicateDiffs, filterAcceptedDiffs, hasUnsupportedQuantitativeClaim, reviewAndMergeFindings } from "../../src/audit/review-findings.js";
 import type { DiffRecord } from "../../src/schemas/core.js";
 
 function makeDiff(overrides: Partial<DiffRecord> = {}): DiffRecord {
@@ -58,5 +58,36 @@ describe("reviewAndMergeFindings", () => {
     const result = reviewAndMergeFindings([a, b, rejected]);
     expect(result).toHaveLength(1);
     expect(result[0]?.severity).toBe("medium");
+  });
+});
+
+describe("hasUnsupportedQuantitativeClaim", () => {
+  it("rejects an exact pixel shift without matching deterministic evidence", () => {
+    expect(hasUnsupportedQuantitativeClaim(
+      makeDiff({ evidence: ["The element is shifted left by 3px."] }),
+      []
+    )).toBe(true);
+  });
+
+  it("allows a claim backed by the named deterministic measurement", () => {
+    expect(hasUnsupportedQuantitativeClaim(
+      makeDiff({ evidence: ["The element is shifted left by 3px."] }),
+      [{ name: "horizontal_shift", value: -3, unit: "px" }]
+    )).toBe(false);
+  });
+
+  it("allows quoted and OCR-backed literal UI values", () => {
+    expect(hasUnsupportedQuantitativeClaim(
+      makeDiff({ evidence: ["Visible text changed from \"420\" to \"10%\" and still includes of 2,400."] }),
+      [],
+      ["420", "10%", "of 2,400"]
+    )).toBe(false);
+  });
+
+  it("rejects unsupported font-size and spacing measurements", () => {
+    expect(hasUnsupportedQuantitativeClaim(
+      makeDiff({ title: "Font size is 16px", evidence: ["Gap increased by 8px."] }),
+      []
+    )).toBe(true);
   });
 });
