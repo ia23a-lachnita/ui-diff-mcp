@@ -12,6 +12,7 @@ import { computePixelDiff } from "../signals/pixel-diff.js";
 import { createDirectionalDiffOverlay, type Rgba } from "../images/directional-diff.js";
 import { extractImageCrop } from "../images/crop.js";
 import { hasUnsupportedQuantitativeClaim } from "./review-findings.js";
+import { RouteExhaustedError } from "../models/fallback-caller.js";
 
 const ReviewDecisionSchema = z.object({
   decision: z.enum(["accepted", "rejected", "needs_escalation"]),
@@ -274,6 +275,7 @@ export async function auditElementPair(
       auditModel = response.model;
       auditResult = AuditResultSchema.parse(response.parsed);
     } catch (err) {
+      if (err instanceof RouteExhaustedError) throw err;
       pushTrace(criterion, err instanceof z.ZodError ? "auditor_schema_error" : "auditor_error", {
         auditorDurationMs: Date.now() - started,
         model: auditModel,

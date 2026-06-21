@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { makeFallbackVisionCaller, isRetryableProviderError, type FallbackCandidate, type FallbackEvent } from "../../src/models/fallback-caller.js";
+import { makeFallbackVisionCaller, isRetryableProviderError, RouteExhaustedError, type FallbackCandidate, type FallbackEvent } from "../../src/models/fallback-caller.js";
 import { ProviderJsonParseError } from "../../src/models/vision-json.js";
 import type { ProviderTraceEvent } from "../../src/schemas/core.js";
 
@@ -47,7 +47,9 @@ describe("makeFallbackVisionCaller", () => {
   it("throws last error when all candidates exhausted", async () => {
     const c1 = cand(vi.fn().mockRejectedValue(new Error("HTTP 429: rate limited")));
     const c2 = cand(vi.fn().mockRejectedValue(new Error("HTTP 503: overloaded")), "openrouter", "m2");
-    await expect(makeFallbackVisionCaller([c1, c2])(dummyReq)).rejects.toThrow("HTTP 503");
+    const caller = makeFallbackVisionCaller([c1, c2]);
+    await expect(caller(dummyReq)).rejects.toBeInstanceOf(RouteExhaustedError);
+    expect(caller.isExhausted()).toBe(true);
   });
 
   it("throws when constructed with empty candidates", () => {

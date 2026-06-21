@@ -304,7 +304,16 @@ export const AuditScopeSchema = z.object({
   auditLimited: z.boolean(),
   limitReason: z.string().optional(),
   vlmAuditedPairs: z.number().int().nonnegative().optional(),
-  preAuditDeterministicPairs: z.number().int().nonnegative().optional()
+  preAuditDeterministicPairs: z.number().int().nonnegative().optional(),
+  selectedPairs: z.number().int().nonnegative().optional(),
+  enteredPairs: z.number().int().nonnegative().optional(),
+  providerCalledPairs: z.number().int().nonnegative().optional(),
+  validAuditorPairs: z.number().int().nonnegative().optional(),
+  reviewedPairs: z.number().int().nonnegative().optional(),
+  skippedNoTriggeredPairs: z.number().int().nonnegative().optional(),
+  failedPairs: z.number().int().nonnegative().optional(),
+  remainingPairs: z.number().int().nonnegative().optional(),
+  stoppedReason: z.enum(["none", "route_exhausted", "interrupted"]).optional()
 });
 export type AuditScope = z.infer<typeof AuditScopeSchema>;
 

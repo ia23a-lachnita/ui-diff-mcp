@@ -5,6 +5,15 @@ import { modelFamilyKey } from "./model-registry.js";
 
 export type { ProviderTraceSink };
 
+export class RouteExhaustedError extends Error {
+  constructor(public readonly lastError?: unknown) {
+    super(lastError instanceof Error ? `All provider routes exhausted: ${lastError.message}` : "All provider routes exhausted", { cause: lastError });
+    this.name = "RouteExhaustedError";
+  }
+}
+
+export type FallbackVisionCaller = VisionJsonCaller & { isExhausted(): boolean };
+
 export interface FallbackCandidate {
   caller: VisionJsonCaller;
   provider: string;
@@ -36,7 +45,7 @@ export function makeFallbackVisionCaller(
   candidates: FallbackCandidate[],
   onFallback?: (event: FallbackEvent) => void,
   traceSink?: ProviderTraceSink
-): VisionJsonCaller {
+): FallbackVisionCaller {
   if (candidates.length === 0) {
     throw new Error("makeFallbackVisionCaller requires at least one candidate");
   }
@@ -49,9 +58,9 @@ export function makeFallbackVisionCaller(
   // instead of re-emitting route_exhausted for every model audit after routes deplete.
   let exhaustedEmitted = false;
   let persistedLastErr: unknown;
-  return async (req) => {
+  const caller = async (req: Parameters<VisionJsonCaller>[0]) => {
     if (healthyStartIndex >= candidates.length) {
-      throw persistedLastErr ?? new Error("all provider candidates exhausted");
+      throw new RouteExhaustedError(persistedLastErr);
     }
     let lastErr: unknown;
     for (let i = healthyStartIndex; i < candidates.length; i++) {
@@ -192,6 +201,7 @@ export function makeFallbackVisionCaller(
         status: "error"
       });
     }
-    throw lastErr;
+    throw new RouteExhaustedError(lastErr);
   };
+  return Object.assign(caller, { isExhausted: () => healthyStartIndex >= candidates.length });
 }

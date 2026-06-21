@@ -17,14 +17,14 @@ import { computeImageLocatorCoverage, type ImageLocatorCoverage } from "../locat
 import { buildTargetMapJson } from "../locator/diagnostics.js";
 import { pairElements } from "../pairing/pair-elements.js";
 import { selectModelForMode, selectFallbackModelsForMode, resolveMode, CANONICAL_MODEL_RANKING, type ModelEntry } from "../models/model-registry.js";
-import { makeFallbackVisionCaller } from "../models/fallback-caller.js";
+import { makeFallbackVisionCaller, RouteExhaustedError } from "../models/fallback-caller.js";
 import { probeRequiredModels, type ProbeResult } from "../models/probes.js";
 import { estimateFreeRunBudget, lookupOpenRouterQuota, checkFreeQuotaSufficiency } from "../models/free-quota.js";
 import { makeOpenRouterVisionCaller, makeNvidiaVisionCaller, type VisionMode } from "../models/vision-json.js";
 import { auditElementPair, makeElementSlug, type AuditContext } from "../audit/audit-target.js";
 import { reviewAndMergeFindings } from "../audit/review-findings.js";
 import { runTargetRecovery } from "../recovery/target-recovery.js";
-import { writeRunDebugArtifacts, type RunDebugTrace } from "../debug/run-debug.js";
+import { writeRunDebugArtifacts, summarizeAuditPairOutcomes, type AuditPairOutcome, type RunDebugTrace } from "../debug/run-debug.js";
 import { ProviderTraceWriter, writeProviderTrace } from "../debug/provider-trace.js";
 import { buildDeterministicDiffs } from "../diff/deterministic-diffs.js";
 import { runProjectedPreAudit } from "../diff/projected-preaudit.js";
@@ -593,13 +593,18 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
         }
 
         const auditTotal = auditSelection.pairs.length;
-        let vlmCallCount = 0;
+        const auditOutcomes: AuditPairOutcome[] = [];
+        let auditStoppedReason: "none" | "route_exhausted" = "none";
+        let remainingAuditPairs = 0;
         for (let auditIdx = 0; auditIdx < auditSelection.pairs.length; auditIdx++) {
           const pair = auditSelection.pairs[auditIdx]!;
           const expEl = expectedElements.find(e => e.id === pair.expectedId);
           const actEl = actualElements.find(e => e.id === pair.actualId);
           const refEl = expEl ?? actEl;
-          if (!refEl) continue;
+          if (!refEl) {
+            auditOutcomes.push({ pairId: pair.id, entered: false, providerCalled: false, validAuditor: false, reviewed: false, skippedNoTrigger: true, failed: false });
+            continue;
+          }
 
           const colorEvidence = (expEl || actEl) ? computeColorEvidence(
             expectedImg.rgba,
@@ -653,22 +658,37 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
             elementSlug: makeElementSlug(refEl.label)
           };
 
-          const { accepted, trace } = await auditElementPair(pair, ctx);
+          let accepted: DiffRecord[];
+          let trace: import("../schemas/core.js").AuditCriterionTrace[];
+          try {
+            ({ accepted, trace } = await auditElementPair(pair, ctx));
+          } catch (err) {
+            if (!(err instanceof RouteExhaustedError)) throw err;
+            auditOutcomes.push({ pairId: pair.id, entered: true, providerCalled: true, validAuditor: false, reviewed: false, skippedNoTrigger: false, failed: true });
+            auditStoppedReason = "route_exhausted";
+            remainingAuditPairs = auditSelection.pairs.length - auditIdx - 1;
+            visualClassificationStatus = "incomplete";
+            warnings.push(`Audit routes exhausted at pair ${pair.id}; ${remainingAuditPairs} selected pairs remain unresolved.`);
+            break;
+          }
           debugTrace.audit.push(...trace);
           auditedDiffs.push(...accepted);
-          if (trace.some(t => t.status !== "criterion_not_triggered")) {
-            vlmCallCount++;
-          }
+          const providerCalled = trace.some(t => t.status !== "criterion_not_triggered");
+          const reviewed = trace.some(t => ["reviewer_accepted", "reviewer_rejected", "reviewer_needs_escalation"].includes(t.status));
+          const validAuditor = trace.some(t => ["auditor_no_diff", "reviewer_accepted", "reviewer_rejected", "reviewer_needs_escalation", "reviewer_error"].includes(t.status));
+          const failed = providerCalled && !validAuditor && trace.some(t => ["auditor_error", "auditor_schema_error", "empty_evidence"].includes(t.status));
+          auditOutcomes.push({ pairId: pair.id, entered: true, providerCalled, validAuditor, reviewed, skippedNoTrigger: !providerCalled, failed });
         }
 
-        auditScope = {
-          auditedPairs: auditTotal,
-          vlmAuditedPairs: vlmCallCount,
+        auditScope = summarizeAuditPairOutcomes(auditOutcomes, {
           totalPairs: pairs.length,
+          selectedPairs: auditTotal,
           auditLimited: auditSelection.limited,
           preAuditDeterministicPairs: projectedPreAuditResult.diffs.length,
+          stoppedReason: auditStoppedReason,
+          remainingPairs: remainingAuditPairs,
           ...(auditSelection.warning ? { limitReason: auditSelection.warning } : {})
-        };
+        });
 
         const merged = reviewAndMergeFindings(auditedDiffs);
         allDiffs.push(...merged);
@@ -760,11 +780,13 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     imageHeight: expectedImg.height
   });
   applyFindingCoverage(regionLedger, allDiffs);
-  const unresolvedReason = recoverySummary?.stoppedReason === "caller_unavailable"
-    ? "recovery_route_exhausted" as const
-    : recoverySummary?.stoppedReason && recoverySummary.stoppedReason !== "none"
-      ? "recovery_budget_exhausted" as const
-      : "not_classified" as const;
+  const unresolvedReason = auditScope?.stoppedReason === "route_exhausted"
+    ? "audit_route_exhausted" as const
+    : recoverySummary?.stoppedReason === "caller_unavailable"
+      ? "recovery_route_exhausted" as const
+      : recoverySummary?.stoppedReason && recoverySummary.stoppedReason !== "none"
+        ? "recovery_budget_exhausted" as const
+        : "not_classified" as const;
   const unresolvedRegions = unresolvedRegionsFromLedger(regionLedger, unresolvedReason);
   const finalDiffs = consolidateFindings(allDiffs, [...expectedElements, ...actualElements], pairs);
 

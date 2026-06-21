@@ -8,6 +8,50 @@ import type {
   UiArtifact
 } from "../schemas/core.js";
 import { RunDebugSummarySchema } from "../schemas/core.js";
+import type { AuditScope } from "../schemas/core.js";
+
+export interface AuditPairOutcome {
+  pairId: string;
+  entered: boolean;
+  providerCalled: boolean;
+  validAuditor: boolean;
+  reviewed: boolean;
+  skippedNoTrigger: boolean;
+  failed: boolean;
+}
+
+export function summarizeAuditPairOutcomes(
+  outcomes: AuditPairOutcome[],
+  options: {
+    totalPairs: number;
+    selectedPairs?: number;
+    auditLimited: boolean;
+    stoppedReason: "none" | "route_exhausted" | "interrupted";
+    preAuditDeterministicPairs?: number;
+    limitReason?: string;
+    remainingPairs?: number;
+  }
+): AuditScope {
+  const selectedPairs = options.selectedPairs ?? outcomes.length;
+  const providerCalledPairs = outcomes.filter(outcome => outcome.providerCalled).length;
+  return {
+    auditedPairs: selectedPairs,
+    vlmAuditedPairs: providerCalledPairs,
+    totalPairs: options.totalPairs,
+    auditLimited: options.auditLimited,
+    selectedPairs,
+    enteredPairs: outcomes.filter(outcome => outcome.entered).length,
+    providerCalledPairs,
+    validAuditorPairs: outcomes.filter(outcome => outcome.validAuditor).length,
+    reviewedPairs: outcomes.filter(outcome => outcome.reviewed).length,
+    skippedNoTriggeredPairs: outcomes.filter(outcome => outcome.skippedNoTrigger).length,
+    failedPairs: outcomes.filter(outcome => outcome.failed).length,
+    remainingPairs: options.remainingPairs ?? 0,
+    stoppedReason: options.stoppedReason,
+    ...(options.preAuditDeterministicPairs !== undefined ? { preAuditDeterministicPairs: options.preAuditDeterministicPairs } : {}),
+    ...(options.limitReason !== undefined ? { limitReason: options.limitReason } : {})
+  };
+}
 
 export interface RunDebugTrace {
   audit: AuditCriterionTrace[];

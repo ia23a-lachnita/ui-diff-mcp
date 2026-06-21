@@ -291,25 +291,25 @@ Commit message: `fix(audit): reject unsupported quantitative model claims`
 **Interfaces:**
 - Produces: selected, entered, provider-called, valid-auditor, reviewed, skipped-no-trigger, and failed pair counts
 
-- [ ] **Step 1: Write the misleading-71-pairs regression test**
+- [x] **Step 1: Write the misleading-71-pairs regression test**
 
 Simulate three pairs: one no-trigger, one valid auditor/reviewer result, and one route-exhausted failure. Assert that `selectedPairs:3`, `providerCalledPairs:2`, `validAuditorPairs:1`, `reviewedPairs:1`, `failedPairs:1`, and `skippedNoTriggeredPairs:1`.
 
-- [ ] **Step 2: Verify the test fails**
+- [x] **Step 2: Verify the test fails**
 
 Run: `npx vitest run tests/unit/audit.test.ts tests/e2e/compare-ui-images.test.ts`
 
 Expected: FAIL because current `vlmAuditedPairs` conflates entry into the auditor path with successful classification.
 
-- [ ] **Step 3: Extend `AuditScopeSchema`**
+- [x] **Step 3: Extend `AuditScopeSchema`**
 
 Add the explicit counters and `stoppedReason: "none" | "route_exhausted" | "interrupted"`. Keep old counters as compatibility aliases for one schema version, but live gates must use the new fields.
 
-- [ ] **Step 4: Stop after route exhaustion**
+- [x] **Step 4: Stop after route exhaustion**
 
 Add a typed `RouteExhaustedError` and `isExhausted(): boolean` to the fallback caller. `auditElementPair()` must rethrow terminal exhaustion instead of converting it to a normal `auditor_error`. The pipeline catches that exact error, stops scheduling later criteria/pairs, and records one structured summary with remaining pair/criterion counts. Remaining work becomes unresolved audit targets, not repeated `auditor_error` rows.
 
-- [ ] **Step 5: Verify, update tracking, commit, and push**
+- [x] **Step 5: Verify, update tracking, commit, and push**
 
 Run: `npm run verify`
 

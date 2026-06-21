@@ -11,6 +11,7 @@ import { UiCriterionSchema } from "../../src/schemas/core.js";
 import type { ElementPair, UiElement, DiffRecord } from "../../src/schemas/core.js";
 import type { VisionJsonCaller } from "../../src/models/vision-json.js";
 import { writeSolidPng } from "../../src/testing/fixture-images.js";
+import { summarizeAuditPairOutcomes } from "../../src/debug/run-debug.js";
 
 // Creates an RGBA buffer with 2-row white/blue stripes — produces real edges so
 // the content-based projected-mismatch logic can distinguish it from a solid actual.
@@ -36,6 +37,27 @@ describe("criteria rubrics", () => {
       expect(rubrics[criterion]).toBeDefined();
       expect(rubrics[criterion]?.jsonSchema).toBeDefined();
     }
+  });
+});
+
+describe("audit pair accounting", () => {
+  it("separates selected, provider-called, valid, reviewed, skipped, and failed pairs", () => {
+    const scope = summarizeAuditPairOutcomes([
+      { pairId: "no-trigger", entered: true, providerCalled: false, validAuditor: false, reviewed: false, skippedNoTrigger: true, failed: false },
+      { pairId: "reviewed", entered: true, providerCalled: true, validAuditor: true, reviewed: true, skippedNoTrigger: false, failed: false },
+      { pairId: "exhausted", entered: true, providerCalled: true, validAuditor: false, reviewed: false, skippedNoTrigger: false, failed: true }
+    ], { totalPairs: 3, auditLimited: false, stoppedReason: "route_exhausted" });
+
+    expect(scope).toMatchObject({
+      selectedPairs: 3,
+      enteredPairs: 3,
+      providerCalledPairs: 2,
+      validAuditorPairs: 1,
+      reviewedPairs: 1,
+      failedPairs: 1,
+      skippedNoTriggeredPairs: 1,
+      stoppedReason: "route_exhausted"
+    });
   });
 });
 
