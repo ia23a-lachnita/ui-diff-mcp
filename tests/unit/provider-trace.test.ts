@@ -87,6 +87,31 @@ describe("ProviderTraceWriter", () => {
     expect(events[1]!.event).toBe("fallback");
     expect(events[1]!.provider).toBe("openrouter");
   });
+
+  it("preserves bounded structured-response diagnostics", () => {
+    const writer = new ProviderTraceWriter();
+    writer.emit({
+      phase: "audit",
+      event: "call_error",
+      role: "auditor",
+      provider: "nvidia",
+      model: "model",
+      modelFamilyKey: "model",
+      status: "error",
+      diagnostic: {
+        kind: "truncated_json",
+        rawContentLength: 564,
+        firstChars: "{\"hasDiff\":",
+        lastChars: "unfinished",
+        startsWithJson: true,
+        endsWithJson: false,
+        streamCompleted: true,
+        finishReason: "length",
+        retryDecision: "same_route_compact_retry"
+      }
+    });
+    expect(writer.getEvents()[0]?.diagnostic).toMatchObject({ kind: "truncated_json", retryDecision: "same_route_compact_retry" });
+  });
 });
 
 describe("writeProviderTrace", () => {

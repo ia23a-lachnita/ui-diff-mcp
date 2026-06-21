@@ -111,7 +111,7 @@ describe("callOpenRouterVisionJson", () => {
       images: [],
       jsonSchema: { name: "s", schema: {} },
       timeoutMs: 5000
-    })).rejects.toThrow(/not valid JSON/);
+    })).rejects.toThrow(/invalid_json/);
   });
 
   it("prefixes non-data-url images with data:image/png;base64,", async () => {
@@ -238,17 +238,19 @@ describe("callNvidiaVisionJson", () => {
 // Helpers for streaming SSE mock
 function makeSseStreamFetch(chunks: string[], status = 200) {
   const encoder = new TextEncoder();
-  const stream = new ReadableStream({
-    start(controller) {
-      for (const chunk of chunks) controller.enqueue(encoder.encode(chunk));
-      controller.close();
-    }
-  });
-  return vi.fn().mockResolvedValue({
-    ok: status >= 200 && status < 300,
-    status,
-    body: stream,
-    text: () => Promise.resolve("")
+  return vi.fn().mockImplementation(() => {
+    const stream = new ReadableStream({
+      start(controller) {
+        for (const chunk of chunks) controller.enqueue(encoder.encode(chunk));
+        controller.close();
+      }
+    });
+    return Promise.resolve({
+      ok: status >= 200 && status < 300,
+      status,
+      body: stream,
+      text: () => Promise.resolve("")
+    });
   });
 }
 
@@ -276,7 +278,8 @@ describe("makeOpenRouterVisionCaller — streaming diagnostics", () => {
     const err = await caller(STREAM_REQ).catch(e => e);
     expect(err).toBeInstanceOf(ProviderJsonParseError);
     const parseErr = err as ProviderJsonParseError;
-    expect(parseErr.diagnostic.kind).toBe("invalid_json");
+    expect(parseErr.diagnostic.kind).toBe("truncated_json");
+    expect(parseErr.diagnostic.retryDecision).toBe("same_route_retry_failed");
     expect(parseErr.diagnostic.endsWithJson).toBe(false);
     expect(parseErr.diagnostic.startsWithJson).toBe(true);
     expect(parseErr.message).not.toContain('{"partial":'); // no raw body in message
@@ -308,7 +311,8 @@ describe("makeNvidiaVisionCaller — streaming diagnostics", () => {
     const err = await caller(STREAM_REQ).catch(e => e);
     expect(err).toBeInstanceOf(ProviderJsonParseError);
     const parseErr = err as ProviderJsonParseError;
-    expect(parseErr.diagnostic.kind).toBe("invalid_json");
+    expect(parseErr.diagnostic.kind).toBe("truncated_json");
+    expect(parseErr.diagnostic.retryDecision).toBe("same_route_retry_failed");
     expect(parseErr.diagnostic.endsWithJson).toBe(false);
     expect(parseErr.message).not.toContain('{"result":');
   });

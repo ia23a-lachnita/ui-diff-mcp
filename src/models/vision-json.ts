@@ -6,22 +6,28 @@ export class ProviderJsonParseError extends Error {
   readonly diagnostic: ProviderFailureDiagnostic;
 
   constructor(provider: "openrouter" | "nvidia", diagnostic: ProviderFailureDiagnostic) {
-    super(`${provider} response content is not valid JSON`);
+    super(`${provider} structured response failed: ${diagnostic.kind}`);
     this.name = "ProviderJsonParseError";
     this.diagnostic = diagnostic;
   }
 }
 
-function buildInvalidJsonDiagnostic(rawContent: string, streamCompleted: boolean): ProviderFailureDiagnostic {
+function buildContentDiagnostic(
+  rawContent: string,
+  streamCompleted: boolean,
+  kind: ProviderFailureDiagnostic["kind"],
+  finishReason?: string
+): ProviderFailureDiagnostic {
   const trimmed = rawContent.trim();
   return {
-    kind: "invalid_json",
+    kind,
     rawContentLength: rawContent.length,
     firstChars: trimmed.slice(0, 300),
     lastChars: trimmed.slice(Math.max(0, trimmed.length - 300)),
     startsWithJson: trimmed.startsWith("{") || trimmed.startsWith("["),
     endsWithJson: trimmed.endsWith("}") || trimmed.endsWith("]"),
-    streamCompleted
+    streamCompleted,
+    ...(finishReason !== undefined ? { finishReason } : {})
   };
 }
 
@@ -33,12 +39,65 @@ function extractJsonFromMarkdown(raw: string): string {
   return m?.[1] !== undefined ? m[1].trim() : trimmed;
 }
 
+function schemaMatches(value: unknown, schema: Record<string, unknown>): boolean {
+  if (Array.isArray(schema["enum"]) && !(schema["enum"] as unknown[]).includes(value)) return false;
+  const type = schema["type"];
+  if (type === "object") {
+    if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+    const record = value as Record<string, unknown>;
+    const properties = (schema["properties"] ?? {}) as Record<string, Record<string, unknown>>;
+    const required = (schema["required"] ?? []) as string[];
+    if (required.some(key => !(key in record))) return false;
+    if (schema["additionalProperties"] === false && Object.keys(record).some(key => !(key in properties))) return false;
+    return Object.entries(properties).every(([key, child]) => !(key in record) || schemaMatches(record[key], child));
+  }
+  if (type === "array") {
+    if (!Array.isArray(value)) return false;
+    const items = schema["items"] as Record<string, unknown> | undefined;
+    return items === undefined || value.every(item => schemaMatches(item, items));
+  }
+  if (type === "string") return typeof value === "string";
+  if (type === "number") return typeof value === "number" && Number.isFinite(value);
+  if (type === "integer") return typeof value === "number" && Number.isInteger(value);
+  if (type === "boolean") return typeof value === "boolean";
+  return true;
+}
+
+export function parseVisionJsonContent(
+  provider: "openrouter" | "nvidia",
+  rawContent: string,
+  schema: Record<string, unknown>,
+  streamCompleted: boolean,
+  finishReason?: string
+): unknown {
+  const normalized = extractJsonFromMarkdown(rawContent);
+  if (normalized.length === 0) {
+    throw new ProviderJsonParseError(provider, buildContentDiagnostic(rawContent, streamCompleted, "empty_content", finishReason));
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(normalized);
+  } catch {
+    const startsWithJson = normalized.startsWith("{") || normalized.startsWith("[");
+    const endsWithJson = normalized.endsWith("}") || normalized.endsWith("]");
+    throw new ProviderJsonParseError(
+      provider,
+      buildContentDiagnostic(rawContent, streamCompleted, startsWithJson && !endsWithJson ? "truncated_json" : "invalid_json", finishReason)
+    );
+  }
+  if (!schemaMatches(parsed, schema)) {
+    throw new ProviderJsonParseError(provider, buildContentDiagnostic(rawContent, streamCompleted, "schema_invalid", finishReason));
+  }
+  return parsed;
+}
+
 export interface VisionJsonRequest {
   prompt: string;
   images: string[];
   jsonSchema: { name: string; schema: Record<string, unknown> };
   timeoutMs: number;
   jsonMode?: "json_schema" | "json_object" | "parser_only";
+  maxOutputTokens?: number;
 }
 
 export interface VisionJsonResponse {
@@ -48,6 +107,8 @@ export interface VisionJsonResponse {
   provider: string;
   usage?: { prompt_tokens?: number; completion_tokens?: number };
   ttftMs?: number | null;
+  finishReason?: string;
+  retryDecision?: "same_route_compact_retry";
 }
 
 export type VisionJsonCaller = (req: VisionJsonRequest) => Promise<VisionJsonResponse>;
@@ -59,7 +120,7 @@ export interface SelectedVisionModel {
   callVisionJson: VisionJsonCaller;
 }
 
-export function makeOpenRouterVisionCaller(apiKey: string, model: string): VisionJsonCaller {
+function makeOpenRouterSingleCaller(apiKey: string, model: string): VisionJsonCaller {
   return async (req) => {
     const requestStartTime = Date.now();
     const content: Array<
@@ -81,6 +142,7 @@ export function makeOpenRouterVisionCaller(apiKey: string, model: string): Visio
       model,
       messages: [{ role: "user" as const, content }],
       stream: true,
+      max_tokens: req.maxOutputTokens ?? 2048,
     };
     if (responseFormat !== undefined) {
       body["response_format"] = responseFormat;
@@ -151,6 +213,9 @@ export function makeOpenRouterVisionCaller(apiKey: string, model: string): Visio
               if (message.model && !completion.model) {
                 completion.model = message.model;
               }
+              if (message.choices?.[0]?.finish_reason) {
+                completion.finishReason = message.choices[0].finish_reason;
+              }
 
             } catch (parseError) {
               console.warn("Error parsing OpenRouter stream chunk:", parseError);
@@ -163,12 +228,7 @@ export function makeOpenRouterVisionCaller(apiKey: string, model: string): Visio
       reader.releaseLock();
     }
 
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(extractJsonFromMarkdown(fullContent));
-    } catch {
-      throw new ProviderJsonParseError("openrouter", buildInvalidJsonDiagnostic(fullContent, streamCompleted));
-    }
+    const parsed = parseVisionJsonContent("openrouter", fullContent, req.jsonSchema.schema, streamCompleted, completion.finishReason);
 
     return {
       parsed,
@@ -176,14 +236,40 @@ export function makeOpenRouterVisionCaller(apiKey: string, model: string): Visio
       model: completion.model ?? model,
       provider: "openrouter",
       ...(completion.usage !== undefined ? { usage: completion.usage } : {}),
-      ttftMs
+      ttftMs,
+      ...(completion.finishReason !== undefined ? { finishReason: completion.finishReason } : {})
     };
   };
 }
 
+function withStructuredRetry(single: VisionJsonCaller): VisionJsonCaller {
+  return async req => {
+    try {
+      return await single(req);
+    } catch (err) {
+      if (!(err instanceof ProviderJsonParseError) || !["truncated_json", "schema_invalid"].includes(err.diagnostic.kind)) throw err;
+      try {
+        const retried = await single({
+          ...req,
+          prompt: `${req.prompt}\nReturn the smallest valid JSON object matching the schema. No prose.`,
+          maxOutputTokens: Math.max(req.maxOutputTokens ?? 0, 4096)
+        });
+        return { ...retried, retryDecision: "same_route_compact_retry" };
+      } catch (retryErr) {
+        if (retryErr instanceof ProviderJsonParseError) retryErr.diagnostic.retryDecision = "same_route_retry_failed";
+        throw retryErr;
+      }
+    }
+  };
+}
+
+export function makeOpenRouterVisionCaller(apiKey: string, model: string): VisionJsonCaller {
+  return withStructuredRetry(makeOpenRouterSingleCaller(apiKey, model));
+}
+
 const NVIDIA_DEFAULT_BASE_URL = "https://integrate.api.nvidia.com/v1";
 
-export function makeNvidiaVisionCaller(apiKey: string, model: string, baseUrl?: string): VisionJsonCaller {
+function makeNvidiaSingleCaller(apiKey: string, model: string, baseUrl?: string): VisionJsonCaller {
   const endpoint = (baseUrl ?? NVIDIA_DEFAULT_BASE_URL).replace(/\/$/, "");
   return async (req) => {
     const requestStartTime = Date.now();
@@ -206,6 +292,7 @@ export function makeNvidiaVisionCaller(apiKey: string, model: string, baseUrl?: 
       model,
       messages: [{ role: "user" as const, content }],
       stream: true,
+      max_tokens: req.maxOutputTokens ?? 2048,
     };
     if (responseFormat !== undefined) {
       body["response_format"] = responseFormat;
@@ -276,6 +363,9 @@ export function makeNvidiaVisionCaller(apiKey: string, model: string, baseUrl?: 
               if (message.model && !completion.model) {
                 completion.model = message.model;
               }
+              if (message.choices?.[0]?.finish_reason) {
+                completion.finishReason = message.choices[0].finish_reason;
+              }
             } catch (parseError) {
               console.warn("Error parsing NVIDIA stream chunk:", parseError);
             }
@@ -287,12 +377,7 @@ export function makeNvidiaVisionCaller(apiKey: string, model: string, baseUrl?: 
       reader.releaseLock();
     }
 
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(extractJsonFromMarkdown(fullContent));
-    } catch {
-      throw new ProviderJsonParseError("nvidia", buildInvalidJsonDiagnostic(fullContent, streamCompleted));
-    }
+    const parsed = parseVisionJsonContent("nvidia", fullContent, req.jsonSchema.schema, streamCompleted, completion.finishReason);
 
     return {
       parsed,
@@ -300,7 +385,12 @@ export function makeNvidiaVisionCaller(apiKey: string, model: string, baseUrl?: 
       model: completion.model ?? model,
       provider: "nvidia",
       ...(completion.usage !== undefined ? { usage: completion.usage } : {}),
-      ttftMs
+      ttftMs,
+      ...(completion.finishReason !== undefined ? { finishReason: completion.finishReason } : {})
     };
   };
+}
+
+export function makeNvidiaVisionCaller(apiKey: string, model: string, baseUrl?: string): VisionJsonCaller {
+  return withStructuredRetry(makeNvidiaSingleCaller(apiKey, model, baseUrl));
 }

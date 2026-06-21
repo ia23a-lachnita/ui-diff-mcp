@@ -333,25 +333,25 @@ Commit message: `fix(audit): report successful audit coverage honestly`
 - Consumes: provider content and finish metadata
 - Produces: distinct `truncated_json`, `empty_content`, `schema_invalid`, and `timeout` outcomes plus bounded retry/failover behavior
 
-- [ ] **Step 1: Add exact live-failure fixtures**
+- [x] **Step 1: Add exact live-failure fixtures**
 
 Cover the observed 564-character truncated auditor JSON, zero-length Nemotron content, 416-character truncated recovery JSON, and a timeout. Assert safe diagnostic snippets remain in provider trace.
 
-- [ ] **Step 2: Verify the tests fail**
+- [x] **Step 2: Verify the tests fail**
 
 Run: `npx vitest run tests/unit/vision-json.test.ts tests/unit/fallback-caller.test.ts tests/unit/provider-trace.test.ts`
 
 Expected: FAIL because all malformed responses currently collapse to generic invalid JSON.
 
-- [ ] **Step 3: Implement bounded response recovery**
+- [x] **Step 3: Implement bounded response recovery**
 
 Use provider JSON-schema mode where supported. For non-empty truncated JSON, retry the same route once with a compact response instruction and an adequate role-specific output-token budget. Empty content marks the route unhealthy immediately. Schema-invalid complete JSON may receive one schema-correction retry. Never auto-complete or repair semantic JSON in code.
 
-- [ ] **Step 4: Preserve precise diagnostics and terminal state**
+- [x] **Step 4: Preserve precise diagnostics and terminal state**
 
 Record finish reason, content length, start/end JSON flags, retry decision, and terminal route outcome. After terminal exhaustion, subsequent calls short-circuit without duplicate provider events.
 
-- [ ] **Step 5: Verify, update tracking, commit, and push**
+- [x] **Step 5: Verify, update tracking, commit, and push**
 
 Run: `npm run verify`
 

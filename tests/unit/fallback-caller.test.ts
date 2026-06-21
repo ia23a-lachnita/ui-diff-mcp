@@ -143,6 +143,15 @@ describe("diagnostic field on trace events", () => {
     expect(serialized).not.toContain(rawBody);
   });
 
+  it("records timeout as a distinct safe diagnostic", async () => {
+    const timeout = new Error("NVIDIA request failed: AbortError timeout");
+    const c1 = cand(vi.fn().mockRejectedValue(timeout), "nvidia", "m1");
+    const c2 = cand(vi.fn().mockResolvedValue(ok2), "openrouter", "m2");
+    const events: ProviderTraceEvent[] = [];
+    await makeFallbackVisionCaller([c1, c2], undefined, event => events.push({ eventId: "x", ...event } as ProviderTraceEvent))(dummyReq);
+    expect(events.find(event => event.event === "call_error")?.diagnostic?.kind).toBe("timeout");
+  });
+
   it("includes diagnostic.kind=http_error with httpStatus=429 on rate-limit error", async () => {
     const c1 = cand(vi.fn().mockRejectedValue(new Error("OpenRouter HTTP 429: rate limited")), "openrouter", "m1");
     const c2 = cand(vi.fn().mockResolvedValue(ok2), "nvidia", "m2");

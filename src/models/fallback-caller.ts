@@ -32,6 +32,7 @@ export interface FallbackEvent {
 }
 
 export function isRetryableProviderError(err: unknown): boolean {
+  if (err instanceof ProviderJsonParseError) return true;
   if (!(err instanceof Error)) return false;
   const msg = err.message;
   // Retry on rate limit, server errors, network failures, and malformed/truncated
@@ -94,7 +95,9 @@ export function makeFallbackVisionCaller(
           completedAt,
           durationMs: Date.now() - callStart,
           status: "ok",
-          ...(result.ttftMs != null ? { ttftMs: result.ttftMs } : {})
+          ...(result.ttftMs != null ? { ttftMs: result.ttftMs } : {}),
+          ...(result.finishReason !== undefined ? { finishReason: result.finishReason } : {}),
+          ...(result.retryDecision !== undefined ? { retryDecision: result.retryDecision } : {})
         });
         return result;
       } catch (err) {

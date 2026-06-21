@@ -40,6 +40,7 @@ export async function callOpenRouterVisionJson(
   const body = {
     model: req.model,
     messages: [{ role: "user" as const, content }],
+    max_tokens: 2048,
     response_format: {
       type: "json_schema",
       json_schema: {
@@ -80,16 +81,11 @@ export async function callOpenRouterVisionJson(
   const completion = json as {
     model?: string;
     usage?: { prompt_tokens?: number; completion_tokens?: number };
-    choices?: Array<{ message?: { content?: string } }>;
+    choices?: Array<{ message?: { content?: string }; finish_reason?: string }>;
   };
 
   const rawContent = completion.choices?.[0]?.message?.content ?? "";
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(rawContent);
-  } catch {
-    throw new Error(`OpenRouter response content is not valid JSON: ${rawContent.slice(0, 200)}`);
-  }
+  const parsed = parseVisionJsonContent("openrouter", rawContent, req.jsonSchema.schema, true, completion.choices?.[0]?.finish_reason);
 
   return {
     parsed,
@@ -98,3 +94,4 @@ export async function callOpenRouterVisionJson(
     ...(completion.usage !== undefined ? { usage: completion.usage } : {})
   };
 }
+import { parseVisionJsonContent } from "./vision-json.js";
