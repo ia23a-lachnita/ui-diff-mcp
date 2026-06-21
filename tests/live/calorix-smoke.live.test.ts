@@ -250,22 +250,29 @@ describe.skipIf(!calorixFullLive)("verify:calorix-full-live unbounded all-target
       // It always blocks production release, even when the trace explains the failure.
       if (report.visualClassificationStatus === "incomplete") {
         console.warn(
-          "[DEGRADED PASS] visualClassificationStatus is incomplete — free-tier provider routes exhausted." +
+          "[DEGRADED PASS] visualClassificationStatus is incomplete — inspect auditScope, recoverySummary, and provider trace." +
           " Production release is BLOCKED until full classification completes."
         );
         const ptFullPath = report.runArtifacts.find(a => a.role === "provider_trace")?.path;
-        if (ptFullPath) {
-          const ptFull = JSON.parse(await fs.readFile(ptFullPath, "utf8")) as Array<{ event: string; role: string }>;
-          expect(ptFull.some(e => e.event === "route_exhausted" && e.role === "target_recovery"),
-            "incomplete classification must have route_exhausted target_recovery events in provider trace").toBe(true);
+        expect(ptFullPath, "incomplete classification must include a provider trace").toBeTruthy();
+        const ptFull = JSON.parse(await fs.readFile(ptFullPath!, "utf8")) as Array<{ event: string; role: string }>;
+        if (report.auditScope?.stoppedReason === "route_exhausted") {
+          expect(ptFull.some(e => e.event === "route_exhausted" && e.role === "auditor"),
+            "audit route exhaustion must have a matching auditor event in provider trace").toBe(true);
+        }
+        if (report.recoverySummary?.stoppedReason && report.recoverySummary.stoppedReason !== "none") {
+          expect(report.unresolvedRegions.length,
+            `recovery stopped with ${report.recoverySummary.stoppedReason}, so unresolved regions must remain`).toBeGreaterThan(0);
         }
       }
 
-      // At least one diff must have gone through model review, not only pixel noise or deterministic checks.
-      // Deterministic records use reviewerStatus="accepted", so model must also be non-deterministic.
+      // At least one diff must be semantically classified by the auditor/reviewer or recovery model,
+      // rather than all findings coming from deterministic checks.
       expect(report.diffs.length, "at least one diff must be reported").toBeGreaterThan(0);
-      const reviewedDiffs = report.diffs.filter(d => d.reviewerStatus !== "not_reviewed" && d.model !== "deterministic");
-      expect(reviewedDiffs.length, "at least one diff must be accepted or rejected by the VLM reviewer (not deterministic-only)").toBeGreaterThan(0);
+      const modelClassifiedDiffs = report.diffs.filter(d =>
+        d.classificationSource === "vlm_reviewed" || d.classificationSource === "target_recovery"
+      );
+      expect(modelClassifiedDiffs.length, "at least one diff must be model-classified (not deterministic-only)").toBeGreaterThan(0);
 
       // Projection mode: expected locator must be complete; actual is projected (not independently located).
       expect(report.locatorMetadata?.expected?.status, "expected image locator coverage must be complete").toBe("complete");
