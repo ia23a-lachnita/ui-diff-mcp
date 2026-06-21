@@ -80,9 +80,10 @@ export function parseVisionJsonContent(
   } catch {
     const startsWithJson = normalized.startsWith("{") || normalized.startsWith("[");
     const endsWithJson = normalized.endsWith("}") || normalized.endsWith("]");
+    const providerStoppedAtLength = finishReason === "length";
     throw new ProviderJsonParseError(
       provider,
-      buildContentDiagnostic(rawContent, streamCompleted, startsWithJson && !endsWithJson ? "truncated_json" : "invalid_json", finishReason)
+      buildContentDiagnostic(rawContent, streamCompleted, startsWithJson && (!endsWithJson || providerStoppedAtLength) ? "truncated_json" : "invalid_json", finishReason)
     );
   }
   if (!schemaMatches(parsed, schema)) {

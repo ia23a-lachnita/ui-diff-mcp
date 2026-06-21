@@ -39,6 +39,18 @@ describe("parseVisionJsonContent", () => {
     }
   });
 
+  it("trusts a provider length finish over a misleading closing bracket", () => {
+    const raw = '{"hasDiff":true,"evidence":["unfinished",]}';
+    try { parseVisionJsonContent("nvidia", raw, schema, true, "length"); } catch (caught) {
+      expect((caught as ProviderJsonParseError).diagnostic).toMatchObject({
+        kind: "truncated_json",
+        startsWithJson: true,
+        endsWithJson: true,
+        finishReason: "length"
+      });
+    }
+  });
+
   it("classifies complete JSON that violates the response schema as schema_invalid", () => {
     try { parseVisionJsonContent("openrouter", '{"evidence":[]}', schema, true, "stop"); } catch (caught) {
       expect((caught as ProviderJsonParseError).diagnostic).toMatchObject({ kind: "schema_invalid", startsWithJson: true, endsWithJson: true });
