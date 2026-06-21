@@ -2,12 +2,41 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { UiDiffReportSchema } from "../../src/schemas/core.js";
+import type { UiDiffReport } from "../../src/schemas/core.js";
 import { startUiDiffMcpClient } from "../helpers/mcp-client.js";
 import { ensureSidecarRunning, type SidecarHandle } from "../helpers/sidecar-manager.js";
 
 const calorixLive = process.env["RUN_CALORIX_UI_DIFF_LIVE"] === "1";
 const calorixFullLive = process.env["RUN_CALORIX_FULL_LIVE"] === "1";
 const calorixReleaseLive = process.env["RUN_CALORIX_RELEASE_LIVE"] === "1";
+
+function overlapRatio(a: { x: number; y: number; width: number; height: number }, b: { x: number; y: number; width: number; height: number }): number {
+  const width = Math.max(0, Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x));
+  const height = Math.max(0, Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y));
+  return (width * height) / Math.min(a.width * a.height, b.width * b.height);
+}
+
+function assertFinalFindingIntegrity(report: UiDiffReport): void {
+  expect(report.diffs.every(diff => diff.criterion !== "unclassified_visual_change"), "raw/unclassified regions must never be final findings").toBe(true);
+  const projectedRoles = ["projected_expected_crop", "projected_actual_crop", "projected_directional_overlay", "projected_pixel_diff_mask"] as const;
+  for (const diff of report.diffs.filter(item => item.classificationSource === "deterministic_projected_mismatch")) {
+    const artifactRoles = new Set(diff.artifactPaths.map(artifact => artifact.role));
+    for (const requiredRole of projectedRoles) {
+      expect(artifactRoles.has(requiredRole), `projected diff ${diff.id} must have ${requiredRole}`).toBe(true);
+    }
+  }
+  const childIds = report.diffs.flatMap(diff => diff.childFindingIds ?? []);
+  expect(new Set(childIds).size, "consolidated child finding IDs must be globally unique").toBe(childIds.length);
+  for (let i = 0; i < report.diffs.length; i++) {
+    for (let j = i + 1; j < report.diffs.length; j++) {
+      const a = report.diffs[i]!;
+      const b = report.diffs[j]!;
+      const sharedTarget = (a.targetIds ?? []).some(id => (b.targetIds ?? []).includes(id));
+      expect(sharedTarget && a.criterion === b.criterion && overlapRatio(a.location, b.location) >= 0.7,
+        `duplicate final findings ${a.id} and ${b.id} share target, criterion, and location`).toBe(false);
+    }
+  }
+}
 
 describe.skipIf(!calorixLive)("Calorix live UI diff smoke", () => {
   let sidecarHandle: SidecarHandle | undefined;
@@ -51,10 +80,11 @@ describe.skipIf(!calorixLive)("Calorix live UI diff smoke", () => {
         if (statusOut.status !== "running") break;
       }
       expect(statusOut?.status, "run must terminate — not hang").not.toBe("running");
-      expect(statusOut?.status, `run must complete, got: ${statusOut?.status}`).toBe("complete");
+      expect(statusOut?.status, `run must complete, got: ${statusOut?.status}; child=${JSON.stringify(started.getDiagnostics())}`).toBe("complete");
       expect(statusOut?.reportPath).toBeTruthy();
 
       const report = UiDiffReportSchema.parse(JSON.parse(await fs.readFile(statusOut!.reportPath!, "utf8")));
+      started.recordRunStatus(report.status);
       expect(path.resolve(statusOut!.reportPath!).includes(`${path.sep}.ui-diff${path.sep}runs${path.sep}`)).toBe(true);
 
       // Locator must have found elements with adequate coverage — weak or failed is a gate failure
@@ -175,10 +205,11 @@ describe.skipIf(!calorixFullLive)("verify:calorix-full-live unbounded all-target
         if (statusOut.status !== "running") break;
       }
       expect(statusOut?.status, "run must terminate — not hang").not.toBe("running");
-      expect(statusOut?.status, `run must complete, got: ${statusOut?.status}`).toBe("complete");
+      expect(statusOut?.status, `run must complete, got: ${statusOut?.status}; child=${JSON.stringify(started.getDiagnostics())}`).toBe("complete");
       expect(statusOut?.reportPath).toBeTruthy();
 
       const report = UiDiffReportSchema.parse(JSON.parse(await fs.readFile(statusOut!.reportPath!, "utf8")));
+      started.recordRunStatus(report.status);
       expect(report.auditScope?.auditLimited ?? false).toBe(false);
 
       // Pair accounting: every pair must be handled by exactly one path (pre-audit or VLM).
@@ -193,11 +224,12 @@ describe.skipIf(!calorixFullLive)("verify:calorix-full-live unbounded all-target
       }
 
       // All accepted diffs must have classificationSource — no untagged diffs allowed
-      const untaggedFullDiffs = report.diffs.filter(d => d.reviewerStatus !== "rejected" && !d.classificationSource);
+      const untaggedFullDiffs = report.diffs.filter(d => d.reviewerStatus === "accepted" && !d.classificationSource);
       expect(
         untaggedFullDiffs.length,
         "all accepted diffs must have classificationSource"
       ).toBe(0);
+      assertFinalFindingIntegrity(report);
 
       // Locator must have found elements with adequate coverage — weak or failed is a gate failure
       expect(report.locatorCoverageStatus, "locator coverage must not be weak or failed").not.toMatch(/^(failed|weak)$/);
@@ -367,11 +399,13 @@ describe.skipIf(!calorixReleaseLive)("Calorix release sign-off gate", () => {
         if (statusOut.status !== "running") break;
       }
       expect(statusOut?.status, "run must terminate — not hang").not.toBe("running");
-      expect(statusOut?.status, `release gate requires complete status, got: ${statusOut?.status}`).toBe("complete");
+      expect(statusOut?.status, `release gate requires complete status, got: ${statusOut?.status}; child=${JSON.stringify(started.getDiagnostics())}`).toBe("complete");
 
       const report = UiDiffReportSchema.parse(JSON.parse(await fs.readFile(statusOut!.reportPath!, "utf8")));
+      started.recordRunStatus(report.status);
 
       expect(report.status, "release gate requires report status=complete").toBe("complete");
+      expect(report.isCheckpoint, "release gate requires a durable final report, not a checkpoint").toBe(false);
       expect(
         report.visualClassificationStatus,
         "release gate requires complete visual classification — incomplete means free auditor routes were exhausted"
@@ -382,6 +416,15 @@ describe.skipIf(!calorixReleaseLive)("Calorix release sign-off gate", () => {
         "release gate requires auditLimited=false"
       ).toBe(false);
 
+      expect(report.unresolvedRegions, "release gate requires zero unresolved canonical regions").toHaveLength(0);
+      expect(report.auditScope?.stoppedReason ?? "none", "release gate must not have terminal route exhaustion").toBe("none");
+      expect(report.auditScope?.remainingPairs ?? 0, "release gate requires zero remaining audit pairs").toBe(0);
+      const selectedPairs = report.auditScope?.selectedPairs ?? report.auditScope?.auditedPairs ?? 0;
+      const providerCalledPairs = report.auditScope?.providerCalledPairs ?? report.auditScope?.vlmAuditedPairs ?? 0;
+      const skippedNoTrigger = report.auditScope?.skippedNoTriggeredPairs ?? 0;
+      expect(providerCalledPairs + skippedNoTrigger, "every selected pair must be provider-called or deterministically skipped before call").toBe(selectedPairs);
+      expect(report.auditScope?.failedPairs ?? 0, "release gate requires zero failed audit pairs").toBe(0);
+
       const escalatedDiffs = report.diffs.filter(d => d.reviewerStatus === "needs_escalation");
       expect(
         escalatedDiffs.length,
@@ -389,13 +432,12 @@ describe.skipIf(!calorixReleaseLive)("Calorix release sign-off gate", () => {
       ).toBe(0);
 
       // Every accepted diff must have a classificationSource — no untagged diffs allowed at release.
-      const untaggedAcceptedDiffs = report.diffs.filter(d =>
-        d.reviewerStatus !== "rejected" && !d.classificationSource
-      );
+      const untaggedAcceptedDiffs = report.diffs.filter(d => d.reviewerStatus === "accepted" && !d.classificationSource);
       expect(
         untaggedAcceptedDiffs.length,
         "release gate must not pass with accepted diffs missing classificationSource"
       ).toBe(0);
+      assertFinalFindingIntegrity(report);
 
       // Unclassified recovery leftovers must be zero for production release.
       expect(
@@ -412,7 +454,7 @@ describe.skipIf(!calorixReleaseLive)("Calorix release sign-off gate", () => {
           "when viewport is mismatch, source crops must preserve original pixels"
         ).toBe(true);
         const unsafeDiffs = report.diffs.filter(d =>
-          d.reviewerStatus !== "rejected" &&
+          d.reviewerStatus === "accepted" &&
           d.classificationSource !== "vlm_reviewed" &&
           d.classificationSource !== "target_recovery" &&
           d.classificationSource !== "deterministic_projected_mismatch" &&

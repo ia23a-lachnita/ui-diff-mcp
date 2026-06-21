@@ -452,11 +452,11 @@ Commit message: `fix(runs): persist honest resumable checkpoint state`
 - Consumes: final findings, unresolved regions, new audit scope, provider traces, checkpoint state
 - Produces: bounded diagnostic, full diagnostic, and strict release evidence with unambiguous pass/fail semantics
 
-- [ ] **Step 1: Fix accepted-finding predicates**
+- [x] **Step 1: Fix accepted-finding predicates**
 
 Use `reviewerStatus === "accepted"` for accepted findings. Assert separately that release has zero `needs_escalation`, zero unresolved regions, no route exhaustion, and complete successful-audit accounting.
 
-- [ ] **Step 2: Add duplicate and artifact assertions**
+- [x] **Step 2: Add duplicate and artifact assertions**
 
 Assert no final finding is `unclassified_visual_change`; every projected deterministic finding has expected/actual/overlay/mask artifacts; consolidated child IDs are unique; and no two final findings share parent, criterion, and strongly overlapping location.
 

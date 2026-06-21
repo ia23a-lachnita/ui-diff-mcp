@@ -19,7 +19,7 @@ export async function startUiDiffMcpClient(
     if (value !== undefined) env[key] = value;
   }
   const transport = new StdioClientTransport({
-    command: "node",
+    command: process.execPath,
     args: ["dist/src/index.js"],
     cwd: process.cwd(),
     env,
