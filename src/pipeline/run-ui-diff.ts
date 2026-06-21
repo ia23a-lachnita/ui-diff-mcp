@@ -6,6 +6,7 @@ import { loadNormalizedImage } from "../images/normalize.js";
 import { createImagePairTransform } from "../images/coordinates.js";
 import { computeViewportCompatibility } from "../images/viewport.js";
 import { buildRegionLedger, applyFindingCoverage, unresolvedRegionsFromLedger, type RegionLedger } from "../report/region-ledger.js";
+import { consolidateFindings } from "../report/finding-consolidation.js";
 import { writeOverlay, writeJsonArtifact } from "../images/artifacts.js";
 import { computePixelDiff } from "../signals/pixel-diff.js";
 import { extractEdgeMask } from "../signals/edge.js";
@@ -764,7 +765,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
       ? "recovery_budget_exhausted" as const
       : "not_classified" as const;
   const unresolvedRegions = unresolvedRegionsFromLedger(regionLedger, unresolvedReason);
-  const finalDiffs = allDiffs;
+  const finalDiffs = consolidateFindings(allDiffs, [...expectedElements, ...actualElements], pairs);
 
   // Write debug trace artifacts and attach summary to the report
   const debugArtifactsResult = await writeRunDebugArtifacts(artifactRoot, debugTrace);

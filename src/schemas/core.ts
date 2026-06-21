@@ -212,6 +212,11 @@ export const UnassignedVisualEvidenceSchema = z.object({
 });
 export type UnassignedVisualEvidence = z.infer<typeof UnassignedVisualEvidenceSchema>;
 
+const DefaultedIdArraySchema = z.preprocess(
+  value => value ?? [],
+  z.array(z.string().min(1)).optional()
+);
+
 export const DiffRecordSchema = z.object({
   id: z.string().min(1),
   pairId: z.string().optional(),
@@ -222,6 +227,8 @@ export const DiffRecordSchema = z.object({
   evidence: z.array(z.string().min(1)).min(1),
   measurements: z.array(DeterministicMeasurementSchema).default([]),
   artifactPaths: z.array(UiArtifactSchema).default([]),
+  childFindingIds: DefaultedIdArraySchema,
+  targetIds: DefaultedIdArraySchema,
   reviewerStatus: z.enum(["accepted", "rejected", "needs_escalation", "not_reviewed"]),
   model: z.string().optional(),
   classificationSource: z.enum([

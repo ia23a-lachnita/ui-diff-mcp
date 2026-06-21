@@ -167,7 +167,7 @@ Commit message: `fix(coverage): keep canonical clustered regions through reporti
 - Consumes: deterministic, projected, VLM-reviewed, and recovery findings plus the expected element hierarchy
 - Produces: consolidated `DiffRecord[]` with `childFindingIds`, `targetIds`, and preserved evidence/artifacts
 
-- [ ] **Step 1: Write fragment-consolidation tests**
+- [x] **Step 1: Write fragment-consolidation tests**
 
 Cover:
 
@@ -177,21 +177,21 @@ Cover:
 - different criteria on the same parent remain separate findings.
 - anonymous/unknown containing boxes cannot become consolidation parents.
 
-- [ ] **Step 2: Verify the tests fail**
+- [x] **Step 2: Verify the tests fail**
 
 Run: `npx vitest run tests/unit/finding-consolidation.test.ts`
 
 Expected: FAIL because current deduplication keys only criterion plus pair/location.
 
-- [ ] **Step 3: Implement hierarchy-aware consolidation**
+- [x] **Step 3: Implement hierarchy-aware consolidation**
 
 Resolve each finding to the smallest common stable parent using `parentId`, `childIds`, containment, and pair ownership. Parent eligibility is restricted to semantic types `card`, `chart`, `nav`, `list_item`, `button`, and `image`; `unknown`, `text`, `icon`, anonymous CV containers, and generic merged wrappers cannot own a consolidation group. Consolidate only when parent identity and the exact criterion agree. If there is no eligible parent, require the same pair ID plus strong box containment/overlap. Preserve every child artifact and evidence string; never merge by proximity alone.
 
-- [ ] **Step 4: Add consolidation metadata**
+- [x] **Step 4: Add consolidation metadata**
 
 Extend `DiffRecordSchema` with defaulted `childFindingIds` and `targetIds`. The consolidated title names the parent visual object, while child evidence names affected subparts.
 
-- [ ] **Step 5: Verify, update tracking, commit, and push**
+- [x] **Step 5: Verify, update tracking, commit, and push**
 
 Run: `npm run verify`
 
