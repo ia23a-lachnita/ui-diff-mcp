@@ -5,7 +5,7 @@ import { resolveInputImagePath, createRunDirectory } from "../security/paths.js"
 import { loadNormalizedImage } from "../images/normalize.js";
 import { createImagePairTransform } from "../images/coordinates.js";
 import { computeViewportCompatibility } from "../images/viewport.js";
-import { buildRegionLedger, applyFindingCoverage, unresolvedRegionsFromLedger, type RegionLedger } from "../report/region-ledger.js";
+import { buildRegionLedger, applyFindingCoverage, applyRecoveryOutcomes, unresolvedRegionsFromLedger, type RegionLedger } from "../report/region-ledger.js";
 import { consolidateFindings } from "../report/finding-consolidation.js";
 import { writeOverlay, writeJsonArtifact } from "../images/artifacts.js";
 import { computePixelDiff } from "../signals/pixel-diff.js";
@@ -23,13 +23,13 @@ import { estimateFreeRunBudget, lookupOpenRouterQuota, checkFreeQuotaSufficiency
 import { makeOpenRouterVisionCaller, makeNvidiaVisionCaller, type VisionMode } from "../models/vision-json.js";
 import { auditElementPair, makeElementSlug, type AuditContext } from "../audit/audit-target.js";
 import { reviewAndMergeFindings } from "../audit/review-findings.js";
-import { runTargetRecovery } from "../recovery/target-recovery.js";
+import { prepareRecoveryRegionArtifacts, runTargetRecovery } from "../recovery/target-recovery.js";
 import { writeRunDebugArtifacts, summarizeAuditPairOutcomes, type AuditPairOutcome, type RunDebugTrace } from "../debug/run-debug.js";
 import { ProviderTraceWriter, writeProviderTrace } from "../debug/provider-trace.js";
 import { buildDeterministicDiffs } from "../diff/deterministic-diffs.js";
 import { runProjectedPreAudit } from "../diff/projected-preaudit.js";
 import { writeUiDiffReport, writeReportCheckpoint } from "../report/report-writer.js";
-import type { UiDiffReport, RunStatus, VisualClassificationStatus, LocatorCoverageStatus, DiffRecord, ElementPair, UiArtifact, AuditScope, ModelSelection, RecoverySummary, StageStatus, LocatorLaneMetadata, RunDebugSummary, ProjectedPreAuditSummary } from "../schemas/core.js";
+import type { UiDiffReport, RunStatus, VisualClassificationStatus, LocatorCoverageStatus, DiffRecord, ElementPair, UiArtifact, AuditScope, ModelSelection, RecoverySummary, RecoveryCursor, StageStatus, LocatorLaneMetadata, RunDebugSummary, ProjectedPreAuditSummary } from "../schemas/core.js";
 import { computeColorEvidence } from "../signals/color.js";
 
 export interface RunInput {
@@ -180,6 +180,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
   let auditScope: AuditScope | undefined = undefined;
   let modelSelection: ModelSelection | undefined = undefined;
   let recoverySummary: RecoverySummary | undefined = undefined;
+  let recoveryCursor: RecoveryCursor | undefined = undefined;
   let regionLedger: RegionLedger | undefined;
   const debugTrace: RunDebugTrace = { audit: [], coverage: [], recovery: [] };
   const providerTrace = new ProviderTraceWriter();
@@ -211,6 +212,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
       ...(auditScope !== undefined ? { auditScope } : {}),
       ...(modelSelection !== undefined ? { modelSelection } : {}),
       ...(recoverySummary !== undefined ? { recoverySummary } : {}),
+      ...(recoveryCursor !== undefined ? { recoveryCursor } : {}),
       imageNormalization: { expected: expectedImg.metadata, actual: actualImg.metadata },
       viewportCompatibilityStatus: viewportCompatibility.status,
       viewportCompatibilityReasons: viewportCompatibility.reasons,
@@ -706,10 +708,25 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
         debugTrace.coverage = regionLedger.coverageTrace;
         const uncoveredComponents = regionLedger.regions
           .filter(region => region.state === "unresolved")
-          .map(region => ({ box: region.box, pixelCount: region.pixelCount }));
+          .map(region => ({ id: region.id, box: region.box, pixelCount: region.pixelCount }));
         const preClusterUncoveredComponents = regionLedger.coverageTrace.filter(decision => decision.status === "uncovered").length;
         const postClusterUncoveredComponents = uncoveredComponents.length;
         if (uncoveredComponents.length > 0 && !recoveryCaller) {
+          const prepared = await prepareRecoveryRegionArtifacts(uncoveredComponents, {
+            expectedRgba: { data: expectedImg.rgba, width: expectedImg.width, height: expectedImg.height },
+            actualRgba: { data: actualImg.rgba, width: actualImg.width, height: actualImg.height },
+            imagePairTransform,
+            pixelDiffMask: pixelDiff.diffMask,
+            directionalOverlayPath,
+            artifactDir: artifactRoot
+          });
+          applyRecoveryOutcomes(regionLedger, prepared.map(entry => ({
+            regionId: entry.regionId,
+            state: "unresolved" as const,
+            reason: "caller_unavailable",
+            artifactPaths: entry.artifacts
+          })));
+          recoveryCursor = { nextRegionIndex: 0, remainingModelCalls: 0, remainingRegionIds: uncoveredComponents.map(component => component.id) };
           warnings.push("Target recovery skipped: no passing target_recovery route available for current mode. Uncovered pixel regions will not be classified.");
           visualClassificationStatus = "incomplete";
           recoverySummary = {
@@ -747,6 +764,8 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
           debugTrace.recovery.push(...recoveryResult.trace);
           allDiffs.push(...recoveryResult.recovered);
           applyFindingCoverage(regionLedger, recoveryResult.recovered);
+          applyRecoveryOutcomes(regionLedger, recoveryResult.regionOutcomes);
+          recoveryCursor = recoveryResult.cursor;
           recoverySummary = {
             totalUncoveredComponents: uncoveredComponents.length,
             attemptedComponents: recoveryResult.attemptedComponents,
@@ -780,6 +799,26 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     imageHeight: expectedImg.height
   });
   applyFindingCoverage(regionLedger, allDiffs);
+  const artifactlessRegions = regionLedger.regions.filter(region => region.state === "unresolved" && region.artifactPaths.length === 0);
+  if (artifactlessRegions.length > 0) {
+    const prepared = await prepareRecoveryRegionArtifacts(
+      artifactlessRegions.map(region => ({ id: region.id, box: region.box, pixelCount: region.pixelCount })),
+      {
+        expectedRgba: { data: expectedImg.rgba, width: expectedImg.width, height: expectedImg.height },
+        actualRgba: { data: actualImg.rgba, width: actualImg.width, height: actualImg.height },
+        imagePairTransform,
+        pixelDiffMask: pixelDiff.diffMask,
+        directionalOverlayPath,
+        artifactDir: artifactRoot
+      }
+    );
+    applyRecoveryOutcomes(regionLedger, prepared.map(entry => ({
+      regionId: entry.regionId,
+      state: "unresolved" as const,
+      reason: "not_classified",
+      artifactPaths: entry.artifacts
+    })));
+  }
   const unresolvedReason = auditScope?.stoppedReason === "route_exhausted"
     ? "audit_route_exhausted" as const
     : recoverySummary?.stoppedReason === "caller_unavailable"
@@ -820,6 +859,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     ...(auditScope !== undefined ? { auditScope } : {}),
     ...(modelSelection !== undefined ? { modelSelection } : {}),
     ...(recoverySummary !== undefined ? { recoverySummary } : {}),
+    ...(recoveryCursor !== undefined ? { recoveryCursor } : {}),
     ...(projectedPreAuditSummary !== undefined ? { projectedPreAudit: projectedPreAuditSummary } : {}),
     providerDiagnosticsPresent: providerTrace.getEvents().some(e => e.diagnostic !== undefined),
     imageNormalization: { expected: expectedImg.metadata, actual: actualImg.metadata },

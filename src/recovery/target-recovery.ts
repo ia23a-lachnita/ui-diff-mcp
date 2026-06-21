@@ -207,16 +207,88 @@ export interface RecoveryResult {
   trace: RecoveryComponentTrace[];
   model?: string;
   statusCounts: Record<string, number>;
+  regionOutcomes: RecoveryRegionOutcome[];
+  cursor: RecoveryCursor;
+}
+
+export interface RecoveryCursor {
+  nextRegionIndex: number;
+  remainingModelCalls: number;
+  remainingRegionIds: string[];
+}
+
+export interface RecoveryRegionOutcome {
+  regionId: string;
+  state: "recovered" | "noise" | "unresolved";
+  reason: string;
+  artifactPaths: UiArtifact[];
+  findingId?: string;
+}
+
+export type RecoveryRegionInput = PixelComponent & { id?: string };
+
+interface PreparedRecoveryEvidence {
+  regionId: string;
+  component: RecoveryRegionInput;
+  artifacts: UiArtifact[];
+  expCrop: { data: Uint8Array; width: number; height: number };
+  actCrop: { data: Uint8Array; width: number; height: number };
+  overlayCrop: { data: Uint8Array; width: number; height: number };
+  maskCrop: { data: Uint8Array; width: number; height: number };
+}
+
+export async function prepareRecoveryRegionArtifacts(
+  regions: RecoveryRegionInput[],
+  ctx: Pick<RecoveryContext, "expectedRgba" | "actualRgba" | "imagePairTransform" | "pixelDiffMask" | "directionalOverlayPath" | "artifactDir">
+): Promise<PreparedRecoveryEvidence[]> {
+  const overlayRawResult = await sharp(ctx.directionalOverlayPath).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const overlayData = new Uint8Array(overlayRawResult.data.buffer, overlayRawResult.data.byteOffset, overlayRawResult.data.byteLength);
+  const prepared: PreparedRecoveryEvidence[] = [];
+  for (let index = 0; index < regions.length; index++) {
+    const component = regions[index]!;
+    const regionId = component.id ?? `component-${String(index + 1).padStart(4, "0")}`;
+    const safeId = regionId.replace(/[^a-zA-Z0-9_-]/g, "-");
+    const box = component.box;
+    const actBox = ctx.imagePairTransform ? projectExpectedBoxToActualSource(box, ctx.imagePairTransform) : box;
+    const expCrop = extractRgbaCrop(ctx.expectedRgba.data, ctx.expectedRgba.width, ctx.expectedRgba.height, box);
+    const actCrop = extractRgbaCrop(ctx.actualRgba.data, ctx.actualRgba.width, ctx.actualRgba.height, actBox);
+    const overlayCrop = extractRgbaCrop(overlayData, overlayRawResult.info.width, overlayRawResult.info.height, box);
+    const maskCrop = extractMaskCrop(ctx.pixelDiffMask, ctx.expectedRgba.width, ctx.expectedRgba.height, box);
+    const expCropPath = path.join(ctx.artifactDir, `recovery-${safeId}-expected.png`);
+    const actCropPath = path.join(ctx.artifactDir, `recovery-${safeId}-actual.png`);
+    const overlayPath = path.join(ctx.artifactDir, `recovery-${safeId}-overlay.png`);
+    const maskPath = path.join(ctx.artifactDir, `recovery-${safeId}-mask.png`);
+    await writePngArtifact(expCrop.data, expCrop.width, expCrop.height, expCropPath, 4);
+    await writePngArtifact(actCrop.data, actCrop.width, actCrop.height, actCropPath, 4);
+    await writePngArtifact(overlayCrop.data, overlayCrop.width, overlayCrop.height, overlayPath, 4);
+    await writePngArtifact(maskCrop.data, maskCrop.width, maskCrop.height, maskPath, 1);
+    prepared.push({
+      regionId,
+      component,
+      expCrop,
+      actCrop,
+      overlayCrop,
+      maskCrop,
+      artifacts: [
+        { role: "recovery_expected_crop", path: expCropPath },
+        { role: "recovery_actual_crop", path: actCropPath },
+        { role: "recovery_directional_overlay", path: overlayPath },
+        { role: "recovery_pixel_diff_mask", path: maskPath }
+      ]
+    });
+  }
+  return prepared;
 }
 
 export async function runTargetRecovery(
-  uncoveredComponents: PixelComponent[],
+  uncoveredComponents: RecoveryRegionInput[],
   ctx: RecoveryContext,
   budget: RecoveryBudget = makeDefaultBudget()
 ): Promise<RecoveryResult> {
   const recovered: DiffRecord[] = [];
   const trace: RecoveryComponentTrace[] = [];
   const statusCounts: Record<string, number> = {};
+  const regionOutcomes: RecoveryRegionOutcome[] = [];
   let unclassifiedCount = 0;
   let modelCallsUsed = 0;
   let stoppedReason: RecoveryResult["stoppedReason"] = "none";
@@ -232,7 +304,7 @@ export async function runTargetRecovery(
   const ranked = uncoveredComponents
     .map((component, originalIndex) => ({
       component,
-      componentId: `component-${String(originalIndex + 1).padStart(4, "0")}`
+      componentId: component.id ?? `component-${String(originalIndex + 1).padStart(4, "0")}`
     }))
     .sort((a, b) => {
       if (b.component.pixelCount !== a.component.pixelCount) return b.component.pixelCount - a.component.pixelCount;
@@ -242,9 +314,15 @@ export async function runTargetRecovery(
       if (a.component.box.y !== b.component.box.y) return a.component.box.y - b.component.box.y;
       return a.component.box.x - b.component.box.x;
     });
+  const prepared = await prepareRecoveryRegionArtifacts(
+    ranked.map(entry => ({ ...entry.component, id: entry.componentId })),
+    ctx
+  );
+  const preparedById = new Map(prepared.map(entry => [entry.regionId, entry]));
 
   // Push below-threshold traces
   for (const entry of ranked.filter(e => e.component.pixelCount < budget.minComponentPixels)) {
+    const artifacts = preparedById.get(entry.componentId)?.artifacts ?? [];
     countStatus("below_threshold");
     trace.push({
       componentId: entry.componentId,
@@ -252,8 +330,9 @@ export async function runTargetRecovery(
       componentBox: entry.component.box,
       pixelCount: entry.component.pixelCount,
       status: "below_threshold",
-      artifactPaths: []
+      artifactPaths: artifacts
     });
+    regionOutcomes.push({ regionId: entry.componentId, state: "noise", reason: "below_threshold", artifactPaths: artifacts });
   }
 
   const eligible = ranked.filter(e => e.component.pixelCount >= budget.minComponentPixels);
@@ -268,6 +347,7 @@ export async function runTargetRecovery(
   }
   for (let i = 0; i < cappedEntries.length; i++) {
     const entry = cappedEntries[i]!;
+    const artifacts = preparedById.get(entry.componentId)?.artifacts ?? [];
     countStatus("skipped_component_cap");
     unclassifiedCount++;
     trace.push({
@@ -276,13 +356,10 @@ export async function runTargetRecovery(
       componentBox: entry.component.box,
       pixelCount: entry.component.pixelCount,
       status: "skipped_component_cap",
-      artifactPaths: []
+      artifactPaths: artifacts
     });
+    regionOutcomes.push({ regionId: entry.componentId, state: "unresolved", reason: "component_cap", artifactPaths: artifacts });
   }
-
-  // Read directional overlay once for cropping
-  const overlayRawResult = await sharp(ctx.directionalOverlayPath).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
-  const overlayData = new Uint8Array(overlayRawResult.data.buffer, overlayRawResult.data.byteOffset, overlayRawResult.data.byteLength);
 
   let attemptedComponents = 0;
   let loopStoppedAt = toProcess.length;
@@ -303,36 +380,10 @@ export async function runTargetRecovery(
       break;
     }
     attemptedComponents++;
-    const evidenceId = crypto.randomBytes(6).toString("hex");
+    const evidenceId = componentId;
     const box = component.box;
-
-    // Crop expected, actual, overlay, mask
-    // Expected and overlay use comparison/expected-space box; actual uses projected box in source space.
-    const actBox = ctx.imagePairTransform
-      ? projectExpectedBoxToActualSource(box, ctx.imagePairTransform)
-      : box;
-    const expCrop = extractRgbaCrop(ctx.expectedRgba.data, imageWidth, imageHeight, box);
-    const actCrop = extractRgbaCrop(ctx.actualRgba.data, ctx.actualRgba.width, ctx.actualRgba.height, actBox);
-    const overlayCrop = extractRgbaCrop(overlayData, overlayRawResult.info.width, overlayRawResult.info.height, box);
-    const maskCrop = extractMaskCrop(ctx.pixelDiffMask, imageWidth, imageHeight, box);
-
-    // Write artifact files
-    const expCropPath = path.join(ctx.artifactDir, `recovery-${evidenceId}-expected.png`);
-    const actCropPath = path.join(ctx.artifactDir, `recovery-${evidenceId}-actual.png`);
-    const overlayPath = path.join(ctx.artifactDir, `recovery-${evidenceId}-overlay.png`);
-    const maskPath = path.join(ctx.artifactDir, `recovery-${evidenceId}-mask.png`);
-
-    await writePngArtifact(expCrop.data, expCrop.width, expCrop.height, expCropPath, 4);
-    await writePngArtifact(actCrop.data, actCrop.width, actCrop.height, actCropPath, 4);
-    await writePngArtifact(overlayCrop.data, overlayCrop.width, overlayCrop.height, overlayPath, 4);
-    await writePngArtifact(maskCrop.data, maskCrop.width, maskCrop.height, maskPath, 1);
-
-    const artifacts: UiArtifact[] = [
-      { role: "recovery_expected_crop", path: expCropPath },
-      { role: "recovery_actual_crop", path: actCropPath },
-      { role: "recovery_directional_overlay", path: overlayPath },
-      { role: "recovery_pixel_diff_mask", path: maskPath }
-    ];
+    const preparedEvidence = preparedById.get(componentId)!;
+    const { expCrop, actCrop, overlayCrop, maskCrop, artifacts } = preparedEvidence;
 
     const evidence: UnassignedVisualEvidence = {
       id: evidenceId,
@@ -392,6 +443,7 @@ export async function runTargetRecovery(
       console.error(`Recovery VLM call failed for component ${evidenceId}:`, err);
       modelCallsUsed++;
       unclassifiedCount++;
+      regionOutcomes.push({ regionId: componentId, state: "unresolved", reason: traceStatus, artifactPaths: artifacts });
       continue;
     }
     const recoveryDurationMs = Date.now() - recoveryStarted;
@@ -400,6 +452,7 @@ export async function runTargetRecovery(
     if (!vlmResponse.classified) {
       countStatus("classified_false");
       trace.push({ ...baseTrace, status: "classified_false", model: componentRecoveryModel, recoveryDurationMs });
+      regionOutcomes.push({ regionId: componentId, state: "noise", reason: "classified_false", artifactPaths: artifacts });
       continue;
     }
 
@@ -413,6 +466,7 @@ export async function runTargetRecovery(
       countStatus("missing_required_fields");
       trace.push({ ...baseTrace, status: "missing_required_fields", model: componentRecoveryModel, recoveryDurationMs });
       unclassifiedCount++;
+      regionOutcomes.push({ regionId: componentId, state: "unresolved", reason: "missing_required_fields", artifactPaths: artifacts });
       continue;
     }
 
@@ -423,6 +477,7 @@ export async function runTargetRecovery(
       countStatus("box_out_of_bounds");
       trace.push({ ...baseTrace, status: "box_out_of_bounds", model: componentRecoveryModel, recoveryDurationMs, criterion: vlmResponse.criterion });
       unclassifiedCount++;
+      regionOutcomes.push({ regionId: componentId, state: "unresolved", reason: "box_out_of_bounds", artifactPaths: artifacts });
       continue;
     }
     if (!boxOverlapsComponent(rawBox, component)) {
@@ -430,6 +485,7 @@ export async function runTargetRecovery(
       countStatus("box_no_component_overlap");
       trace.push({ ...baseTrace, status: "box_no_component_overlap", model: componentRecoveryModel, recoveryDurationMs, criterion: vlmResponse.criterion });
       unclassifiedCount++;
+      regionOutcomes.push({ regionId: componentId, state: "unresolved", reason: "box_no_component_overlap", artifactPaths: artifacts });
       continue;
     }
 
@@ -481,6 +537,7 @@ export async function runTargetRecovery(
       countStatus("recovery_rejected");
       trace.push({ ...baseTrace, status: "recovery_rejected", model: componentRecoveryModel, reviewerModel, recoveryDurationMs, reviewerDurationMs, criterion: vlmResponse.criterion });
       unclassifiedCount++;
+      regionOutcomes.push({ regionId: componentId, state: "unresolved", reason: "reviewer_rejected", artifactPaths: artifacts });
       continue;
     }
 
@@ -520,6 +577,13 @@ export async function runTargetRecovery(
       criterion: vlmResponse.criterion,
       diffId: record.id
     });
+    regionOutcomes.push({
+      regionId: componentId,
+      state: reviewDecision === "needs_escalation" ? "unresolved" : "recovered",
+      reason: reviewDecision === "needs_escalation" ? "needs_escalation" : "recovery_accepted",
+      artifactPaths: artifacts,
+      findingId: record.id
+    });
     void evidence; // evidence artifact metadata is captured in record.artifactPaths
   }
 
@@ -528,6 +592,7 @@ export async function runTargetRecovery(
     const skippedStatus = stoppedReason === "deadline_exceeded" ? "skipped_deadline" as const : "skipped_model_call_cap" as const;
     for (let i = loopStoppedAt; i < toProcess.length; i++) {
       const entry = toProcess[i]!;
+      const artifacts = preparedById.get(entry.componentId)?.artifacts ?? [];
       countStatus(skippedStatus);
       trace.push({
         componentId: entry.componentId,
@@ -535,8 +600,10 @@ export async function runTargetRecovery(
         componentBox: entry.component.box,
         pixelCount: entry.component.pixelCount,
         status: skippedStatus,
-        artifactPaths: []
+        artifactPaths: artifacts
       });
+      regionOutcomes.push({ regionId: entry.componentId, state: "unresolved", reason: stoppedReason, artifactPaths: artifacts });
+      unclassifiedCount++;
     }
   }
 
@@ -548,6 +615,12 @@ export async function runTargetRecovery(
     stoppedReason,
     trace,
     statusCounts,
+    regionOutcomes,
+    cursor: {
+      nextRegionIndex: attemptedComponents,
+      remainingModelCalls: Math.max(0, budget.maxModelCalls - modelCallsUsed),
+      remainingRegionIds: regionOutcomes.filter(outcome => outcome.state === "unresolved").map(outcome => outcome.regionId)
+    },
     ...(recoveryModel !== undefined ? { model: recoveryModel } : {})
   };
 }

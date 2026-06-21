@@ -277,7 +277,25 @@ describe("runTargetRecovery", () => {
   it("traces skipped components caused by cap", async () => {
     const components = Array.from({ length: 3 }, (_, i) => ({ box: { x: i * 20, y: 0, width: 10, height: 10 }, pixelCount: 100 }));
     const result = await runTargetRecovery(components, makeCtx(), { maxComponents: 1, maxModelCalls: 10, deadlineMs: Date.now() + 300000, minComponentPixels: 1 });
-    expect(result.trace.filter(t => t.status === "skipped_component_cap")).toHaveLength(2);
+    const skipped = result.trace.filter(t => t.status === "skipped_component_cap");
+    expect(skipped).toHaveLength(2);
+    expect(skipped.every(entry => entry.artifactPaths.length === 4)).toBe(true);
+    await Promise.all(skipped.flatMap(entry => entry.artifactPaths).map(artifact => fs.access(artifact.path)));
+    expect(result.cursor.nextRegionIndex).toBe(1);
+    expect(result.cursor.remainingRegionIds).toHaveLength(2);
+  });
+
+  it("preserves artifacts and unresolved outcomes when deadline is already exhausted", async () => {
+    const result = await runTargetRecovery([component], makeCtx(), {
+      maxComponents: 10,
+      maxModelCalls: 10,
+      deadlineMs: Date.now() - 1,
+      minComponentPixels: 1
+    });
+    expect(result.stoppedReason).toBe("deadline_exceeded");
+    expect(result.trace[0]?.status).toBe("skipped_deadline");
+    expect(result.trace[0]?.artifactPaths).toHaveLength(4);
+    expect(result.regionOutcomes[0]).toMatchObject({ state: "unresolved", reason: "deadline_exceeded" });
   });
 
   it("traces recovery_accepted for accepted diff", async () => {

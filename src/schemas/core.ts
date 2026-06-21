@@ -203,6 +203,7 @@ export const UnresolvedRegionSchema = z.object({
     "recovery_budget_exhausted",
     "interrupted"
   ]),
+  detail: z.string().max(200).optional(),
   artifactPaths: z.array(UiArtifactSchema).default([])
 }).strict();
 export type UnresolvedRegion = z.infer<typeof UnresolvedRegionSchema>;
@@ -360,6 +361,13 @@ export const RecoverySummarySchema = z.object({
 });
 export type RecoverySummary = z.infer<typeof RecoverySummarySchema>;
 
+export const RecoveryCursorSchema = z.object({
+  nextRegionIndex: z.number().int().nonnegative(),
+  remainingModelCalls: z.number().int().nonnegative(),
+  remainingRegionIds: z.array(z.string().min(1)).default([])
+});
+export type RecoveryCursor = z.infer<typeof RecoveryCursorSchema>;
+
 export const AuditDecisionStatusSchema = z.enum([
   "criterion_not_triggered",
   "auditor_has_diff",
@@ -513,6 +521,7 @@ export const UiDiffReportSchema = z.object({
   }).optional(),
   providerDiagnosticsPresent: z.boolean().optional(),
   recoverySummary: RecoverySummarySchema.optional(),
+  recoveryCursor: RecoveryCursorSchema.optional(),
   stages: z.array(StageStatusSchema).default([]),
   debugSummary: RunDebugSummarySchema.optional()
 });

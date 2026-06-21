@@ -3,6 +3,7 @@ import type { PixelComponent } from "../signals/pixel-diff.js";
 import { intersect } from "../signals/geometry.js";
 import { clusterUncoveredComponentsWithMembers } from "./component-clustering.js";
 import { traceCoverageDecisions } from "./coverage.js";
+import type { RecoveryRegionOutcome } from "../recovery/target-recovery.js";
 
 export interface CanonicalRegion {
   id: string;
@@ -12,6 +13,7 @@ export interface CanonicalRegion {
   state: "unresolved" | "covered" | "recovered" | "noise";
   coveringFindingIds: string[];
   artifactPaths: UiArtifact[];
+  unresolvedDetail?: string;
 }
 
 export interface RegionLedger {
@@ -90,6 +92,18 @@ export function applyFindingCoverage(ledger: RegionLedger, findings: DiffRecord[
   }
 }
 
+export function applyRecoveryOutcomes(ledger: RegionLedger, outcomes: RecoveryRegionOutcome[]): void {
+  const byId = new Map(ledger.regions.map(region => [region.id, region]));
+  for (const outcome of outcomes) {
+    const region = byId.get(outcome.regionId);
+    if (!region) continue;
+    region.artifactPaths = outcome.artifactPaths;
+    region.state = outcome.state;
+    region.unresolvedDetail = outcome.reason;
+    if (outcome.findingId) region.coveringFindingIds = [outcome.findingId];
+  }
+}
+
 export function unresolvedRegionsFromLedger(
   ledger: RegionLedger,
   reason: UnresolvedRegion["reason"]
@@ -102,6 +116,7 @@ export function unresolvedRegionsFromLedger(
       pixelCount: region.pixelCount,
       sourceComponentIds: region.sourceComponentIds,
       reason,
+      ...(region.unresolvedDetail ? { detail: region.unresolvedDetail } : {}),
       artifactPaths: region.artifactPaths
     }));
 }

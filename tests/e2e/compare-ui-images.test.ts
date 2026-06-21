@@ -46,10 +46,13 @@ describe("runUiDiff end-to-end (deterministic_only mode)", () => {
       runId: string;
       status: string;
       visualClassificationStatus: string;
+      unresolvedRegions: Array<{ artifactPaths: unknown[] }>;
     };
     expect(report.schemaVersion).toBe("0.1");
     expect(report.runId).toBe(result.runId);
     expect(report.visualClassificationStatus).toBe("not_run");
+    expect(report.unresolvedRegions.length).toBeGreaterThan(0);
+    expect(report.unresolvedRegions.every(region => region.artifactPaths.length === 4)).toBe(true);
   });
 
   it("normalized images are written as artifacts", async () => {

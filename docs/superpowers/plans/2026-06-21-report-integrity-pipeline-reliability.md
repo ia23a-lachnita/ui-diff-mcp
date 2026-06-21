@@ -372,25 +372,25 @@ Commit message: `fix(models): distinguish and contain structured response failur
 - Consumes: unresolved canonical regions
 - Produces: recovered findings, noise decisions, or explicit unresolved reasons; never silently skipped final work
 
-- [ ] **Step 1: Write cap/deadline regression tests**
+- [x] **Step 1: Write cap/deadline regression tests**
 
 Assert that a diagnostic bounded run may stop with explicit unresolved regions, while release mode cannot return complete when component cap, model-call cap, deadline, or caller unavailability leaves regions unresolved. Assert skipped regions already have deterministic crop/mask/overlay artifacts before any model budget check.
 
-- [ ] **Step 2: Verify the tests fail**
+- [x] **Step 2: Verify the tests fail**
 
 Run: `npx vitest run tests/unit/target-recovery.test.ts tests/e2e/compare-ui-images.test.ts`
 
 Expected: FAIL because current recovery skips capped regions without preserving canonical unresolved records.
 
-- [ ] **Step 3: Update ledger state per recovery result**
+- [x] **Step 3: Update ledger state per recovery result**
 
 Generate expected crop, actual crop, local directional overlay, and mask for every canonical region before applying model-call caps or deadlines. Every region must then end as recovered, classified noise, or unresolved with an exact reason. Recovery boxes must map to and overlap their canonical region before acceptance. Attach the pre-generated artifacts to the ledger and any resulting finding.
 
-- [ ] **Step 4: Add resumable recovery cursor**
+- [x] **Step 4: Add resumable recovery cursor**
 
 Persist the next canonical region index and remaining budgets in checkpoint state. A resumed run continues unresolved work instead of probing and auditing completed regions again.
 
-- [ ] **Step 5: Verify, update tracking, commit, and push**
+- [x] **Step 5: Verify, update tracking, commit, and push**
 
 Run: `npm run verify`
 
