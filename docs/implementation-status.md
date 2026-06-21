@@ -4,15 +4,15 @@ This file is the persistent handoff state for implementation agents. Read it bef
 
 ## Current State
 
-- Status: **Projection pre-audit hardening code is complete; production sign-off is blocked by fresh live evidence.** After restarting Codex on 2026-06-21, Git writes, provider HTTPS, npm audit, and Calorix run-state writes all worked. Deterministic, NVIDIA, OpenRouter, default MCP, and bounded Calorix gates passed. The unbounded Calorix gate failed, and two strict release attempts terminated without completing a final report.
+- Status: **Report-integrity implementation and provider gates are complete; production sign-off is blocked by fresh Calorix evidence.** Deterministic, coverage, audit, NVIDIA, OpenRouter, and default MCP gates are green at the current implementation.
 - Branch: `master`.
 - Approved spec: `docs/superpowers/specs/2026-06-12-ui-diff-mcp-research-design.md`.
 - Completed plan: `docs/superpowers/plans/2026-06-17-viewport-projection-capture-hardening.md` (all 8 tasks done).
 - Production-readiness test plan: `docs/superpowers/plans/2026-06-13-production-readiness-tests.md`.
-- Current task: **Task 10 - Correct release gates and re-run Calorix.** Branch `master`; gate implementation is pushed through `966808a`. Next command after external access is restored: `RUN_NVIDIA_LIVE=1 npm run verify:nvidia-live`, followed by OpenRouter, MCP, bounded Calorix, full Calorix, and strict release gates.
+- Current task: **Task 10 - Correct release gates and re-run Calorix.** Branch `master`; provider-gate checkpoint is being recorded after `e234140`. Next command: bounded Calorix, followed by full Calorix and strict release gates.
 - Calorix live actual screenshot for new gates: `C:\Users\xursc\projects\calorix\docs\screenshots\today-screen-2026-06-17-adb-seeded-2.png`. Do not use the older `today-screen-2026-06-09-criterion-audit-validation.png` cutoff screenshot for fresh Calorix sign-off runs.
-- Last verification: deterministic equivalent of `npm run verify` PASS — 449 unit/e2e + 22 integration + 16 Python sidecar tests, typecheck clean, build clean. `npm run test:coverage` PASS — 88.75% statements / 73.02% branches / 91.21% functions / 91.06% lines (2026-06-21). The direct tool commands used a temporary Node 24 runtime because the restarted sandbox denied realpath access through the machine's NVM symlink; the MCP test helper now launches children with `process.execPath`.
-- Open blockers: **Production release blocked pending fresh live evidence.** The historical full run `run-1781995654661-a86c16` and strict release attempts are invalidated as sign-off evidence by Tasks 1-10. In the restarted 2026-06-21 Codex sandbox, the NVIDIA live gate failed immediately with `fetch failed` on every route; three `require_escalated` retries and a short HTTPS check remained queued without starting until terminated. The Antigravity MCP `gemini-3.1-pro-preview` implementation review and a one-word availability probe likewise returned no content or tool error until terminated. Do not count either silence as a gate or review result.
+- Last verification: `npm run verify` PASS — 449 unit/e2e + 22 integration + 16 Python sidecar tests, typecheck clean, build clean. Coverage PASS — 88.75% statements / 73.02% branches / 91.21% functions / 91.06% lines. `npm audit --audit-level=critical` reports 0 vulnerabilities. NVIDIA 4/4, OpenRouter 2 active tests, and default MCP 1/1 passed (2026-06-21).
+- Open blockers: **Production release blocked pending bounded, full, and strict Calorix runs plus the final Gemini implementation review.** Historical pre-Task-10 runs are invalidated as sign-off evidence. The earlier sandbox/network failure is resolved and must not be treated as a provider failure.
 
 ## Standing Implementation Rules
 
@@ -28,6 +28,7 @@ This file is the persistent handoff state for implementation agents. Read it bef
 
 | Date | Commit | Task | Verification | Notes |
 | --- | --- | --- | --- | --- |
+| 2026-06-21 | this commit | Report integrity Task 10 deterministic/provider gates | `npm run verify`, coverage, and critical audit PASS; NVIDIA 4/4 PASS in 59.6s; OpenRouter 2 active tests PASS in 56.9s; MCP 1/1 PASS in 52.6s | Task 10 Step 3 complete. Proceeding to bounded, full, and strict Calorix gates. |
 | 2026-06-21 | this commit | Report integrity Task 10 OpenRouter gate contract | `verify:openrouter-free-live` PASS - 2 passed / 3 skipped in 56.9s | Updated the live MCP smoke assertion so a known visual change may be a final finding or an inspectable unresolved canonical region; raw `unclassified_visual_change` records remain forbidden from final findings. NVIDIA live also passed 4/4 in 59.6s. |
 | 2026-06-21 | this commit | Report integrity Task 10 external-gate handoff | Fresh rerun PASS - 449 unit/e2e + 22 integration; external NVIDIA attempt failed with sandbox-level `fetch failed` | Live provider/Calorix gates await working outbound/external-path approval. Antigravity MCP produced no response even for a minimal availability probe; required implementation review remains pending. |
 | 2026-06-21 | this commit | Report integrity Task 10 accounting/checklist correction | `npm run typecheck` equivalent PASS; `git diff --check` PASS | Updated the full diagnostic gate for Task 6 counter semantics and documented the strict distinction between diagnostic evidence and production release. Live provider and Calorix gates remain pending. |

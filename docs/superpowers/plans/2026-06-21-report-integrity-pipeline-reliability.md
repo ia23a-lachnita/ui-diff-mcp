@@ -460,9 +460,9 @@ Use `reviewerStatus === "accepted"` for accepted findings. Assert separately tha
 
 Assert no final finding is `unclassified_visual_change`; every projected deterministic finding has expected/actual/overlay/mask artifacts; consolidated child IDs are unique; and no two final findings share parent, criterion, and strongly overlapping location.
 
-- [ ] **Step 3: Run deterministic and provider gates**
+- [x] **Step 3: Run deterministic and provider gates**
 
-  Deterministic verification and coverage passed on 2026-06-21. Provider execution is pending because the restarted Codex sandbox denied outbound HTTPS (`fetch failed`), while escalation requests remained queued without starting.
+  Deterministic verification, coverage, audit, NVIDIA, OpenRouter, and default MCP gates passed on 2026-06-21 after unrestricted network access was restored.
 
 Run:
 
