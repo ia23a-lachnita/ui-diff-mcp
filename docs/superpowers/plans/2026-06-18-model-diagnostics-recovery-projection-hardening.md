@@ -877,7 +877,7 @@ git push
 
 Legacy Gemini CLI review attempts:
 
-- Tool status: deprecated for new reviews. Use Antigravity/`agy` instead.
+- Tool status: deprecated for new reviews. Use `mcp__antigravity_mcp__ask_gemini` instead.
 
 Gemini 3.1 Pro Preview review attempt through the legacy Gemini CLI:
 
@@ -900,4 +900,4 @@ Antigravity/`agy` replacement attempt:
 - Upstream issue: `https://github.com/google-antigravity/antigravity-cli/issues/76` documents the same non-TTY `--print` stdout loss.
 - Review status: not completed. Empty stdout must be treated as a tooling failure, not as an approving review.
 
-No external feedback was incorporated because no Gemini-family review completed. The plan was self-reviewed against the requested scope and is committed for human review with this blocker recorded explicitly. Next reviewer attempt should run Antigravity/`agy` from a real interactive TTY or after the non-TTY print bug is fixed.
+No external feedback was incorporated because no Gemini-family review completed. The plan was self-reviewed against the requested scope and is committed for human review with this blocker recorded explicitly. Any new review must use `mcp__antigravity_mcp__ask_gemini`; the obsolete CLI limitation does not apply to the MCP tool.

@@ -914,7 +914,7 @@ Type consistency:
 
 ## External Review Prompt
 
-Use the prompt below in an interactive Antigravity/`agy` session with Gemini 3.1 Pro Preview. If unavailable, use Gemini 3 Pro Preview; if unavailable, Gemini Flash; if unavailable, Gemini Flash Lite.
+Use the prompt below with `mcp__antigravity_mcp__ask_gemini` and `model: "gemini-3.1-pro-preview"`. Continue the same MCP conversation for revisions; do not use either CLI.
 
 ```text
 You are reviewing a production-readiness implementation plan for C:\Users\xursc\projects\ui-diff-mcp.

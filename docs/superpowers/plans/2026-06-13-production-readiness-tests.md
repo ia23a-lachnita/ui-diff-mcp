@@ -1412,7 +1412,7 @@ Gemini 3 Pro Preview review attempt 1:
 Gemini 3 Pro Preview review attempt 2 (post-implementation):
 
 - `AGREEMENT_STATUS: agree`
-- Historical tool/model: `gemini-3-pro-preview` through `mcp__gemini-cli.ask-gemini`. For new reviews, use Antigravity/`agy` rather than the deprecated Gemini CLI.
+- Historical tool/model: `gemini-3-pro-preview` through `mcp__gemini-cli.ask-gemini`. For new reviews, use `mcp__antigravity_mcp__ask_gemini`; do not use either CLI.
 - Date: 2026-06-13.
 - Scope: reviewed the implemented test gates (`tests/helpers/mcp-client.ts`, `src/server.ts`, `tests/unit/server-handlers.test.ts`, `tests/integration/mcp-tools.integration.test.ts`, `src/capture/mobile-capture.ts`, `tests/unit/mobile-capture.test.ts`, `tests/live/*.test.ts`, `package.json`, `vitest.config.ts`) for MUST_FIX correctness/reliability defects only.
 - Result: no MUST_FIX issues. Gemini confirmed deterministic/credential-free default tests, correct live-test env-gating and coverage exclusions, met thresholds (85/68/85/85), and accurate docs. Remaining step is running the live gates before production sign-off.

@@ -660,7 +660,7 @@ Review completed with `gemini-3-pro-preview` on 2026-06-14.
 
 ### Claude Sonnet 4.6
 
-Requested by user but not completed because the current Codex session exposes no callable Claude Sonnet 4.6 review tool. Tool discovery found the legacy Gemini CLI, code-search, and GPT-family subagents, but no Claude Sonnet execution tool. If a Claude tool becomes available, ask it to independently research OpenRouter free vision models and NVIDIA free VLM endpoints, then review this plan for blockers. For new Gemini-family reviews, use Antigravity/`agy` rather than the deprecated Gemini CLI.
+Requested by user but not completed because the current Codex session exposes no callable Claude Sonnet 4.6 review tool. Tool discovery found the legacy Gemini CLI, code-search, and GPT-family subagents, but no Claude Sonnet execution tool. If a Claude tool becomes available, ask it to independently research OpenRouter free vision models and NVIDIA free VLM endpoints, then review this plan for blockers. For new Gemini-family reviews, use `mcp__antigravity_mcp__ask_gemini`; do not use either CLI.
 
 ### Independent Non-Claude Reviewer
 

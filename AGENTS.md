@@ -28,10 +28,11 @@ The implementation status file is the persistent source of truth for where the p
 
 ## External Review Tooling
 
-- Do not start new plan reviews with the deprecated Gemini CLI.
-- Use Google Antigravity via `agy` for Gemini-family external reviews.
-- If the current terminal session does not see `agy`, refresh PATH from the Windows user/machine environment or call `C:\Users\xursc\AppData\Local\agy\bin\agy.exe` directly.
-- As of 2026-06-18, `agy --print` can complete with exit code 0 but emit no stdout when launched from a non-TTY subprocess. Treat an empty captured response as a tooling failure, not a successful review. Prefer an interactive/TTY Antigravity session until upstream issue `google-antigravity/antigravity-cli#76` is fixed.
+- Do not use the deprecated Gemini CLI or the `agy` Antigravity CLI for new reviews.
+- Use the Antigravity MCP tool `mcp__antigravity_mcp__ask_gemini`.
+- For production plans, request `model: "gemini-3.1-pro-preview"`, `approvalMode: "plan"`, and a persistent `conversationId` so revisions can be reviewed in the same conversation.
+- A review is green only when the response explicitly reports `AGREEMENT_STATUS: agree` and `MUST_FIX: none`. Apply must-fix feedback, then continue the same MCP conversation until green.
+- If the MCP tool or requested model is unavailable, record the exact tool error. Do not silently substitute a CLI review or count an empty response as successful.
 
 ## Required Environment Variables
 
