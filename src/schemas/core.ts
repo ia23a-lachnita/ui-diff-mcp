@@ -184,6 +184,22 @@ export const UiArtifactSchema = z.object({
 });
 export type UiArtifact = z.infer<typeof UiArtifactSchema>;
 
+export const UnresolvedRegionSchema = z.object({
+  id: z.string().min(1),
+  location: BoxSchema,
+  pixelCount: z.number().int().positive(),
+  sourceComponentIds: z.array(z.string().min(1)).min(1),
+  reason: z.enum([
+    "not_classified",
+    "audit_route_exhausted",
+    "recovery_route_exhausted",
+    "recovery_budget_exhausted",
+    "interrupted"
+  ]),
+  artifactPaths: z.array(UiArtifactSchema).default([])
+}).strict();
+export type UnresolvedRegion = z.infer<typeof UnresolvedRegionSchema>;
+
 export const UnassignedVisualEvidenceSchema = z.object({
   id: z.string().min(1),
   componentBox: BoxSchema,
@@ -448,6 +464,7 @@ export const UiDiffReportSchema = z.object({
   }),
   pairs: z.array(ElementPairSchema),
   diffs: z.array(DiffRecordSchema),
+  unresolvedRegions: z.array(UnresolvedRegionSchema).default([]),
   modelHealth: z.array(z.object({
     role: z.string().min(1),
     provider: z.string().min(1),

@@ -7,6 +7,7 @@ function makeRunOutput(overrides: Partial<RunOutput> = {}): RunOutput {
     runId: "run-1",
     status: "complete",
     diffCount: 0,
+    unresolvedRegionCount: 0,
     reportPath: "/tmp/.ui-diff/runs/run-1/artifacts/report.json",
     artifactRoot: "/tmp/.ui-diff/runs/run-1/artifacts",
     runArtifacts: [],

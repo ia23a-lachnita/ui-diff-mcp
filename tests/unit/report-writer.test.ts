@@ -2,8 +2,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { writeReportCheckpoint } from "../../src/report/report-writer.js";
-import { UiDiffReportSchema } from "../../src/schemas/core.js";
+import { writeReportCheckpoint, writeUiDiffReport } from "../../src/report/report-writer.js";
+import { UiDiffReportSchema, UnresolvedRegionSchema } from "../../src/schemas/core.js";
 import type { UiDiffReport } from "../../src/schemas/core.js";
 
 let tmpDir: string;
@@ -30,6 +30,7 @@ function makeReport(overrides: Partial<UiDiffReport> = {}): UiDiffReport {
     elements: { expected: [], actual: [] },
     pairs: [],
     diffs: [],
+    unresolvedRegions: [],
     modelHealth: [],
     runArtifacts: [],
     warnings: [],
@@ -79,5 +80,66 @@ describe("writeReportCheckpoint", () => {
 
     const written = JSON.parse(await fs.readFile(reportPath, "utf8")) as { stages: unknown[] };
     expect(written.stages).toHaveLength(1);
+  });
+});
+
+describe("writeUiDiffReport", () => {
+  it("counts final findings separately from unresolved regions", async () => {
+    const report = makeReport({
+      diffs: [{
+        id: "diff-1",
+        criterion: "geometry",
+        severity: "medium",
+        title: "Chart marker is displaced",
+        location: { x: 20, y: 40, width: 12, height: 12 },
+        evidence: ["Marker does not align with its expected position."],
+        measurements: [],
+        artifactPaths: [],
+        reviewerStatus: "accepted"
+      }],
+      unresolvedRegions: [
+        {
+          id: "region-1",
+          location: { x: 1, y: 2, width: 10, height: 11 },
+          pixelCount: 45,
+          sourceComponentIds: ["component-1"],
+          reason: "not_classified",
+          artifactPaths: []
+        },
+        {
+          id: "region-2",
+          location: { x: 30, y: 40, width: 20, height: 10 },
+          pixelCount: 80,
+          sourceComponentIds: ["component-2", "component-3"],
+          reason: "recovery_budget_exhausted",
+          artifactPaths: []
+        }
+      ]
+    });
+
+    const output = await writeUiDiffReport(report);
+
+    expect(output.diffCount).toBe(1);
+    expect(output.unresolvedRegionCount).toBe(2);
+    const written = UiDiffReportSchema.parse(JSON.parse(await fs.readFile(output.reportPath, "utf8")));
+    expect(written.diffs).toHaveLength(1);
+    expect(written.unresolvedRegions).toHaveLength(2);
+  });
+
+  it("rejects reviewer fields on unresolved regions", () => {
+    const parsed = UnresolvedRegionSchema.safeParse({
+      id: "region-1",
+      location: { x: 1, y: 2, width: 10, height: 11 },
+      pixelCount: 45,
+      sourceComponentIds: ["component-1"],
+      reason: "not_classified",
+      artifactPaths: [],
+      reviewerStatus: "accepted"
+    });
+
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) {
+      expect(parsed.error.issues.some(issue => issue.code === "unrecognized_keys")).toBe(true);
+    }
   });
 });

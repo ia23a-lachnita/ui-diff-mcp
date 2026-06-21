@@ -26,6 +26,7 @@ function runOutput(overrides: Partial<RunOutput> = {}): RunOutput {
     runId: "run-test",
     status: "complete",
     diffCount: 1,
+    unresolvedRegionCount: 0,
     reportPath: "C:/project/.ui-diff/runs/run-test/artifacts/report.json",
     artifactRoot: "C:/project/.ui-diff/runs/run-test/artifacts",
     runArtifacts: [
@@ -55,6 +56,7 @@ function report(): UiDiffReport {
     elements: { expected: [], actual: [] },
     pairs: [],
     diffs: [],
+    unresolvedRegions: [],
     modelHealth: [],
     runArtifacts: [],
     warnings: [],

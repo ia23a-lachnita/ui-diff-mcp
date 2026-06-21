@@ -9,7 +9,7 @@ This file is the persistent handoff state for implementation agents. Read it bef
 - Approved spec: `docs/superpowers/specs/2026-06-12-ui-diff-mcp-research-design.md`.
 - Completed plan: `docs/superpowers/plans/2026-06-17-viewport-projection-capture-hardening.md` (all 8 tasks done).
 - Production-readiness test plan: `docs/superpowers/plans/2026-06-13-production-readiness-tests.md`.
-- Current task: **Task 1 - Separate final findings from unresolved regions.** Branch `master`, starting commit `941238d`. Focused verification: `npx vitest run tests/unit/report-writer.test.ts tests/unit/server.test.ts`; task verification: `npm run verify`.
+- Current task: **Task 1 complete; Task 2 - Build one canonical region ledger is next.** Task 1 verification: `npm run verify` PASS. The next checkpoint will replace raw-component final reporting with one clustered region ledger.
 - Calorix live actual screenshot for new gates: `C:\Users\xursc\projects\calorix\docs\screenshots\today-screen-2026-06-17-adb-seeded-2.png`. Do not use the older `today-screen-2026-06-09-criterion-audit-validation.png` cutoff screenshot for fresh Calorix sign-off runs.
 - Last verification: `npm run verify` PASS — 416 unit/e2e + 22 integration + 16 Python sidecar tests, typecheck clean, build clean. `npm run test:coverage` PASS — 88.71% statements / 71.56% branches / 90.90% functions / 90.84% lines (2026-06-21).
 - Open blockers: **Production release blocked** — full run `run-1781995654661-a86c16` has `visualClassificationStatus:"incomplete"`, 93 unclassified recovery leftovers, and recovery deadline/cap exhaustion. The full live assertion also incorrectly counts 706 `not_reviewed` unclassified records as "accepted" because it filters only `reviewerStatus !== "rejected"`. Strict release attempts `run-1781996099339-37129e` and `run-1781996435518-9de09d` terminated after checkpoint reports (`visualClassificationStatus:"not_run"`) without final traces.
@@ -28,7 +28,7 @@ This file is the persistent handoff state for implementation agents. Read it bef
 
 | Date | Commit | Task | Verification | Notes |
 | --- | --- | --- | --- | --- |
-| 2026-06-21 | pending | Report integrity Task 1 started | Baseline `npm run verify` PASS - 416 unit/e2e + 22 integration + 16 sidecar tests, typecheck and build clean | Implementing the approved report-integrity plan with TDD; first checkpoint separates final findings from unresolved regions. |
+| 2026-06-21 | task commit pending | Report integrity Task 1 complete | `npm run verify` PASS - 419 unit/e2e + 22 integration + 16 sidecar tests, typecheck and build clean | Added strict unresolved-region schema, separate compact count, report/index persistence, tool output contract, and compatibility defaults. |
 | 2026-06-12 | `5badb60` | Implementation plan approved | Gemini 3 Pro Preview final blocker pass: `AGREEMENT_STATUS: agree`, `MUST_FIX: none` | Ready to start Task 1. |
 | 2026-06-13 | `656e112` | All 12 tasks implemented | `npm run verify` — 65 tests passed, typecheck clean, build clean | All tasks complete. |
 | 2026-06-13 | `5bee6f9` | Post-implementation bug fixes | `npm run verify` — 65 tests passed, typecheck clean, build clean | Fixed P1: rawBox1000 schema (array not object), not_checked models falsely marked available, image size mismatch crash, read_ui_diff_report path traversal. Fixed P2: crop artifacts saved to disk, plan checkboxes synced. |

@@ -13,6 +13,7 @@ export const CompareUiImagesOutputSchema = {
   runId: z.string().min(1),
   status: RunStatusSchema,
   diffCount: z.number().int().min(0),
+  unresolvedRegionCount: z.number().int().min(0),
   reportPath: z.string().min(1),
   artifactRoot: z.string().min(1),
   runArtifacts: z.array(UiArtifactSchema).default([]),

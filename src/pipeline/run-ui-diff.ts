@@ -44,6 +44,7 @@ export interface RunOutput {
   runId: string;
   status: string;
   diffCount: number;
+  unresolvedRegionCount: number;
   reportPath: string;
   artifactRoot: string;
   runArtifacts: UiArtifact[];
@@ -218,6 +219,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
       elements: { expected: expectedElements, actual: actualElements },
       pairs: currentPairs,
       diffs: allDiffs,
+      unresolvedRegions: [],
       modelHealth: currentModelHealth,
       runArtifacts,
       warnings,
@@ -794,6 +796,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     elements: { expected: expectedElements, actual: actualElements },
     pairs,
     diffs: finalDiffs,
+    unresolvedRegions: [],
     modelHealth,
     runArtifacts,
     warnings,

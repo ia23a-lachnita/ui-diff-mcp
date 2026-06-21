@@ -44,17 +44,17 @@ Full Calorix run `run-1781995654661-a86c16` established the baseline:
 - Produces: `UnresolvedRegion`, `UiDiffReport.unresolvedRegions`, `CompactOutput.unresolvedRegionCount`
 - Preserves: `UiDiffReport.diffs` as the final-finding array and `diffCount === diffs.length`
 
-- [ ] **Step 1: Add failing schema and writer tests**
+- [x] **Step 1: Add failing schema and writer tests**
 
 Assert that a report can contain one accepted finding and two unresolved regions while compact output reports `diffCount:1` and `unresolvedRegionCount:2`. Assert that `unresolvedRegions` cannot contain `reviewerStatus` or masquerade as a `DiffRecord`.
 
-- [ ] **Step 2: Verify the tests fail**
+- [x] **Step 2: Verify the tests fail**
 
 Run: `npx vitest run tests/unit/report-writer.test.ts tests/unit/server.test.ts`
 
 Expected: FAIL because `UnresolvedRegionSchema` and `unresolvedRegionCount` do not exist.
 
-- [ ] **Step 3: Add the report contract**
+- [x] **Step 3: Add the report contract**
 
 Add a schema shaped as:
 
@@ -77,13 +77,13 @@ export const UnresolvedRegionSchema = z.object({
 
 Add `unresolvedRegions: z.array(UnresolvedRegionSchema).default([])` to `UiDiffReportSchema`. Add `unresolvedRegionCount` to compact/tool outputs. Keep old report parsing compatible by defaulting the new array. An empty artifact list is schema-valid during early checkpoints, but a final unresolved region must have artifacts before final report validation.
 
-- [ ] **Step 4: Pass the focused tests**
+- [x] **Step 4: Pass the focused tests**
 
 Run: `npx vitest run tests/unit/report-writer.test.ts tests/unit/server.test.ts`
 
 Expected: PASS.
 
-- [ ] **Step 5: Update tracking, commit, and push**
+- [x] **Step 5: Update tracking, commit, and push**
 
 Commit message: `feat(report): separate findings from unresolved regions`
 

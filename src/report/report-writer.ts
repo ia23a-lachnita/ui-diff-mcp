@@ -7,6 +7,7 @@ export interface CompactOutput {
   runId: string;
   status: string;
   diffCount: number;
+  unresolvedRegionCount: number;
   reportPath: string;
   artifactRoot: string;
   runArtifacts: UiArtifact[];
@@ -39,13 +40,14 @@ export async function writeUiDiffReport(
   await fs.writeFile(reportPath, JSON.stringify(report, null, 2), "utf8");
 
   const diffArtifactPaths = report.diffs.flatMap(d => d.artifactPaths);
+  const unresolvedArtifactPaths = report.unresolvedRegions.flatMap(region => region.artifactPaths);
   const indexPath = path.join(reportDir, "index.json");
   await fs.writeFile(indexPath, JSON.stringify({
     runId: report.runId,
     createdAt: report.createdAt,
     reportPath,
     runArtifacts: report.runArtifacts ?? [],
-    artifacts: diffArtifactPaths
+    artifacts: [...diffArtifactPaths, ...unresolvedArtifactPaths]
   }, null, 2), "utf8");
 
   const diffCount = report.diffs.length;
@@ -59,6 +61,7 @@ export async function writeUiDiffReport(
     runId: report.runId,
     status: report.status,
     diffCount,
+    unresolvedRegionCount: report.unresolvedRegions.length,
     reportPath,
     artifactRoot: reportDir,
     runArtifacts: report.runArtifacts ?? [],

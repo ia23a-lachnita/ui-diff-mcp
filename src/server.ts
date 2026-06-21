@@ -107,6 +107,7 @@ export async function handleCompareUiImages(
     runId: "timeout",
     status: "incomplete",
     diffCount: 0,
+    unresolvedRegionCount: 0,
     reportPath: pendingPath,
     artifactRoot: path.dirname(pendingPath),
     runArtifacts: [],
