@@ -3,6 +3,10 @@ export interface PixelComponent {
   pixelCount: number;
 }
 
+export interface ClusteredPixelComponent extends PixelComponent {
+  sourceIndexes: number[];
+}
+
 interface ClusterNode {
   parent: number;
   rank: number;
@@ -49,10 +53,10 @@ function overlapsExpanded(a: PixelComponent["box"], b: PixelComponent["box"], ga
   );
 }
 
-export function clusterUncoveredComponents(
+export function clusterUncoveredComponentsWithMembers(
   components: PixelComponent[],
   options: { maxGapPx: number; maxClusterAreaRatio: number; imageWidth: number; imageHeight: number }
-): PixelComponent[] {
+): ClusteredPixelComponent[] {
   if (components.length === 0) return [];
 
   const screenArea = options.imageWidth * options.imageHeight;
@@ -81,14 +85,15 @@ export function clusterUncoveredComponents(
     }
   }
 
-  const clusters = new Map<number, PixelComponent[]>();
+  const clusters = new Map<number, Array<{ component: PixelComponent; index: number }>>();
   for (let i = 0; i < components.length; i++) {
     const root = find(nodes, i);
     if (!clusters.has(root)) clusters.set(root, []);
-    clusters.get(root)!.push(components[i]!);
+    clusters.get(root)!.push({ component: components[i]!, index: i });
   }
 
-  return [...clusters.values()].map(members => {
+  return [...clusters.values()].map(entries => {
+    const members = entries.map(entry => entry.component);
     const xs = members.flatMap(m => [m.box.x, m.box.x + m.box.width]);
     const ys = members.flatMap(m => [m.box.y, m.box.y + m.box.height]);
     const x = Math.min(...xs);
@@ -96,6 +101,13 @@ export function clusterUncoveredComponents(
     const width = Math.max(...xs) - x;
     const height = Math.max(...ys) - y;
     const pixelCount = members.reduce((s, m) => s + m.pixelCount, 0);
-    return { box: { x, y, width, height }, pixelCount };
+    return { box: { x, y, width, height }, pixelCount, sourceIndexes: entries.map(entry => entry.index) };
   });
+}
+
+export function clusterUncoveredComponents(
+  components: PixelComponent[],
+  options: { maxGapPx: number; maxClusterAreaRatio: number; imageWidth: number; imageHeight: number }
+): PixelComponent[] {
+  return clusterUncoveredComponentsWithMembers(components, options).map(({ box, pixelCount }) => ({ box, pixelCount }));
 }

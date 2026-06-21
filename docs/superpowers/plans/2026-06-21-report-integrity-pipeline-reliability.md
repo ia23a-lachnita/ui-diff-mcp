@@ -103,17 +103,17 @@ Commit message: `feat(report): separate findings from unresolved regions`
 - Consumes: raw `PixelComponent[]`, coverage decisions, recovered diff IDs
 - Produces: `RegionLedger` with raw metrics, clustered canonical regions, and resolved/unresolved state
 
-- [ ] **Step 1: Write the 724-to-109 regression shape as a small fixture**
+- [x] **Step 1: Write the 724-to-109 regression shape as a small fixture**
 
 Create a synthetic set where multiple adjacent child components cluster into two canonical regions. Assert that final unresolved output contains exactly two regions and never recreates the raw children.
 
-- [ ] **Step 2: Verify the regression fails**
+- [x] **Step 2: Verify the regression fails**
 
 Run: `npx vitest run tests/unit/coverage.test.ts tests/e2e/compare-ui-images.test.ts`
 
 Expected: FAIL because final reporting still calls `assignDiffComponentsToRecords()` with raw components.
 
-- [ ] **Step 3: Implement `buildRegionLedger()`**
+- [x] **Step 3: Implement `buildRegionLedger()`**
 
 Use an explicit ledger:
 
@@ -136,7 +136,7 @@ interface RegionLedger {
 
 Cluster once after initial coverage. Recovery and final reporting must consume and update this ledger. Remove `assignDiffComponentsToRecords()` from the final pipeline path; retain raw component decisions only in debug traces.
 
-- [ ] **Step 4: Prove no raw-component re-expansion**
+- [x] **Step 4: Prove no raw-component re-expansion**
 
 Assert these invariants:
 
@@ -146,7 +146,7 @@ expect(report.unresolvedRegions).toHaveLength(2);
 expect(report.debugSummary?.coverageComponents).toBe(rawComponents.length);
 ```
 
-- [ ] **Step 5: Run focused and full verification, update tracking, commit, and push**
+- [x] **Step 5: Run focused and full verification, update tracking, commit, and push**
 
 Run: `npm run verify`
 

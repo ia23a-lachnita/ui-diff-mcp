@@ -60,17 +60,21 @@ describe("MCP stdio tool surface", () => {
     const structured = result.structuredContent as {
       status: string;
       diffCount: number;
+      unresolvedRegionCount: number;
       reportPath: string;
       artifactRoot: string;
       runArtifacts: string[];
     };
     expect(structured.status).toBe("complete");
-    expect(structured.diffCount).toBeGreaterThanOrEqual(1);
+    expect(structured.diffCount).toBe(0);
+    expect(structured.unresolvedRegionCount).toBeGreaterThanOrEqual(1);
     expect(structured.reportPath.endsWith("report.json")).toBe(true);
     expect(structured.runArtifacts.length).toBeGreaterThanOrEqual(9);
 
     const report = UiDiffReportSchema.parse(JSON.parse(await fs.readFile(structured.reportPath, "utf8")));
     expect(report.visualClassificationStatus).toBe("not_run");
+    expect(report.diffs.every(diff => diff.criterion !== "unclassified_visual_change")).toBe(true);
+    expect(report.unresolvedRegions.length).toBe(structured.unresolvedRegionCount);
     await expect(fs.access(path.join(structured.artifactRoot, "index.json"))).resolves.toBeUndefined();
   });
 

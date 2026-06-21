@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { findUncoveredComponents, assignDiffComponentsToRecords, traceCoverageDecisions } from "../../src/report/coverage.js";
 import { clusterUncoveredComponents } from "../../src/report/component-clustering.js";
+import { buildRegionLedger, unresolvedRegionsFromLedger } from "../../src/report/region-ledger.js";
 import type { PixelComponent } from "../../src/signals/pixel-diff.js";
 import type { DiffRecord } from "../../src/schemas/core.js";
 
@@ -163,5 +164,31 @@ describe("clusterUncoveredComponents", () => {
     // imageWidth=210, imageHeight=100 → screenArea=21000; merged 210x100=21000 → ratio=1.0 ≥ 0.5, not merged
     const result = clusterUncoveredComponents([a, b], { maxGapPx: 20, maxClusterAreaRatio: 0.5, imageWidth: 210, imageHeight: 100 });
     expect(result).toHaveLength(2);
+  });
+});
+
+describe("buildRegionLedger", () => {
+  it("clusters raw child components once and emits only canonical unresolved regions", () => {
+    const components = [
+      makeComponent(0, 0, 10, 10, 80),
+      makeComponent(12, 0, 10, 10, 90),
+      makeComponent(100, 100, 10, 10, 70),
+      makeComponent(112, 100, 10, 10, 60),
+      makeComponent(180, 180, 2, 2, 4)
+    ];
+
+    const ledger = buildRegionLedger(components, [], {
+      minPixelCount: 10,
+      maxGapPx: 5,
+      maxClusterAreaRatio: 0.5,
+      imageWidth: 200,
+      imageHeight: 200
+    });
+
+    expect(ledger.rawComponentCount).toBe(5);
+    expect(ledger.belowThresholdCount).toBe(1);
+    expect(ledger.regions).toHaveLength(2);
+    expect(ledger.regions.map(region => region.sourceComponentIds.length)).toEqual([2, 2]);
+    expect(unresolvedRegionsFromLedger(ledger, "not_classified")).toHaveLength(2);
   });
 });

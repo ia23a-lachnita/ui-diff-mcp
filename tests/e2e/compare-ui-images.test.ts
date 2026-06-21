@@ -112,13 +112,16 @@ describe("runUiDiff with mock sidecar and models (full mode)", () => {
 
     const reportRaw = await fs.readFile(result.reportPath, "utf8");
     const report = JSON.parse(reportRaw) as {
-      diffs: unknown[];
+      diffs: { criterion: string }[];
+      unresolvedRegions: unknown[];
       elements: { expected: unknown[]; actual: unknown[] };
       visualClassificationStatus: string;
       debugSummary?: unknown;
       runArtifacts: { role: string; path: string }[];
     };
     expect(Array.isArray(report.diffs)).toBe(true);
+    expect(report.diffs.every(diff => diff.criterion !== "unclassified_visual_change")).toBe(true);
+    expect(Array.isArray(report.unresolvedRegions)).toBe(true);
     expect(Array.isArray(report.elements.expected)).toBe(true);
     // Recovery may leave some pixel-diff regions unclassified when the VLM mock returns
     // classified:false; the important check is that the VLM stage ran (not "not_run").
