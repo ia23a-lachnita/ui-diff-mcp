@@ -419,7 +419,8 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     expectedElements,
     actualElements,
     expectedRgba: { data: expectedImg.rgba, width: expectedImg.width, height: expectedImg.height },
-    actualRgba: { data: actualImg.rgba, width: actualImg.width, height: actualImg.height }
+    actualRgba: { data: actualImg.rgba, width: actualImg.width, height: actualImg.height },
+    artifactDir: artifactRoot
   });
   allDiffs.push(...projectedPreAuditResult.diffs);
   projectedPreAuditSummary = projectedPreAuditResult.summary;

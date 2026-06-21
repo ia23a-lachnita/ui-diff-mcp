@@ -171,6 +171,10 @@ export const UiArtifactSchema = z.object({
     "recovery_actual_crop",
     "recovery_directional_overlay",
     "recovery_pixel_diff_mask",
+    "projected_expected_crop",
+    "projected_actual_crop",
+    "projected_directional_overlay",
+    "projected_pixel_diff_mask",
     "audit_trace",
     "coverage_trace",
     "recovery_trace",
@@ -244,7 +248,8 @@ export const DiffRecordSchema = z.object({
     "projected_crop_low_overlap",
     "projected_crop_high_diff_mass",
     "projection_dimension_mismatch"
-  ]).optional()
+  ]).optional(),
+  projectionMismatchKind: z.enum(["absent_at_location", "displaced"]).optional()
 });
 export type DiffRecord = z.infer<typeof DiffRecordSchema>;
 

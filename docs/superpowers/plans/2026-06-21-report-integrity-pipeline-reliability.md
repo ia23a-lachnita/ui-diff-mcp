@@ -211,25 +211,25 @@ Commit message: `feat(report): consolidate hierarchical fragment findings`
 **Interfaces:**
 - Produces: `ProjectedMismatchResult.kind: "absent_at_location" | "displaced"`, deterministic shift measurements when available, and four typed artifacts per finding
 
-- [ ] **Step 1: Add failing displacement and artifact tests**
+- [x] **Step 1: Add failing displacement and artifact tests**
 
 Use a colored dot shifted partly outside its projected box. Assert `kind:"displaced"`, criterion `geometry`, and deterministic shift evidence. Place a matched sibling dot inside the search area and assert it is not selected. Use a genuinely absent target fixture and assert `kind:"absent_at_location"`, criterion `presence`. Assert both paths save expected crop, actual crop, overlay, and mask.
 
-- [ ] **Step 2: Verify the tests fail**
+- [x] **Step 2: Verify the tests fail**
 
 Run: `npx vitest run tests/unit/projected-mismatch.test.ts tests/unit/projected-preaudit.test.ts`
 
 Expected: FAIL because all projected mismatches are currently high-severity presence findings without artifacts.
 
-- [ ] **Step 3: Add bounded deterministic translation search**
+- [x] **Step 3: Add bounded deterministic translation search**
 
 Compare the expected template against an actual search region expanded around the projected box. Search an edge-map offset grid bounded independently per axis by `min(32, max(4, ceil(projectedDimension * 0.5)))` pixels. Reject candidate centers that fall inside another projected matched sibling box, and mask sibling-owned pixels before scoring repetitive grids/lists. If translated overlap clears the structural threshold, return deterministic displacement and measured offsets. If no plausible translated match exists, return absent-at-projected-location. Do not claim global absence. Add a performance test requiring a 256x256 search fixture to finish within 100 ms on the test machine.
 
-- [ ] **Step 4: Write pre-audit artifacts**
+- [x] **Step 4: Write pre-audit artifacts**
 
 Add typed artifact roles for projected expected crop, actual crop, directional overlay, and mask. Attach them to each deterministic finding before it bypasses VLM selection.
 
-- [ ] **Step 5: Verify, update tracking, commit, and push**
+- [x] **Step 5: Verify, update tracking, commit, and push**
 
 Run: `npm run verify`
 

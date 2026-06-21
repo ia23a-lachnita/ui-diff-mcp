@@ -1,12 +1,16 @@
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { runProjectedPreAudit } from "../../src/diff/projected-preaudit.js";
 import type { ElementPair, UiElement } from "../../src/schemas/core.js";
 
 vi.mock("../../src/audit/projected-mismatch.js", () => ({
-  detectProjectedCropMismatch: vi.fn()
+  detectProjectedCropMismatch: vi.fn(),
+  findProjectedDisplacement: vi.fn()
 }));
 
-import { detectProjectedCropMismatch } from "../../src/audit/projected-mismatch.js";
+import { detectProjectedCropMismatch, findProjectedDisplacement } from "../../src/audit/projected-mismatch.js";
 
 function makeRgba(w: number, h: number, fill = 128): { data: Uint8Array; width: number; height: number } {
   return { data: new Uint8Array(w * h * 4).fill(fill), width: w, height: h };
@@ -41,6 +45,8 @@ describe("runProjectedPreAudit", () => {
       reason: "changed_pixels",
       changedPercent: 90
     });
+    (findProjectedDisplacement as ReturnType<typeof vi.fn>).mockResolvedValueOnce(null);
+    const artifactDir = await fs.mkdtemp(path.join(os.tmpdir(), "projected-preaudit-"));
 
     const expectedEl = makeExpected("e1");
     const actualEl = makeActualProjected("a1");
@@ -51,7 +57,8 @@ describe("runProjectedPreAudit", () => {
       expectedElements: [expectedEl],
       actualElements: [actualEl],
       expectedRgba: makeRgba(200, 400),
-      actualRgba: makeRgba(150, 300, 10)
+      actualRgba: makeRgba(150, 300, 10),
+      artifactDir
     });
 
     expect(result.diffs).toHaveLength(1);
@@ -60,6 +67,10 @@ describe("runProjectedPreAudit", () => {
     expect(result.summary.deterministicProjectedDiffs).toBe(1);
     expect(result.summary.sentToVlmPairs).toBe(0);
     expect(result.summary.projectedPairsChecked).toBe(1);
+    expect(result.diffs[0]?.criterion).toBe("presence");
+    expect(result.diffs[0]?.projectionMismatchKind).toBe("absent_at_location");
+    expect(result.diffs[0]?.artifactPaths).toHaveLength(4);
+    await Promise.all(result.diffs[0]!.artifactPaths.map(artifact => fs.access(artifact.path)));
   });
 
   it("accounting: deterministicProjectedDiffs + sentToVlmPairs equals projectedPairsChecked", async () => {
@@ -70,6 +81,7 @@ describe("runProjectedPreAudit", () => {
       .mockResolvedValueOnce({ mismatched: true, reason: "changed_pixels", changedPercent: 85 })
       .mockResolvedValueOnce({ mismatched: false, reason: "not_mismatched", changedPercent: 3 })
       .mockResolvedValueOnce({ mismatched: false, reason: "not_mismatched", changedPercent: 1 });
+    (findProjectedDisplacement as ReturnType<typeof vi.fn>).mockResolvedValueOnce(null);
 
     const pairs = [
       makePair("p10", "e10", "a10"),
@@ -84,7 +96,8 @@ describe("runProjectedPreAudit", () => {
       expectedElements: expectedEls,
       actualElements: actualEls,
       expectedRgba: makeRgba(200, 400),
-      actualRgba: makeRgba(150, 300, 10)
+      actualRgba: makeRgba(150, 300, 10),
+      artifactDir: os.tmpdir()
     });
 
     expect(result.summary.projectedPairsChecked).toBe(3);
@@ -112,12 +125,36 @@ describe("runProjectedPreAudit", () => {
       expectedElements: [expectedEl],
       actualElements: [actualEl],
       expectedRgba: makeRgba(200, 400),
-      actualRgba: makeRgba(150, 300, 200)
+      actualRgba: makeRgba(150, 300, 200),
+      artifactDir: os.tmpdir()
     });
 
     expect(result.diffs).toHaveLength(0);
     expect(result.skipVlmPairIds.has("p2")).toBe(false);
     expect(result.summary.sentToVlmPairs).toBe(1);
     expect(result.summary.deterministicProjectedDiffs).toBe(0);
+  });
+
+  it("classifies a deterministic translation as geometry", async () => {
+    (detectProjectedCropMismatch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      mismatched: true,
+      reason: "projected_crop_low_overlap",
+      changedPercent: 80
+    });
+    (findProjectedDisplacement as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ dx: 4, dy: -2, edgeOverlap: 0.88 });
+    const result = await runProjectedPreAudit({
+      pairs: [makePair("p-shift", "e-shift", "a-shift")],
+      expectedElements: [makeExpected("e-shift")],
+      actualElements: [makeActualProjected("a-shift")],
+      expectedRgba: makeRgba(200, 400),
+      actualRgba: makeRgba(150, 300, 10),
+      artifactDir: await fs.mkdtemp(path.join(os.tmpdir(), "projected-shift-"))
+    });
+
+    expect(result.diffs[0]).toMatchObject({ criterion: "geometry", projectionMismatchKind: "displaced" });
+    expect(result.diffs[0]?.measurements).toEqual(expect.arrayContaining([
+      { name: "horizontal_shift", value: 4, unit: "px" },
+      { name: "vertical_shift", value: -2, unit: "px" }
+    ]));
   });
 });

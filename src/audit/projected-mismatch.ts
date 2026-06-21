@@ -1,4 +1,5 @@
 import { resizeRgbaForComparison } from "../images/crop.js";
+import type { Box } from "../schemas/core.js";
 
 export interface ProjectedMismatchResult {
   mismatched: boolean;
@@ -6,6 +7,13 @@ export interface ProjectedMismatchResult {
   changedPercent: number;
   expectedDominant: string;
   actualDominant: string;
+  kind?: "absent_at_location" | "displaced";
+}
+
+export interface ProjectedDisplacementResult {
+  dx: number;
+  dy: number;
+  edgeOverlap: number;
 }
 
 interface CropInput {
@@ -92,6 +100,78 @@ function computeEdgePixels(data: Uint8Array, width: number, height: number): Set
   return edges;
 }
 
+function pointInBox(x: number, y: number, box: Box): boolean {
+  return x >= box.x && x < box.x + box.width && y >= box.y && y < box.y + box.height;
+}
+
+export async function findProjectedDisplacement(input: {
+  expected: CropInput;
+  actualImage: CropInput;
+  projectedBox: Box;
+  siblingBoxes?: Box[];
+}): Promise<ProjectedDisplacementResult | null> {
+  const targetWidth = Math.max(1, Math.round(input.projectedBox.width));
+  const targetHeight = Math.max(1, Math.round(input.projectedBox.height));
+  const templateData = input.expected.width === targetWidth && input.expected.height === targetHeight
+    ? input.expected.data
+    : await resizeRgbaForComparison(input.expected, targetWidth, targetHeight);
+  const templateEdges = [...computeEdgePixels(templateData, targetWidth, targetHeight)];
+  if (templateEdges.length < 4) return null;
+  const actualEdges = computeEdgePixels(input.actualImage.data, input.actualImage.width, input.actualImage.height);
+  const originX = Math.round(input.projectedBox.x);
+  const originY = Math.round(input.projectedBox.y);
+  const maxDx = Math.min(32, Math.max(4, Math.ceil(targetWidth * 0.5)));
+  const maxDy = Math.min(32, Math.max(4, Math.ceil(targetHeight * 0.5)));
+  const siblings = input.siblingBoxes ?? [];
+
+  const scoreAt = (dx: number, dy: number): number => {
+    const centerX = originX + dx + targetWidth / 2;
+    const centerY = originY + dy + targetHeight / 2;
+    if (siblings.some(box => pointInBox(centerX, centerY, box))) return -1;
+    let considered = 0;
+    let matched = 0;
+    for (const edge of templateEdges) {
+      const x = originX + dx + (edge % targetWidth);
+      const y = originY + dy + Math.floor(edge / targetWidth);
+      if (x < 0 || y < 0 || x >= input.actualImage.width || y >= input.actualImage.height) continue;
+      if (siblings.some(box => pointInBox(x, y, box))) continue;
+      considered++;
+      const exactIndex = y * input.actualImage.width + x;
+      if (actualEdges.has(exactIndex)) {
+        matched += 1;
+        continue;
+      }
+      let found = false;
+      for (let oy = -1; oy <= 1 && !found; oy++) {
+        for (let ox = -1; ox <= 1; ox++) {
+          const nx = x + ox;
+          const ny = y + oy;
+          if (nx >= 0 && ny >= 0 && nx < input.actualImage.width && ny < input.actualImage.height && actualEdges.has(ny * input.actualImage.width + nx)) {
+            found = true;
+            break;
+          }
+        }
+      }
+      if (found) matched += 0.5;
+    }
+    return considered >= Math.max(4, Math.ceil(templateEdges.length * 0.25)) ? matched / considered : -1;
+  };
+
+  const currentScore = scoreAt(0, 0);
+  let best: ProjectedDisplacementResult | null = null;
+  for (let dy = -maxDy; dy <= maxDy; dy++) {
+    for (let dx = -maxDx; dx <= maxDx; dx++) {
+      if (dx === 0 && dy === 0) continue;
+      const edgeOverlap = scoreAt(dx, dy);
+      if (edgeOverlap < 0.55 || edgeOverlap < currentScore + 0.15) continue;
+      if (!best || edgeOverlap > best.edgeOverlap || (edgeOverlap === best.edgeOverlap && Math.abs(dx) + Math.abs(dy) < Math.abs(best.dx) + Math.abs(best.dy))) {
+        best = { dx, dy, edgeOverlap };
+      }
+    }
+  }
+  return best;
+}
+
 function computeEdgeOverlapPercent(
   expEdges: Set<number>,
   actEdges: Set<number>,
@@ -176,5 +256,5 @@ export async function detectProjectedCropMismatch(
     ? "projected_crop_low_overlap"
     : "projected_crop_high_diff_mass";
 
-  return { mismatched: true, reason, changedPercent, expectedDominant, actualDominant };
+  return { mismatched: true, reason, changedPercent, expectedDominant, actualDominant, kind: "absent_at_location" };
 }
