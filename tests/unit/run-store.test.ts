@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { putRun, getRun, type RunHandleState } from "../../src/pipeline/run-store.js";
+import { clearRunMemoryForTests, createRunId, putRun, getRun, type RunHandleState } from "../../src/pipeline/run-store.js";
 
 let tmpDir: string;
 
@@ -11,6 +11,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  clearRunMemoryForTests();
   await fs.rm(tmpDir, { recursive: true, force: true });
 });
 
@@ -25,6 +26,9 @@ function makeState(overrides: Partial<RunHandleState> = {}): RunHandleState {
 }
 
 describe("run-store", () => {
+  it("creates validated stable run IDs", () => {
+    expect(createRunId()).toMatch(/^run-[0-9]+-[a-f0-9]{6}$/);
+  });
   it("putRun stores state in memory and getRun returns it", async () => {
     const state = makeState();
     await putRun(state);
@@ -41,6 +45,7 @@ describe("run-store", () => {
     const raw = await fs.readFile(filePath, "utf8");
     const parsed = JSON.parse(raw) as RunHandleState;
     expect(parsed.runId).toBe(state.runId);
+    await expect(fs.access(`${filePath}.tmp`)).rejects.toThrow();
   });
 
   it("getRun returns undefined for unknown runId", async () => {
@@ -56,6 +61,14 @@ describe("run-store", () => {
     const found = await getRun(tmpDir, state.runId);
     expect(found?.runId).toBe("run-disk-only");
     expect(found?.status).toBe("queued");
+  });
+
+  it("loads orphaned running state as interrupted", async () => {
+    const state = makeState({ runId: "run-interrupted", status: "running", checkpointPath: path.join(tmpDir, "report.json") });
+    await putRun(state);
+    clearRunMemoryForTests();
+    const found = await getRun(tmpDir, state.runId);
+    expect(found).toMatchObject({ status: "interrupted", checkpointPath: state.checkpointPath });
   });
 
   it("putRun updates existing run state", async () => {

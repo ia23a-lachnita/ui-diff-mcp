@@ -13,7 +13,7 @@ import {
   GetUiDiffRunStatusInputSchema,
   GetUiDiffRunStatusOutputSchema
 } from "./schemas/tool-schemas.js";
-import { putRun, getRun } from "./pipeline/run-store.js";
+import { createRunId, putRun, getRun } from "./pipeline/run-store.js";
 import { runUiDiff, type RunInput, type RunOutput } from "./pipeline/run-ui-diff.js";
 import { captureMobileScreen, type CaptureResult } from "./capture/mobile-capture.js";
 import { probeRequiredModels, type ProbeResult } from "./models/probes.js";
@@ -30,13 +30,17 @@ function buildRunInput(input: {
   projectRoot?: string | undefined;
   runLabel?: string | undefined;
   mode?: string | undefined;
+  runId?: string | undefined;
+  resumeRunId?: string | undefined;
 }) {
   return {
     expectedImagePath: input.expectedImagePath,
     actualImagePath: input.actualImagePath,
     mode: input.mode ?? "free",
     ...(input.projectRoot !== undefined ? { projectRoot: input.projectRoot } : {}),
-    ...(input.runLabel !== undefined ? { runLabel: input.runLabel } : {})
+    ...(input.runLabel !== undefined ? { runLabel: input.runLabel } : {}),
+    ...(input.runId !== undefined ? { runId: input.runId } : {}),
+    ...(input.resumeRunId !== undefined ? { resumeRunId: input.resumeRunId } : {})
   };
 }
 
@@ -130,24 +134,47 @@ export async function handleStartUiDiffRun(
     projectRoot?: string | undefined;
     mode?: string | undefined;
     label?: string | undefined;
+    resumeRunId?: string | undefined;
   },
   deps: ServerDeps
 ) {
   const projectRoot = input.projectRoot ?? process.cwd();
-  const runId = `run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  const runInput = buildRunInput({
+  const runId = input.resumeRunId ?? createRunId();
+  if (input.resumeRunId) {
+    const existing = await getRun(projectRoot, input.resumeRunId);
+    if (!existing) throw new Error(`Cannot resume unknown run ${input.resumeRunId}.`);
+    if (!["interrupted", "incomplete", "failed"].includes(existing.status)) {
+      throw new Error(`Run ${input.resumeRunId} is ${existing.status} and cannot be resumed.`);
+    }
+  }
+  const baseRunInput = buildRunInput({
     expectedImagePath: input.expectedImagePath,
     actualImagePath: input.actualImagePath,
     mode: input.mode,
     projectRoot,
-    runLabel: input.label
+    runLabel: input.label,
+    runId,
+    ...(input.resumeRunId ? { resumeRunId: input.resumeRunId } : {})
   });
 
-  const state = { runId, status: "queued" as const, projectRoot, startedAt: new Date().toISOString(), ...(input.label !== undefined ? { label: input.label } : {}) };
+  const state = { runId, status: "queued" as const, projectRoot, startedAt: new Date().toISOString(), heartbeatAt: new Date().toISOString(), ...(input.label !== undefined ? { label: input.label } : {}) };
+  const runInput: RunInput = {
+    ...baseRunInput,
+    onCheckpoint: async progress => {
+      await putRun({
+        ...state,
+        status: "running",
+        heartbeatAt: progress.heartbeatAt,
+        checkpointPath: progress.checkpointPath,
+        artifactRoot: path.dirname(progress.checkpointPath),
+        progress: { stage: progress.stage }
+      });
+    }
+  };
   await putRun(state);
 
   void (async () => {
-    await putRun({ ...state, status: "running" });
+    await putRun({ ...state, status: "running", progress: { stage: "pipeline_start" }, heartbeatAt: new Date().toISOString() });
     try {
       const result = await deps.runUiDiff(runInput);
       await putRun({
@@ -193,6 +220,9 @@ export async function handleGetUiDiffRunStatus(
   if (found.completedAt !== undefined) out["completedAt"] = found.completedAt;
   if (found.error !== undefined) out["error"] = found.error;
   if (found.label !== undefined) out["label"] = found.label;
+  if (found.heartbeatAt !== undefined) out["heartbeatAt"] = found.heartbeatAt;
+  if (found.checkpointPath !== undefined) out["checkpointPath"] = found.checkpointPath;
+  if (found.progress !== undefined) out["progress"] = found.progress;
   return {
     content: [{ type: "text" as const, text: `Run ${found.runId}: ${found.status}.` }],
     structuredContent: out

@@ -67,7 +67,7 @@ describe("writeReportCheckpoint", () => {
     expect(tmpExists).toBe(false);
 
     const written = JSON.parse(await fs.readFile(reportPath, "utf8")) as { status: string };
-    expect(written.status).toBe("incomplete");
+    expect(written.status).toBe("running");
   });
 
   it("records stages in the written report", async () => {
@@ -80,6 +80,13 @@ describe("writeReportCheckpoint", () => {
 
     const written = JSON.parse(await fs.readFile(reportPath, "utf8")) as { stages: unknown[] };
     expect(written.stages).toHaveLength(1);
+  });
+
+  it("forces checkpoint reports to honest running state", async () => {
+    const reportPath = await writeReportCheckpoint(makeReport({ status: "complete" }));
+    const written = JSON.parse(await fs.readFile(reportPath, "utf8")) as { status: string; isCheckpoint?: boolean };
+    expect(written.status).toBe("running");
+    expect(written.isCheckpoint).toBe(true);
   });
 });
 

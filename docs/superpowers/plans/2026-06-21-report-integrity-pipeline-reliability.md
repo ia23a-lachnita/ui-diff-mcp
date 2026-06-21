@@ -414,25 +414,25 @@ Commit message: `feat(recovery): resolve canonical regions with resumable progre
 **Interfaces:**
 - Produces: one shared run ID, optional explicit resumption, atomic checkpoint reports with `isCheckpoint:true`, honest `running/interrupted` status, heartbeat/progress, and captured child exit diagnostics
 
-- [ ] **Step 1: Write interruption tests**
+- [x] **Step 1: Write interruption tests**
 
 Start a run and assert the MCP handle ID, run-store ID, artifact directory ID, and report ID are identical. Persist a checkpoint, terminate the worker, and reload state. Assert that neither report nor run handle says complete; state must be `interrupted` with last stage, pair index, criterion index, and checkpoint path. Resume with that ID and assert completed stages are not repeated.
 
-- [ ] **Step 2: Verify the tests fail**
+- [x] **Step 2: Verify the tests fail**
 
 Run: `npx vitest run tests/unit/run-store.test.ts tests/e2e/compare-ui-images.test.ts`
 
 Expected: FAIL because checkpoint reports currently inherit `status:"complete"`.
 
-- [ ] **Step 3: Add atomic checkpoint state**
+- [x] **Step 3: Add atomic checkpoint state**
 
 Create a single `createRunId()` owner in `run-store.ts`. `handleStartUiDiffRun()` generates the ID once and passes it into `runUiDiff({ runId })`; direct pipeline calls may omit it and receive an internally generated ID. Add optional `resumeRunId` to `StartUiDiffRunInputSchema`; when present, validate and reuse that exact ID, load its checkpoint cursor, and continue in the existing artifact root. Extend run/report status with `running` and `interrupted`, plus `isCheckpoint`, heartbeat, and progress fields. Write JSON to a same-directory temporary file and rename atomically. Final `complete` is written only after traces and report index are durable.
 
-- [ ] **Step 4: Capture MCP child termination**
+- [x] **Step 4: Capture MCP child termination**
 
 `startUiDiffMcpClient()` must retain bounded stderr, exit code/signal, and last run status. Live tests must print these diagnostics when the child exits before a terminal report.
 
-- [ ] **Step 5: Verify, update tracking, commit, and push**
+- [x] **Step 5: Verify, update tracking, commit, and push**
 
 Run: `npm run verify`
 

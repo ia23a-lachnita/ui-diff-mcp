@@ -74,6 +74,33 @@ describe("runUiDiff end-to-end (deterministic_only mode)", () => {
     await expect(fs.access(expectedNorm)).resolves.toBeUndefined();
     await expect(fs.access(actualNorm)).resolves.toBeUndefined();
   });
+
+  it("resumes into the same artifact root without duplicating completed stage records", async () => {
+    const { expected, actual } = await writeTwoButtonFixture(tmpDir, "resume-e.png", "resume-a.png");
+    const first = await runUiDiff({
+      expectedImagePath: expected,
+      actualImagePath: actual,
+      projectRoot: tmpDir,
+      mode: "deterministic_only",
+      runId: "run-resume-e2e"
+    });
+    const checkpoint = JSON.parse(await fs.readFile(first.reportPath, "utf8")) as Record<string, unknown>;
+    checkpoint["status"] = "interrupted";
+    checkpoint["isCheckpoint"] = true;
+    await fs.writeFile(first.reportPath, JSON.stringify(checkpoint), "utf8");
+
+    const resumed = await runUiDiff({
+      expectedImagePath: expected,
+      actualImagePath: actual,
+      projectRoot: tmpDir,
+      mode: "deterministic_only",
+      resumeRunId: "run-resume-e2e"
+    });
+    const report = JSON.parse(await fs.readFile(resumed.reportPath, "utf8")) as { runId: string; stages: Array<{ name: string }> };
+    expect(resumed.runId).toBe("run-resume-e2e");
+    expect(resumed.artifactRoot).toBe(first.artifactRoot);
+    expect(new Set(report.stages.map(stage => stage.name)).size).toBe(report.stages.length);
+  });
 });
 
 describe("runUiDiff with mock sidecar and models (full mode)", () => {

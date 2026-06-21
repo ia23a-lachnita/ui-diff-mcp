@@ -1,4 +1,4 @@
-import crypto from "node:crypto";
+import fs from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
 import { resolveInputImagePath, createRunDirectory } from "../security/paths.js";
@@ -31,6 +31,8 @@ import { runProjectedPreAudit } from "../diff/projected-preaudit.js";
 import { writeUiDiffReport, writeReportCheckpoint } from "../report/report-writer.js";
 import type { UiDiffReport, RunStatus, VisualClassificationStatus, LocatorCoverageStatus, DiffRecord, ElementPair, UiArtifact, AuditScope, ModelSelection, RecoverySummary, RecoveryCursor, StageStatus, LocatorLaneMetadata, RunDebugSummary, ProjectedPreAuditSummary } from "../schemas/core.js";
 import { computeColorEvidence } from "../signals/color.js";
+import { createRunId } from "./run-store.js";
+import { UiDiffReportSchema } from "../schemas/core.js";
 
 export interface RunInput {
   expectedImagePath: string;
@@ -38,6 +40,9 @@ export interface RunInput {
   projectRoot?: string;
   runLabel?: string;
   mode?: string;
+  runId?: string;
+  resumeRunId?: string;
+  onCheckpoint?: (progress: { stage: string; checkpointPath: string; heartbeatAt: string }) => Promise<void>;
 }
 
 export interface RunOutput {
@@ -114,7 +119,7 @@ function makeVisionCaller(
 }
 
 export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeOverride }): Promise<RunOutput> {
-  const runId = `run-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`;
+  const runId = input.runId ?? input.resumeRunId ?? createRunId();
   const warnings: string[] = [];
   const mode: VisionMode = resolveMode(input.mode);
 
@@ -123,6 +128,14 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
   const actualAbs = resolveInputImagePath(input.actualImagePath, projectRoot);
   const runDir = await createRunDirectory(projectRoot, runId);
   const artifactRoot = path.join(runDir, "artifacts");
+  let resumedReport: UiDiffReport | undefined;
+  if (input.resumeRunId) {
+    try {
+      resumedReport = UiDiffReportSchema.parse(JSON.parse(await fs.readFile(path.join(artifactRoot, "report.json"), "utf8")));
+    } catch {
+      resumedReport = undefined;
+    }
+  }
 
   const normalizedExpPath = path.join(runDir, "expected-normalized.png");
   const normalizedActPath = path.join(runDir, "actual-normalized.png");
@@ -185,7 +198,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
   const debugTrace: RunDebugTrace = { audit: [], coverage: [], recovery: [] };
   const providerTrace = new ProviderTraceWriter();
   const allDiffs: DiffRecord[] = [];
-  const stages: StageStatus[] = [];
+  const stages: StageStatus[] = resumedReport?.stages ? [...resumedReport.stages] : [];
   const createdAt = new Date().toISOString();
   const runArtifacts: UiArtifact[] = [
     { role: "expected_normalized", path: normalizedExpPath },
@@ -201,12 +214,18 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     currentPairs: ElementPair[],
     currentModelHealth: UiDiffReport["modelHealth"]
   ): Promise<void> {
-    stages.push({ name: stageName, status: stageStatus, completedAt: new Date().toISOString() });
-    await writeReportCheckpoint({
+    const stageRecord = { name: stageName, status: stageStatus, completedAt: new Date().toISOString() };
+    const existingStageIndex = stages.findIndex(stage => stage.name === stageName);
+    if (existingStageIndex >= 0) stages[existingStageIndex] = stageRecord;
+    else stages.push(stageRecord);
+    const checkpointPath = await writeReportCheckpoint({
       schemaVersion: "0.1",
       runId,
       createdAt,
-      status: status === "complete" && stageStatus === "failed" ? "incomplete" : status,
+      status: "running",
+      isCheckpoint: true,
+      heartbeatAt: new Date().toISOString(),
+      progress: { stage: stageName },
       visualClassificationStatus,
       locatorCoverageStatus,
       ...(auditScope !== undefined ? { auditScope } : {}),
@@ -228,6 +247,9 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
       warnings,
       stages: [...stages]
     });
+    if (input.onCheckpoint) {
+      await input.onCheckpoint({ stage: stageName, checkpointPath, heartbeatAt: new Date().toISOString() });
+    }
   }
 
   const openRouterApiKey = process.env["OPENROUTER_API_KEY"] ?? "";
@@ -853,6 +875,9 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     runId,
     createdAt,
     status,
+    isCheckpoint: false,
+    heartbeatAt: new Date().toISOString(),
+    progress: { stage: "complete" },
     visualClassificationStatus,
     locatorCoverageStatus,
     ...(locatorMetadata !== undefined ? { locatorMetadata } : {}),

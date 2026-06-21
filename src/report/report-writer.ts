@@ -25,7 +25,14 @@ export async function writeReportCheckpoint(report: UiDiffReport): Promise<strin
   const reportPath = path.join(report.artifactRoot, "report.json");
   const tmpPath = `${reportPath}.tmp`;
   await fs.mkdir(report.artifactRoot, { recursive: true });
-  await fs.writeFile(tmpPath, JSON.stringify(UiDiffReportSchema.parse(report), null, 2), "utf8");
+  const checkpoint = UiDiffReportSchema.parse({
+    ...report,
+    status: report.status === "interrupted" ? "interrupted" : "running",
+    isCheckpoint: true,
+    heartbeatAt: new Date().toISOString(),
+    progress: { ...(report.progress ?? { stage: "checkpoint" }), checkpointPath: reportPath }
+  });
+  await fs.writeFile(tmpPath, JSON.stringify(checkpoint, null, 2), "utf8");
   await fs.rename(tmpPath, reportPath);
   return reportPath;
 }
@@ -37,18 +44,24 @@ export async function writeUiDiffReport(
   await fs.mkdir(reportDir, { recursive: true });
 
   const reportPath = path.join(reportDir, "report.json");
-  await fs.writeFile(reportPath, JSON.stringify(report, null, 2), "utf8");
 
   const diffArtifactPaths = report.diffs.flatMap(d => d.artifactPaths);
   const unresolvedArtifactPaths = report.unresolvedRegions.flatMap(region => region.artifactPaths);
   const indexPath = path.join(reportDir, "index.json");
-  await fs.writeFile(indexPath, JSON.stringify({
+  const indexTmpPath = `${indexPath}.tmp`;
+  await fs.writeFile(indexTmpPath, JSON.stringify({
     runId: report.runId,
     createdAt: report.createdAt,
     reportPath,
     runArtifacts: report.runArtifacts ?? [],
     artifacts: [...diffArtifactPaths, ...unresolvedArtifactPaths]
   }, null, 2), "utf8");
+  await fs.rename(indexTmpPath, indexPath);
+
+  const finalReport = UiDiffReportSchema.parse({ ...report, isCheckpoint: false, heartbeatAt: new Date().toISOString() });
+  const reportTmpPath = `${reportPath}.tmp`;
+  await fs.writeFile(reportTmpPath, JSON.stringify(finalReport, null, 2), "utf8");
+  await fs.rename(reportTmpPath, reportPath);
 
   const diffCount = report.diffs.length;
   const highCount = report.diffs.filter(d => d.severity === "high").length;

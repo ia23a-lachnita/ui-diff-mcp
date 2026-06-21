@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../../src/pipeline/run-store.js", () => ({
+  createRunId: vi.fn(() => "run-shared-test"),
   putRun: vi.fn().mockResolvedValue(undefined),
   getRun: vi.fn().mockResolvedValue(undefined)
 }));
@@ -226,6 +227,29 @@ describe("server tool handlers", () => {
     const structured = result.structuredContent as { runId: string; status: string };
     expect(structured.status).toBe("queued");
     expect(structured.runId).toMatch(/^run-/);
+    await vi.waitFor(() => expect(d.runUiDiff).toHaveBeenCalled());
+    expect(vi.mocked(d.runUiDiff).mock.calls[0]?.[0].runId).toBe(structured.runId);
+  });
+
+  it("resumes an interrupted run with the same run ID", async () => {
+    vi.mocked(getRun).mockResolvedValueOnce({
+      runId: "run-resume",
+      status: "interrupted",
+      projectRoot: tmpDir,
+      startedAt: new Date().toISOString(),
+      checkpointPath: path.join(tmpDir, "report.json")
+    });
+    const d = deps();
+    const result = await handleStartUiDiffRun({
+      expectedImagePath: "expected.png",
+      actualImagePath: "actual.png",
+      projectRoot: tmpDir,
+      mode: "deterministic_only",
+      resumeRunId: "run-resume"
+    }, d);
+    expect((result.structuredContent as { runId: string }).runId).toBe("run-resume");
+    await vi.waitFor(() => expect(d.runUiDiff).toHaveBeenCalled());
+    expect(vi.mocked(d.runUiDiff).mock.calls[0]?.[0]).toMatchObject({ runId: "run-resume", resumeRunId: "run-resume" });
   });
 
   it("get_ui_diff_run_status returns state from getRun including label", async () => {

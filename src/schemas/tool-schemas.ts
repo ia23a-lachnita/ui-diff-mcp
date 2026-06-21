@@ -58,7 +58,8 @@ export const StartUiDiffRunInputSchema = {
   actualImagePath: z.string().min(1),
   projectRoot: z.string().min(1).optional(),
   mode: z.enum(["free", "free_openrouter", "free_nvidia", "paid", "deterministic_only"]).default("free"),
-  label: z.string().min(1).max(80).optional()
+  label: z.string().min(1).max(80).optional(),
+  resumeRunId: z.string().regex(/^[a-zA-Z0-9_-]+$/).optional()
 };
 
 export const StartUiDiffRunOutputSchema = {
@@ -74,11 +75,14 @@ export const GetUiDiffRunStatusInputSchema = {
 
 export const GetUiDiffRunStatusOutputSchema = {
   runId: z.string().min(1),
-  status: z.enum(["queued", "running", "complete", "incomplete", "failed", "not_found"]),
+  status: z.enum(["queued", "running", "interrupted", "complete", "incomplete", "failed", "not_found"]),
   reportPath: z.string().optional(),
   artifactRoot: z.string().optional(),
   startedAt: z.string().optional(),
   completedAt: z.string().optional(),
   error: z.string().optional(),
   label: z.string().optional()
+  ,heartbeatAt: z.string().optional(),
+  checkpointPath: z.string().optional(),
+  progress: z.object({ stage: z.string(), pairIndex: z.number().int().nonnegative().optional(), criterionIndex: z.number().int().nonnegative().optional() }).optional()
 };

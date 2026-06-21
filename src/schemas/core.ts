@@ -257,7 +257,7 @@ export const DiffRecordSchema = z.object({
 });
 export type DiffRecord = z.infer<typeof DiffRecordSchema>;
 
-export const RunStatusSchema = z.enum(["complete", "incomplete", "model_unavailable", "insufficient_free_quota", "failed"]);
+export const RunStatusSchema = z.enum(["running", "interrupted", "complete", "incomplete", "model_unavailable", "insufficient_free_quota", "failed"]);
 export type RunStatus = z.infer<typeof RunStatusSchema>;
 
 export const VisualClassificationStatusSchema = z.enum(["complete", "incomplete", "not_run"]);
@@ -481,6 +481,14 @@ export const UiDiffReportSchema = z.object({
   runId: z.string().min(1),
   createdAt: z.string().datetime(),
   status: RunStatusSchema,
+  isCheckpoint: z.preprocess(value => value ?? false, z.boolean().optional()),
+  heartbeatAt: z.string().datetime().optional(),
+  progress: z.object({
+    stage: z.string().min(1),
+    pairIndex: z.number().int().nonnegative().optional(),
+    criterionIndex: z.number().int().nonnegative().optional(),
+    checkpointPath: z.string().min(1).optional()
+  }).optional(),
   visualClassificationStatus: VisualClassificationStatusSchema,
   locatorCoverageStatus: LocatorCoverageStatusSchema.default("not_run"),
   locatorMetadata: LocatorMetadataSchema.optional(),

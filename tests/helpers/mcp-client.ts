@@ -1,9 +1,12 @@
 import { Readable } from "node:stream";
+import type { ChildProcess } from "node:child_process";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
 export interface StartedMcpClient {
   client: Client;
+  getDiagnostics(): { stderr: string; exitCode: number | null; exitSignal: NodeJS.Signals | null; lastRunStatus?: string };
+  recordRunStatus(status: string): void;
   close(): Promise<void>;
 }
 
@@ -25,12 +28,25 @@ export async function startUiDiffMcpClient(
 
   await client.connect(transport);
 
-  // Drain the piped stderr so the server's event loop never blocks on a full OS pipe buffer.
-  // Without this, verbose pipeline logging fills the 64KB pipe and freezes the server mid-run.
-  if (transport.stderr) (transport.stderr as Readable).resume();
+  const diagnostics: { stderr: string; exitCode: number | null; exitSignal: NodeJS.Signals | null; lastRunStatus?: string } = {
+    stderr: "",
+    exitCode: null,
+    exitSignal: null
+  };
+  const stderr = transport.stderr as Readable | null;
+  stderr?.on("data", chunk => {
+    diagnostics.stderr = `${diagnostics.stderr}${String(chunk)}`.slice(-32768);
+  });
+  const child = (transport as unknown as { _process?: ChildProcess })._process;
+  child?.on("close", (code, signal) => {
+    diagnostics.exitCode = code;
+    diagnostics.exitSignal = signal;
+  });
 
   return {
     client,
+    getDiagnostics: () => ({ ...diagnostics }),
+    recordRunStatus: status => { diagnostics.lastRunStatus = status; },
     close: async () => {
       await client.close();
     }
