@@ -462,6 +462,8 @@ Assert no final finding is `unclassified_visual_change`; every projected determi
 
 - [ ] **Step 3: Run deterministic and provider gates**
 
+  Deterministic verification and coverage passed on 2026-06-21. Provider execution is pending because the restarted Codex sandbox denied outbound HTTPS (`fetch failed`), while escalation requests remained queued without starting.
+
 Run:
 
 ```powershell
