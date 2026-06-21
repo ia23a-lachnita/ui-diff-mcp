@@ -45,11 +45,15 @@ describe.skipIf(!liveEnabled)("live MCP discover_ui_diffs (OpenRouter-only free 
     const structured = result.structuredContent as {
       status: string;
       diffCount: number;
+      unresolvedRegionCount: number;
       reportPath: string;
       runArtifacts: Array<{ role: string; path: string }>;
     };
     expect(structured.status).not.toBe("failed");
-    expect(structured.diffCount).toBeGreaterThanOrEqual(1);
+    expect(
+      structured.diffCount + structured.unresolvedRegionCount,
+      "the known fixture change must be finalized or retained as an unresolved region"
+    ).toBeGreaterThanOrEqual(1);
     expect(structured.runArtifacts.map(a => a.role)).toEqual(expect.arrayContaining([
       "expected_normalized",
       "actual_normalized",
@@ -59,6 +63,7 @@ describe.skipIf(!liveEnabled)("live MCP discover_ui_diffs (OpenRouter-only free 
     ]));
 
     const report = UiDiffReportSchema.parse(JSON.parse(await fs.readFile(structured.reportPath, "utf8")));
+    expect(report.diffs.every(diff => diff.criterion !== "unclassified_visual_change")).toBe(true);
     expect(report.modelSelection?.auditor?.provider).toBe("openrouter");
     expect(report.modelSelection?.reviewer?.provider).toBe("openrouter");
     const selectedRoutes = [
