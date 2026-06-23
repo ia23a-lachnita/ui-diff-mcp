@@ -274,15 +274,15 @@ describe("runTargetRecovery", () => {
     expect(result.trace[0]).toMatchObject({ status: "recovery_rejected", model: "recovery-model", reviewerModel: "review-model" });
   });
 
-  it("traces skipped components caused by cap", async () => {
+  it("uses maxComponents as a batch size instead of skipping later components", async () => {
     const components = Array.from({ length: 3 }, (_, i) => ({ box: { x: i * 20, y: 0, width: 10, height: 10 }, pixelCount: 100 }));
     const result = await runTargetRecovery(components, makeCtx(), { maxComponents: 1, maxModelCalls: 10, deadlineMs: Date.now() + 300000, minComponentPixels: 1 });
     const skipped = result.trace.filter(t => t.status === "skipped_component_cap");
-    expect(skipped).toHaveLength(2);
-    expect(skipped.every(entry => entry.artifactPaths.length === 4)).toBe(true);
-    await Promise.all(skipped.flatMap(entry => entry.artifactPaths).map(artifact => fs.access(artifact.path)));
-    expect(result.cursor.nextRegionIndex).toBe(1);
-    expect(result.cursor.remainingRegionIds).toHaveLength(2);
+    expect(skipped).toHaveLength(0);
+    expect(result.attemptedComponents).toBe(3);
+    expect(result.batchCount).toBe(3);
+    expect(result.cursor.nextRegionIndex).toBe(3);
+    expect(result.cursor.remainingRegionIds).toHaveLength(0);
   });
 
   it("preserves artifacts and unresolved outcomes when deadline is already exhausted", async () => {
@@ -313,25 +313,47 @@ describe("runTargetRecovery", () => {
     expect(result.trace[0]?.diffId).toBeTruthy();
   });
 
-  it("caps recovery at maxComponents and reports skipped count", async () => {
+  it("processes all eligible regions across multiple batches", async () => {
     const ctx = makeCtx();
-    const components: PixelComponent[] = Array.from({ length: 100 }, (_, i) => ({
-      box: { x: i, y: i, width: 10, height: 10 },
+    const components: PixelComponent[] = Array.from({ length: 25 }, (_, i) => ({
+      box: { x: (i % 5) * 35, y: Math.floor(i / 5) * 35, width: 20, height: 20 },
       pixelCount: 100 + i
     }));
     const budget: RecoveryBudget = {
-      maxComponents: 5,
+      maxComponents: 12,
       maxModelCalls: 1000,
       deadlineMs: Date.now() + 300000,
       minComponentPixels: 1
     };
     const result = await runTargetRecovery(components, ctx, budget);
-    expect(result.attemptedComponents).toBe(5);
-    expect(result.skippedComponents).toBe(95);
-    // Capped components are unexamined, so stoppedReason must not be "none"
-    // and unclassifiedCount must include all 95 capped entries.
-    expect(result.stoppedReason).toBe("component_cap");
-    expect(result.unclassifiedCount).toBeGreaterThanOrEqual(95);
+    expect(result.eligibleComponents).toBe(25);
+    expect(result.attemptedComponents).toBe(25);
+    expect(result.completedComponents).toBe(25);
+    expect(result.remainingComponents).toBe(0);
+    expect(result.batchCount).toBe(3);
+    expect(result.skippedComponents).toBe(0);
+    expect(result.stoppedReason).toBe("none");
+    expect(result.statusCounts["skipped_component_cap"] ?? 0).toBe(0);
+  });
+
+  it("preserves exact remaining region ids when model-call budget is exhausted", async () => {
+    const components = Array.from({ length: 5 }, (_, index) => ({
+      id: `region-${index + 1}`,
+      box: { x: index * 30, y: 0, width: 20, height: 20 },
+      pixelCount: 200 - index
+    }));
+    const result = await runTargetRecovery(components, makeCtx(), {
+      maxComponents: 12,
+      maxModelCalls: 2,
+      deadlineMs: Date.now() + 300000,
+      minComponentPixels: 1
+    });
+
+    expect(result.stoppedReason).toBe("model_call_cap");
+    expect(result.attemptedComponents).toBe(2);
+    expect(result.skippedComponents).toBe(3);
+    expect(result.remainingComponents).toBe(3);
+    expect(result.cursor.remainingRegionIds).toEqual(["region-3", "region-4", "region-5"]);
   });
 
   it("marks needs_escalation when reviewer throws", async () => {

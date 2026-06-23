@@ -91,6 +91,25 @@ describe("traceCoverageDecisions", () => {
     const trace = traceCoverageDecisions(components, [], 10);
     expect(trace.map(t => t.componentId)).toEqual(["component-0001", "component-0002", "component-0003"]);
   });
+
+  it("uses shape-local coverage boxes instead of a displacement corridor", () => {
+    const diff = makeDiff(0, 0, 20, 120);
+    diff.coverageLocations = [
+      { x: 0, y: 0, width: 20, height: 20 },
+      { x: 0, y: 100, width: 20, height: 20 }
+    ];
+    const trace = traceCoverageDecisions([
+      makeComponent(2, 2, 10, 10),
+      makeComponent(2, 52, 10, 10),
+      makeComponent(2, 102, 10, 10)
+    ], [diff], 10);
+
+    expect(trace.map(decision => decision.status)).toEqual([
+      "covered_by_diff",
+      "uncovered",
+      "covered_by_diff"
+    ]);
+  });
 });
 
 describe("assignDiffComponentsToRecords", () => {

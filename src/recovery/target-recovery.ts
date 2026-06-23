@@ -201,6 +201,10 @@ function boxOverlapsComponent(box: Box, component: PixelComponent, threshold = 0
 export interface RecoveryResult {
   recovered: DiffRecord[];
   unclassifiedCount: number;
+  eligibleComponents: number;
+  completedComponents: number;
+  remainingComponents: number;
+  batchCount: number;
   attemptedComponents: number;
   skippedComponents: number;
   stoppedReason: "none" | "component_cap" | "model_call_cap" | "deadline_exceeded";
@@ -336,33 +340,12 @@ export async function runTargetRecovery(
   }
 
   const eligible = ranked.filter(e => e.component.pixelCount >= budget.minComponentPixels);
-  const skippedComponents = Math.max(0, eligible.length - budget.maxComponents);
-  const cappedEntries = eligible.slice(budget.maxComponents);
-  const toProcess = eligible.slice(0, budget.maxComponents);
-
-  // Push skipped_component_cap traces and count capped components as unclassified so
-  // visualClassificationStatus cannot be "complete" when regions were never examined.
-  if (cappedEntries.length > 0 && stoppedReason === "none") {
-    stoppedReason = "component_cap";
-  }
-  for (let i = 0; i < cappedEntries.length; i++) {
-    const entry = cappedEntries[i]!;
-    const artifacts = preparedById.get(entry.componentId)?.artifacts ?? [];
-    countStatus("skipped_component_cap");
-    unclassifiedCount++;
-    trace.push({
-      componentId: entry.componentId,
-      rank: budget.maxComponents + i,
-      componentBox: entry.component.box,
-      pixelCount: entry.component.pixelCount,
-      status: "skipped_component_cap",
-      artifactPaths: artifacts
-    });
-    regionOutcomes.push({ regionId: entry.componentId, state: "unresolved", reason: "component_cap", artifactPaths: artifacts });
-  }
+  const toProcess = eligible;
+  const batchSize = Math.max(1, budget.maxComponents);
 
   let attemptedComponents = 0;
   let loopStoppedAt = toProcess.length;
+  let batchCount = 0;
 
   for (let rankIndex = 0; rankIndex < toProcess.length; rankIndex++) {
     const entry = toProcess[rankIndex]!;
@@ -379,6 +362,7 @@ export async function runTargetRecovery(
       loopStoppedAt = rankIndex;
       break;
     }
+    if (rankIndex % batchSize === 0) batchCount++;
     attemptedComponents++;
     const evidenceId = componentId;
     const box = component.box;
@@ -607,9 +591,20 @@ export async function runTargetRecovery(
     }
   }
 
+  const eligibleIds = new Set(eligible.map(entry => entry.componentId));
+  const completedComponents = regionOutcomes.filter(outcome => eligibleIds.has(outcome.regionId) && outcome.state !== "unresolved").length;
+  const remainingRegionIds = regionOutcomes
+    .filter(outcome => eligibleIds.has(outcome.regionId) && outcome.state === "unresolved")
+    .map(outcome => outcome.regionId);
+  const skippedComponents = Math.max(0, eligible.length - loopStoppedAt);
+
   return {
     recovered,
     unclassifiedCount,
+    eligibleComponents: eligible.length,
+    completedComponents,
+    remainingComponents: remainingRegionIds.length,
+    batchCount,
     attemptedComponents,
     skippedComponents,
     stoppedReason,
@@ -617,9 +612,9 @@ export async function runTargetRecovery(
     statusCounts,
     regionOutcomes,
     cursor: {
-      nextRegionIndex: attemptedComponents,
+      nextRegionIndex: loopStoppedAt,
       remainingModelCalls: Math.max(0, budget.maxModelCalls - modelCallsUsed),
-      remainingRegionIds: regionOutcomes.filter(outcome => outcome.state === "unresolved").map(outcome => outcome.regionId)
+      remainingRegionIds
     },
     ...(recoveryModel !== undefined ? { model: recoveryModel } : {})
   };

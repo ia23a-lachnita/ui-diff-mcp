@@ -101,11 +101,22 @@ function mergeGroup(group: OwnedFinding[]): DiffRecord {
   const childFindingIds = [...new Set(allFindings.flatMap(finding => [finding.id, ...(finding.childFindingIds ?? [])]))];
   const targetIds = [...new Set(group.flatMap(entry => [...entry.targetIds, ...(entry.finding.targetIds ?? [])]))];
   const criterionLabel = primary.finding.criterion.replaceAll("_", " ");
+  const coverageLocations = new Map<string, Box>();
+  for (const location of allFindings.flatMap(finding => finding.coverageLocations ?? [finding.location])) {
+    coverageLocations.set(JSON.stringify(location), location);
+  }
+  const explicitDisplacementGroup = primary.finding.findingGroupKind === "coherent_displacement";
+  const explicitStructuralGroup = primary.finding.findingGroupKind === "structural_region_mismatch";
 
   return {
     ...primary.finding,
-    title: parent ? `${parent.label}: ${criterionLabel}` : primary.finding.title,
+    title: explicitDisplacementGroup
+      ? `${primary.finding.groupLabel ?? "UI region"} displaced from expected position`
+      : explicitStructuralGroup
+        ? `${primary.finding.groupLabel ?? "UI region"} layout differs from expected`
+      : parent ? `${parent.label}: ${criterionLabel}` : primary.finding.title,
     location: unionBoxes(allFindings.map(finding => finding.location)),
+    coverageLocations: [...coverageLocations.values()],
     severity: primary.finding.severity,
     evidence: [...new Set(allFindings.flatMap(finding => finding.evidence))],
     measurements: [...measurements.values()],
@@ -127,10 +138,13 @@ export function consolidateFindings(
 
   for (const finding of findings) {
     const owned = resolveOwnership(finding, elements, elementMap, pairMap);
-    let key = owned.parent
+    const explicitGroup = finding.findingGroupId && finding.findingGroupKind
+      ? `explicit:${finding.findingGroupKind}:${finding.findingGroupId}:${finding.criterion}`
+      : undefined;
+    let key = explicitGroup ?? (owned.parent
       ? `parent:${owned.parent.id}:${finding.criterion}`
-      : `fallback:${owned.fallbackKey}`;
-    if (!owned.parent) {
+      : `fallback:${owned.fallbackKey}`);
+    if (!explicitGroup && !owned.parent) {
       const existing = groups.get(key);
       if (existing && !existing.some(entry => strongOverlap(entry.finding.location, finding.location))) {
         key = `${key}:${finding.id}`;

@@ -321,7 +321,8 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
   if (dualLocatorMode.warning) warnings.push(dualLocatorMode.warning);
   const dualLocatorEnabled = dualLocatorMode.enabled;
 
-  if (mode !== "deterministic_only" && status !== "insufficient_free_quota") {
+  const deterministicLocatorEnabled = process.env["UI_DIFF_DETERMINISTIC_LOCATOR"] === "1";
+  if ((mode !== "deterministic_only" || deterministicLocatorEnabled) && status !== "insufficient_free_quota") {
     try {
       const expResp = await locateUiElements({
         endpoint: locatorUrl,
@@ -753,6 +754,10 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
           visualClassificationStatus = "incomplete";
           recoverySummary = {
             totalUncoveredComponents: uncoveredComponents.length,
+            eligibleComponents: uncoveredComponents.length,
+            completedComponents: 0,
+            remainingComponents: uncoveredComponents.length,
+            batchCount: 0,
             attemptedComponents: 0,
             skippedComponents: uncoveredComponents.length,
             recoveredDiffs: 0,
@@ -790,6 +795,10 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
           recoveryCursor = recoveryResult.cursor;
           recoverySummary = {
             totalUncoveredComponents: uncoveredComponents.length,
+            eligibleComponents: recoveryResult.eligibleComponents,
+            completedComponents: recoveryResult.completedComponents,
+            remainingComponents: recoveryResult.remainingComponents,
+            batchCount: recoveryResult.batchCount,
             attemptedComponents: recoveryResult.attemptedComponents,
             skippedComponents: recoveryResult.skippedComponents,
             recoveredDiffs: recoveryResult.recovered.length,

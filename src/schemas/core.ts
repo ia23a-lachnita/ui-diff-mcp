@@ -178,6 +178,10 @@ export const UiArtifactSchema = z.object({
     "projected_actual_crop",
     "projected_directional_overlay",
     "projected_pixel_diff_mask",
+    "projected_group_expected_crop",
+    "projected_group_actual_crop",
+    "projected_group_directional_overlay",
+    "projected_group_pixel_diff_mask",
     "audit_trace",
     "coverage_trace",
     "recovery_trace",
@@ -232,11 +236,15 @@ export const DiffRecordSchema = z.object({
   severity: z.enum(["low", "medium", "high"]),
   title: z.string().min(1),
   location: BoxSchema,
+  coverageLocations: z.array(BoxSchema).min(1).optional(),
   evidence: z.array(z.string().min(1)).min(1),
   measurements: z.array(DeterministicMeasurementSchema).default([]),
   artifactPaths: z.array(UiArtifactSchema).default([]),
   childFindingIds: DefaultedIdArraySchema,
   targetIds: DefaultedIdArraySchema,
+  findingGroupId: z.string().min(1).optional(),
+  findingGroupKind: z.enum(["coherent_displacement", "structural_region_mismatch"]).optional(),
+  groupLabel: z.string().min(1).optional(),
   reviewerStatus: z.enum(["accepted", "rejected", "needs_escalation", "not_reviewed"]),
   model: z.string().optional(),
   classificationSource: z.enum([
@@ -253,7 +261,20 @@ export const DiffRecordSchema = z.object({
     "projected_crop_high_diff_mass",
     "projection_dimension_mismatch"
   ]).optional(),
-  projectionMismatchKind: z.enum(["absent_at_location", "displaced"]).optional()
+  projectionMismatchKind: z.enum(["absent_at_location", "displaced", "region_mismatch"]).optional()
+}).superRefine((record, ctx) => {
+  const deterministicSources = new Set([
+    "deterministic_projected_mismatch",
+    "deterministic_geometry",
+    "deterministic_presence"
+  ]);
+  if (record.classificationSource && deterministicSources.has(record.classificationSource) && record.reviewerStatus !== "not_reviewed") {
+    ctx.addIssue({
+      code: "custom",
+      path: ["reviewerStatus"],
+      message: "Deterministic findings must use reviewerStatus=not_reviewed."
+    });
+  }
 });
 export type DiffRecord = z.infer<typeof DiffRecordSchema>;
 
@@ -298,7 +319,11 @@ export const ProjectedPreAuditSummarySchema = z.object({
   projectedPairsChecked: z.number().int().nonnegative(),
   deterministicProjectedDiffs: z.number().int().nonnegative(),
   sentToVlmPairs: z.number().int().nonnegative(),
-  skippedFromVlmPairIds: z.array(z.string()).default([])
+  skippedFromVlmPairIds: z.array(z.string()).default([]),
+  uniqueDisplacements: z.number().int().nonnegative().default(0),
+  displacementGroups: z.number().int().nonnegative().default(0),
+  structuralMismatchGroups: z.number().int().nonnegative().default(0),
+  groupedPairs: z.number().int().nonnegative().default(0)
 });
 export type ProjectedPreAuditSummary = z.infer<typeof ProjectedPreAuditSummarySchema>;
 
@@ -349,6 +374,10 @@ export type StageStatus = z.infer<typeof StageStatusSchema>;
 
 export const RecoverySummarySchema = z.object({
   totalUncoveredComponents: z.number().int().min(0),
+  eligibleComponents: z.number().int().min(0).default(0),
+  completedComponents: z.number().int().min(0).default(0),
+  remainingComponents: z.number().int().min(0).default(0),
+  batchCount: z.number().int().min(0).default(0),
   preClusterUncoveredComponents: z.number().int().min(0).optional(),
   postClusterUncoveredComponents: z.number().int().min(0).optional(),
   attemptedComponents: z.number().int().min(0),

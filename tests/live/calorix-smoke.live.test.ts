@@ -9,6 +9,7 @@ import { ensureSidecarRunning, type SidecarHandle } from "../helpers/sidecar-man
 const calorixLive = process.env["RUN_CALORIX_UI_DIFF_LIVE"] === "1";
 const calorixFullLive = process.env["RUN_CALORIX_FULL_LIVE"] === "1";
 const calorixReleaseLive = process.env["RUN_CALORIX_RELEASE_LIVE"] === "1";
+const calorixDeterministicLive = process.env["RUN_CALORIX_DETERMINISTIC_LIVE"] === "1";
 
 function overlapRatio(a: { x: number; y: number; width: number; height: number }, b: { x: number; y: number; width: number; height: number }): number {
   const width = Math.max(0, Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x));
@@ -20,11 +21,25 @@ function assertFinalFindingIntegrity(report: UiDiffReport): void {
   expect(report.diffs.every(diff => diff.criterion !== "unclassified_visual_change"), "raw/unclassified regions must never be final findings").toBe(true);
   const projectedRoles = ["projected_expected_crop", "projected_actual_crop", "projected_directional_overlay", "projected_pixel_diff_mask"] as const;
   for (const diff of report.diffs.filter(item => item.classificationSource === "deterministic_projected_mismatch")) {
+    expect(diff.reviewerStatus, `deterministic diff ${diff.id} must not imply model review`).toBe("not_reviewed");
     const artifactRoles = new Set(diff.artifactPaths.map(artifact => artifact.role));
     for (const requiredRole of projectedRoles) {
       expect(artifactRoles.has(requiredRole), `projected diff ${diff.id} must have ${requiredRole}`).toBe(true);
     }
   }
+  const grouped = report.diffs.filter(diff => diff.findingGroupId !== undefined);
+  expect(new Set(grouped.map(diff => diff.findingGroupId)).size, "each displacement group must appear once in final findings").toBe(grouped.length);
+  const groupRoles = [
+    "projected_group_expected_crop",
+    "projected_group_actual_crop",
+    "projected_group_directional_overlay",
+    "projected_group_pixel_diff_mask"
+  ] as const;
+  for (const diff of grouped) {
+    const roles = new Set(diff.artifactPaths.map(artifact => artifact.role));
+    for (const role of groupRoles) expect(roles.has(role), `grouped diff ${diff.id} must have ${role}`).toBe(true);
+  }
+  expect(report.recoverySummary?.statusCounts["skipped_component_cap"] ?? 0, "component batch size must never become a terminal skip").toBe(0);
   const childIds = report.diffs.flatMap(diff => diff.childFindingIds ?? []);
   expect(new Set(childIds).size, "consolidated child finding IDs must be globally unique").toBe(childIds.length);
   for (let i = 0; i < report.diffs.length; i++) {
@@ -37,6 +52,89 @@ function assertFinalFindingIntegrity(report: UiDiffReport): void {
     }
   }
 }
+
+function assertNoSplitDisplacementConsensus(report: UiDiffReport): void {
+  const elementMap = new Map(report.elements.expected.map(element => [element.id, element]));
+  const ancestors = (diff: UiDiffReport["diffs"][number]): Set<string> => {
+    const result = new Set<string>();
+    for (const targetId of diff.targetIds ?? []) {
+      let element = elementMap.get(targetId);
+      const visited = new Set<string>();
+      while (element && !visited.has(element.id)) {
+        visited.add(element.id);
+        result.add(element.id);
+        element = element.parentId ? elementMap.get(element.parentId) : undefined;
+      }
+    }
+    return result;
+  };
+  const shifted = report.diffs.flatMap(diff => {
+    const dx = diff.measurements.find(measurement => measurement.name === "horizontal_shift")?.value;
+    const dy = diff.measurements.find(measurement => measurement.name === "vertical_shift")?.value;
+    return typeof dx === "number" && typeof dy === "number" ? [{ diff, dx, dy, ancestors: ancestors(diff) }] : [];
+  });
+  const width = report.comparisonSpace?.width ?? report.imageNormalization?.actual.source.width ?? 1000;
+  const tolerance = Math.max(8, width * 0.015);
+  for (let leftIndex = 0; leftIndex < shifted.length; leftIndex++) {
+    for (let rightIndex = leftIndex + 1; rightIndex < shifted.length; rightIndex++) {
+      const left = shifted[leftIndex]!;
+      const right = shifted[rightIndex]!;
+      const sharedAncestor = [...left.ancestors].some(id => right.ancestors.has(id));
+      const sameVector = Math.hypot(left.dx - right.dx, left.dy - right.dy) <= tolerance;
+      expect(sharedAncestor && sameVector,
+        `same-vector findings ${left.diff.id} and ${right.diff.id} share an ancestor but were not consolidated`).toBe(false);
+    }
+  }
+}
+
+describe.skipIf(!calorixDeterministicLive)("Calorix deterministic pipeline quality gate", () => {
+  let sidecarHandle: SidecarHandle | undefined;
+
+  beforeAll(async () => {
+    const url = process.env["LOCATEANYTHING_SIDECAR_URL"] ?? "http://127.0.0.1:39731";
+    sidecarHandle = await ensureSidecarRunning(url);
+  }, 130000);
+
+  afterAll(() => { sidecarHandle?.close(); });
+
+  test("consolidates large projected displacement without model providers", async () => {
+    const expectedImagePath = process.env["UI_DIFF_LIVE_EXPECTED_IMAGE"];
+    const actualImagePath = process.env["UI_DIFF_LIVE_ACTUAL_IMAGE"];
+    expect(expectedImagePath, "UI_DIFF_LIVE_EXPECTED_IMAGE must be set").toBeTruthy();
+    expect(actualImagePath, "UI_DIFF_LIVE_ACTUAL_IMAGE must be set").toBeTruthy();
+    const projectRoot = process.env["UI_DIFF_LIVE_PROJECT_ROOT"] ?? "C:/Users/xursc/projects/calorix";
+    const started = await startUiDiffMcpClient({
+      LOCATEANYTHING_TIMEOUT_MS: "600000",
+      UI_DIFF_DETERMINISTIC_LOCATOR: "1"
+    });
+    try {
+      const startResult = await started.client.callTool({
+        name: "start_ui_diff_run",
+        arguments: { expectedImagePath: expectedImagePath!, actualImagePath: actualImagePath!, projectRoot, mode: "deterministic_only" }
+      }, undefined, { timeout: 600000 });
+      expect(startResult.isError, `start_ui_diff_run failed: ${JSON.stringify(startResult)}`).not.toBe(true);
+      const { runId } = startResult.structuredContent as { runId: string };
+      let statusOut: { status: string; reportPath?: string } | undefined;
+      for (let attempt = 0; attempt < 120; attempt++) {
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        const statusResult = await started.client.callTool({ name: "get_ui_diff_run_status", arguments: { projectRoot, runId } }, undefined, { timeout: 600000 });
+        statusOut = statusResult.structuredContent as { status: string; reportPath?: string };
+        if (statusOut.status !== "running") break;
+      }
+      expect(statusOut?.status, `deterministic gate must terminate; child=${JSON.stringify(started.getDiagnostics())}`).not.toBe("running");
+      expect(statusOut?.reportPath).toBeTruthy();
+      const report = UiDiffReportSchema.parse(JSON.parse(await fs.readFile(statusOut!.reportPath!, "utf8")));
+      assertFinalFindingIntegrity(report);
+      assertNoSplitDisplacementConsensus(report);
+      const groupCount = (report.projectedPreAudit?.displacementGroups ?? 0) + (report.projectedPreAudit?.structuralMismatchGroups ?? 0);
+      expect(groupCount, "baseline contains at least two grouped projected-mismatch UI areas").toBeGreaterThanOrEqual(2);
+      expect(report.projectedPreAudit?.groupedPairs ?? 0, "baseline eight fragments must become grouped mismatch evidence").toBeGreaterThanOrEqual(8);
+      console.info(`[calorix-deterministic] run=${report.runId} displacementGroups=${report.projectedPreAudit?.displacementGroups ?? 0} structuralGroups=${report.projectedPreAudit?.structuralMismatchGroups ?? 0} groupedPairs=${report.projectedPreAudit?.groupedPairs ?? 0} finalDiffs=${report.diffs.length} unresolved=${report.unresolvedRegions.length}`);
+    } finally {
+      await started.close();
+    }
+  }, 1200000);
+});
 
 describe.skipIf(!calorixLive)("Calorix live UI diff smoke", () => {
   let sidecarHandle: SidecarHandle | undefined;

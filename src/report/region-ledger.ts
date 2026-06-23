@@ -32,9 +32,11 @@ export interface RegionLedgerOptions {
 }
 
 function overlapRatio(box: Box, finding: DiffRecord): number {
-  const overlap = intersect(box, finding.location);
-  if (!overlap) return 0;
-  return (overlap.width * overlap.height) / (box.width * box.height);
+  return Math.max(...(finding.coverageLocations ?? [finding.location]).map(location => {
+    const overlap = intersect(box, location);
+    if (!overlap) return 0;
+    return (overlap.width * overlap.height) / (box.width * box.height);
+  }));
 }
 
 export function buildRegionLedger(

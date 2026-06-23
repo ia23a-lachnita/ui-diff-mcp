@@ -108,4 +108,78 @@ describe("consolidateFindings", () => {
 
     expect(result).toHaveLength(2);
   });
+
+  it("does not upgrade deterministic children to reviewer accepted", () => {
+    const card = element("card", "card", 0, 0, 100, 100);
+    const child = element("child", "icon", 10, 10, 20, 20, card.id);
+    card.childIds = [child.id];
+    const deterministic = finding(
+      "deterministic",
+      "pair-child",
+      "geometry",
+      10,
+      10,
+      20,
+      20,
+      "deterministic_geometry"
+    );
+    deterministic.reviewerStatus = "not_reviewed";
+
+    const result = consolidateFindings([deterministic], [card, child], [pair("pair-child", child.id)]);
+
+    expect(result[0]?.reviewerStatus).toBe("not_reviewed");
+  });
+
+  it("consolidates an explicit coherent displacement group under a generic parent", () => {
+    const wrapper = element("wrapper", "text", 0, 0, 300, 500, undefined, "merged");
+    const children = Array.from({ length: 6 }, (_, index) => element(`child-${index}`, "text", 20, 40 + index * 60, 20, 20, wrapper.id));
+    wrapper.childIds = children.map(child => child.id);
+    const pairs = children.map((child, index) => pair(`pair-${index}`, child.id));
+    const diffs = children.map((child, index) => {
+      const diff = finding(`grouped-${index}`, pairs[index]!.id, "geometry", child.box.x, child.box.y, 20, 120, "deterministic_projected_mismatch");
+      diff.reviewerStatus = "not_reviewed";
+      diff.findingGroupId = "displacement-nutrition";
+      diff.findingGroupKind = "coherent_displacement";
+      diff.groupLabel = "Nutrition summary";
+      diff.coverageLocations = [child.box, { ...child.box, y: child.box.y + 100 }];
+      diff.measurements = [
+        { name: "horizontal_shift", value: 0, unit: "px" },
+        { name: "vertical_shift", value: 100, unit: "px" }
+      ];
+      return diff;
+    });
+
+    const result = consolidateFindings(diffs, [wrapper, ...children], pairs);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]?.title).toBe("Nutrition summary displaced from expected position");
+    expect(result[0]?.childFindingIds).toHaveLength(6);
+    expect(result[0]?.artifactPaths).toHaveLength(6);
+    expect(result[0]?.coverageLocations).toHaveLength(12);
+    expect(result[0]?.reviewerStatus).toBe("not_reviewed");
+  });
+
+  it("keeps different explicit displacement groups separate under one generic parent", () => {
+    const wrapper = element("wrapper", "text", 0, 0, 300, 500, undefined, "merged");
+    const children = [
+      element("a-1", "text", 20, 40, 20, 20, wrapper.id),
+      element("a-2", "text", 20, 80, 20, 20, wrapper.id),
+      element("b-1", "text", 20, 300, 20, 20, wrapper.id),
+      element("b-2", "text", 20, 340, 20, 20, wrapper.id)
+    ];
+    const pairs = children.map((child, index) => pair(`pair-explicit-${index}`, child.id));
+    const diffs = children.map((child, index) => {
+      const diff = finding(`explicit-${index}`, pairs[index]!.id, "geometry", child.box.x, child.box.y, 20, 80, "deterministic_projected_mismatch");
+      diff.reviewerStatus = "not_reviewed";
+      diff.findingGroupId = index < 2 ? "group-a" : "group-b";
+      diff.findingGroupKind = "coherent_displacement";
+      diff.groupLabel = index < 2 ? "Upper region" : "Lower region";
+      return diff;
+    });
+
+    const result = consolidateFindings(diffs, [wrapper, ...children], pairs);
+
+    expect(result).toHaveLength(2);
+    expect(result.map(item => item.findingGroupId).sort()).toEqual(["group-a", "group-b"]);
+  });
 });

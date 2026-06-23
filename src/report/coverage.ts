@@ -4,11 +4,13 @@ import type { PixelComponent } from "../signals/pixel-diff.js";
 import { intersect } from "../signals/geometry.js";
 
 function componentOverlapsDiff(component: PixelComponent, diff: DiffRecord): boolean {
-  const overlap = intersect(component.box, diff.location);
-  if (!overlap) return false;
-  const overlapArea = overlap.width * overlap.height;
-  const componentArea = component.box.width * component.box.height;
-  return overlapArea / componentArea >= 0.1;
+  return (diff.coverageLocations ?? [diff.location]).some(location => {
+    const overlap = intersect(component.box, location);
+    if (!overlap) return false;
+    const overlapArea = overlap.width * overlap.height;
+    const componentArea = component.box.width * component.box.height;
+    return overlapArea / componentArea >= 0.1;
+  });
 }
 
 export function traceCoverageDecisions(
@@ -23,10 +25,12 @@ export function traceCoverageDecisions(
     }
     let best: { diff: DiffRecord; ratio: number } | undefined;
     for (const diff of diffs) {
-      const overlap = intersect(component.box, diff.location);
-      if (!overlap) continue;
-      const ratio = (overlap.width * overlap.height) / (component.box.width * component.box.height);
-      if (!best || ratio > best.ratio) best = { diff, ratio };
+      for (const location of diff.coverageLocations ?? [diff.location]) {
+        const overlap = intersect(component.box, location);
+        if (!overlap) continue;
+        const ratio = (overlap.width * overlap.height) / (component.box.width * component.box.height);
+        if (!best || ratio > best.ratio) best = { diff, ratio };
+      }
     }
     if (best && best.ratio >= 0.1) {
       return {

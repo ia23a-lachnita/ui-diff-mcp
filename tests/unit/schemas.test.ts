@@ -33,6 +33,36 @@ describe("core schemas", () => {
     expect(parsed.criterion).toBe("geometry");
   });
 
+  it("accepts deterministic findings only as not reviewed", () => {
+    const parsed = DiffRecordSchema.parse({
+      id: "deterministic-1",
+      criterion: "geometry",
+      severity: "medium",
+      title: "Target is displaced",
+      location: { x: 10, y: 20, width: 100, height: 44 },
+      evidence: ["Deterministic translation dx=4px, dy=8px."],
+      reviewerStatus: "not_reviewed",
+      model: "deterministic",
+      classificationSource: "deterministic_projected_mismatch"
+    });
+
+    expect(parsed.reviewerStatus).toBe("not_reviewed");
+  });
+
+  it("rejects deterministic findings labeled as reviewer accepted", () => {
+    expect(() => DiffRecordSchema.parse({
+      id: "deterministic-accepted",
+      criterion: "presence",
+      severity: "high",
+      title: "Target absent at projected location",
+      location: { x: 10, y: 20, width: 100, height: 44 },
+      evidence: ["Projected crop mismatch."],
+      reviewerStatus: "accepted",
+      model: "deterministic",
+      classificationSource: "deterministic_projected_mismatch"
+    })).toThrow(/deterministic findings must use reviewerStatus=not_reviewed/i);
+  });
+
   it("rejects a report without evidence-backed diffs", () => {
     expect(() => UiDiffReportSchema.parse(makeMinimalReport({
       diffs: [{

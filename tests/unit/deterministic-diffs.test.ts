@@ -54,7 +54,7 @@ describe("buildDeterministicDiffs", () => {
 
     expect(diffs).toHaveLength(1);
     expect(diffs[0]!.criterion).toBe("geometry");
-    expect(diffs[0]!.reviewerStatus).toBe("accepted");
+    expect(diffs[0]!.reviewerStatus).toBe("not_reviewed");
     expect(diffs[0]!.model).toBe("deterministic");
     // union box covers both old (y=50) and new (y=70) positions
     expect(diffs[0]!.location).toEqual({ x: 20, y: 50, width: 160, height: 40 });

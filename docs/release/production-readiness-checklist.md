@@ -72,9 +72,31 @@ Required result:
 - Required model health entries for selected routes are `pass`.
 - The report includes normalized images, pixel diff, overlay, report JSON, and artifact index.
 
-## Known Coverage Limitation
+## Shape-Local Coverage
 
-Deterministic geometry diffs use a union box that covers both the expected and actual element positions. This prevents shifted elements from being reported as unclassified pixel fragments during target recovery. However, unrelated pixel changes that fall inside the union box may be considered covered and not sent to recovery until shape-aware coverage is implemented in a future task.
+Deterministic displacement findings retain separate expected and translated child locations for region-ledger coverage. The rectangular corridor between those shapes is not marked covered, so unrelated changed pixels inside a final group's display union remain eligible for recovery.
+
+## Deterministic Calorix Pipeline Gate
+
+Run this before provider-backed Calorix gates so displacement, consolidation, coverage, and recovery scheduling are evaluated independently of model availability:
+
+```powershell
+$env:RUN_CALORIX_DETERMINISTIC_LIVE="1"
+$env:UI_DIFF_LIVE_EXPECTED_IMAGE="C:\Users\xursc\projects\calorix\docs\mockups\image\dark\single\Today.png"
+$env:UI_DIFF_LIVE_ACTUAL_IMAGE="C:\Users\xursc\projects\calorix\docs\screenshots\today-screen-2026-06-17-adb-seeded-2.png"
+$env:LOCATEANYTHING_SIDECAR_URL="http://127.0.0.1:39731"
+npm run verify:calorix-deterministic-live
+```
+
+Required evidence:
+
+- Large uniquely supported translations are reported as coherent geometry groups. Multiple independently proven non-coherent mismatches in one connected bounded region are reported as one structural layout finding rather than duplicate presence fragments.
+- Deterministic findings use `reviewerStatus:not_reviewed`.
+- Group and child artifacts are present.
+- Same-vector findings under one ancestor are consolidated.
+- Recovery emits no `skipped_component_cap`; the compatibility component value is batch size only.
+
+Latest provider-independent result: `run-1782187460179-53f4c9` on 2026-06-23. It checked 79 projected pairs, grouped 8 deterministic mismatches into 2 structural findings, and made no auditor/reviewer calls. See `docs/release/2026-06-22-deterministic-pipeline-live-results.md`.
 
 ## Bounded Calorix Smoke Gate
 

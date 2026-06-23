@@ -52,7 +52,7 @@ export function buildDeterministicDiffs(input: {
             { name: "deltaHeight", value: dh, unit: "px" }
           ],
           artifactPaths: [],
-          reviewerStatus: "accepted",
+          reviewerStatus: "not_reviewed",
           model: "deterministic",
           classificationSource: "deterministic_geometry"
         });
@@ -69,7 +69,7 @@ export function buildDeterministicDiffs(input: {
         evidence: [`Expected element exists at x=${expected.box.x}, y=${expected.box.y}, w=${expected.box.width}, h=${expected.box.height}; no actual element was paired.`],
         measurements: [],
         artifactPaths: [],
-        reviewerStatus: "accepted",
+        reviewerStatus: "not_reviewed",
         model: "deterministic",
         classificationSource: "deterministic_presence"
       });
@@ -85,7 +85,7 @@ export function buildDeterministicDiffs(input: {
         evidence: [`Actual element exists at x=${actual.box.x}, y=${actual.box.y}, w=${actual.box.width}, h=${actual.box.height}; no expected element was paired.`],
         measurements: [],
         artifactPaths: [],
-        reviewerStatus: "accepted",
+        reviewerStatus: "not_reviewed",
         model: "deterministic",
         classificationSource: "deterministic_presence"
       });
