@@ -73,7 +73,7 @@ describe("writeReportCheckpoint", () => {
   it("records stages in the written report", async () => {
     const report = makeReport({
       stages: [
-        { name: "locator_pairing", status: "complete", completedAt: new Date().toISOString() }
+        { name: "locator_pairing", status: "complete", outcome: "success", completedAt: new Date().toISOString() }
       ]
     });
     const reportPath = await writeReportCheckpoint(report);

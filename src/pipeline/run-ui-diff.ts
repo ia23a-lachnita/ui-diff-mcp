@@ -35,6 +35,8 @@ import type { UiDiffReport, RunStatus, VisualClassificationStatus, LocatorCovera
 import { computeColorEvidence } from "../signals/color.js";
 import { createRunId } from "./run-store.js";
 import { UiDiffReportSchema } from "../schemas/core.js";
+import { deriveAuditStageOutcome, deriveRecoveryStageOutcome } from "./stages.js";
+import type { StageOutcome } from "../schemas/core.js";
 
 export interface RunInput {
   expectedImagePath: string;
@@ -213,16 +215,33 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     { role: "directional_overlay", path: directionalOverlayPath }
   ];
 
-  async function checkpoint(
+  function upsertStage(
     stageName: string,
     stageStatus: StageStatus["status"],
-    currentPairs: ElementPair[],
-    currentModelHealth: UiDiffReport["modelHealth"]
-  ): Promise<void> {
-    const stageRecord = { name: stageName, status: stageStatus, completedAt: new Date().toISOString() };
+    outcome: StageOutcome,
+    detail?: string
+  ): void {
+    const stageRecord: StageStatus = {
+      name: stageName,
+      status: stageStatus,
+      outcome,
+      completedAt: new Date().toISOString(),
+      ...(detail !== undefined ? { detail } : {})
+    };
     const existingStageIndex = stages.findIndex(stage => stage.name === stageName);
     if (existingStageIndex >= 0) stages[existingStageIndex] = stageRecord;
     else stages.push(stageRecord);
+  }
+
+  async function checkpoint(
+    stageName: string,
+    stageStatus: StageStatus["status"],
+    outcome: StageOutcome,
+    detail: string | undefined,
+    currentPairs: ElementPair[],
+    currentModelHealth: UiDiffReport["modelHealth"]
+  ): Promise<void> {
+    upsertStage(stageName, stageStatus, outcome, detail);
     const checkpointPath = await writeReportCheckpoint({
       schemaVersion: "0.1",
       runId,
@@ -458,7 +477,19 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
   const vlmCandidatePairs = pairs.filter(p => !projectedPreAuditResult.skipVlmPairIds.has(p.id));
 
   const modelHealth: UiDiffReport["modelHealth"] = [];
-  await checkpoint("locator_pairing_deterministic", "complete", pairs, modelHealth);
+  const locatorStageOutcome: StageOutcome = locatorFailed || locatorCoverageStatus === "failed"
+    ? "unavailable"
+    : locatorCoverageStatus === "weak"
+      ? "incomplete"
+      : "success";
+  await checkpoint(
+    "locator_pairing_deterministic",
+    "complete",
+    locatorStageOutcome,
+    locatorStageOutcome === "success" ? undefined : locatorCoverageStatus,
+    pairs,
+    modelHealth
+  );
 
   if (mode !== "deterministic_only" && status !== "insufficient_free_quota") {
     const probe = opts?.probeOverride ?? probeRequiredModels;
@@ -523,7 +554,14 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     const auditorEntry = auditorCandidates[0];
     const reviewerEntry = reviewerCandidates[0];
 
-    await checkpoint("model_probe", "complete", pairs, modelHealth);
+    await checkpoint(
+      "model_probe",
+      "complete",
+      auditorEntry && reviewerEntry ? "success" : "unavailable",
+      !auditorEntry ? "auditor_unavailable" : !reviewerEntry ? "reviewer_unavailable" : undefined,
+      pairs,
+      modelHealth
+    );
 
     if (!auditorEntry || !reviewerEntry) {
       if (!locatorFailed) {
@@ -723,7 +761,8 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
 
         const merged = reviewAndMergeFindings(auditedDiffs);
         allDiffs.push(...merged);
-        await checkpoint("audit", "complete", pairs, modelHealth);
+        const auditStageOutcome = deriveAuditStageOutcome(auditScope);
+        await checkpoint("audit", "complete", auditStageOutcome.outcome, auditStageOutcome.detail, pairs, modelHealth);
 
         // Target recovery: classify uncovered changed-pixel regions
         const significantComponents = pixelDiff.components.filter(c => c.pixelCount >= 50);
@@ -783,6 +822,8 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
             status: "error",
             reason: "all target_recovery probes failed — no caller created"
           });
+          const recoveryStageOutcome = deriveRecoveryStageOutcome(recoverySummary);
+          await checkpoint("target_recovery", "complete", recoveryStageOutcome.outcome, recoveryStageOutcome.detail, pairs, modelHealth);
         } else if (uncoveredComponents.length > 0 && recoveryCaller) {
           const recoveryResult = await runTargetRecovery(uncoveredComponents, {
             expectedRgba: { data: expectedImg.rgba, width: expectedImg.width, height: expectedImg.height },
@@ -819,11 +860,29 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
           } else if (!locatorFailed && !auditSelection.limited) {
             visualClassificationStatus = "complete";
           }
-          await checkpoint("target_recovery", "complete", pairs, modelHealth);
-        } else if (!locatorFailed && !auditSelection.limited) {
-          visualClassificationStatus = "complete";
+          const recoveryStageOutcome = deriveRecoveryStageOutcome(recoverySummary);
+          await checkpoint("target_recovery", "complete", recoveryStageOutcome.outcome, recoveryStageOutcome.detail, pairs, modelHealth);
+        } else {
+          if (!locatorFailed && !auditSelection.limited) {
+            visualClassificationStatus = "complete";
+          }
+          await checkpoint("target_recovery", "skipped", "not_applicable", "no_uncovered_regions", pairs, modelHealth);
         }
       }
+    }
+  }
+
+  for (const stageName of ["model_probe", "audit", "target_recovery"] as const) {
+    if (stages.some(stage => stage.name === stageName)) continue;
+    if (mode === "deterministic_only") {
+      upsertStage(stageName, "skipped", "not_applicable", "deterministic_only");
+    } else {
+      const detail = status === "insufficient_free_quota"
+        ? "insufficient_free_quota"
+        : locatorFailed
+          ? "locator_unavailable"
+          : "required_provider_stage_not_run";
+      upsertStage(stageName, "skipped", "unavailable", detail);
     }
   }
 

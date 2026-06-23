@@ -346,7 +346,7 @@ Commit: `fix(report): index actual comparison image`
 - Produces: `StageOutcome = "success" | "incomplete" | "unavailable" | "not_applicable"`.
 - Every final report contains `model_probe`, `audit`, and `target_recovery` stage records.
 
-- [ ] **Step 1: Write failing final-report tests**
+- [x] **Step 1: Write failing final-report tests**
 
 Cover four cases:
 
@@ -359,13 +359,13 @@ expect(deterministicStage("audit")).toMatchObject({ status: "skipped", outcome: 
 
 Also assert a fully successful semantic fixture reports `success` for all performed provider stages.
 
-- [ ] **Step 2: Run tests and verify RED**
+- [x] **Step 2: Run tests and verify RED**
 
 Run: `npx vitest run tests/unit/schemas.test.ts tests/e2e/compare-ui-images.test.ts`
 
 Expected: missing stage outcome and sparse stage records.
 
-- [ ] **Step 3: Implement lifecycle/outcome separation**
+- [x] **Step 3: Implement lifecycle/outcome separation**
 
 Extend `StageStatusSchema` with `outcome`. For legacy reports that omit it, preprocess `status: skipped` to `not_applicable` and every other missing outcome to `incomplete`; this fail-closed compatibility rule prevents an old `complete` lifecycle value from becoming semantic success. Change `checkpoint(stageName, stageStatus, outcome, detail, ...)` and update every call site in `run-ui-diff.ts` in the same task, so no newly written checkpoint can omit outcome. Update all typed stage fixtures to carry explicit outcomes.
 
@@ -376,7 +376,7 @@ Rules:
 - `target_recovery`: no components is `skipped/not_applicable`; missing caller is `complete/unavailable`; non-none stop reason or unclassified regions is `complete/incomplete`; otherwise `complete/success`.
 - `deterministic_only`: all three provider stages are `skipped/not_applicable`.
 
-- [ ] **Step 4: Harden the strict live gate**
+- [x] **Step 4: Harden the strict live gate**
 
 Require provider stage outcome truth:
 
@@ -388,13 +388,13 @@ expect(["success", "not_applicable"]).toContain(stage("target_recovery").outcome
 
 Diagnostic gates may accept `incomplete` only while printing a degraded-pass warning.
 
-- [ ] **Step 5: Run focused and e2e tests**
+- [x] **Step 5: Run focused and e2e tests**
 
 Run: `npx vitest run tests/unit/schemas.test.ts tests/e2e/compare-ui-images.test.ts tests/unit/report-writer.test.ts`
 
 Expected: PASS.
 
-- [ ] **Step 6: Update tracking, commit, and push**
+- [x] **Step 6: Update tracking, commit, and push**
 
 Commit: `fix(report): distinguish stage completion from outcome`
 

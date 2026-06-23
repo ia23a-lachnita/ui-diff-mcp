@@ -363,14 +363,28 @@ export const ModelSelectionSchema = z.object({
 });
 export type ModelSelection = z.infer<typeof ModelSelectionSchema>;
 
-export const StageStatusSchema = z.object({
+export const StageOutcomeSchema = z.enum(["success", "incomplete", "unavailable", "not_applicable"]);
+export type StageOutcome = z.infer<typeof StageOutcomeSchema>;
+
+const StageStatusRecordSchema = z.object({
   name: z.string().min(1),
   status: z.enum(["pending", "running", "complete", "failed", "skipped"]),
+  outcome: StageOutcomeSchema,
   startedAt: z.string().datetime().optional(),
   completedAt: z.string().datetime().optional(),
   durationMs: z.number().int().min(0).optional(),
   detail: z.string().optional()
 });
+
+export const StageStatusSchema = z.preprocess(value => {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return value;
+  const record = value as Record<string, unknown>;
+  if (record["outcome"] !== undefined) return value;
+  return {
+    ...record,
+    outcome: record["status"] === "skipped" ? "not_applicable" : "incomplete"
+  };
+}, StageStatusRecordSchema);
 export type StageStatus = z.infer<typeof StageStatusSchema>;
 
 export const RecoverySummarySchema = z.object({

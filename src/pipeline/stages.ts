@@ -23,3 +23,38 @@ export function runStage<T>(
     data
   }));
 }
+
+export interface SemanticStageOutcome {
+  outcome: StageOutcome;
+  detail?: string;
+}
+
+export function deriveAuditStageOutcome(scope: AuditScope): SemanticStageOutcome {
+  if (scope.stoppedReason === "route_exhausted") {
+    return { outcome: "incomplete", detail: "route_exhausted" };
+  }
+  if ((scope.failedPairs ?? 0) > 0) {
+    return { outcome: "incomplete", detail: "failed_pairs" };
+  }
+  if ((scope.remainingPairs ?? 0) > 0) {
+    return { outcome: "incomplete", detail: "remaining_pairs" };
+  }
+  if (scope.auditLimited) {
+    return { outcome: "incomplete", detail: "audit_limited" };
+  }
+  return { outcome: "success" };
+}
+
+export function deriveRecoveryStageOutcome(summary: RecoverySummary): SemanticStageOutcome {
+  if (summary.stoppedReason === "caller_unavailable") {
+    return { outcome: "unavailable", detail: "caller_unavailable" };
+  }
+  if (summary.stoppedReason !== "none") {
+    return { outcome: "incomplete", detail: summary.stoppedReason };
+  }
+  if (summary.unclassifiedCount > 0 || summary.remainingComponents > 0) {
+    return { outcome: "incomplete", detail: "unclassified_regions" };
+  }
+  return { outcome: "success" };
+}
+import type { AuditScope, RecoverySummary, StageOutcome } from "../schemas/core.js";

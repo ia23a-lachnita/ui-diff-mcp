@@ -53,6 +53,11 @@ describe("runUiDiff end-to-end (deterministic_only mode)", () => {
     expect(report.visualClassificationStatus).toBe("not_run");
     expect(report.unresolvedRegions.length).toBeGreaterThan(0);
     expect(report.unresolvedRegions.every(region => region.artifactPaths.length === 4)).toBe(true);
+    const stageMap = Object.fromEntries((report as unknown as { stages: Array<{ name: string; status: string; outcome: string }> }).stages
+      .map(stage => [stage.name, stage]));
+    for (const name of ["model_probe", "audit", "target_recovery"]) {
+      expect(stageMap[name]).toMatchObject({ status: "skipped", outcome: "not_applicable" });
+    }
   });
 
   it("normalized images are written as artifacts", async () => {
@@ -161,6 +166,7 @@ describe("runUiDiff with mock sidecar and models (full mode)", () => {
     const report = JSON.parse(await fs.readFile(result.reportPath, "utf8")) as {
       modelSelection?: Record<string, { provider: string; model: string }>;
       runArtifacts: Array<{ role: string; path: string }>;
+      stages: Array<{ name: string; status: string; outcome: string; detail?: string }>;
     };
     expect(report.modelSelection?.["auditor"]).toMatchObject({ provider: "opencode", model: "mimo-v2.5-free" });
     expect(report.modelSelection?.["reviewer"]).toMatchObject({ provider: "opencode", model: "mimo-v2.5-free" });
@@ -170,6 +176,10 @@ describe("runUiDiff with mock sidecar and models (full mode)", () => {
     expect(providerTracePath).toBeTruthy();
     const providerTrace = JSON.parse(await fs.readFile(providerTracePath!, "utf8")) as Array<{ provider: string; event: string }>;
     expect(providerTrace.some(event => event.provider === "opencode" && event.event === "call_success")).toBe(true);
+    const stageMap = Object.fromEntries(report.stages.map(stage => [stage.name, stage]));
+    expect(stageMap["model_probe"]).toMatchObject({ status: "complete", outcome: "success" });
+    expect(stageMap["audit"]).toMatchObject({ status: "complete", outcome: "success" });
+    expect(stageMap["target_recovery"]).toMatchObject({ status: "skipped", outcome: "not_applicable" });
   });
 
   it("discovers elements, pairs them, and runs audit pipeline", async () => {

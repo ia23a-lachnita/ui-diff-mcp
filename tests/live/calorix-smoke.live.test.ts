@@ -151,7 +151,6 @@ describe.skipIf(!calorixLive)("Calorix live UI diff smoke", () => {
     const actualImagePath = process.env["UI_DIFF_LIVE_ACTUAL_IMAGE"];
     expect(expectedImagePath, "UI_DIFF_LIVE_EXPECTED_IMAGE must be set").toBeTruthy();
     expect(actualImagePath, "UI_DIFF_LIVE_ACTUAL_IMAGE must be set").toBeTruthy();
-    expect(process.env["OPENROUTER_API_KEY"], "OPENROUTER_API_KEY must be set").toBeTruthy();
     expect(process.env["LOCATEANYTHING_SIDECAR_URL"], "LOCATEANYTHING_SIDECAR_URL must be set").toBeTruthy();
 
     const projectRoot = "C:/Users/xursc/projects/calorix";
@@ -274,7 +273,6 @@ describe.skipIf(!calorixFullLive)("verify:calorix-full-live unbounded all-target
     const actualImagePath = process.env["UI_DIFF_LIVE_ACTUAL_IMAGE"];
     expect(expectedImagePath, "UI_DIFF_LIVE_EXPECTED_IMAGE must be set").toBeTruthy();
     expect(actualImagePath, "UI_DIFF_LIVE_ACTUAL_IMAGE must be set").toBeTruthy();
-    expect(process.env["OPENROUTER_API_KEY"], "OPENROUTER_API_KEY must be set").toBeTruthy();
     expect(process.env["LOCATEANYTHING_SIDECAR_URL"], "LOCATEANYTHING_SIDECAR_URL must be set").toBeTruthy();
     // Confirm UI_DIFF_MAX_AUDIT_PAIRS is not set so this is a genuine unbounded run
     expect(process.env["UI_DIFF_MAX_AUDIT_PAIRS"], "UI_DIFF_MAX_AUDIT_PAIRS must NOT be set for full audit").toBeUndefined();
@@ -484,7 +482,6 @@ describe.skipIf(!calorixReleaseLive)("Calorix release sign-off gate", () => {
     const actualImagePath = process.env["UI_DIFF_LIVE_ACTUAL_IMAGE"];
     expect(expectedImagePath, "UI_DIFF_LIVE_EXPECTED_IMAGE must be set").toBeTruthy();
     expect(actualImagePath, "UI_DIFF_LIVE_ACTUAL_IMAGE must be set").toBeTruthy();
-    expect(process.env["OPENROUTER_API_KEY"], "OPENROUTER_API_KEY must be set").toBeTruthy();
     expect(process.env["LOCATEANYTHING_SIDECAR_URL"], "LOCATEANYTHING_SIDECAR_URL must be set").toBeTruthy();
 
     await expect(fs.access(expectedImagePath!), "expected screenshot must exist on disk").resolves.toBeUndefined();
@@ -535,6 +532,17 @@ describe.skipIf(!calorixReleaseLive)("Calorix release sign-off gate", () => {
       const skippedNoTrigger = report.auditScope?.skippedNoTriggeredPairs ?? 0;
       expect(providerCalledPairs + skippedNoTrigger, "every selected pair must be provider-called or deterministically skipped before call").toBe(selectedPairs);
       expect(report.auditScope?.failedPairs ?? 0, "release gate requires zero failed audit pairs").toBe(0);
+
+      const stageMap = Object.fromEntries(report.stages.map(stage => [stage.name, stage]));
+      expect(stageMap["model_probe"], "release gate requires a model_probe stage record").toBeDefined();
+      expect(stageMap["model_probe"]?.outcome, "release gate requires successful model probes").toBe("success");
+      expect(stageMap["audit"], "release gate requires an audit stage record").toBeDefined();
+      expect(stageMap["audit"]?.outcome, "release gate requires a semantically complete audit").toBe("success");
+      expect(stageMap["target_recovery"], "release gate requires a target_recovery stage record").toBeDefined();
+      expect(
+        ["success", "not_applicable"],
+        "release gate requires successful recovery or no uncovered regions"
+      ).toContain(stageMap["target_recovery"]?.outcome);
 
       const escalatedDiffs = report.diffs.filter(d => d.reviewerStatus === "needs_escalation");
       expect(

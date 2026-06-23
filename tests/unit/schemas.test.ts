@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DiffRecordSchema, UiArtifactSchema, UiDiffReportSchema, ModelSelectionSchema } from "../../src/schemas/core.js";
+import { DiffRecordSchema, StageStatusSchema, UiArtifactSchema, UiDiffReportSchema, ModelSelectionSchema } from "../../src/schemas/core.js";
 
 function makeMinimalReport(overrides: Record<string, unknown> = {}) {
   return {
@@ -25,6 +25,20 @@ describe("core schemas", () => {
       role: "actual_comparison_space",
       path: "C:/run/actual-comparison-space.png"
     })).toMatchObject({ role: "actual_comparison_space" });
+  });
+
+  it("parses legacy complete stage records fail-closed as incomplete", () => {
+    expect(StageStatusSchema.parse({ name: "audit", status: "complete" })).toMatchObject({
+      status: "complete",
+      outcome: "incomplete"
+    });
+  });
+
+  it("parses legacy skipped stage records as not applicable", () => {
+    expect(StageStatusSchema.parse({ name: "audit", status: "skipped" })).toMatchObject({
+      status: "skipped",
+      outcome: "not_applicable"
+    });
   });
 
   it("accepts a visible diff record with evidence", () => {
