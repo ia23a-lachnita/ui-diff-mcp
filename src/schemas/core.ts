@@ -160,6 +160,7 @@ export const UiArtifactSchema = z.object({
   role: z.enum([
     "expected_normalized",
     "actual_normalized",
+    "actual_comparison_space",
     "pixel_diff",
     "pixel_diff_mask",
     "directional_overlay",

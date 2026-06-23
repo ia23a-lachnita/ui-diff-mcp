@@ -207,6 +207,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
   const runArtifacts: UiArtifact[] = [
     { role: "expected_normalized", path: normalizedExpPath },
     { role: "actual_normalized", path: normalizedActPath },
+    { role: "actual_comparison_space", path: actualComparisonPath },
     { role: "pixel_diff", path: pixelDiffPngPath },
     { role: "pixel_diff_mask", path: pixelDiffMaskPath },
     { role: "directional_overlay", path: directionalOverlayPath }

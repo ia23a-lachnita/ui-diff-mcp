@@ -303,17 +303,17 @@ Commit: `feat(pipeline): route free vision through opencode`
 **Interfaces:**
 - Produces artifact role `actual_comparison_space`.
 
-- [ ] **Step 1: Write failing schema and e2e assertions**
+- [x] **Step 1: Write failing schema and e2e assertions**
 
 Assert the final report has exactly one `actual_comparison_space` artifact and that `artifacts/index.json` contains the same canonical path.
 
-- [ ] **Step 2: Run tests and verify RED**
+- [x] **Step 2: Run tests and verify RED**
 
 Run: `npx vitest run tests/unit/schemas.test.ts tests/e2e/compare-ui-images.test.ts`
 
 Expected: role rejected or missing from `runArtifacts`/index.
 
-- [ ] **Step 3: Register the artifact**
+- [x] **Step 3: Register the artifact**
 
 Add the role to `UiArtifactSchema` and add:
 
@@ -323,13 +323,13 @@ Add the role to `UiArtifactSchema` and add:
 
 to the initial run artifact list.
 
-- [ ] **Step 4: Run tests and verify GREEN**
+- [x] **Step 4: Run tests and verify GREEN**
 
 Run: `npx vitest run tests/unit/schemas.test.ts tests/e2e/compare-ui-images.test.ts`
 
 Expected: PASS.
 
-- [ ] **Step 5: Update tracking, commit, and push**
+- [x] **Step 5: Update tracking, commit, and push**
 
 Commit: `fix(report): index actual comparison image`
 

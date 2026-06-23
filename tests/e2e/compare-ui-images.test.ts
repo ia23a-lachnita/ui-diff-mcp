@@ -73,6 +73,18 @@ describe("runUiDiff end-to-end (deterministic_only mode)", () => {
 
     await expect(fs.access(expectedNorm)).resolves.toBeUndefined();
     await expect(fs.access(actualNorm)).resolves.toBeUndefined();
+
+    const report = JSON.parse(await fs.readFile(result.reportPath, "utf8")) as {
+      runArtifacts: Array<{ role: string; path: string }>;
+    };
+    const comparisonArtifact = report.runArtifacts.find(artifact => artifact.role === "actual_comparison_space");
+    expect(comparisonArtifact?.path).toBe(path.join(runDir, "actual-comparison-space.png"));
+    await expect(fs.access(comparisonArtifact!.path)).resolves.toBeUndefined();
+
+    const index = JSON.parse(await fs.readFile(path.join(result.artifactRoot, "index.json"), "utf8")) as {
+      runArtifacts: Array<{ role: string; path: string }>;
+    };
+    expect(index.runArtifacts).toContainEqual(comparisonArtifact);
   });
 
   it("resumes into the same artifact root without duplicating completed stage records", async () => {

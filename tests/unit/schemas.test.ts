@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DiffRecordSchema, UiDiffReportSchema, ModelSelectionSchema } from "../../src/schemas/core.js";
+import { DiffRecordSchema, UiArtifactSchema, UiDiffReportSchema, ModelSelectionSchema } from "../../src/schemas/core.js";
 
 function makeMinimalReport(overrides: Record<string, unknown> = {}) {
   return {
@@ -20,6 +20,13 @@ function makeMinimalReport(overrides: Record<string, unknown> = {}) {
 }
 
 describe("core schemas", () => {
+  it("accepts the actual comparison-space image as a primary run artifact", () => {
+    expect(UiArtifactSchema.parse({
+      role: "actual_comparison_space",
+      path: "C:/run/actual-comparison-space.png"
+    })).toMatchObject({ role: "actual_comparison_space" });
+  });
+
   it("accepts a visible diff record with evidence", () => {
     const parsed = DiffRecordSchema.parse({
       id: "diff-1",
