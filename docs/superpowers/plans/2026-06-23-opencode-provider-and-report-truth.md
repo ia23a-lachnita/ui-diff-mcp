@@ -148,7 +148,7 @@ Commit: `feat(models): define opencode free route policy`
 - Default base URL: `https://opencode.ai/zen/v1`.
 - Default free credential value: `public`.
 
-- [ ] **Step 1: Write failing adapter tests**
+- [x] **Step 1: Write failing adapter tests**
 
 Tests must exercise real request construction through a stubbed `fetch` and assert:
 
@@ -163,23 +163,23 @@ expect(body.response_format.type).toBe("json_schema");
 
 Also cover custom key/base URL, parser-only mode, provider-returned concrete model/usage, non-2xx response, empty content, schema-invalid content, and one compact structured retry.
 
-- [ ] **Step 2: Run focused tests and verify RED**
+- [x] **Step 2: Run focused tests and verify RED**
 
 Run: `npx vitest run tests/unit/opencode-client.test.ts`
 
 Expected: module-not-found or missing export failure.
 
-- [ ] **Step 3: Implement the caller**
+- [x] **Step 3: Implement the caller**
 
 Resolve credentials inside the adapter with `apiKey?.trim() || process.env["OPENCODE_API_KEY"]?.trim() || "public"`, so direct adapter callers and pipeline callers behave identically. Use one non-streaming OpenAI-compatible request. Parse `choices[0].message.content` through `parseVisionJsonContent("opencode", ...)`. Never store prompt text, image data, auth headers, or raw provider response bodies in traces.
 
-- [ ] **Step 4: Run focused tests and verify GREEN**
+- [x] **Step 4: Run focused tests and verify GREEN**
 
 Run: `npx vitest run tests/unit/opencode-client.test.ts tests/unit/vision-json.test.ts`
 
 Expected: PASS.
 
-- [ ] **Step 5: Update tracking, commit, and push**
+- [x] **Step 5: Update tracking, commit, and push**
 
 Commit: `feat(models): add opencode zen vision caller`
 

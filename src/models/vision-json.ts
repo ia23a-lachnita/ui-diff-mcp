@@ -244,7 +244,7 @@ function makeOpenRouterSingleCaller(apiKey: string, model: string): VisionJsonCa
   };
 }
 
-function withStructuredRetry(single: VisionJsonCaller): VisionJsonCaller {
+export function withStructuredRetry(single: VisionJsonCaller): VisionJsonCaller {
   return async req => {
     try {
       return await single(req);
