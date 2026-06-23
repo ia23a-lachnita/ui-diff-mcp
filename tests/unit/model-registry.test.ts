@@ -19,6 +19,12 @@ function allPass(): ProbeResult[] {
 }
 
 describe("CANONICAL_MODEL_RANKING", () => {
+  it("ranks OpenCode MiMo as a free visual route and excludes text-only DeepSeek", () => {
+    const routes = CANONICAL_MODEL_RANKING.flatMap(c => c.eligibleFreeProviderRoutes);
+    expect(routes).toContainEqual({ provider: "opencode", model: "mimo-v2.5-free" });
+    expect(routes).not.toContainEqual({ provider: "opencode", model: "deepseek-v4-flash-free" });
+  });
+
   it("contains auditor and reviewer entries", () => {
     const roles = CANONICAL_MODEL_RANKING.map(c => c.role);
     expect(roles).toContain("auditor");
@@ -254,9 +260,11 @@ describe("selectFallbackModelsForMode", () => {
     expect(candidates).toHaveLength(0);
   });
 
-  it("free mode without NVIDIA key returns only OpenRouter candidates", () => {
+  it("free mode without NVIDIA key returns OpenCode first and retains OpenRouter fallbacks", () => {
     const candidates = selectFallbackModelsForMode("auditor", "free", allPass(), 3, noEnv);
-    expect(candidates.every(c => c.provider === "openrouter")).toBe(true);
+    expect(candidates[0]?.provider).toBe("opencode");
+    expect(candidates.some(c => c.provider === "openrouter")).toBe(true);
+    expect(candidates.every(c => c.provider !== "nvidia")).toBe(true);
   });
 });
 
@@ -377,10 +385,12 @@ describe("selectFallbackModelsForMode — route diversity", () => {
     expect(candidates.every(c => c.provider === "openrouter")).toBe(true);
   });
 
-  it("free mode without NVIDIA key selects only OpenRouter routes, all treated as different-family", () => {
+  it("free mode without NVIDIA key selects OpenCode and OpenRouter routes", () => {
     const candidates = selectFallbackModelsForMode("auditor", "free", allPass(), 3, noEnv);
     expect(candidates.length).toBeGreaterThan(0);
-    expect(candidates.every(c => c.provider === "openrouter")).toBe(true);
+    expect(candidates[0]?.provider).toBe("opencode");
+    expect(candidates.some(c => c.provider === "openrouter")).toBe(true);
+    expect(candidates.every(c => c.provider === "opencode" || c.provider === "openrouter")).toBe(true);
   });
 });
 
@@ -468,6 +478,7 @@ describe("resolveMode", () => {
     expect(resolveMode("free")).toBe("free");
     expect(resolveMode("free_openrouter")).toBe("free_openrouter");
     expect(resolveMode("free_nvidia")).toBe("free_nvidia");
+    expect(resolveMode("free_opencode")).toBe("free_opencode");
     expect(resolveMode("paid")).toBe("paid");
     expect(resolveMode("deterministic_only")).toBe("deterministic_only");
   });
@@ -477,3 +488,19 @@ describe("resolveMode", () => {
     expect(resolveMode("nonsense")).toBe("free");
   });
 });
+  it("free mode prefers OpenCode MiMo when its visual probe passes", () => {
+    const probes = [makeProbe("opencode", "mimo-v2.5-free", "auditor")];
+    expect(selectModelForMode("auditor", "free", probes, {})).toMatchObject({
+      provider: "opencode",
+      model: "mimo-v2.5-free",
+      costClass: "free"
+    });
+  });
+
+  it("free_opencode selects only OpenCode routes", () => {
+    const entry = selectModelForMode("reviewer", "free_opencode", allPass(), {});
+    expect(entry).toMatchObject({ provider: "opencode", model: "mimo-v2.5-free" });
+    const routes = selectFallbackModelsForMode("reviewer", "free_opencode", allPass(), 3, {});
+    expect(routes.length).toBeGreaterThan(0);
+    expect(routes.every(route => route.provider === "opencode")).toBe(true);
+  });

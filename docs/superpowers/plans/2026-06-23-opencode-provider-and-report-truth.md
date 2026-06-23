@@ -50,7 +50,7 @@
 - Produces: `VisionProviderConfig` with all three provider credentials/base URLs.
 - Produces: canonical `opencode/mimo-v2.5-free` route for auditor, reviewer, and recovery.
 
-- [ ] **Step 1: Write failing provider/type and selection tests**
+- [x] **Step 1: Write failing provider/type and selection tests**
 
 Add tests proving:
 
@@ -67,13 +67,13 @@ expect(CANONICAL_MODEL_RANKING.flatMap(entry => entry.eligibleFreeProviderRoutes
   .not.toContainEqual({ provider: "opencode", model: "deepseek-v4-flash-free" });
 ```
 
-- [ ] **Step 2: Run focused tests and verify RED**
+- [x] **Step 2: Run focused tests and verify RED**
 
 Run: `npx vitest run tests/unit/vision-json.test.ts tests/unit/model-registry.test.ts`
 
 Expected: failures for unknown `opencode` provider/mode and missing MiMo route.
 
-- [ ] **Step 3: Implement the shared provider types and configuration**
+- [x] **Step 3: Implement the shared provider types and configuration**
 
 Create `src/models/provider-config.ts` with:
 
@@ -109,7 +109,7 @@ Use `VisionProvider` in every currently closed provider type, including:
 - `findValidProbe`;
 - selected/excluded route parameters.
 
-- [ ] **Step 4: Implement minimal route selection**
+- [x] **Step 4: Implement minimal route selection**
 
 Add a shared provider type, extend parse diagnostics to it, add `free_opencode`, and place MiMo at the top of the canonical free ranking with:
 
@@ -125,13 +125,13 @@ capabilities: {
 
 Add explicit `selectModelForMode` branches for `opencode` in both `free` and `free_opencode`. Refactor fallback collection into three phases in the exact provider order `opencode`, `nvidia`, `openrouter`, then apply family diversity within later providers. Explicit provider modes must contain only their named provider. NVIDIA key availability continues to gate NVIDIA; OpenCode is eligible with the resolved `public` credential.
 
-- [ ] **Step 5: Run focused tests and verify GREEN**
+- [x] **Step 5: Run focused tests and verify GREEN**
 
 Run: `npx vitest run tests/unit/vision-json.test.ts tests/unit/model-registry.test.ts`
 
 Expected: PASS.
 
-- [ ] **Step 6: Update tracking, commit, and push**
+- [x] **Step 6: Update tracking, commit, and push**
 
 Commit: `feat(models): define opencode free route policy`
 

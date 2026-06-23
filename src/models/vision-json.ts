@@ -1,11 +1,12 @@
 import type { ProviderFailureDiagnostic } from "../schemas/core.js";
 
-export type VisionMode = "free" | "free_openrouter" | "free_nvidia" | "paid" | "deterministic_only";
+export type VisionProvider = "openrouter" | "nvidia" | "opencode";
+export type VisionMode = "free" | "free_opencode" | "free_openrouter" | "free_nvidia" | "paid" | "deterministic_only";
 
 export class ProviderJsonParseError extends Error {
   readonly diagnostic: ProviderFailureDiagnostic;
 
-  constructor(provider: "openrouter" | "nvidia", diagnostic: ProviderFailureDiagnostic) {
+  constructor(provider: VisionProvider, diagnostic: ProviderFailureDiagnostic) {
     super(`${provider} structured response failed: ${diagnostic.kind}`);
     this.name = "ProviderJsonParseError";
     this.diagnostic = diagnostic;
@@ -64,7 +65,7 @@ function schemaMatches(value: unknown, schema: Record<string, unknown>): boolean
 }
 
 export function parseVisionJsonContent(
-  provider: "openrouter" | "nvidia",
+  provider: VisionProvider,
   rawContent: string,
   schema: Record<string, unknown>,
   streamCompleted: boolean,
@@ -115,7 +116,7 @@ export interface VisionJsonResponse {
 export type VisionJsonCaller = (req: VisionJsonRequest) => Promise<VisionJsonResponse>;
 
 export interface SelectedVisionModel {
-  provider: "openrouter" | "nvidia";
+  provider: VisionProvider;
   model: string;
   costClass: "free" | "paid";
   callVisionJson: VisionJsonCaller;

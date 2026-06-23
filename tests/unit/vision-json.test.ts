@@ -14,6 +14,11 @@ function truncatedJson(length: number): string {
 }
 
 describe("parseVisionJsonContent", () => {
+  it("accepts OpenCode as a structured vision provider", () => {
+    expect(parseVisionJsonContent("opencode", '{"hasDiff":false}', schema, true, "stop"))
+      .toEqual({ hasDiff: false });
+  });
+
   it("classifies the observed 564-character auditor response as truncated_json", () => {
     const raw = truncatedJson(564);
     const error = (() => { try { parseVisionJsonContent("nvidia", raw, schema, true, "length"); } catch (caught) { return caught; } })();
