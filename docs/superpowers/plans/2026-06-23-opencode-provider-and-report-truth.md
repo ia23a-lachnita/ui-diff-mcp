@@ -255,7 +255,7 @@ Commit: `feat(models): probe opencode routes once per run`
 - Consumes: `makeOpenCodeVisionCaller` and OpenCode model entries.
 - Produces: exact `modelSelection` and provider trace entries for runtime OpenCode calls.
 
-- [ ] **Step 1: Write a failing pipeline e2e test**
+- [x] **Step 1: Write a failing pipeline e2e test**
 
 Run the full fixture pipeline in `free_opencode` with a passing OpenCode probe override and fetch fixture. Assert:
 
@@ -266,13 +266,13 @@ expect(report.modelSelection?.targetRecovery).toMatchObject({ provider: "opencod
 expect(providerTrace.some(event => event.provider === "opencode" && event.event === "call_success")).toBe(true);
 ```
 
-- [ ] **Step 2: Run the e2e test and verify RED**
+- [x] **Step 2: Run the e2e test and verify RED**
 
 Run: `npx vitest run tests/e2e/compare-ui-images.test.ts`
 
 Expected: missing mode/caller routing failure.
 
-- [ ] **Step 3: Wire shared provider configuration and exhaustive caller creation**
+- [x] **Step 3: Wire shared provider configuration and exhaustive caller creation**
 
 Resolve once:
 
@@ -282,13 +282,13 @@ const providerConfig = resolveVisionProviderConfig(process.env);
 
 Change `makeVisionCaller(entry, providerConfig)` to an exhaustive provider switch and call `makeOpenCodeVisionCaller` for `opencode`. Pass the same object to `probeRequiredModels` and the pipeline `ProbeOverride`. Update no-model warnings to name all configured free providers without implying an OpenRouter/NVIDIA key is mandatory for OpenCode.
 
-- [ ] **Step 4: Run e2e and focused model tests**
+- [x] **Step 4: Run e2e and focused model tests**
 
 Run: `npx vitest run tests/e2e/compare-ui-images.test.ts tests/unit/model-registry.test.ts tests/unit/probes.test.ts`
 
 Expected: PASS.
 
-- [ ] **Step 5: Update tracking, commit, and push**
+- [x] **Step 5: Update tracking, commit, and push**
 
 Commit: `feat(pipeline): route free vision through opencode`
 

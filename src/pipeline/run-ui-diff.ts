@@ -21,6 +21,7 @@ import { makeFallbackVisionCaller, RouteExhaustedError } from "../models/fallbac
 import { probeRequiredModels, type ProbeResult } from "../models/probes.js";
 import { estimateFreeRunBudget, lookupOpenRouterQuota, checkFreeQuotaSufficiency } from "../models/free-quota.js";
 import { makeOpenRouterVisionCaller, makeNvidiaVisionCaller, type VisionMode } from "../models/vision-json.js";
+import { makeOpenCodeVisionCaller } from "../models/opencode-client.js";
 import { resolveVisionProviderConfig, type VisionProviderConfig } from "../models/provider-config.js";
 import { auditElementPair, makeElementSlug, type AuditContext } from "../audit/audit-target.js";
 import { reviewAndMergeFindings } from "../audit/review-findings.js";
@@ -109,14 +110,16 @@ export function selectAuditPairsForRun(
 
 function makeVisionCaller(
   entry: ModelEntry,
-  openRouterApiKey: string,
-  nvidiaApiKey: string,
-  nvidiaBaseUrl: string
+  config: VisionProviderConfig
 ) {
-  if (entry.provider === "nvidia") {
-    return makeNvidiaVisionCaller(nvidiaApiKey, entry.model, nvidiaBaseUrl);
+  switch (entry.provider) {
+    case "opencode":
+      return makeOpenCodeVisionCaller(config.openCodeApiKey, entry.model, config.openCodeBaseUrl);
+    case "nvidia":
+      return makeNvidiaVisionCaller(config.nvidiaApiKey, entry.model, config.nvidiaBaseUrl);
+    case "openrouter":
+      return makeOpenRouterVisionCaller(config.openRouterApiKey, entry.model);
   }
-  return makeOpenRouterVisionCaller(openRouterApiKey, entry.model);
 }
 
 export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeOverride }): Promise<RunOutput> {
@@ -254,7 +257,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
   }
 
   const providerConfig = resolveVisionProviderConfig(process.env);
-  const { openRouterApiKey, nvidiaApiKey, nvidiaBaseUrl } = providerConfig;
+  const { openRouterApiKey } = providerConfig;
   const paidModeEnabled = process.env["UI_DIFF_ENABLE_PAID_MODE"] === "1";
   const locatorUrl = process.env["LOCATEANYTHING_SIDECAR_URL"] ?? "http://127.0.0.1:39731";
   const locatorTimeoutMs = Number.parseInt(process.env["LOCATEANYTHING_TIMEOUT_MS"] ?? "300000", 10);
@@ -525,7 +528,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
       if (!locatorFailed) {
         status = "model_unavailable";
         visualClassificationStatus = "incomplete";
-        warnings.push(`No model available for mode "${mode}". Set NVIDIA_API_KEY or OPENROUTER_API_KEY with passing probes.`);
+        warnings.push(`No visual model passed the required image/schema probes for mode "${mode}". Inspect modelHealth and provider-trace.json.`);
         // Emit route_exhausted for the role(s) that had no passing candidates.
         // In free_nvidia mode this is explicit: no OpenRouter fallback is available.
         const exhaustedRole = !auditorEntry ? "auditor" as const : "reviewer" as const;
@@ -553,21 +556,23 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
           reviewerRoutes: reviewerCandidates.map(toRouteEntry),
           ...(recoveryCandidates.length > 0 ? { targetRecoveryRoutes: recoveryCandidates.map(toRouteEntry) } : {})
         };
-        // Warn when the primary is NVIDIA but OpenRouter fallbacks exist in free mode — the run may
-        // silently switch providers mid-flight and that change should be observable in the report.
+        // Surface cross-provider fallback availability before any runtime route transition.
         for (const [role, primary, routes] of [
           ["auditor", auditorEntry, auditorCandidates],
           ["reviewer", reviewerEntry, reviewerCandidates],
           ["target_recovery", recoveryEntry, recoveryCandidates]
         ] as const) {
           if (
-            primary?.provider === "nvidia" &&
-            routes.some(r => r.provider === "openrouter") &&
+            primary !== undefined &&
+            routes.some(r => r.provider !== primary.provider) &&
             (mode === "free")
           ) {
+            const fallbackProviders = [...new Set(routes
+              .filter(route => route.provider !== primary.provider)
+              .map(route => route.provider))].join(", ");
             warnings.push(
-              `${role} primary route is NVIDIA (${primary.model}); OpenRouter fallback routes are available ` +
-              `and will activate automatically on NVIDIA rate-limit or malformed-JSON failures in free mode.`
+              `${role} primary route is ${primary.provider}/${primary.model}; ` +
+              `${fallbackProviders} fallback routes are available and activate only after a traced runtime failure.`
             );
           }
         }
@@ -579,7 +584,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
         };
         const auditorCaller = makeFallbackVisionCaller(
           auditorCandidates.map(e => ({
-            caller: makeVisionCaller(e, openRouterApiKey, nvidiaApiKey, nvidiaBaseUrl),
+            caller: makeVisionCaller(e, providerConfig),
             provider: e.provider,
             model: e.model,
             phase: "audit" as const
@@ -589,7 +594,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
         );
         const reviewerCaller = makeFallbackVisionCaller(
           reviewerCandidates.map(e => ({
-            caller: makeVisionCaller(e, openRouterApiKey, nvidiaApiKey, nvidiaBaseUrl),
+            caller: makeVisionCaller(e, providerConfig),
             provider: e.provider,
             model: e.model,
             phase: "reviewer" as const
@@ -600,7 +605,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
         const recoveryCaller = recoveryCandidates.length > 0
           ? makeFallbackVisionCaller(
               recoveryCandidates.map(e => ({
-                caller: makeVisionCaller(e, openRouterApiKey, nvidiaApiKey, nvidiaBaseUrl),
+                caller: makeVisionCaller(e, providerConfig),
                 provider: e.provider,
                 model: e.model,
                 phase: "recovery" as const

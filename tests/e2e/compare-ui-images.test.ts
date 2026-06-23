@@ -104,6 +104,62 @@ describe("runUiDiff end-to-end (deterministic_only mode)", () => {
 });
 
 describe("runUiDiff with mock sidecar and models (full mode)", () => {
+  it("routes free_opencode semantic calls through Zen and records exact model selections", async () => {
+    const expected = await writeSolidPng(tmpDir, "opencode-e.png", 200, 400, 200, 200, 200);
+    const actual = await writeSolidPng(tmpDir, "opencode-a.png", 200, 400, 200, 200, 200);
+    sidecar = await startMockSidecar({ imageWidth: 200, imageHeight: 400 });
+
+    const baseFetch = makeMockFetch([], { sidecarImageWidth: 200, sidecarImageHeight: 400 });
+    const callBaseFetch = baseFetch as unknown as (url: unknown, init?: RequestInit) => Promise<unknown>;
+    const mockFetch = vi.fn().mockImplementation((url: unknown, init?: RequestInit) => {
+      if (typeof url === "string" && url.includes("opencode.ai/zen/v1/chat/completions")) {
+        const body = JSON.parse(String(init?.body)) as {
+          response_format?: { json_schema?: { name?: string } };
+        };
+        const schemaName = body.response_format?.json_schema?.name ?? "";
+        const content = schemaName.startsWith("audit_")
+          ? '{"hasDiff":false}'
+          : schemaName === "review_decision"
+            ? '{"decision":"accepted","reason":"supported"}'
+            : '{"classified":false}';
+        return Promise.resolve(new Response(JSON.stringify({
+          model: "xiaomi/mimo-v2.5-20260422",
+          choices: [{ message: { content }, finish_reason: "stop" }],
+          usage: { prompt_tokens: 100, completion_tokens: 20 }
+        }), { status: 200, headers: { "Content-Type": "application/json" } }));
+      }
+      return callBaseFetch(url, init);
+    });
+    vi.stubGlobal("fetch", mockFetch);
+    vi.stubEnv("LOCATEANYTHING_SIDECAR_URL", sidecar.url);
+
+    const probeOverride = async () => [
+      { role: "auditor", provider: "opencode", model: "mimo-v2.5-free", status: "pass" as const, checkedAt: new Date().toISOString(), schemaValid: true, contentAccurate: true, maxImagesSupported: 5 },
+      { role: "reviewer", provider: "opencode", model: "mimo-v2.5-free", status: "pass" as const, checkedAt: new Date().toISOString(), schemaValid: true, contentAccurate: true, maxImagesSupported: 5 },
+      { role: "target_recovery", provider: "opencode", model: "mimo-v2.5-free", status: "pass" as const, checkedAt: new Date().toISOString(), schemaValid: true, contentAccurate: true, maxImagesSupported: 5 }
+    ];
+
+    const result = await runUiDiff({
+      expectedImagePath: expected,
+      actualImagePath: actual,
+      projectRoot: tmpDir,
+      mode: "free_opencode"
+    }, { probeOverride });
+
+    const report = JSON.parse(await fs.readFile(result.reportPath, "utf8")) as {
+      modelSelection?: Record<string, { provider: string; model: string }>;
+      runArtifacts: Array<{ role: string; path: string }>;
+    };
+    expect(report.modelSelection?.["auditor"]).toMatchObject({ provider: "opencode", model: "mimo-v2.5-free" });
+    expect(report.modelSelection?.["reviewer"]).toMatchObject({ provider: "opencode", model: "mimo-v2.5-free" });
+    expect(report.modelSelection?.["targetRecovery"]).toMatchObject({ provider: "opencode", model: "mimo-v2.5-free" });
+    expect(mockFetch.mock.calls.some(([url]) => typeof url === "string" && url.includes("opencode.ai/zen/v1/chat/completions"))).toBe(true);
+    const providerTracePath = report.runArtifacts.find(artifact => artifact.role === "provider_trace")?.path;
+    expect(providerTracePath).toBeTruthy();
+    const providerTrace = JSON.parse(await fs.readFile(providerTracePath!, "utf8")) as Array<{ provider: string; event: string }>;
+    expect(providerTrace.some(event => event.provider === "opencode" && event.event === "call_success")).toBe(true);
+  });
+
   it("discovers elements, pairs them, and runs audit pipeline", async () => {
     const { expected, actual } = await writeTwoButtonFixture(
       tmpDir, "e.png", "a.png"
@@ -196,7 +252,7 @@ describe("runUiDiff with mock sidecar and models (full mode)", () => {
     expect(result.status).toBe("model_unavailable");
     expect(result.warnings).toEqual(
       expect.arrayContaining([
-        expect.stringContaining("No model available for mode")
+        expect.stringContaining("No visual model passed the required image/schema probes")
       ])
     );
   });
