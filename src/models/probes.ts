@@ -1,7 +1,9 @@
 import sharp from "sharp";
 import { makeOpenRouterVisionCaller, makeNvidiaVisionCaller } from "./vision-json.js";
+import { makeOpenCodeVisionCaller } from "./opencode-client.js";
 import type { ModelEntry } from "./model-registry.js";
 import { modelFamilyKey } from "./model-registry.js";
+import type { VisionProviderConfig } from "./provider-config.js";
 import type { ProviderTraceSink } from "../debug/provider-trace.js";
 export interface ProbeResult {
   role: string;
@@ -58,21 +60,21 @@ async function runRoleProbe(
   entry: ModelEntry,
   role: string,
   imageCount: number,
-  openRouterApiKey?: string,
-  nvidiaApiKey?: string,
-  nvidiaBaseUrl?: string,
+  config: VisionProviderConfig,
   traceSink?: ProviderTraceSink
 ): Promise<ProbeResult> {
   const key = entry.provider === "nvidia"
-    ? (nvidiaApiKey ?? process.env["NVIDIA_API_KEY"] ?? "")
-    : (openRouterApiKey ?? "");
+    ? config.nvidiaApiKey
+    : entry.provider === "openrouter"
+      ? config.openRouterApiKey
+      : config.openCodeApiKey || "public";
 
   const probeRole = (role === "auditor" || role === "fast_auditor") ? "auditor" as const
     : (role === "reviewer" || role === "escalation") ? "reviewer" as const
     : role === "target_recovery" ? "target_recovery" as const
     : "auditor" as const;
 
-  if (!key) {
+  if (!key && entry.provider !== "opencode") {
     const result: ProbeResult = {
       role,
       provider: entry.provider,
@@ -97,8 +99,10 @@ async function runRoleProbe(
 
   const images = await makeProbeImageSet(imageCount);
   const caller = entry.provider === "nvidia"
-    ? makeNvidiaVisionCaller(key, entry.model, nvidiaBaseUrl)
-    : makeOpenRouterVisionCaller(key, entry.model);
+    ? makeNvidiaVisionCaller(key, entry.model, config.nvidiaBaseUrl)
+    : entry.provider === "openrouter"
+      ? makeOpenRouterVisionCaller(key, entry.model)
+      : makeOpenCodeVisionCaller(key, entry.model, config.openCodeBaseUrl);
 
   try {
     const result = await caller({
@@ -193,35 +197,29 @@ async function runRoleProbe(
 
 export async function probeAuditCapability(
   entry: ModelEntry,
-  openRouterApiKey?: string,
-  nvidiaApiKey?: string,
-  nvidiaBaseUrl?: string,
+  config: VisionProviderConfig,
   traceSink?: ProviderTraceSink
 ): Promise<ProbeResult> {
   // Audit sends 5 images: expected crop, actual crop, directional overlay, pixel mask, context crop
-  return runRoleProbe(entry, "auditor", 5, openRouterApiKey, nvidiaApiKey, nvidiaBaseUrl, traceSink);
+  return runRoleProbe(entry, "auditor", 5, config, traceSink);
 }
 
 export async function probeReviewerCapability(
   entry: ModelEntry,
-  openRouterApiKey?: string,
-  nvidiaApiKey?: string,
-  nvidiaBaseUrl?: string,
+  config: VisionProviderConfig,
   traceSink?: ProviderTraceSink
 ): Promise<ProbeResult> {
   // Reviewer fixed 5-image max: expected crop, actual crop, directional overlay, pixel mask, context crop
-  return runRoleProbe(entry, "reviewer", 5, openRouterApiKey, nvidiaApiKey, nvidiaBaseUrl, traceSink);
+  return runRoleProbe(entry, "reviewer", 5, config, traceSink);
 }
 
 export async function probeRecoveryCapability(
   entry: ModelEntry,
-  openRouterApiKey?: string,
-  nvidiaApiKey?: string,
-  nvidiaBaseUrl?: string,
+  config: VisionProviderConfig,
   traceSink?: ProviderTraceSink
 ): Promise<ProbeResult> {
   // Recovery sends 4 images: expected crop, actual crop, overlay, mask
-  return runRoleProbe(entry, "target_recovery", 4, openRouterApiKey, nvidiaApiKey, nvidiaBaseUrl, traceSink);
+  return runRoleProbe(entry, "target_recovery", 4, config, traceSink);
 }
 
 // Legacy single-probe functions kept for backward compatibility with direct callers
@@ -413,25 +411,49 @@ export async function probeNvidiaModel(
 
 export async function probeRequiredModels(
   entries: ModelEntry[],
-  openRouterApiKey: string,
-  nvidiaApiKey?: string,
-  nvidiaBaseUrl?: string,
+  config: VisionProviderConfig,
   traceSink?: ProviderTraceSink
 ): Promise<ProbeResult[]> {
-  return Promise.all(
-    entries.map(e => {
-      if (e.role === "auditor" || e.role === "fast_auditor") {
-        return probeAuditCapability(e, openRouterApiKey, nvidiaApiKey, nvidiaBaseUrl, traceSink);
+  const grouped = new Map<string, ModelEntry[]>();
+  for (const entry of entries) {
+    const key = `${entry.provider}:${entry.model}`;
+    const group = grouped.get(key);
+    if (group) group.push(entry);
+    else grouped.set(key, [entry]);
+  }
+
+  const groupedResults = await Promise.all([...grouped.values()].map(async group => {
+    const imageCount = Math.max(...group.map(entry => {
+      if (entry.role === "target_recovery") return 4;
+      if (["auditor", "fast_auditor", "reviewer", "escalation"].includes(entry.role)) return 5;
+      return 2;
+    }));
+    const representative = group.find(entry => entry.role !== "target_recovery") ?? group[0]!;
+    const result = await runRoleProbe(representative, representative.role, imageCount, config, traceSink);
+
+    return group.map((entry, index) => {
+      const projected = { ...result, role: entry.role };
+      if (index > 0) {
+        const traceRole = (entry.role === "reviewer" || entry.role === "escalation")
+          ? "reviewer" as const
+          : entry.role === "target_recovery"
+            ? "target_recovery" as const
+            : "auditor" as const;
+        traceSink?.({
+          phase: "probe",
+          event: "probe_result",
+          role: traceRole,
+          provider: entry.provider,
+          model: entry.model,
+          modelFamilyKey: modelFamilyKey(entry.model),
+          status: result.status,
+          ...(result.detail !== undefined ? { reason: result.detail.slice(0, 500) } : {}),
+          ...(result.ttftMs != null ? { ttftMs: result.ttftMs } : {})
+        });
       }
-      if (e.role === "reviewer" || e.role === "escalation") {
-        return probeReviewerCapability(e, openRouterApiKey, nvidiaApiKey, nvidiaBaseUrl, traceSink);
-      }
-      if (e.role === "target_recovery") {
-        return probeRecoveryCapability(e, openRouterApiKey, nvidiaApiKey, nvidiaBaseUrl, traceSink);
-      }
-      // fallback for unrecognized roles
-      if (e.provider === "nvidia") return probeNvidiaModel(e, nvidiaApiKey, nvidiaBaseUrl);
-      return probeOpenRouterModel(e, openRouterApiKey);
-    })
-  );
+      return projected;
+    });
+  }));
+
+  return groupedResults.flat();
 }

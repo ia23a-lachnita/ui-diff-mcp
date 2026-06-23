@@ -3,6 +3,7 @@ import { CANONICAL_MODEL_RANKING } from "../../src/models/model-registry.js";
 import { probeRequiredModels } from "../../src/models/probes.js";
 import { estimateFreeRunBudget, checkFreeQuotaSufficiency, lookupOpenRouterQuota } from "../../src/models/free-quota.js";
 import { runUiDiff } from "../../src/pipeline/run-ui-diff.js";
+import { resolveVisionProviderConfig } from "../../src/models/provider-config.js";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -30,7 +31,7 @@ describe.skipIf(!liveEnabled)("live OpenRouter model probes", () => {
         }))
     );
 
-    const results = await probeRequiredModels(entries, apiKey!);
+    const results = await probeRequiredModels(entries, resolveVisionProviderConfig(process.env));
     const passingAuditor = results.find(r => r.role === "auditor" && r.status === "pass");
     const passingReviewer = results.find(r => r.role === "reviewer" && r.status === "pass");
 
@@ -95,7 +96,7 @@ describe.skipIf(!freeLiveEnabled)("verify:free-live OpenRouter free model gates"
         }))
     );
 
-    const results = await probeRequiredModels(freeEntries, apiKey!);
+    const results = await probeRequiredModels(freeEntries, resolveVisionProviderConfig(process.env));
     for (const r of results) {
       console.info(`[free-probe] ${r.role} ${r.provider}/${r.model}: ${r.status}${r.detail ? ` | ${r.detail}` : ""}`);
     }

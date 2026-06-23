@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { CANONICAL_MODEL_RANKING } from "../../src/models/model-registry.js";
 import { probeRequiredModels } from "../../src/models/probes.js";
+import { resolveVisionProviderConfig } from "../../src/models/provider-config.js";
 
 const nvidiaLiveEnabled = process.env["RUN_NVIDIA_LIVE"] === "1";
 
@@ -30,7 +31,12 @@ describe.skipIf(!nvidiaLiveEnabled)("verify:nvidia-live NVIDIA endpoint gates", 
 
     expect(nvidiaEntries.length, "No native NVIDIA entries in CANONICAL_MODEL_RANKING").toBeGreaterThan(0);
 
-    const results = await probeRequiredModels(nvidiaEntries, apiKey, nvidiaApiKey!, nvidiaBaseUrl);
+    const results = await probeRequiredModels(nvidiaEntries, resolveVisionProviderConfig({
+      ...process.env,
+      OPENROUTER_API_KEY: apiKey,
+      NVIDIA_API_KEY: nvidiaApiKey!,
+      NVIDIA_VLM_BASE_URL: nvidiaBaseUrl
+    }));
     for (const r of results) {
       console.info(`[nvidia-probe] ${r.role} ${r.provider}/${r.model}: ${r.status}${r.detail ? ` | ${r.detail}` : ""}`);
     }
@@ -60,7 +66,12 @@ describe.skipIf(!nvidiaLiveEnabled)("verify:nvidia-live NVIDIA endpoint gates", 
         }))
     );
 
-    const results = await probeRequiredModels(nvidiaEntries, apiKey, nvidiaApiKey, nvidiaBaseUrl);
+    const results = await probeRequiredModels(nvidiaEntries, resolveVisionProviderConfig({
+      ...process.env,
+      OPENROUTER_API_KEY: apiKey,
+      NVIDIA_API_KEY: nvidiaApiKey,
+      NVIDIA_VLM_BASE_URL: nvidiaBaseUrl
+    }));
     const passingReviewer = results.find(r => r.role === "reviewer" && r.status === "pass");
     expect(
       passingReviewer,
@@ -88,7 +99,12 @@ describe.skipIf(!nvidiaLiveEnabled)("verify:nvidia-live NVIDIA endpoint gates", 
     );
 
     const { probeRequiredModels: probe } = await import("../../src/models/probes.js");
-    const probeResults = await probe(nvidiaEntries, apiKey, nvidiaApiKey, nvidiaBaseUrl);
+    const probeResults = await probe(nvidiaEntries, resolveVisionProviderConfig({
+      ...process.env,
+      OPENROUTER_API_KEY: apiKey,
+      NVIDIA_API_KEY: nvidiaApiKey,
+      NVIDIA_VLM_BASE_URL: nvidiaBaseUrl
+    }));
     const env = { NVIDIA_API_KEY: nvidiaApiKey };
     const auditorEntry = selectModelForMode("auditor", "free_nvidia", probeResults, env);
 

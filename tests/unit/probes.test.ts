@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { probeOpenRouterModel, probeNvidiaModel, probeRequiredModels } from "../../src/models/probes.js";
+import type { VisionProviderConfig } from "../../src/models/provider-config.js";
 
 const AUDITOR: import("../../src/models/model-registry.js").ModelEntry = {
   role: "auditor",
@@ -17,6 +18,14 @@ const NVIDIA_ENTRY: import("../../src/models/model-registry.js").ModelEntry = {
   costClass: "free",
   probeTtlMs: 60000,
   required: false
+};
+
+const PROVIDER_CONFIG: VisionProviderConfig = {
+  openRouterApiKey: "sk-test",
+  nvidiaApiKey: "nv-test",
+  nvidiaBaseUrl: "https://nvidia.example/v1",
+  openCodeApiKey: "public",
+  openCodeBaseUrl: "https://opencode.ai/zen/v1"
 };
 
 function makeSseStream(contentJson: string, model = "qwen/test"): ReadableStream<Uint8Array> {
@@ -91,6 +100,29 @@ describe("probeNvidiaModel", () => {
 });
 
 describe("probeRequiredModels", () => {
+  it("probes one OpenCode route once at five images and projects the result to all visual roles", async () => {
+    const entries: import("../../src/models/model-registry.js").ModelEntry[] = [
+      { role: "auditor", provider: "opencode", model: "mimo-v2.5-free", costClass: "free", probeTtlMs: 60_000, required: false },
+      { role: "reviewer", provider: "opencode", model: "mimo-v2.5-free", costClass: "free", probeTtlMs: 60_000, required: false },
+      { role: "target_recovery", provider: "opencode", model: "mimo-v2.5-free", costClass: "free", probeTtlMs: 60_000, required: false }
+    ];
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      model: "xiaomi/mimo-v2.5-20260422",
+      choices: [{ message: { content: '{"imageCount":5,"hasBlueImage":true}' }, finish_reason: "stop" }],
+      usage: { prompt_tokens: 100, completion_tokens: 20 }
+    }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const results = await probeRequiredModels(entries, PROVIDER_CONFIG);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(results.map(result => result.role).sort()).toEqual(["auditor", "reviewer", "target_recovery"]);
+    expect(results.every(result => result.status === "pass")).toBe(true);
+    expect(results.every(result => result.maxImagesSupported === 5)).toBe(true);
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(new Headers(init.headers).get("Authorization")).toBe("Bearer public");
+  });
+
   it("returns not_checked for all openrouter entries when no API key", async () => {
     const reviewer: import("../../src/models/model-registry.js").ModelEntry = {
       role: "reviewer",
@@ -100,13 +132,13 @@ describe("probeRequiredModels", () => {
       probeTtlMs: 60000,
       required: true
     };
-    const results = await probeRequiredModels([AUDITOR, reviewer], "");
+    const results = await probeRequiredModels([AUDITOR, reviewer], { ...PROVIDER_CONFIG, openRouterApiKey: "" });
     expect(results).toHaveLength(2);
     expect(results.every(r => r.status === "not_checked")).toBe(true);
   });
 
   it("dispatches nvidia entries to probeNvidiaModel (no key returns not_checked)", async () => {
-    const results = await probeRequiredModels([NVIDIA_ENTRY], "sk-test", "");
+    const results = await probeRequiredModels([NVIDIA_ENTRY], { ...PROVIDER_CONFIG, nvidiaApiKey: "" });
     expect(results[0]?.status).toBe("not_checked");
     expect(results[0]?.detail).toContain("NVIDIA_API_KEY");
   });

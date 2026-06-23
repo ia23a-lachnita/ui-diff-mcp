@@ -21,6 +21,7 @@ import { makeFallbackVisionCaller, RouteExhaustedError } from "../models/fallbac
 import { probeRequiredModels, type ProbeResult } from "../models/probes.js";
 import { estimateFreeRunBudget, lookupOpenRouterQuota, checkFreeQuotaSufficiency } from "../models/free-quota.js";
 import { makeOpenRouterVisionCaller, makeNvidiaVisionCaller, type VisionMode } from "../models/vision-json.js";
+import { resolveVisionProviderConfig, type VisionProviderConfig } from "../models/provider-config.js";
 import { auditElementPair, makeElementSlug, type AuditContext } from "../audit/audit-target.js";
 import { reviewAndMergeFindings } from "../audit/review-findings.js";
 import { prepareRecoveryRegionArtifacts, runTargetRecovery } from "../recovery/target-recovery.js";
@@ -63,7 +64,7 @@ export interface RunOutput {
   debugSummary?: RunDebugSummary;
 }
 
-type ProbeOverride = (entries: ModelEntry[], openRouterApiKey: string, nvidiaApiKey?: string, nvidiaBaseUrl?: string) => Promise<ProbeResult[]>;
+type ProbeOverride = (entries: ModelEntry[], config: VisionProviderConfig) => Promise<ProbeResult[]>;
 
 export function resolveDualLocatorMode(env: Record<string, string | undefined>): {
   enabled: boolean;
@@ -252,9 +253,8 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     }
   }
 
-  const openRouterApiKey = process.env["OPENROUTER_API_KEY"] ?? "";
-  const nvidiaApiKey = process.env["NVIDIA_API_KEY"] ?? "";
-  const nvidiaBaseUrl = process.env["NVIDIA_VLM_BASE_URL"] ?? "https://integrate.api.nvidia.com/v1";
+  const providerConfig = resolveVisionProviderConfig(process.env);
+  const { openRouterApiKey, nvidiaApiKey, nvidiaBaseUrl } = providerConfig;
   const paidModeEnabled = process.env["UI_DIFF_ENABLE_PAID_MODE"] === "1";
   const locatorUrl = process.env["LOCATEANYTHING_SIDECAR_URL"] ?? "http://127.0.0.1:39731";
   const locatorTimeoutMs = Number.parseInt(process.env["LOCATEANYTHING_TIMEOUT_MS"] ?? "300000", 10);
@@ -502,7 +502,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
       return [...freeEntries, ...freeRecoveryEntries, ...paidEntries, ...paidRecoveryEntries];
     });
 
-    const probeResults = await probe(probeEntries, openRouterApiKey, nvidiaApiKey, nvidiaBaseUrl, providerTrace.sink);
+    const probeResults = await probe(probeEntries, providerConfig, providerTrace.sink);
     for (const p of probeResults) {
       modelHealth.push({
         role: p.role,

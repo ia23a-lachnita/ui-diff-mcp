@@ -17,6 +17,7 @@ import { createRunId, putRun, getRun } from "./pipeline/run-store.js";
 import { runUiDiff, type RunInput, type RunOutput } from "./pipeline/run-ui-diff.js";
 import { captureMobileScreen, type CaptureResult } from "./capture/mobile-capture.js";
 import { probeRequiredModels, type ProbeResult } from "./models/probes.js";
+import { resolveVisionProviderConfig, type VisionProviderConfig } from "./models/provider-config.js";
 import { getRequiredModels, type ModelEntry } from "./models/model-registry.js";
 import { UiDiffReportSchema } from "./schemas/core.js";
 
@@ -47,7 +48,7 @@ function buildRunInput(input: {
 export interface ServerDeps {
   runUiDiff: (input: RunInput) => Promise<RunOutput>;
   captureMobileScreen: (target: "adb" | "ios-simctl") => Promise<CaptureResult>;
-  probeRequiredModels: (entries: ModelEntry[], openRouterApiKey: string) => Promise<ProbeResult[]>;
+  probeRequiredModels: (entries: ModelEntry[], config: VisionProviderConfig) => Promise<ProbeResult[]>;
   getRequiredModels: () => ModelEntry[];
   readFile: typeof fs.readFile;
 }
@@ -230,8 +231,7 @@ export async function handleGetUiDiffRunStatus(
 }
 
 export async function handleModelHealth(deps: ServerDeps) {
-  const apiKey = process.env["OPENROUTER_API_KEY"] ?? "";
-  const results = await deps.probeRequiredModels(deps.getRequiredModels(), apiKey);
+  const results = await deps.probeRequiredModels(deps.getRequiredModels(), resolveVisionProviderConfig(process.env));
   const output = {
     checkedAt: new Date().toISOString(),
     results: results.map(r => ({

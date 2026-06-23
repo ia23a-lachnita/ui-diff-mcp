@@ -195,7 +195,7 @@ Commit: `feat(models): add opencode zen vision caller`
 - Update `probeAuditCapability`, `probeReviewerCapability`, `probeRecoveryCapability`, the pipeline `ProbeOverride`, benchmark scripts, and all unit/integration/live call sites to use the same `VisionProviderConfig` object.
 - One provider/model route is called once per run at the maximum requested image count; results are projected to every requested role.
 
-- [ ] **Step 1: Write failing probe tests**
+- [x] **Step 1: Write failing probe tests**
 
 Create auditor, reviewer, and target-recovery entries for the same OpenCode MiMo route. Stub `fetch` once and assert:
 
@@ -209,13 +209,13 @@ expect(results.every(result => result.maxImagesSupported === 5)).toBe(true);
 
 Also prove that an absent `OPENCODE_API_KEY` still probes with `public`, while OpenRouter/NVIDIA retain their credential requirements.
 
-- [ ] **Step 2: Run focused tests and verify RED**
+- [x] **Step 2: Run focused tests and verify RED**
 
 Run: `npx vitest run tests/unit/probes.test.ts tests/integration/probes.integration.test.ts`
 
 Expected: OpenCode dispatch missing and duplicate call count greater than one.
 
-- [ ] **Step 3: Implement explicit provider dispatch and grouped max-image probing**
+- [x] **Step 3: Implement explicit provider dispatch and grouped max-image probing**
 
 Replace every binary `provider === "nvidia" ? nvidia : openrouter` expression with an exhaustive provider switch:
 
@@ -234,13 +234,13 @@ OpenCode must never inherit an OpenRouter key, endpoint, or missing-key message.
 
 Group entries by `${provider}:${model}`. Probe the maximum `requiredImagesForRole` value once, then clone the validated result with each original role. Emit role-specific `probe_result` metadata without duplicating provider calls.
 
-- [ ] **Step 4: Run focused tests and verify GREEN**
+- [x] **Step 4: Run focused tests and verify GREEN**
 
 Run: `npx vitest run tests/unit/probes.test.ts tests/integration/probes.integration.test.ts`
 
 Expected: PASS.
 
-- [ ] **Step 5: Update tracking, commit, and push**
+- [x] **Step 5: Update tracking, commit, and push**
 
 Commit: `feat(models): probe opencode routes once per run`
 
