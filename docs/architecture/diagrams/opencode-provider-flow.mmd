@@ -1,0 +1,13 @@
+flowchart TD
+  A["UI diff semantic stage"] --> B["Role-specific probe results"]
+  B --> C{"Mode"}
+  C -->|"free"| D["OpenCode MiMo V2.5 Free"]
+  C -->|"free_opencode"| D
+  D -->|"runtime failure"| E["NVIDIA free VLM routes"]
+  E -->|"runtime failure"| F["OpenRouter :free VLM routes"]
+  C -->|"free_nvidia"| E
+  C -->|"free_openrouter"| F
+  D --> G["Auditor, reviewer, or recovery JSON"]
+  E --> G
+  F --> G
+  G --> H["Provider trace plus exact selected route"]
