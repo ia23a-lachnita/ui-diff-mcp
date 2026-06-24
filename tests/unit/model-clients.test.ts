@@ -254,6 +254,18 @@ function makeSseStreamFetch(chunks: string[], status = 200) {
   });
 }
 
+function makeHangingSseStreamFetch() {
+  const encoder = new TextEncoder();
+  return vi.fn().mockImplementation(() => {
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode(sseChunk('{"partial":')));
+      }
+    });
+    return Promise.resolve({ ok: true, status: 200, body: stream, text: () => Promise.resolve("") });
+  });
+}
+
 function sseChunk(content: string, model = "test-model") {
   return `data: ${JSON.stringify({ choices: [{ delta: { content } }], model })}\n\n`;
 }
@@ -296,6 +308,23 @@ describe("makeOpenRouterVisionCaller — streaming diagnostics", () => {
     expect(err).toBeInstanceOf(ProviderJsonParseError);
     expect((err as ProviderJsonParseError).diagnostic.streamCompleted).toBe(true);
   });
+
+  it("bounds a provider stream that never closes by the request timeout", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.stubGlobal("fetch", makeHangingSseStreamFetch());
+      const caller = makeOpenRouterVisionCaller("sk-test", "openrouter/model");
+      const outcome = Promise.race([
+        caller({ ...STREAM_REQ, timeoutMs: 25 }).then(() => "resolved", error => error instanceof Error ? error.message : String(error)),
+        new Promise<string>(resolve => setTimeout(() => resolve("hung"), 100))
+      ]);
+
+      await vi.advanceTimersByTimeAsync(100);
+      expect(await outcome).toMatch(/stream timeout/i);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe("makeNvidiaVisionCaller — streaming diagnostics", () => {
@@ -330,5 +359,22 @@ describe("makeNvidiaVisionCaller — streaming diagnostics", () => {
     const diag = (err as ProviderJsonParseError).diagnostic;
     expect(diag.rawContentLength).toBe(truncatedContent.length);
     expect(diag.firstChars).toBe(truncatedContent.trim());
+  });
+
+  it("bounds a NVIDIA stream that never closes by the request timeout", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.stubGlobal("fetch", makeHangingSseStreamFetch());
+      const caller = makeNvidiaVisionCaller("nv-test", "nvidia/model");
+      const outcome = Promise.race([
+        caller({ ...STREAM_REQ, timeoutMs: 25 }).then(() => "resolved", error => error instanceof Error ? error.message : String(error)),
+        new Promise<string>(resolve => setTimeout(() => resolve("hung"), 100))
+      ]);
+
+      await vi.advanceTimersByTimeAsync(100);
+      expect(await outcome).toMatch(/stream timeout/i);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

@@ -115,6 +115,33 @@ export interface VisionJsonResponse {
 
 export type VisionJsonCaller = (req: VisionJsonRequest) => Promise<VisionJsonResponse>;
 
+type StreamReadResult = Awaited<ReturnType<ReadableStreamDefaultReader<Uint8Array>["read"]>>;
+
+async function readStreamWithDeadline(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  deadlineMs: number,
+  provider: VisionProvider
+): Promise<StreamReadResult> {
+  const remainingMs = Math.max(0, deadlineMs - Date.now());
+  if (remainingMs === 0) {
+    await reader.cancel("stream timeout").catch(() => undefined);
+    throw new Error(`${provider} request failed: stream timeout`);
+  }
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await new Promise<StreamReadResult>((resolve, reject) => {
+      timer = setTimeout(() => {
+        reject(new Error(`${provider} request failed: stream timeout`));
+        void reader.cancel("stream timeout").catch(() => undefined);
+      }, remainingMs);
+      reader.read().then(resolve, reject);
+    });
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
 export interface SelectedVisionModel {
   provider: VisionProvider;
   model: string;
@@ -182,10 +209,11 @@ function makeOpenRouterSingleCaller(apiKey: string, model: string): VisionJsonCa
     let ttftMs: number | null = null;
     let completion: any = {}; // To accumulate the full completion object
     let streamCompleted = false;
+    const streamDeadlineMs = requestStartTime + req.timeoutMs;
 
     try {
       while (true) {
-        const { value, done } = await reader.read();
+        const { value, done } = await readStreamWithDeadline(reader, streamDeadlineMs, "openrouter");
         if (done) break;
 
         const chunk = decoder.decode(value, { stream: true });
@@ -332,10 +360,11 @@ function makeNvidiaSingleCaller(apiKey: string, model: string, baseUrl?: string)
     let ttftMs: number | null = null;
     let completion: any = {}; // To accumulate the full completion object
     let streamCompleted = false;
+    const streamDeadlineMs = requestStartTime + req.timeoutMs;
 
     try {
       while (true) {
-        const { value, done } = await reader.read();
+        const { value, done } = await readStreamWithDeadline(reader, streamDeadlineMs, "nvidia");
         if (done) break;
 
         const chunk = decoder.decode(value, { stream: true });
