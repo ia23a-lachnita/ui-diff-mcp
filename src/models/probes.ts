@@ -422,7 +422,10 @@ export async function probeRequiredModels(
     else grouped.set(key, [entry]);
   }
 
-  const groupedResults = await Promise.all([...grouped.values()].map(async group => {
+  const groups = [...grouped.values()];
+  const requestedRoles = new Set(entries.map(entry => entry.role));
+  const results: ProbeResult[] = [];
+  const probeGroup = async (group: ModelEntry[]): Promise<ProbeResult[]> => {
     const imageCount = Math.max(...group.map(entry => {
       if (entry.role === "target_recovery") return 4;
       if (["auditor", "fast_auditor", "reviewer", "escalation"].includes(entry.role)) return 5;
@@ -453,7 +456,58 @@ export async function probeRequiredModels(
       }
       return projected;
     });
-  }));
+  };
 
-  return groupedResults.flat();
+  const hasSufficientHealthyRoutes = (): boolean => {
+    for (const role of requestedRoles) {
+      const passing = results.filter(result => result.role === role && result.status === "pass");
+      const routeCount = new Set(passing.map(result => `${result.provider}:${result.model}`)).size;
+      const familyCount = new Set(passing.map(result => modelFamilyKey(result.model))).size;
+      if (routeCount < 3 || familyCount < 2) return false;
+    }
+    return requestedRoles.size > 0;
+  };
+
+  const waveSize = 3;
+  let nextGroupIndex = 0;
+  for (; nextGroupIndex < groups.length; nextGroupIndex += waveSize) {
+    const wave = groups.slice(nextGroupIndex, nextGroupIndex + waveSize);
+    results.push(...(await Promise.all(wave.map(probeGroup))).flat());
+    if (hasSufficientHealthyRoutes()) {
+      nextGroupIndex += wave.length;
+      break;
+    }
+  }
+
+  const skippedAt = new Date().toISOString();
+  for (const group of groups.slice(nextGroupIndex)) {
+    for (const entry of group) {
+      const skipped: ProbeResult = {
+        role: entry.role,
+        provider: entry.provider,
+        model: entry.model,
+        status: "not_checked",
+        checkedAt: skippedAt,
+        detail: "Skipped after sufficient healthy routes were selected."
+      };
+      results.push(skipped);
+      const traceRole = (entry.role === "reviewer" || entry.role === "escalation")
+        ? "reviewer" as const
+        : entry.role === "target_recovery"
+          ? "target_recovery" as const
+          : "auditor" as const;
+      traceSink?.({
+        phase: "probe",
+        event: "probe_result",
+        role: traceRole,
+        provider: entry.provider,
+        model: entry.model,
+        modelFamilyKey: modelFamilyKey(entry.model),
+        status: "not_checked",
+        reason: skipped.detail
+      });
+    }
+  }
+
+  return results;
 }

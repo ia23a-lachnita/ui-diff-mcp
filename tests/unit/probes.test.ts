@@ -142,4 +142,36 @@ describe("probeRequiredModels", () => {
     expect(results[0]?.status).toBe("not_checked");
     expect(results[0]?.detail).toContain("NVIDIA_API_KEY");
   });
+
+  it("stops ranked probing after every visual role has three healthy routes", async () => {
+    const roles = ["auditor", "reviewer", "target_recovery"] as const;
+    const models = ["family-a", "family-b", "family-c", "family-d"];
+    const entries: import("../../src/models/model-registry.js").ModelEntry[] = models.flatMap(model =>
+      roles.map(role => ({
+        role,
+        provider: "opencode" as const,
+        model,
+        costClass: "free" as const,
+        probeTtlMs: 60_000,
+        required: false
+      }))
+    );
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify({
+      choices: [{ message: { content: '{"imageCount":5,"hasBlueImage":true}' }, finish_reason: "stop" }]
+    }), { status: 200, headers: { "Content-Type": "application/json" } })));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const results = await probeRequiredModels(entries, PROVIDER_CONFIG);
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(results).toHaveLength(entries.length);
+    expect(results.filter(result => result.status === "pass")).toHaveLength(9);
+    expect(results.filter(result => result.model === "family-d")).toEqual(
+      expect.arrayContaining(roles.map(role => expect.objectContaining({
+        role,
+        status: "not_checked",
+        detail: expect.stringMatching(/sufficient healthy routes/i)
+      })))
+    );
+  });
 });
