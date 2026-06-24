@@ -17,6 +17,25 @@ describe("makeFallbackVisionCaller", () => {
     expect(result.model).toBe("m1");
   });
 
+  it("records provider-returned token usage on successful calls", async () => {
+    const events: ProviderTraceEvent[] = [];
+    const resultWithUsage = {
+      ...ok1,
+      usage: { prompt_tokens: 12_345, completion_tokens: 678 }
+    };
+
+    await makeFallbackVisionCaller(
+      [cand(vi.fn().mockResolvedValue(resultWithUsage))],
+      undefined,
+      event => events.push({ eventId: "x", ...event } as ProviderTraceEvent)
+    )(dummyReq);
+
+    expect(events.find(event => event.event === "call_success")).toMatchObject({
+      inputTokens: 12_345,
+      outputTokens: 678
+    });
+  });
+
   it("falls back to second candidate on HTTP 503", async () => {
     const c1 = cand(vi.fn().mockRejectedValue(new Error("NVIDIA HTTP 503: service unavailable")), "nvidia", "m1");
     const c2 = cand(vi.fn().mockResolvedValue(ok2), "openrouter", "m2");

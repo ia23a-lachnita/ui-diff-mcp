@@ -102,6 +102,8 @@ export function makeFallbackVisionCaller(
           completedAt,
           durationMs: Date.now() - callStart,
           status: "ok",
+          ...(result.usage?.prompt_tokens !== undefined ? { inputTokens: result.usage.prompt_tokens } : {}),
+          ...(result.usage?.completion_tokens !== undefined ? { outputTokens: result.usage.completion_tokens } : {}),
           ...(result.ttftMs != null ? { ttftMs: result.ttftMs } : {}),
           ...(result.finishReason !== undefined ? { finishReason: result.finishReason } : {}),
           ...(result.retryDecision !== undefined ? { retryDecision: result.retryDecision } : {})
