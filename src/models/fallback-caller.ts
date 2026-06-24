@@ -6,7 +6,10 @@ import { modelFamilyKey } from "./model-registry.js";
 export type { ProviderTraceSink };
 
 export class RouteExhaustedError extends Error {
-  constructor(public readonly lastError?: unknown) {
+  constructor(
+    public readonly lastError?: unknown,
+    public readonly permanent = false
+  ) {
     super(lastError instanceof Error ? `All provider routes exhausted: ${lastError.message}` : "All provider routes exhausted", { cause: lastError });
     this.name = "RouteExhaustedError";
   }
@@ -43,7 +46,6 @@ export function isRetryableProviderError(err: unknown): boolean {
 }
 
 function isRunStickyProviderError(err: unknown): boolean {
-  if (err instanceof ProviderJsonParseError) return true;
   return err instanceof Error && /HTTP 429/i.test(err.message);
 }
 
@@ -66,7 +68,7 @@ export function makeFallbackVisionCaller(
   let persistedLastErr: unknown;
   const caller = async (req: Parameters<VisionJsonCaller>[0]) => {
     if (healthyStartIndex >= candidates.length) {
-      throw new RouteExhaustedError(persistedLastErr);
+      throw new RouteExhaustedError(persistedLastErr, true);
     }
     let lastErr: unknown;
     for (let i = healthyStartIndex; i < candidates.length; i++) {
@@ -137,7 +139,8 @@ export function makeFallbackVisionCaller(
         // Quota exhaustion and repeated schema-invalid JSON are useful run-wide
         // health signals. Timeouts, network errors, and 5xx responses are transient:
         // fall back for this request, but allow the route to recover on the next one.
-        if (i === healthyStartIndex && isRunStickyProviderError(err)) {
+        const sticky = isRunStickyProviderError(err);
+        if (i === healthyStartIndex && sticky) {
           traceSink?.({
             phase,
             event: "route_unhealthy",
@@ -151,29 +154,7 @@ export function makeFallbackVisionCaller(
             status: "error",
             ...(diagnostic !== undefined ? { diagnostic } : {})
           });
-          const next = candidates[i + 1];
-          if (next) {
-            traceSink?.({
-              phase,
-              event: "fallback",
-              role,
-              provider: next.provider,
-              model: next.model,
-              modelFamilyKey: modelFamilyKey(next.model),
-              routeIndex: i + 1,
-              reason: `previous route (${candidate.provider}/${candidate.model}) unhealthy`
-            });
-            if (onFallback) {
-              onFallback({
-                fromProvider: candidate.provider,
-                fromModel: candidate.model,
-                toProvider: next.provider,
-                toModel: next.model,
-                reason: errMsg.slice(0, 200),
-                timestamp: new Date().toISOString()
-              });
-            }
-          } else {
+          if (!candidates[i + 1]) {
             if (!exhaustedEmitted) {
               exhaustedEmitted = true;
               traceSink?.({
@@ -190,6 +171,27 @@ export function makeFallbackVisionCaller(
             }
           }
           healthyStartIndex++;
+        }
+        const next = candidates[i + 1];
+        if (next) {
+          traceSink?.({
+            phase,
+            event: "fallback",
+            role,
+            provider: next.provider,
+            model: next.model,
+            modelFamilyKey: modelFamilyKey(next.model),
+            routeIndex: i + 1,
+            reason: `previous route (${candidate.provider}/${candidate.model}) failed for this request`
+          });
+          onFallback?.({
+            fromProvider: candidate.provider,
+            fromModel: candidate.model,
+            toProvider: next.provider,
+            toModel: next.model,
+            reason: errMsg.slice(0, 200),
+            timestamp: new Date().toISOString()
+          });
         }
       }
     }
@@ -211,7 +213,7 @@ export function makeFallbackVisionCaller(
         status: "error"
       });
     }
-    throw new RouteExhaustedError(lastErr);
+    throw new RouteExhaustedError(lastErr, healthyStartIndex >= candidates.length);
   };
   return Object.assign(caller, { isExhausted: () => healthyStartIndex >= candidates.length });
 }

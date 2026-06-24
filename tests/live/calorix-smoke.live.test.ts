@@ -503,7 +503,7 @@ describe.skipIf(!calorixReleaseLive)("Calorix release sign-off gate", () => {
       const { runId } = startResult.structuredContent as { runId: string };
 
       let statusOut: { status: string; reportPath?: string } | undefined;
-      for (let i = 0; i < 144; i++) {
+      for (let i = 0; i < 228; i++) {
         await new Promise(r => setTimeout(r, 10000));
         const statusResult = await started.client.callTool({ name: "get_ui_diff_run_status", arguments: { projectRoot, runId } }, undefined, { timeout: 600000 });
         statusOut = statusResult.structuredContent as { status: string; reportPath?: string };

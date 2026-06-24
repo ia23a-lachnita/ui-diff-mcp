@@ -270,12 +270,13 @@ export async function auditElementPair(
         prompt: auditorPrompt,
         images,
         jsonSchema: { name: `audit_${criterion}`, schema: rubric.jsonSchema },
-        timeoutMs: 60000
+        timeoutMs: 60000,
+        maxOutputTokens: 8192
       });
       auditModel = response.model;
       auditResult = AuditResultSchema.parse(response.parsed);
     } catch (err) {
-      if (err instanceof RouteExhaustedError) throw err;
+      if (err instanceof RouteExhaustedError && err.permanent) throw err;
       pushTrace(criterion, err instanceof z.ZodError ? "auditor_schema_error" : "auditor_error", {
         auditorDurationMs: Date.now() - started,
         model: auditModel,

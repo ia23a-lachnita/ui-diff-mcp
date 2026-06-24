@@ -10,6 +10,7 @@ import { reviewAndMergeFindings, hasUnsupportedCropBoundaryClaim } from "../../s
 import { UiCriterionSchema } from "../../src/schemas/core.js";
 import type { ElementPair, UiElement, DiffRecord } from "../../src/schemas/core.js";
 import type { VisionJsonCaller } from "../../src/models/vision-json.js";
+import { RouteExhaustedError } from "../../src/models/fallback-caller.js";
 import { writeSolidPng } from "../../src/testing/fixture-images.js";
 import { summarizeAuditPairOutcomes } from "../../src/debug/run-debug.js";
 
@@ -283,6 +284,28 @@ describe("auditElementPair", () => {
     expect(result.accepted.length).toBeGreaterThanOrEqual(1);
     expect(result.accepted[0]?.criterion).toBe("geometry");
     expect(vi.mocked(auditorCaller)).toHaveBeenCalled();
+  });
+
+  it("gives reasoning auditors enough output budget to emit structured JSON", async () => {
+    const auditorCaller = vi.fn().mockResolvedValue({
+      parsed: { hasDiff: false }, rawContent: "", model: "m", provider: "nvidia"
+    });
+
+    await auditElementPair(pair, makeAuditContext({ auditorCaller, boxDeltaPx: 15 }));
+
+    expect(auditorCaller).toHaveBeenCalled();
+    expect(auditorCaller.mock.calls[0]?.[0].maxOutputTokens).toBeGreaterThanOrEqual(8192);
+  });
+
+  it("records transient all-route exhaustion without aborting later pairs", async () => {
+    const auditorCaller = vi.fn().mockRejectedValue(
+      new RouteExhaustedError(new Error("all transient routes returned empty content"), false)
+    );
+
+    const result = await auditElementPair(pair, makeAuditContext({ auditorCaller, boxDeltaPx: 15 }));
+
+    expect(result.accepted).toHaveLength(0);
+    expect(result.trace.some(entry => entry.status === "auditor_error")).toBe(true);
   });
 
   it("removes diff when reviewer rejects it", async () => {

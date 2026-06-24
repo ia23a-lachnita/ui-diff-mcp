@@ -55,3 +55,15 @@ Strict run `run-1782275065154-88c1e0` failed after 1,352.7 seconds, but isolated
 - strict result: FAIL, correctly blocked on `visualClassificationStatus: incomplete`.
 
 Root cause: recovery supplied only region-local crops but demanded a full-screen box, then compared the crop-local model answer to absolute component coordinates. The deterministic pixel component already owns the full-screen location. Recovery now asks the VLM only for semantic classification, anchors accepted findings to deterministic component geometry, raises the default model-call cap to 200, and raises the default recovery deadline to 15 minutes. A fresh strict run is required.
+
+Strict run `run-1782276794272-5f4ab7` validated that recovery correction: 23/24 eligible regions resolved, including 13 accepted semantic findings and 10 noise verdicts. One reviewer rejection remained unresolved. Audit stopped at pair 48 after OpenCode reached its free 429 and each remaining route returned one empty structured response; 23 audit pairs remained.
+
+The same run finalized seconds after the gate's 24-minute poll loop, exposing a harness race even though the outer test timeout is 40 minutes. The next correction:
+
+- only HTTP 429 permanently quarantines a route for the run;
+- empty/malformed structured responses and timeouts remain request-scoped;
+- all-route transient exhaustion is recorded as a failed pair instead of aborting every later pair;
+- auditor output budget is 8,192 tokens so reasoning models can emit their JSON;
+- the strict poll window is 38 minutes.
+
+A fresh strict run is still required. Release remains blocked until that gate returns complete classification with zero failed/remaining audit pairs and zero unresolved regions.

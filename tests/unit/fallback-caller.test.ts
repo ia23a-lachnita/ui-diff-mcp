@@ -135,6 +135,44 @@ describe("makeFallbackVisionCaller", () => {
     expect(caller.isExhausted()).toBe(false);
   });
 
+  it("retries routes after a transient all-route structured-output failure", async () => {
+    const diagnostic = {
+      kind: "empty_content" as const,
+      rawContentLength: 0,
+      firstChars: "",
+      lastChars: "",
+      startsWithJson: false,
+      endsWithJson: false,
+      streamCompleted: true
+    };
+    const first = vi.fn()
+      .mockRejectedValueOnce(new ProviderJsonParseError("opencode", diagnostic))
+      .mockResolvedValue(ok1);
+    const second = vi.fn()
+      .mockRejectedValueOnce(new ProviderJsonParseError("nvidia", diagnostic))
+      .mockResolvedValue(ok2);
+    const caller = makeFallbackVisionCaller([
+      cand(first, "opencode", "m1"),
+      cand(second, "nvidia", "m2")
+    ]);
+
+    const exhausted = await caller(dummyReq).catch(error => error);
+    expect(exhausted).toBeInstanceOf(RouteExhaustedError);
+    expect((exhausted as RouteExhaustedError).permanent).toBe(false);
+    await expect(caller(dummyReq)).resolves.toMatchObject({ model: "m1" });
+    expect(caller.isExhausted()).toBe(false);
+  });
+
+  it("marks quota-exhausted route sets as permanent", async () => {
+    const caller = makeFallbackVisionCaller([
+      cand(vi.fn().mockRejectedValue(new Error("OpenCode HTTP 429: rate limited")), "opencode", "m1")
+    ]);
+
+    const exhausted = await caller(dummyReq).catch(error => error);
+    expect(exhausted).toBeInstanceOf(RouteExhaustedError);
+    expect((exhausted as RouteExhaustedError).permanent).toBe(true);
+  });
+
   it("two separate caller instances have independent health state", async () => {
     const failFn = vi.fn().mockRejectedValue(new Error("HTTP 429"));
     const okFn = vi.fn().mockResolvedValue(ok2);
