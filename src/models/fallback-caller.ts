@@ -39,7 +39,7 @@ export function isRetryableProviderError(err: unknown): boolean {
   // provider JSON — all indicate a transient provider-side issue.
   // Do NOT retry on HTTP 400 (bad request schema) or 401 (auth) — those are
   // caller-side problems that will recur on every candidate.
-  return /HTTP 429|HTTP 5\d{2}|request failed|ECONNRESET|ETIMEDOUT|ENOTFOUND|timeout|not valid JSON/i.test(msg);
+  return /HTTP 429|HTTP 5\d{2}|request failed|ECONNRESET|ETIMEDOUT|ENOTFOUND|timeout|not valid JSON|Multimodal data is corrupted/i.test(msg);
 }
 
 function isRunStickyProviderError(err: unknown): boolean {

@@ -32,4 +32,14 @@ Two TDD fixes now supersede that behavior:
 
 ## Next Gate
 
-Rerun `verify:calorix-full-live`, then `verify:calorix-release-live`. Production approval requires complete visual classification, zero failed or remaining audit pairs, zero unresolved recovery regions, and successful semantic stage outcomes.
+Corrected full diagnostic run `run-1782273698879-b00df7` passed its diagnostic harness in 1,192.6 seconds and produced truthful incomplete outcomes:
+
+- all 71 selected pairs entered the VLM path and all 71 received reviewer attempts;
+- 22 pairs failed because OpenCode intermittently returned HTTP 400 `Multimodal data is corrupted` for locally valid PNG evidence;
+- audit outcome: `incomplete / failed_pairs`;
+- recovery outcome: `incomplete / model_call_cap`, with 21 unresolved regions;
+- the comparison-space artifact was indexed.
+
+Replaying one failed five-image payload proved that OpenCode accepted the same valid images afterward, so this provider-specific 400 is now retryable across routes for the current request. It does not permanently quarantine OpenCode.
+
+Run `verify:calorix-release-live` from the corrected commit. Production approval requires complete visual classification, zero failed or remaining audit pairs, zero unresolved recovery regions, and successful semantic stage outcomes.

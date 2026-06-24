@@ -44,6 +44,16 @@ describe("makeFallbackVisionCaller", () => {
     expect(result.model).toBe("m2");
   });
 
+  it("falls back when a provider intermittently rejects valid multimodal data", async () => {
+    const c1 = cand(vi.fn().mockRejectedValue(new Error(
+      "OpenCode HTTP 400: Provider returned error: Multimodal data is corrupted or invalid"
+    )), "opencode", "m1");
+    const c2 = cand(vi.fn().mockResolvedValue(ok2), "nvidia", "m2");
+
+    await expect(makeFallbackVisionCaller([c1, c2])(dummyReq))
+      .resolves.toMatchObject({ model: "m2" });
+  });
+
   it("throws last error when all candidates exhausted", async () => {
     const c1 = cand(vi.fn().mockRejectedValue(new Error("HTTP 429: rate limited")));
     const c2 = cand(vi.fn().mockRejectedValue(new Error("HTTP 429: rate limited")), "openrouter", "m2");
@@ -192,6 +202,7 @@ describe("isRetryableProviderError", () => {
     ["NVIDIA request failed: ETIMEDOUT", true],
     ["OpenRouter request failed: ECONNRESET", true],
     ["OpenRouter HTTP 400: bad request", false],
+    ["OpenCode HTTP 400: Multimodal data is corrupted or invalid", true],
     ["OpenRouter HTTP 401: unauthorized", false],
     ["OpenRouter response content is not valid JSON: {}", true],
   ])("%s → %s", (msg, expected) => {
