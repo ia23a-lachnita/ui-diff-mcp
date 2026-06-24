@@ -519,7 +519,7 @@ describe.skipIf(!calorixReleaseLive)("Calorix release sign-off gate", () => {
       expect(report.isCheckpoint, "release gate requires a durable final report, not a checkpoint").toBe(false);
       expect(
         report.visualClassificationStatus,
-        "release gate requires complete visual classification — incomplete means free auditor routes were exhausted"
+        "release gate requires complete visual classification; inspect audit and recovery stage outcomes for the exact blocker"
       ).toBe("complete");
 
       expect(

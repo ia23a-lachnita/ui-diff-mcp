@@ -124,12 +124,12 @@ describe("prompt builders", () => {
     expect(prompt).toContain("Do not return determination or reasoning keys");
   });
 
-  it("spells out recovery camelCase keys, box object, and evidence array", () => {
+  it("keeps recovery semantic and does not ask for unavailable screen coordinates", () => {
     const prompt = buildRecoveryPrompt(200, 500);
-    expect(prompt).toContain('"coordinateFrame": "expected"');
-    expect(prompt).toContain('"box": { "x": 0, "y": 0, "width": 1, "height": 1 }');
+    expect(prompt).not.toContain("coordinateFrame");
+    expect(prompt).not.toContain('"box"');
     expect(prompt).toContain('"evidence": ["visible qualitative observation"]');
-    expect(prompt).toContain("Do not return coordinate_frame, bounding_box, or a string evidence value");
+    expect(prompt).toContain("The deterministic region already provides the screen location");
   });
 
   it("auditor prompt does not contain code-edit advice", () => {

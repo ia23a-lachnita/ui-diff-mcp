@@ -43,3 +43,15 @@ Corrected full diagnostic run `run-1782273698879-b00df7` passed its diagnostic h
 Replaying one failed five-image payload proved that OpenCode accepted the same valid images afterward, so this provider-specific 400 is now retryable across routes for the current request. It does not permanently quarantine OpenCode.
 
 Run `verify:calorix-release-live` from the corrected commit. Production approval requires complete visual classification, zero failed or remaining audit pairs, zero unresolved recovery regions, and successful semantic stage outcomes.
+
+## Strict Gate Finding
+
+Strict run `run-1782275065154-88c1e0` failed after 1,352.7 seconds, but isolated the remaining pipeline issue cleanly:
+
+- audit: 71/71 pairs entered, 71 reviewed, zero failed, zero remaining, semantic outcome `success`;
+- provider routing: 33 intermittent OpenCode multimodal HTTP 400s fell through successfully, proving the provider correction works at full scale;
+- recovery: 22/24 attempted regions were rejected as `box_no_component_overlap`, one region was skipped by the 24-call cap, and 23 remained unresolved;
+- recovery outcome: `incomplete / model_call_cap`;
+- strict result: FAIL, correctly blocked on `visualClassificationStatus: incomplete`.
+
+Root cause: recovery supplied only region-local crops but demanded a full-screen box, then compared the crop-local model answer to absolute component coordinates. The deterministic pixel component already owns the full-screen location. Recovery now asks the VLM only for semantic classification, anchors accepted findings to deterministic component geometry, raises the default model-call cap to 200, and raises the default recovery deadline to 15 minutes. A fresh strict run is required.

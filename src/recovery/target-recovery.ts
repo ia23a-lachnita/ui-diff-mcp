@@ -8,7 +8,6 @@ import { UiCriterionSchema } from "../schemas/core.js";
 import type { PixelComponent } from "../signals/pixel-diff.js";
 import type { VisionJsonCaller } from "../models/vision-json.js";
 import { buildRecoveryPrompt, buildReviewerPrompt } from "../audit/prompts.js";
-import { intersect } from "../signals/geometry.js";
 import { type ImagePairTransform, projectExpectedBoxToActualSource } from "../images/coordinates.js";
 
 const CLASSIFIABLE_CRITERIA = UiCriterionSchema.exclude(["unclassified_visual_change"]);
@@ -18,13 +17,6 @@ const RecoveryVlmResponseSchema = z.object({
   criterion: CLASSIFIABLE_CRITERIA.optional(),
   severity: z.enum(["low", "medium", "high"]).optional(),
   label: z.string().min(1).optional(),
-  coordinateFrame: z.enum(["expected", "actual", "normalized"]).optional(),
-  box: z.object({
-    x: z.number().finite().min(0),
-    y: z.number().finite().min(0),
-    width: z.number().finite().positive(),
-    height: z.number().finite().positive()
-  }).optional(),
   evidence: z.array(z.string()).min(1).optional(),
   measurements: z.array(z.object({
     name: z.string(),
@@ -45,18 +37,6 @@ const RECOVERY_JSON_SCHEMA = {
     criterion: { type: "string", enum: CLASSIFIABLE_CRITERIA.options },
     severity: { type: "string", enum: ["low", "medium", "high"] },
     label: { type: "string" },
-    coordinateFrame: { type: "string", enum: ["expected", "actual", "normalized"] },
-    box: {
-      type: "object",
-      properties: {
-        x: { type: "number" },
-        y: { type: "number" },
-        width: { type: "number" },
-        height: { type: "number" }
-      },
-      required: ["x", "y", "width", "height"],
-      additionalProperties: false
-    },
     evidence: { type: "array", items: { type: "string" }, minItems: 1 },
     measurements: {
       type: "array",
@@ -86,8 +66,8 @@ export interface RecoveryBudget {
 function makeDefaultBudget(): RecoveryBudget {
   return {
     maxComponents: parseInt(process.env["UI_DIFF_MAX_RECOVERY_COMPONENTS"] ?? "12", 10),
-    maxModelCalls: parseInt(process.env["UI_DIFF_MAX_RECOVERY_MODEL_CALLS"] ?? "24", 10),
-    deadlineMs: Date.now() + parseInt(process.env["UI_DIFF_RECOVERY_BUDGET_MS"] ?? "120000", 10),
+    maxModelCalls: parseInt(process.env["UI_DIFF_MAX_RECOVERY_MODEL_CALLS"] ?? "200", 10),
+    deadlineMs: Date.now() + parseInt(process.env["UI_DIFF_RECOVERY_BUDGET_MS"] ?? "900000", 10),
     minComponentPixels: parseInt(process.env["UI_DIFF_MIN_RECOVERY_PIXELS"] ?? "80", 10)
   };
 }
@@ -180,22 +160,6 @@ async function toBase64Png(
     { raw: { width: width > 0 ? width : 1, height: height > 0 ? height : 1, channels } }
   ).png().toBuffer();
   return buf.toString("base64");
-}
-
-function isBoxInBounds(box: Box, imageWidth: number, imageHeight: number): boolean {
-  return (
-    box.x >= 0 && box.y >= 0 &&
-    box.x + box.width <= imageWidth &&
-    box.y + box.height <= imageHeight
-  );
-}
-
-function boxOverlapsComponent(box: Box, component: PixelComponent, threshold = 0.1): boolean {
-  const overlap = intersect(box, component.box);
-  if (!overlap) return false;
-  const overlapArea = overlap.width * overlap.height;
-  const componentArea = component.box.width * component.box.height;
-  return overlapArea / componentArea >= threshold;
 }
 
 export interface RecoveryResult {
@@ -300,8 +264,6 @@ export async function runTargetRecovery(
   function countStatus(status: string): void {
     statusCounts[status] = (statusCounts[status] ?? 0) + 1;
   }
-  const imageWidth = ctx.expectedRgba.width;
-  const imageHeight = ctx.expectedRgba.height;
   let recoveryModel: string | undefined;
 
   // Assign stable componentIds before sorting, then rank: pixelCount desc, area desc, y asc, x asc
@@ -443,9 +405,7 @@ export async function runTargetRecovery(
     if (
       !vlmResponse.criterion ||
       !vlmResponse.label ||
-      !vlmResponse.box ||
-      !vlmResponse.evidence ||
-      !vlmResponse.coordinateFrame
+      !vlmResponse.evidence
     ) {
       countStatus("missing_required_fields");
       trace.push({ ...baseTrace, status: "missing_required_fields", model: componentRecoveryModel, recoveryDurationMs });
@@ -454,27 +414,8 @@ export async function runTargetRecovery(
       continue;
     }
 
-    // Validate box
-    const rawBox = vlmResponse.box;
-    if (!isBoxInBounds(rawBox, imageWidth, imageHeight)) {
-      console.warn(`Recovery: box out of bounds for component ${evidenceId}, skipping`);
-      countStatus("box_out_of_bounds");
-      trace.push({ ...baseTrace, status: "box_out_of_bounds", model: componentRecoveryModel, recoveryDurationMs, criterion: vlmResponse.criterion });
-      unclassifiedCount++;
-      regionOutcomes.push({ regionId: componentId, state: "unresolved", reason: "box_out_of_bounds", artifactPaths: artifacts });
-      continue;
-    }
-    if (!boxOverlapsComponent(rawBox, component)) {
-      console.warn(`Recovery: box does not overlap component ${evidenceId}, skipping`);
-      countStatus("box_no_component_overlap");
-      trace.push({ ...baseTrace, status: "box_no_component_overlap", model: componentRecoveryModel, recoveryDurationMs, criterion: vlmResponse.criterion });
-      unclassifiedCount++;
-      regionOutcomes.push({ regionId: componentId, state: "unresolved", reason: "box_no_component_overlap", artifactPaths: artifacts });
-      continue;
-    }
-
-    // Snap recovered box to the deterministic pixel-component bounds.
-    // The VLM provides label/criterion; the pixel analysis provides the ground-truth region.
+    // The VLM supplies semantic classification only. The deterministic pixel
+    // component is the authoritative full-screen location for this crop.
     const recoveredBox = component.box;
 
     // Review with standard reviewer
@@ -540,7 +481,7 @@ export async function runTargetRecovery(
       evidence: vlmResponse.evidence,
       measurements: [
         ...baseMeasurements,
-        { name: "coordinateFrame", value: vlmResponse.coordinateFrame }
+        { name: "coordinateSource", value: "deterministic_pixel_component" }
       ],
       artifactPaths: artifacts,
       reviewerStatus: reviewDecision === "needs_escalation" ? "needs_escalation" : "accepted",

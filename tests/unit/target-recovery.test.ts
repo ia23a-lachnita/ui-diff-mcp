@@ -18,6 +18,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
   await fs.rm(tmpDir, { recursive: true, force: true });
 });
 
@@ -95,8 +96,6 @@ describe("runTargetRecovery", () => {
         criterion: "geometry",
         severity: "medium",
         label: "Submit button",
-        coordinateFrame: "expected",
-        box: { x: 10, y: 10, width: 80, height: 60 },
         evidence: ["element shifted 15px"]
       },
       rawContent: "",
@@ -117,22 +116,17 @@ describe("runTargetRecovery", () => {
     expect(recovered[0]?.reviewerStatus).toBe("accepted");
     expect(recovered[0]?.model).toBe("test-model");
     expect(unclassifiedCount).toBe(0);
-    // coordinateFrame preserved in measurements
-    const cfMeasurement = recovered[0]?.measurements.find(m => m.name === "coordinateFrame");
-    expect(cfMeasurement?.value).toBe("expected");
     // location snapped to pixel-component's deterministic bounds
     expect(recovered[0]?.location).toEqual(component.box);
   });
 
-  it("marks component unclassified when coordinateFrame is missing", async () => {
+  it("does not require a crop-only VLM to invent screen coordinates", async () => {
     const recoveryCaller: VisionJsonCaller = vi.fn().mockResolvedValue({
       parsed: {
         classified: true,
         criterion: "geometry",
         severity: "medium",
         label: "Button",
-        // coordinateFrame intentionally omitted
-        box: { x: 10, y: 10, width: 80, height: 60 },
         evidence: ["shifted"]
       },
       rawContent: "",
@@ -142,8 +136,9 @@ describe("runTargetRecovery", () => {
     const ctx = makeCtx({ recoveryCaller });
 
     const { recovered, unclassifiedCount } = await runTargetRecovery([component], ctx, unlimitedBudget);
-    expect(recovered).toHaveLength(0);
-    expect(unclassifiedCount).toBe(1);
+    expect(recovered).toHaveLength(1);
+    expect(recovered[0]?.location).toEqual(component.box);
+    expect(unclassifiedCount).toBe(0);
   });
 
   it("marks component unclassified when reviewer rejects", async () => {
@@ -174,7 +169,7 @@ describe("runTargetRecovery", () => {
     expect(unclassifiedCount).toBe(1);
   });
 
-  it("rejects recovered box that is outside image bounds", async () => {
+  it("ignores legacy VLM coordinates outside bounds and uses deterministic geometry", async () => {
     const recoveryCaller: VisionJsonCaller = vi.fn().mockResolvedValue({
       parsed: {
         classified: true,
@@ -192,11 +187,12 @@ describe("runTargetRecovery", () => {
     const ctx = makeCtx({ recoveryCaller });
 
     const { recovered, unclassifiedCount } = await runTargetRecovery([component], ctx, unlimitedBudget);
-    expect(recovered).toHaveLength(0);
-    expect(unclassifiedCount).toBe(1);
+    expect(recovered).toHaveLength(1);
+    expect(recovered[0]?.location).toEqual(component.box);
+    expect(unclassifiedCount).toBe(0);
   });
 
-  it("rejects recovered box that does not overlap the component", async () => {
+  it("ignores legacy non-overlapping VLM coordinates and uses deterministic geometry", async () => {
     const recoveryCaller: VisionJsonCaller = vi.fn().mockResolvedValue({
       parsed: {
         classified: true,
@@ -214,8 +210,9 @@ describe("runTargetRecovery", () => {
     const ctx = makeCtx({ recoveryCaller });
 
     const { recovered, unclassifiedCount } = await runTargetRecovery([component], ctx, unlimitedBudget);
-    expect(recovered).toHaveLength(0);
-    expect(unclassifiedCount).toBe(1);
+    expect(recovered).toHaveLength(1);
+    expect(recovered[0]?.location).toEqual(component.box);
+    expect(unclassifiedCount).toBe(0);
   });
 
   it("writes 4 artifact PNG files for each component", async () => {
@@ -336,6 +333,21 @@ describe("runTargetRecovery", () => {
     expect(result.statusCounts["skipped_component_cap"] ?? 0).toBe(0);
   });
 
+  it("does not cap the default recovery budget below 25 eligible regions", async () => {
+    vi.stubEnv("UI_DIFF_RECOVERY_BUDGET_MS", "300000");
+    vi.stubEnv("UI_DIFF_MIN_RECOVERY_PIXELS", "1");
+    const components: PixelComponent[] = Array.from({ length: 25 }, (_, i) => ({
+      box: { x: (i % 5) * 35, y: Math.floor(i / 5) * 35, width: 20, height: 20 },
+      pixelCount: 100 + i
+    }));
+
+    const result = await runTargetRecovery(components, makeCtx());
+
+    expect(result.attemptedComponents).toBe(25);
+    expect(result.remainingComponents).toBe(0);
+    expect(result.stoppedReason).toBe("none");
+  });
+
   it("preserves exact remaining region ids when model-call budget is exhausted", async () => {
     const components = Array.from({ length: 5 }, (_, index) => ({
       id: `region-${index + 1}`,
@@ -408,7 +420,7 @@ describe("runTargetRecovery", () => {
 
     const recoveryCaller: VisionJsonCaller = vi.fn()
       .mockResolvedValueOnce({ parsed: { classified: false }, rawContent: "", model: "m1", provider: "openrouter" })
-      .mockResolvedValueOnce({ parsed: { classified: true, criterion: "geometry", label: "Button", box: { x: 10, y: 10, width: 80, height: 60 }, evidence: ["shifted"] }, rawContent: "", model: "m1", provider: "openrouter" });
+      .mockResolvedValueOnce({ parsed: { classified: true, criterion: "geometry", evidence: ["shifted"] }, rawContent: "", model: "m1", provider: "openrouter" });
 
     const budget: RecoveryBudget = { maxComponents: 100, maxModelCalls: 100, deadlineMs: Date.now() + 60000, minComponentPixels: 10 };
     const result = await runTargetRecovery(
