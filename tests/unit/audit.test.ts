@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import sharp from "sharp";
 import { rubrics, selectTriggeredCriteria } from "../../src/audit/criteria.js";
-import { buildAuditorPrompt, buildReviewerPrompt } from "../../src/audit/prompts.js";
+import { buildAuditorPrompt, buildRecoveryPrompt, buildReviewerPrompt } from "../../src/audit/prompts.js";
 import { auditElementPair } from "../../src/audit/audit-target.js";
 import { reviewAndMergeFindings, hasUnsupportedCropBoundaryClaim } from "../../src/audit/review-findings.js";
 import { UiCriterionSchema } from "../../src/schemas/core.js";
@@ -110,6 +110,28 @@ describe("selectTriggeredCriteria", () => {
 });
 
 describe("prompt builders", () => {
+  it("spells out the exact auditor JSON keys and forbids provider-invented aliases", () => {
+    const prompt = buildAuditorPrompt({
+      criterion: "geometry",
+      rubric: rubrics.geometry,
+      elementLabel: "Nutrition ring",
+      elementType: "chart",
+      pairingStatus: "matched",
+      measurements: []
+    });
+    expect(prompt).toContain('"hasDiff": false');
+    expect(prompt).toContain('"evidence": ["visible qualitative observation"]');
+    expect(prompt).toContain("Do not return determination or reasoning keys");
+  });
+
+  it("spells out recovery camelCase keys, box object, and evidence array", () => {
+    const prompt = buildRecoveryPrompt(200, 500);
+    expect(prompt).toContain('"coordinateFrame": "expected"');
+    expect(prompt).toContain('"box": { "x": 0, "y": 0, "width": 1, "height": 1 }');
+    expect(prompt).toContain('"evidence": ["visible qualitative observation"]');
+    expect(prompt).toContain("Do not return coordinate_frame, bounding_box, or a string evidence value");
+  });
+
   it("auditor prompt does not contain code-edit advice", () => {
     const prompt = buildAuditorPrompt({
       criterion: "geometry",

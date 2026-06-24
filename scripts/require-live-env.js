@@ -11,7 +11,7 @@ if (process.env[varName] !== "1") {
   console.error(`Error: ${varName}=1 must be set to run this live release gate.`);
   if (varName === "RUN_UI_DIFF_LIVE") {
     console.error(
-      "Also set OPENROUTER_API_KEY, NVIDIA_API_KEY, and LOCATEANYTHING_SIDECAR_URL before running verify:mcp-live."
+      "Also set LOCATEANYTHING_SIDECAR_URL before running verify:mcp-live. OpenCode uses the public free credential by default; NVIDIA/OpenRouter keys are optional fallbacks."
     );
   } else if (varName === "RUN_OPENROUTER_FREE_LIVE") {
     console.error(
@@ -25,14 +25,18 @@ if (process.env[varName] !== "1") {
     console.error(
       "Also set NVIDIA_API_KEY (and optionally NVIDIA_VLM_BASE_URL) before running verify:nvidia-live."
     );
+  } else if (varName === "RUN_OPENCODE_LIVE") {
+    console.error(
+      "OpenCode's current free route uses the public credential by default; OPENCODE_API_KEY and OPENCODE_ZEN_BASE_URL are optional overrides."
+    );
   } else if (varName === "RUN_CALORIX_UI_DIFF_LIVE") {
     console.error(
-      "Also set OPENROUTER_API_KEY, LOCATEANYTHING_SIDECAR_URL, " +
+      "Also set LOCATEANYTHING_SIDECAR_URL, " +
       "UI_DIFF_LIVE_EXPECTED_IMAGE, and UI_DIFF_LIVE_ACTUAL_IMAGE before running verify:calorix-live."
     );
   } else if (varName === "RUN_CALORIX_FULL_LIVE") {
     console.error(
-      "Also set OPENROUTER_API_KEY, LOCATEANYTHING_SIDECAR_URL, " +
+      "Also set LOCATEANYTHING_SIDECAR_URL, " +
       "UI_DIFF_LIVE_EXPECTED_IMAGE, and UI_DIFF_LIVE_ACTUAL_IMAGE before running verify:calorix-full-live. " +
       "Do NOT set UI_DIFF_MAX_AUDIT_PAIRS — this gate requires an unbounded audit."
     );

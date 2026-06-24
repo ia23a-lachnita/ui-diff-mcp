@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { runStage } from "../../src/pipeline/stages.js";
-import { deriveAuditStageOutcome, deriveRecoveryStageOutcome } from "../../src/pipeline/stages.js";
+import { auditTraceHasFailure, deriveAuditStageOutcome, deriveRecoveryStageOutcome } from "../../src/pipeline/stages.js";
 
 describe("runStage", () => {
   it("returns stage result with timing and data", async () => {
@@ -26,6 +26,20 @@ describe("runStage", () => {
 });
 
 describe("semantic stage outcomes", () => {
+  it("treats a reviewer provider error as an audit-pair failure", () => {
+    expect(auditTraceHasFailure([
+      { status: "reviewer_error" }
+    ])).toBe(true);
+  });
+
+  it("does not treat accepted, rejected, or no-diff decisions as failures", () => {
+    expect(auditTraceHasFailure([
+      { status: "reviewer_accepted" },
+      { status: "reviewer_rejected" },
+      { status: "auditor_no_diff" }
+    ])).toBe(false);
+  });
+
   it("marks audit route exhaustion incomplete even though the stage returned", () => {
     expect(deriveAuditStageOutcome({
       auditedPairs: 2,

@@ -46,7 +46,13 @@ export function buildRecoveryPrompt(pixelCount: number, componentArea: number): 
     `- Do NOT fabricate coordinates — use the region shown.`,
     `- Evidence must be specific (e.g., "background color changed from dark to light").`,
     ``,
-    `Respond with JSON only matching the schema provided. No prose before or after the JSON.`
+    `EXACT OUTPUT SHAPE:`,
+    `- No meaningful difference: { "classified": false }`,
+    `- Classifiable difference: { "classified": true, "criterion": "presence", "severity": "high", "label": "short visible label", "coordinateFrame": "expected", "box": { "x": 0, "y": 0, "width": 1, "height": 1 }, "evidence": ["visible qualitative observation"] }`,
+    `- Use the exact camelCase key coordinateFrame, the exact key box with an object value, and an array of strings for evidence.`,
+    `- Do not return coordinate_frame, bounding_box, or a string evidence value.`,
+    ``,
+    `Respond with JSON only matching that exact shape and the provided schema. No prose before or after the JSON.`
   ].join("\n");
 }
 
@@ -97,7 +103,13 @@ export function buildAuditorPrompt(ctx: AuditorPromptContext): string {
     `- Do not recommend fixes.`,
     `- If the evidence is only a projected-location mismatch, classify it as presence/geometry only when visible evidence supports that label.`,
     ``,
-    `Respond with JSON only matching the schema provided. No prose before or after the JSON.`
+    `EXACT OUTPUT SHAPE:`,
+    `- No criterion difference: { "hasDiff": false }`,
+    `- Visible criterion difference: { "hasDiff": true, "severity": "medium", "title": "short qualitative title", "evidence": ["visible qualitative observation"] }`,
+    `- Use the exact keys hasDiff, severity, title, and evidence. Evidence is always an array of strings.`,
+    `- Do not return determination or reasoning keys.`,
+    ``,
+    `Respond with JSON only matching that exact shape and the provided schema. No prose before or after the JSON.`
   ].join("\n");
 }
 

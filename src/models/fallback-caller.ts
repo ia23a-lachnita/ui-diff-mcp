@@ -42,6 +42,11 @@ export function isRetryableProviderError(err: unknown): boolean {
   return /HTTP 429|HTTP 5\d{2}|request failed|ECONNRESET|ETIMEDOUT|ENOTFOUND|timeout|not valid JSON/i.test(msg);
 }
 
+function isRunStickyProviderError(err: unknown): boolean {
+  if (err instanceof ProviderJsonParseError) return true;
+  return err instanceof Error && /HTTP 429/i.test(err.message);
+}
+
 export function makeFallbackVisionCaller(
   candidates: FallbackCandidate[],
   onFallback?: (event: FallbackEvent) => void,
@@ -129,8 +134,10 @@ export function makeFallbackVisionCaller(
           ...(diagnostic !== undefined ? { diagnostic } : {})
         });
         if (!retryable) throw err;
-        // Advance sticky index past this unhealthy candidate and emit trace + fallback event.
-        if (i === healthyStartIndex) {
+        // Quota exhaustion and repeated schema-invalid JSON are useful run-wide
+        // health signals. Timeouts, network errors, and 5xx responses are transient:
+        // fall back for this request, but allow the route to recover on the next one.
+        if (i === healthyStartIndex && isRunStickyProviderError(err)) {
           traceSink?.({
             phase,
             event: "route_unhealthy",

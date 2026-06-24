@@ -46,7 +46,7 @@ describe("makeFallbackVisionCaller", () => {
 
   it("throws last error when all candidates exhausted", async () => {
     const c1 = cand(vi.fn().mockRejectedValue(new Error("HTTP 429: rate limited")));
-    const c2 = cand(vi.fn().mockRejectedValue(new Error("HTTP 503: overloaded")), "openrouter", "m2");
+    const c2 = cand(vi.fn().mockRejectedValue(new Error("HTTP 429: rate limited")), "openrouter", "m2");
     const caller = makeFallbackVisionCaller([c1, c2]);
     await expect(caller(dummyReq)).rejects.toBeInstanceOf(RouteExhaustedError);
     expect(caller.isExhausted()).toBe(true);
@@ -82,7 +82,7 @@ describe("makeFallbackVisionCaller", () => {
 
   it("sticky health: onFallback fires only once even across multiple calls", async () => {
     const events: FallbackEvent[] = [];
-    const failFn = vi.fn().mockRejectedValue(new Error("HTTP 503"));
+    const failFn = vi.fn().mockRejectedValue(new Error("HTTP 429"));
     const okFn = vi.fn().mockResolvedValue(ok2);
     const caller = makeFallbackVisionCaller([cand(failFn), cand(okFn, "openrouter", "m2")], ev => events.push(ev));
     await caller(dummyReq);
@@ -95,7 +95,7 @@ describe("makeFallbackVisionCaller", () => {
     const trace: string[] = [];
     const traceSink = vi.fn((e: { event: string }) => trace.push(e.event));
     const c1 = cand(vi.fn().mockRejectedValue(new Error("HTTP 429")), "nvidia", "m1");
-    const c2 = cand(vi.fn().mockRejectedValue(new Error("HTTP 503")), "openrouter", "m2");
+    const c2 = cand(vi.fn().mockRejectedValue(new Error("HTTP 429")), "openrouter", "m2");
     const caller = makeFallbackVisionCaller([c1, c2], undefined, traceSink as never);
     await expect(caller(dummyReq)).rejects.toThrow(); // exhausts both candidates
     await expect(caller(dummyReq)).rejects.toThrow(); // short-circuits — no new provider calls
@@ -104,6 +104,25 @@ describe("makeFallbackVisionCaller", () => {
     expect(trace.filter(e => e === "route_exhausted")).toHaveLength(1);
     // call 1 emits 2 call_starts (m1 then m2); calls 2 and 3 short-circuit before the loop
     expect(trace.filter(e => e === "call_start")).toHaveLength(2);
+  });
+
+  it("retries transiently timed-out routes on the next request", async () => {
+    const first = vi.fn()
+      .mockRejectedValueOnce(new Error("OpenCode request failed: The operation was aborted due to timeout"))
+      .mockResolvedValue(ok1);
+    const second = vi.fn()
+      .mockRejectedValueOnce(new Error("NVIDIA request failed: The operation was aborted due to timeout"))
+      .mockResolvedValue(ok2);
+    const caller = makeFallbackVisionCaller([
+      cand(first, "opencode", "m1"),
+      cand(second, "nvidia", "m2")
+    ]);
+
+    await expect(caller(dummyReq)).rejects.toBeInstanceOf(RouteExhaustedError);
+    await expect(caller(dummyReq)).resolves.toMatchObject({ model: "m1" });
+    expect(first).toHaveBeenCalledTimes(2);
+    expect(second).toHaveBeenCalledTimes(1);
+    expect(caller.isExhausted()).toBe(false);
   });
 
   it("two separate caller instances have independent health state", async () => {

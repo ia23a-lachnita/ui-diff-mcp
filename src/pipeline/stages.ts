@@ -29,6 +29,17 @@ export interface SemanticStageOutcome {
   detail?: string;
 }
 
+export function auditTraceHasFailure(
+  trace: Array<Pick<AuditCriterionTrace, "status">>
+): boolean {
+  return trace.some(entry => [
+    "auditor_error",
+    "auditor_schema_error",
+    "empty_evidence",
+    "reviewer_error"
+  ].includes(entry.status));
+}
+
 export function deriveAuditStageOutcome(scope: AuditScope): SemanticStageOutcome {
   if (scope.stoppedReason === "route_exhausted") {
     return { outcome: "incomplete", detail: "route_exhausted" };
@@ -57,4 +68,4 @@ export function deriveRecoveryStageOutcome(summary: RecoverySummary): SemanticSt
   }
   return { outcome: "success" };
 }
-import type { AuditScope, RecoverySummary, StageOutcome } from "../schemas/core.js";
+import type { AuditCriterionTrace, AuditScope, RecoverySummary, StageOutcome } from "../schemas/core.js";

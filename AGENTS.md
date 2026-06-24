@@ -40,6 +40,8 @@ These must be set in the shell before running live tests or the sidecar. They ar
 
 | Variable | Required for | Value on this machine |
 |---|---|---|
+| `OPENCODE_API_KEY` | Optional OpenCode Zen credential override | Current public free route defaults to `public` |
+| `OPENCODE_ZEN_BASE_URL` | Optional OpenCode endpoint override | `https://opencode.ai/zen/v1` (default) |
 | `OPENROUTER_API_KEY` | Live model tests, free-mode pipeline | OpenRouter secret key |
 | `NVIDIA_API_KEY` | NVIDIA model probes and free-mode inference | NVIDIA API secret key |
 | `LOCATEANYTHING_SIDECAR_URL` | Any non-deterministic run | `http://127.0.0.1:39731` (default) |

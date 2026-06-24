@@ -430,11 +430,14 @@ describe.skipIf(!calorixFullLive)("verify:calorix-full-live unbounded all-target
         "sourceCropsPreserveOriginalPixels must be true — source crops must not be stretched to comparison space"
       ).toBe(true);
 
-      // Provider diagnostics: when classification is incomplete, diagnostics must be present to explain failures
-      if (report.visualClassificationStatus === "incomplete") {
+      // Provider diagnostics are required for provider-caused incompleteness. Budget/deadline
+      // incompleteness is explained by recoverySummary and the stage outcome instead.
+      const providerCausedIncomplete = report.auditScope?.stoppedReason === "route_exhausted" ||
+        report.recoverySummary?.stoppedReason === "caller_unavailable";
+      if (providerCausedIncomplete) {
         expect(
           report.providerDiagnosticsPresent,
-          "providerDiagnosticsPresent must be true when classification is incomplete"
+          "providerDiagnosticsPresent must be true when a provider route caused incompleteness"
         ).toBe(true);
       }
 

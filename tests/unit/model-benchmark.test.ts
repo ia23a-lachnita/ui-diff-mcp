@@ -11,7 +11,7 @@ describe("benchmark script prerequisites", () => {
   it("eligible free routes have provider and non-empty model id", () => {
     for (const c of CANONICAL_MODEL_RANKING) {
       for (const route of c.eligibleFreeProviderRoutes) {
-        expect(route.provider).toMatch(/^(openrouter|nvidia)$/);
+        expect(route.provider).toMatch(/^(opencode|openrouter|nvidia)$/);
         expect(route.model.length).toBeGreaterThan(0);
       }
     }

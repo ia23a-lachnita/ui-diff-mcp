@@ -412,7 +412,7 @@ Commit: `fix(report): distinguish stage completion from outcome`
 **Interfaces:**
 - Produces: `npm run verify:opencode-live` guarded by `RUN_OPENCODE_LIVE=1`.
 
-- [ ] **Step 1: Write the live gate**
+- [x] **Step 1: Write the live gate**
 
 The real gate must:
 
@@ -422,7 +422,7 @@ The real gate must:
 - run auditor, reviewer, and target-recovery probes through `probeRequiredModels`;
 - print provider-returned model, duration, finish reason, and token usage without printing prompts, image data, or credentials.
 
-- [ ] **Step 2: Add scripts and docs**
+- [x] **Step 2: Add scripts and docs**
 
 Add:
 
@@ -432,7 +432,7 @@ Add:
 
 Document `OPENCODE_API_KEY` as optional for the current public free route, `OPENCODE_ZEN_BASE_URL`, the temporary nature of free models, MiMo's visual eligibility, and DeepSeek V4 Flash's current text-only exclusion.
 
-- [ ] **Step 3: Run deterministic verification**
+- [x] **Step 3: Run deterministic verification**
 
 Run:
 
@@ -445,7 +445,7 @@ git diff --check
 
 Expected: all commands PASS and coverage thresholds remain satisfied.
 
-- [ ] **Step 4: Run the OpenCode live gate**
+- [x] **Step 4: Run the OpenCode live gate**
 
 Run:
 

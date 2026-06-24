@@ -11,7 +11,9 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { CANONICAL_MODEL_RANKING } from "../src/models/model-registry.js";
-import { probeOpenRouterModel, probeNvidiaModel } from "../src/models/probes.js";
+import type { ModelEntry } from "../src/models/model-registry.js";
+import { probeRequiredModels } from "../src/models/probes.js";
+import { resolveVisionProviderConfig } from "../src/models/provider-config.js";
 import { FreeCallThrottler } from "../src/models/free-quota.js";
 
 const OUTPUT_DIR = ".ui-diff/generated";
@@ -31,20 +33,14 @@ interface BenchmarkEntry {
 }
 
 export async function runBenchmark(): Promise<void> {
-  const openRouterApiKey = process.env["OPENROUTER_API_KEY"] ?? "";
-  const nvidiaApiKey = process.env["NVIDIA_API_KEY"] ?? "";
-  const nvidiaBaseUrl = process.env["NVIDIA_VLM_BASE_URL"] ?? "https://integrate.api.nvidia.com/v1";
-
-  if (!openRouterApiKey && !nvidiaApiKey) {
-    throw new Error("ERROR: Set OPENROUTER_API_KEY and/or NVIDIA_API_KEY to run benchmarks.");
-  }
+  const config = resolveVisionProviderConfig(process.env);
 
   const throttler = new FreeCallThrottler(18);
   const results: BenchmarkEntry[] = [];
 
   for (const candidate of CANONICAL_MODEL_RANKING) {
     for (const route of candidate.eligibleFreeProviderRoutes) {
-      const entry = {
+      const entry: ModelEntry = {
         role: candidate.role,
         provider: route.provider,
         model: route.model,
@@ -53,9 +49,9 @@ export async function runBenchmark(): Promise<void> {
         required: false
       };
 
-      let probeResult: Awaited<ReturnType<typeof probeOpenRouterModel>>;
+      let probeResult;
       if (route.provider === "openrouter") {
-        if (!openRouterApiKey) {
+        if (!config.openRouterApiKey) {
           results.push({
             role: candidate.role,
             provider: route.provider,
@@ -71,9 +67,8 @@ export async function runBenchmark(): Promise<void> {
           continue;
         }
         await throttler.throttle();
-        probeResult = await probeOpenRouterModel(entry, openRouterApiKey);
-      } else {
-        if (!nvidiaApiKey) {
+      } else if (route.provider === "nvidia") {
+        if (!config.nvidiaApiKey) {
           results.push({
             role: candidate.role,
             provider: route.provider,
@@ -88,8 +83,11 @@ export async function runBenchmark(): Promise<void> {
           });
           continue;
         }
-        probeResult = await probeNvidiaModel(entry, nvidiaApiKey, nvidiaBaseUrl);
       }
+
+      const [result] = await probeRequiredModels([entry], config);
+      if (!result) throw new Error(`Probe returned no result for ${route.provider}/${route.model}`);
+      probeResult = result;
 
       const benchEntry: BenchmarkEntry = {
         role: candidate.role,
@@ -122,4 +120,3 @@ export async function runBenchmark(): Promise<void> {
     console.log(`  ${r.ttftMs}ms  [${r.provider}] ${r.model}`);
   }
 }
-

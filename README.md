@@ -6,7 +6,9 @@ Design spec: `docs/superpowers/specs/2026-06-12-ui-diff-mcp-research-design.md`
 
 ## Free-First Default
 
-The default mode (`free`) never calls paid models. It selects native NVIDIA free VLM endpoints first when `NVIDIA_API_KEY` is configured and probes pass, then uses OpenRouter `:free` routes that are present in OpenRouter's Models API and pass probes. Paid models are disabled unless `mode: "paid"` is passed and `UI_DIFF_ENABLE_PAID_MODE=1` is set.
+The default mode (`free`) never calls paid models. It probes OpenCode Zen's image-capable `mimo-v2.5-free` route first, then native NVIDIA free VLM endpoints, then OpenRouter `:free` routes. Every route must pass the role's real image-count and JSON probe before selection. Paid models are disabled unless `mode: "paid"` is passed and `UI_DIFF_ENABLE_PAID_MODE=1` is set.
+
+OpenCode currently also lists `deepseek-v4-flash-free`, but its model metadata is text-only. It is intentionally excluded from auditor, reviewer, and target-recovery roles because those roles require four or five crop images. OpenCode documents its free models as limited-time routes, so catalog presence never replaces runtime probes.
 
 Before starting a free-model run, the pipeline estimates the required request count and checks available quota against the OpenRouter key info endpoint. If estimated calls exceed available free quota, the run exits immediately with `status: "insufficient_free_quota"` rather than consuming quota silently.
 
@@ -14,7 +16,8 @@ Before starting a free-model run, the pipeline estimates the required request co
 
 | Mode | Behavior |
 | --- | --- |
-| `free` | Default. NVIDIA free endpoints first, then OpenRouter `:free` routes. Never paid. |
+| `free` | Default. OpenCode MiMo first, then NVIDIA free endpoints, then OpenRouter `:free`. Never paid. |
+| `free_opencode` | Only OpenCode Zen visual routes. Currently `mimo-v2.5-free`. |
 | `free_openrouter` | Only OpenRouter `:free` routes. |
 | `free_nvidia` | Only native NVIDIA free endpoint routes. |
 | `paid` | Explicit opt-in requiring `UI_DIFF_ENABLE_PAID_MODE=1`. Records paid model use in `report.json`. |
@@ -54,6 +57,8 @@ Copy `.env.example` and fill in the relevant keys.
 
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |
+| `OPENCODE_API_KEY` | No | `public` | Optional OpenCode Zen credential override. The current free route accepts the public credential. |
+| `OPENCODE_ZEN_BASE_URL` | No | `https://opencode.ai/zen/v1` | OpenCode Zen API base URL. |
 | `OPENROUTER_API_KEY` | For OpenRouter free mode | — | OpenRouter API key. Free-tier account sufficient for `:free` routes. |
 | `NVIDIA_API_KEY` | For NVIDIA free mode | — | NVIDIA Build/NIM API key for native NVIDIA free VLM endpoints. |
 | `NVIDIA_VLM_BASE_URL` | No | `https://integrate.api.nvidia.com/v1` | Override NVIDIA base URL for self-hosted NIM. |
@@ -66,6 +71,17 @@ Copy `.env.example` and fill in the relevant keys.
 | `UI_DIFF_MAX_AUDIT_PAIRS` | No | — | Cap the number of element pairs audited. Bounded runs are marked `auditLimited: true` in the report. Bounded smoke and full classification are distinguishable via `visualClassificationStatus` and `auditScope`. |
 
 This implementation requires no user-authored target map, ROI map, ignore mask, or anchor dump.
+
+## Configuring OpenCode Zen Free Models
+
+No local OpenCode daemon or `opencode run` process is required. The MCP calls the OpenAI-compatible Zen API directly. The current free route works with the default public credential; set `OPENCODE_API_KEY` only when OpenCode provides a dedicated key.
+
+```powershell
+$env:RUN_OPENCODE_LIVE="1"
+npm run verify:opencode-live
+```
+
+The gate verifies the live catalog, a one-image structured response, and one deduplicated five-image probe shared across auditor, reviewer, and target recovery.
 
 ## Configuring Native NVIDIA Free Models
 
@@ -161,9 +177,10 @@ enabled = true
 
 | Gate | Command | Required env |
 | --- | --- | --- |
+| OpenCode Zen MiMo | `npm run verify:opencode-live` | `RUN_OPENCODE_LIVE=1`; optional `OPENCODE_API_KEY` |
 | Free OpenRouter models | `npm run verify:free-live` | `RUN_FREE_LIVE=1`, `OPENROUTER_API_KEY` |
 | Native NVIDIA models | `npm run verify:nvidia-live` | `RUN_NVIDIA_LIVE=1`, `NVIDIA_API_KEY` |
-| Full pipeline | `npm run verify:live` | `RUN_UI_DIFF_LIVE=1`, `OPENROUTER_API_KEY`, `LOCATEANYTHING_SIDECAR_URL` |
+| Full pipeline | `npm run verify:mcp-live` | `RUN_UI_DIFF_LIVE=1`, `LOCATEANYTHING_SIDECAR_URL`; provider keys optional fallbacks |
 | Bounded Calorix smoke | `npm run verify:calorix-live` | `RUN_CALORIX_UI_DIFF_LIVE=1`, image paths, sidecar |
 | Full Calorix all-target | `npm run verify:calorix-full-live` | `RUN_CALORIX_FULL_LIVE=1`, image paths, sidecar; **do not set `UI_DIFF_MAX_AUDIT_PAIRS`** |
 

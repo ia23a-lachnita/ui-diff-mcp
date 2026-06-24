@@ -35,7 +35,7 @@ import type { UiDiffReport, RunStatus, VisualClassificationStatus, LocatorCovera
 import { computeColorEvidence } from "../signals/color.js";
 import { createRunId } from "./run-store.js";
 import { UiDiffReportSchema } from "../schemas/core.js";
-import { deriveAuditStageOutcome, deriveRecoveryStageOutcome } from "./stages.js";
+import { auditTraceHasFailure, deriveAuditStageOutcome, deriveRecoveryStageOutcome } from "./stages.js";
 import type { StageOutcome } from "../schemas/core.js";
 
 export interface RunInput {
@@ -744,8 +744,8 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
           auditedDiffs.push(...accepted);
           const providerCalled = trace.some(t => t.status !== "criterion_not_triggered");
           const reviewed = trace.some(t => ["reviewer_accepted", "reviewer_rejected", "reviewer_needs_escalation"].includes(t.status));
-          const validAuditor = trace.some(t => ["auditor_no_diff", "reviewer_accepted", "reviewer_rejected", "reviewer_needs_escalation", "reviewer_error"].includes(t.status));
-          const failed = providerCalled && !validAuditor && trace.some(t => ["auditor_error", "auditor_schema_error", "empty_evidence"].includes(t.status));
+          const validAuditor = trace.some(t => ["auditor_no_diff", "reviewer_accepted", "reviewer_rejected", "reviewer_needs_escalation"].includes(t.status));
+          const failed = providerCalled && auditTraceHasFailure(trace);
           auditOutcomes.push({ pairId: pair.id, entered: true, providerCalled, validAuditor, reviewed, skippedNoTrigger: !providerCalled, failed });
         }
 

@@ -20,6 +20,7 @@
     "verify:openrouter-free-live": "node scripts/require-live-env.js RUN_OPENROUTER_FREE_LIVE && npm run build && vitest run tests/live/openrouter.live.test.ts tests/live/mcp-openrouter-free.live.test.ts --testTimeout 300000",
     "verify:free-live": "npm run verify:openrouter-free-live",
     "verify:nvidia-live": "node scripts/require-live-env.js RUN_NVIDIA_LIVE && npm run build && vitest run tests/live/nvidia-live.test.ts --testTimeout 300000",
+    "verify:opencode-live": "node scripts/require-live-env.js RUN_OPENCODE_LIVE && npm run build && vitest run tests/live/opencode-live.test.ts --testTimeout 300000",
     "verify:calorix-live": "node scripts/require-live-env.js RUN_CALORIX_UI_DIFF_LIVE && npm run build && vitest run tests/live/calorix-smoke.live.test.ts --testTimeout 900000",
     "verify:calorix-deterministic-live": "node scripts/require-live-env.js RUN_CALORIX_DETERMINISTIC_LIVE && npm run build && vitest run tests/live/calorix-smoke.live.test.ts --testTimeout 1200000",
     "verify:calorix-full-live": "node scripts/require-live-env.js RUN_CALORIX_FULL_LIVE && npm run build && vitest run tests/live/calorix-smoke.live.test.ts --testTimeout 2400000",

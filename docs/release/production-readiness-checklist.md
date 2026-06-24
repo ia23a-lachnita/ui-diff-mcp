@@ -17,6 +17,22 @@ Required result:
 - Coverage thresholds pass.
 - `npm audit` reports no critical vulnerability.
 
+## OpenCode Zen Free Visual Gate
+
+```powershell
+$env:RUN_OPENCODE_LIVE="1"
+# OPENCODE_API_KEY is optional; the current free route defaults to public.
+npm run verify:opencode-live
+```
+
+Required result:
+
+- The live catalog contains `mimo-v2.5-free`.
+- A real PNG produces locally validated structured JSON.
+- One five-image provider call produces passing auditor, reviewer, and target-recovery probe records.
+- The provider-returned concrete model, duration, finish reason, and token usage are logged without prompts, image data, or credentials.
+- `deepseek-v4-flash-free` is not selected for visual roles while its current metadata remains text-only.
+
 ## OpenRouter-Only Free Live Gate
 
 ```powershell
@@ -52,8 +68,6 @@ Required result:
 
 ```powershell
 $env:RUN_UI_DIFF_LIVE="1"
-$env:OPENROUTER_API_KEY="<real-openrouter-key>"
-$env:NVIDIA_API_KEY="<real-nvidia-key>"
 $env:LOCATEANYTHING_SIDECAR_URL="http://127.0.0.1:39731"
 $env:LOCATEANYTHING_IN_TOKEN_LIMIT="4096"
 $env:LOCATEANYTHING_GENERATION_MODE="hybrid"
@@ -64,13 +78,14 @@ npm run verify:mcp-live
 
 Required result:
 
-- Auditor and reviewer are selected from `nvidia` or `openrouter` providers with `costClass: "free"`.
+- Auditor and reviewer are selected from `opencode`, `nvidia`, or `openrouter` with `costClass: "free"`.
 - LocateAnything sidecar returns valid in-bounds boxes.
 - `discover_ui_diffs` completes through the MCP stdio server.
 - The report has `status !== "failed"`.
 - Exact selected provider, model, and costClass are recorded in `modelSelection`.
 - Required model health entries for selected routes are `pass`.
-- The report includes normalized images, pixel diff, overlay, report JSON, and artifact index.
+- The report includes normalized images, `actual_comparison_space`, pixel diff, overlay, report JSON, and artifact index.
+- Provider stages contain explicit semantic outcomes; a lifecycle `complete` value alone is not release evidence.
 
 ## Shape-Local Coverage
 
@@ -102,7 +117,6 @@ Latest provider-independent result: `run-1782187460179-53f4c9` on 2026-06-23. It
 
 ```powershell
 $env:RUN_CALORIX_UI_DIFF_LIVE="1"
-$env:OPENROUTER_API_KEY="<real-openrouter-key>"
 $env:LOCATEANYTHING_SIDECAR_URL="http://127.0.0.1:39731"
 $env:LOCATEANYTHING_IN_TOKEN_LIMIT="4096"
 $env:LOCATEANYTHING_GENERATION_MODE="hybrid"
@@ -142,7 +156,6 @@ If any of these fail in the bounded smoke, fix the underlying code issue before 
 
 ```powershell
 $env:RUN_CALORIX_FULL_LIVE="1"
-$env:OPENROUTER_API_KEY="<real-openrouter-key>"
 $env:LOCATEANYTHING_SIDECAR_URL="http://127.0.0.1:39731"
 $env:LOCATEANYTHING_IN_TOKEN_LIMIT="4096"
 $env:LOCATEANYTHING_GENERATION_MODE="hybrid"
@@ -170,14 +183,12 @@ Required result:
 - `locatorActualMode` is `"projected"` — dual-locator must not be active in the release gate.
 - `modelSelection.auditorRoutes` and `modelSelection.reviewerRoutes` are present with at least one entry each.
 - If recovery ran (`recoverySummary.attemptedComponents > 0`), `modelSelection.targetRecoveryRoutes` is present.
-- Any NVIDIA→OpenRouter provider fallback in `free` mode is recorded explicitly in `report.warnings`.
+- Any OpenCode→NVIDIA/OpenRouter or NVIDIA→OpenRouter fallback in `free` mode is recorded explicitly in `report.warnings`.
 
 ## Strict Calorix Release Gate
 
 ```powershell
 $env:RUN_CALORIX_RELEASE_LIVE="1"
-$env:OPENROUTER_API_KEY="<real-openrouter-key>"
-$env:NVIDIA_API_KEY="<real-nvidia-key>"
 $env:LOCATEANYTHING_SIDECAR_URL="http://127.0.0.1:39731"
 $env:UI_DIFF_LIVE_EXPECTED_IMAGE="C:\Users\xursc\projects\calorix\docs\mockups\image\dark\single\Today.png"
 $env:UI_DIFF_LIVE_ACTUAL_IMAGE="C:\Users\xursc\projects\calorix\docs\screenshots\today-screen-2026-06-17-adb-seeded-2.png"
@@ -193,6 +204,8 @@ Required result:
 - `auditScope.providerCalledPairs + auditScope.skippedNoTriggeredPairs === auditScope.selectedPairs` and `auditScope.failedPairs === 0`.
 - No final finding has `reviewerStatus:"needs_escalation"`, lacks `classificationSource` when reviewer-accepted, or uses `unclassified_visual_change`.
 - Recovery leaves zero unclassified regions, and all required debug/provider traces and artifacts are durable.
+- `model_probe.outcome === "success"`, `audit.outcome === "success"`, and `target_recovery.outcome` is `success` or `not_applicable`.
+- `actual-comparison-space.png` is typed as `actual_comparison_space` and indexed in `artifacts/index.json`.
 
 A bounded or full diagnostic pass never substitutes for this gate.
 
