@@ -505,6 +505,30 @@ describe("auditElementPair", () => {
     expect(result.trace.some(t => t.status === "reviewer_rejected" && t.rejectionReason === "not supported")).toBe(true);
   });
 
+  it("persists reviewer reason on final accepted and escalated diff records", async () => {
+    const accepted = await auditElementPair(pair, makeAuditContext({
+      auditorCaller: vi.fn().mockResolvedValue({ parsed: { hasDiff: true, evidence: ["visible"], title: "Shift" }, rawContent: "", model: "audit-model", provider: "nvidia" }),
+      reviewerCaller: vi.fn().mockResolvedValue({ parsed: { decision: "accepted", reason: "visible in overlay" }, rawContent: "", model: "review-model", provider: "nvidia" }),
+      boxDeltaPx: 15
+    }));
+
+    expect(accepted.accepted[0]).toMatchObject({
+      reviewerStatus: "accepted",
+      reviewerReason: "visible in overlay"
+    });
+
+    const escalated = await auditElementPair(pair, makeAuditContext({
+      auditorCaller: vi.fn().mockResolvedValue({ parsed: { hasDiff: true, evidence: ["visible"], title: "Shift" }, rawContent: "", model: "audit-model", provider: "nvidia" }),
+      reviewerCaller: vi.fn().mockResolvedValue({ parsed: { decision: "needs_escalation", reason: "crop is ambiguous" }, rawContent: "", model: "review-model", provider: "nvidia" }),
+      boxDeltaPx: 15
+    }));
+
+    expect(escalated.accepted[0]).toMatchObject({
+      reviewerStatus: "needs_escalation",
+      reviewerReason: "crop is ambiguous"
+    });
+  });
+
   it("records criterion_not_triggered for criteria not selected by triggers", async () => {
     const auditorCaller = vi.fn().mockResolvedValue({ parsed: { hasDiff: false }, rawContent: "", model: "m", provider: "nvidia" });
     const result = await auditElementPair(pair, makeAuditContext({ auditorCaller, boxDeltaPx: 0 }));

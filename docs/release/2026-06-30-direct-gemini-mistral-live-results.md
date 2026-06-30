@@ -46,6 +46,16 @@ The one unresolved region (`region-0871`) is a small curved/ring edge around `x=
 
 The `needs_escalation` diff (`984e090cb0e3`) concerns the text crop for `left`: expected shows the word `left`, actual is essentially a green bar/blank region, and the overlay shows missing/misaligned expected text. This is also a real mismatch, but the reviewer left it unresolved, so the release gate correctly failed.
 
+## External Run Review
+
+Antigravity MCP with `gemini-3.1-pro-preview` independently reviewed the strict run after implementation.
+
+- Review result: `AGREEMENT_STATUS: agree`; the run is not production-ready.
+- The reviewer confirmed the exact blockers: unresolved recovery `region-0871` and active escalation diff `984e090cb0e3`.
+- The reviewer found that diff `984e090cb0e3` is visually a missing-text/presence issue rather than a reliable spacing-baseline finding.
+- The reviewer confirmed the report/trace defect that reviewer reasons were parsed but not persisted onto final diff records. This is fixed for future reports by adding `reviewerReason` to VLM and target-recovery diff records.
+- MCP response noise: none.
+
 ## Production Decision
 
 Not production-ready yet. The provider capacity blocker is materially improved: the full run no longer times out, and Mistral completed all audit pairs. The remaining blockers are now pipeline/report semantics around unresolved recovery rejection and `needs_escalation` final diff handling, not total provider unavailability.

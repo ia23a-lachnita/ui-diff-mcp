@@ -114,6 +114,7 @@ describe("runTargetRecovery", () => {
     expect(recovered).toHaveLength(1);
     expect(recovered[0]?.criterion).toBe("geometry");
     expect(recovered[0]?.reviewerStatus).toBe("accepted");
+    expect(recovered[0]).toMatchObject({ reviewerReason: "shift confirmed" });
     expect(recovered[0]?.model).toBe("test-model");
     expect(unclassifiedCount).toBe(0);
     // location snapped to pixel-component's deterministic bounds

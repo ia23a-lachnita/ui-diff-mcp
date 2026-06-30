@@ -381,7 +381,8 @@ export async function auditElementPair(
       artifactPaths: auditArtifacts,
       reviewerStatus: reviewDecision === "needs_escalation" ? "needs_escalation" : reviewDecision,
       model: auditModel,
-      classificationSource: "vlm_reviewed"
+      classificationSource: "vlm_reviewed",
+      ...(reviewReason !== undefined ? { reviewerReason: reviewReason } : {})
     };
 
     if (reviewDecision === "rejected") {

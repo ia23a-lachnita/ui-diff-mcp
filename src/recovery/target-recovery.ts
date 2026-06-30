@@ -429,6 +429,7 @@ export async function runTargetRecovery(
     let reviewDecision: "accepted" | "rejected" | "needs_escalation" = "accepted";
     const reviewerStarted = Date.now();
     let reviewerModel = "unknown";
+    let reviewReason: string | undefined;
     try {
       const reviewRes = await ctx.reviewerCaller({
         prompt: reviewerPrompt,
@@ -450,6 +451,7 @@ export async function runTargetRecovery(
       modelCallsUsed++;
       const parsed = ReviewDecisionSchema.parse(reviewRes.parsed);
       reviewDecision = parsed.decision;
+      reviewReason = parsed.reason;
       reviewerModel = reviewRes.model;
     } catch (err) {
       console.error(`Recovery reviewer call failed for component ${evidenceId}:`, err);
@@ -486,7 +488,8 @@ export async function runTargetRecovery(
       artifactPaths: artifacts,
       reviewerStatus: reviewDecision === "needs_escalation" ? "needs_escalation" : "accepted",
       model: componentRecoveryModel,
-      classificationSource: "target_recovery"
+      classificationSource: "target_recovery",
+      ...(reviewReason !== undefined ? { reviewerReason: reviewReason } : {})
     };
 
     recovered.push(record);

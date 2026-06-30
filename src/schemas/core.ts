@@ -247,6 +247,7 @@ export const DiffRecordSchema = z.object({
   findingGroupKind: z.enum(["coherent_displacement", "structural_region_mismatch"]).optional(),
   groupLabel: z.string().min(1).optional(),
   reviewerStatus: z.enum(["accepted", "rejected", "needs_escalation", "not_reviewed"]),
+  reviewerReason: z.string().min(1).optional(),
   model: z.string().optional(),
   classificationSource: z.enum([
     "vlm_reviewed",
