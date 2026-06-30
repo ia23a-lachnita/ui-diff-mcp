@@ -54,8 +54,9 @@ Antigravity MCP with `gemini-3.1-pro-preview` independently reviewed the strict 
 - The reviewer confirmed the exact blockers: unresolved recovery `region-0871` and active escalation diff `984e090cb0e3`.
 - The reviewer found that diff `984e090cb0e3` is visually a missing-text/presence issue rather than a reliable spacing-baseline finding.
 - The reviewer confirmed the report/trace defect that reviewer reasons were parsed but not persisted onto final diff records. This is fixed for future reports by adding `reviewerReason` to VLM and target-recovery diff records.
-- MCP response noise: none.
+- MCP response noise: the first strict-run review was clean. The follow-up implementation-plan review on 2026-06-30 returned the requested green verdict, but prefixed it with implementation-like "I will update..." lines even though the MCP did not edit files; treat that as harmless wrapper/tool noise, not as repo changes.
 - **Gemini Runtime Update**: During the strict Calorix run runtime, the Gemini API routes failed with HTTP 429 due to quota limitations. However, the Gemini API itself works fine under ordinary quota.
+- **Fresh Gemini Live Check**: A follow-up `npm run verify:gemini-live` using the user-level `GEMINI_API_KEY` also reached Gemini and failed with HTTP 429 before structured parsing. The user's separate Git Bash curl demonstrates that a Gemini key/model can work under a different quota state or environment value; the local gate result remains quota-blocked for the key visible to this PowerShell/Codex process.
 - **Bug Fixes Applied**:
   1. Fixed a separate client bug where Gemini's `MAX_TOKENS` finishReason was not treated as a truncation signal, preventing `withStructuredRetry` from retrying the request.
   2. Fixed target recovery tracing so reviewer rejection reasons are successfully persisted in `recovery-trace.json` and outcome summaries for future reports.

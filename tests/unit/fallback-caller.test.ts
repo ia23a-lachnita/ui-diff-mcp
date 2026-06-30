@@ -21,7 +21,7 @@ describe("makeFallbackVisionCaller", () => {
     const events: ProviderTraceEvent[] = [];
     const resultWithUsage = {
       ...ok1,
-      usage: { prompt_tokens: 12_345, completion_tokens: 678 }
+      usage: { prompt_tokens: 12_345, completion_tokens: 678, total_tokens: 13_023, reasoning_tokens: 42 }
     };
 
     await makeFallbackVisionCaller(
@@ -32,7 +32,9 @@ describe("makeFallbackVisionCaller", () => {
 
     expect(events.find(event => event.event === "call_success")).toMatchObject({
       inputTokens: 12_345,
-      outputTokens: 678
+      outputTokens: 678,
+      totalTokens: 13_023,
+      reasoningTokens: 42
     });
   });
 

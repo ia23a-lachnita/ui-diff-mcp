@@ -17,7 +17,7 @@ function completion(content: string): Response {
       content: { parts: [{ text: content }], role: "model" },
       finishReason: "STOP"
     }],
-    usageMetadata: { promptTokenCount: 12, candidatesTokenCount: 4 }
+    usageMetadata: { promptTokenCount: 12, candidatesTokenCount: 4, totalTokenCount: 21, thoughtsTokenCount: 5 }
   }), { status: 200, headers: { "Content-Type": "application/json" } });
 }
 
@@ -42,7 +42,7 @@ describe("makeGeminiVisionCaller", () => {
       model: "gemini-3.5-flash",
       provider: "gemini",
       finishReason: "STOP",
-      usage: { prompt_tokens: 12, completion_tokens: 4 }
+      usage: { prompt_tokens: 12, completion_tokens: 4, total_tokens: 21, reasoning_tokens: 5 }
     });
 
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];

@@ -56,6 +56,18 @@ describe("parseVisionJsonContent", () => {
     }
   });
 
+  it("trusts Gemini MAX_TOKENS finish over a misleading closing bracket", () => {
+    const raw = '{"hasDiff":true,"evidence":["unfinished",]}';
+    try { parseVisionJsonContent("gemini", raw, schema, true, "MAX_TOKENS"); } catch (caught) {
+      expect((caught as ProviderJsonParseError).diagnostic).toMatchObject({
+        kind: "truncated_json",
+        startsWithJson: true,
+        endsWithJson: true,
+        finishReason: "MAX_TOKENS"
+      });
+    }
+  });
+
   it("classifies complete JSON that violates the response schema as schema_invalid", () => {
     try { parseVisionJsonContent("openrouter", '{"evidence":[]}', schema, true, "stop"); } catch (caught) {
       expect((caught as ProviderJsonParseError).diagnostic).toMatchObject({ kind: "schema_invalid", startsWithJson: true, endsWithJson: true });
