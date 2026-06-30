@@ -1,7 +1,15 @@
 import type { ProviderFailureDiagnostic } from "../schemas/core.js";
 
-export type VisionProvider = "openrouter" | "nvidia" | "opencode";
-export type VisionMode = "free" | "free_opencode" | "free_openrouter" | "free_nvidia" | "paid" | "deterministic_only";
+export type VisionProvider = "openrouter" | "nvidia" | "opencode" | "gemini" | "mistral";
+export type VisionMode =
+  | "free"
+  | "free_gemini"
+  | "free_mistral"
+  | "free_opencode"
+  | "free_openrouter"
+  | "free_nvidia"
+  | "paid"
+  | "deterministic_only";
 
 export class ProviderJsonParseError extends Error {
   readonly diagnostic: ProviderFailureDiagnostic;

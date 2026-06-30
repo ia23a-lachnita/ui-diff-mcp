@@ -58,12 +58,12 @@ describe.skipIf(!liveEnabled)("live full MCP discover_ui_diffs (default free mod
 
     const report = UiDiffReportSchema.parse(JSON.parse(await fs.readFile(structured.reportPath, "utf8")));
     expect(report.modelSelection?.auditor).toEqual(expect.objectContaining({
-      provider: expect.stringMatching(/^(opencode|nvidia|openrouter)$/),
+      provider: expect.stringMatching(/^(gemini|mistral|opencode|nvidia|openrouter)$/),
       model: expect.any(String),
       costClass: "free"
     }));
     expect(report.modelSelection?.reviewer).toEqual(expect.objectContaining({
-      provider: expect.stringMatching(/^(opencode|nvidia|openrouter)$/),
+      provider: expect.stringMatching(/^(gemini|mistral|opencode|nvidia|openrouter)$/),
       model: expect.any(String),
       costClass: "free"
     }));

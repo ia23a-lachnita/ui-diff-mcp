@@ -221,14 +221,14 @@ describe("selectFallbackModelsForMode", () => {
       makeProbe(nvidiaRoute.provider, nvidiaRoute.model, "auditor"),
       makeProbe(orRoute.provider, orRoute.model, "auditor")
     ];
-    const candidates = selectFallbackModelsForMode("auditor", "free", probes, 1, withNvidia);
-    // maxCandidates=1 would give only NVIDIA, but diversity guarantee must append OpenRouter
+    const candidates = selectFallbackModelsForMode("auditor", "free", probes, 2, withNvidia);
+    // With two slots available, free mode should keep a different-provider fallback.
     expect(candidates.some(c => c.provider === "openrouter")).toBe(true);
     expect(candidates.some(c => c.provider === "nvidia")).toBe(true);
   });
 
   it("free mode with only NVIDIA probes still provides OpenRouter fallback if any OpenRouter route passes", () => {
-    const candidates = selectFallbackModelsForMode("auditor", "free", allPass(), 3, withNvidia);
+    const candidates = selectFallbackModelsForMode("auditor", "free", allPass(), 99, withNvidia);
     // With all probes passing, should include both NVIDIA (preferred) and at least one OpenRouter
     const hasNvidia = candidates.some(c => c.provider === "nvidia");
     const hasOpenRouter = candidates.some(c => c.provider === "openrouter");
@@ -255,14 +255,20 @@ describe("selectFallbackModelsForMode", () => {
     expect(new Set(keys).size).toBe(keys.length); // all unique
   });
 
+  it("does not exceed maxCandidates across free-mode provider phases", () => {
+    const candidates = selectFallbackModelsForMode("auditor", "free", allPass(), 2, withNvidia);
+    expect(candidates.length).toBeLessThanOrEqual(2);
+  });
+
   it("returns empty array when no probes pass", () => {
     const candidates = selectFallbackModelsForMode("auditor", "free", [], 3, withNvidia);
     expect(candidates).toHaveLength(0);
   });
 
-  it("free mode without NVIDIA key returns OpenCode first and retains OpenRouter fallbacks", () => {
-    const candidates = selectFallbackModelsForMode("auditor", "free", allPass(), 3, noEnv);
-    expect(candidates[0]?.provider).toBe("opencode");
+  it("free mode without NVIDIA key returns Gemini first and retains later fallbacks", () => {
+    const candidates = selectFallbackModelsForMode("auditor", "free", allPass(), 6, noEnv);
+    expect(candidates[0]?.provider).toBe("gemini");
+    expect(candidates.some(c => c.provider === "opencode")).toBe(true);
     expect(candidates.some(c => c.provider === "openrouter")).toBe(true);
     expect(candidates.every(c => c.provider !== "nvidia")).toBe(true);
   });
@@ -385,12 +391,14 @@ describe("selectFallbackModelsForMode — route diversity", () => {
     expect(candidates.every(c => c.provider === "openrouter")).toBe(true);
   });
 
-  it("free mode without NVIDIA key selects OpenCode and OpenRouter routes", () => {
-    const candidates = selectFallbackModelsForMode("auditor", "free", allPass(), 3, noEnv);
+  it("free mode without NVIDIA key selects Gemini, Mistral, OpenCode, and OpenRouter routes", () => {
+    const candidates = selectFallbackModelsForMode("auditor", "free", allPass(), 6, noEnv);
     expect(candidates.length).toBeGreaterThan(0);
-    expect(candidates[0]?.provider).toBe("opencode");
+    expect(candidates[0]?.provider).toBe("gemini");
+    expect(candidates.some(c => c.provider === "mistral")).toBe(true);
+    expect(candidates.some(c => c.provider === "opencode")).toBe(true);
     expect(candidates.some(c => c.provider === "openrouter")).toBe(true);
-    expect(candidates.every(c => c.provider === "opencode" || c.provider === "openrouter")).toBe(true);
+    expect(candidates.every(c => ["gemini", "mistral", "opencode", "openrouter"].includes(c.provider))).toBe(true);
   });
 });
 
@@ -476,6 +484,8 @@ describe("resolveMode", () => {
 
   it("passes through valid modes unchanged", () => {
     expect(resolveMode("free")).toBe("free");
+    expect(resolveMode("free_gemini")).toBe("free_gemini");
+    expect(resolveMode("free_mistral")).toBe("free_mistral");
     expect(resolveMode("free_openrouter")).toBe("free_openrouter");
     expect(resolveMode("free_nvidia")).toBe("free_nvidia");
     expect(resolveMode("free_opencode")).toBe("free_opencode");
@@ -503,4 +513,27 @@ describe("resolveMode", () => {
     const routes = selectFallbackModelsForMode("reviewer", "free_opencode", allPass(), 3, {});
     expect(routes.length).toBeGreaterThan(0);
     expect(routes.every(route => route.provider === "opencode")).toBe(true);
+  });
+
+  it("free_gemini selects only Gemini routes", () => {
+    const entry = selectModelForMode("auditor", "free_gemini", allPass(), {});
+    expect(entry).toMatchObject({ provider: "gemini", model: "gemini-3.1-pro-preview" });
+    const routes = selectFallbackModelsForMode("auditor", "free_gemini", allPass(), 3, {});
+    expect(routes.length).toBeGreaterThan(0);
+    expect(routes.every(route => route.provider === "gemini")).toBe(true);
+  });
+
+  it("free_mistral selects only Mistral routes", () => {
+    const entry = selectModelForMode("target_recovery", "free_mistral", allPass(), {});
+    expect(entry).toMatchObject({ provider: "mistral", model: "ministral-14b-2512" });
+    const routes = selectFallbackModelsForMode("target_recovery", "free_mistral", allPass(), 3, {});
+    expect(routes.length).toBeGreaterThan(0);
+    expect(routes.every(route => route.provider === "mistral")).toBe(true);
+  });
+
+  it("default free selects Gemini first when probes pass", () => {
+    expect(selectModelForMode("auditor", "free", allPass(), {})).toMatchObject({
+      provider: "gemini",
+      model: "gemini-3.1-pro-preview"
+    });
   });

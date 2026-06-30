@@ -25,7 +25,11 @@ const PROVIDER_CONFIG: VisionProviderConfig = {
   nvidiaApiKey: "nv-test",
   nvidiaBaseUrl: "https://nvidia.example/v1",
   openCodeApiKey: "public",
-  openCodeBaseUrl: "https://opencode.ai/zen/v1"
+  openCodeBaseUrl: "https://opencode.ai/zen/v1",
+  geminiApiKey: "g-key",
+  geminiBaseUrl: "https://generativelanguage.googleapis.com/v1beta",
+  mistralApiKey: "m-key",
+  mistralBaseUrl: "https://api.mistral.ai/v1"
 };
 
 function makeSseStream(contentJson: string, model = "qwen/test"): ReadableStream<Uint8Array> {

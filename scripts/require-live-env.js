@@ -29,6 +29,14 @@ if (process.env[varName] !== "1") {
     console.error(
       "OpenCode's current free route uses the public credential by default; OPENCODE_API_KEY and OPENCODE_ZEN_BASE_URL are optional overrides."
     );
+  } else if (varName === "RUN_GEMINI_LIVE") {
+    console.error(
+      "Also set GEMINI_API_KEY (and optionally GEMINI_BASE_URL) before running verify:gemini-live."
+    );
+  } else if (varName === "RUN_MISTRAL_LIVE") {
+    console.error(
+      "Also set MISTRAL_API_KEY (and optionally MISTRAL_BASE_URL) before running verify:mistral-live."
+    );
   } else if (varName === "RUN_CALORIX_UI_DIFF_LIVE") {
     console.error(
       "Also set LOCATEANYTHING_SIDECAR_URL, " +

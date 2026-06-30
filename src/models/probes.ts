@@ -1,6 +1,8 @@
 import sharp from "sharp";
 import { makeOpenRouterVisionCaller, makeNvidiaVisionCaller } from "./vision-json.js";
 import { makeOpenCodeVisionCaller } from "./opencode-client.js";
+import { makeGeminiVisionCaller } from "./gemini-client.js";
+import { makeMistralVisionCaller } from "./mistral-client.js";
 import type { ModelEntry } from "./model-registry.js";
 import { modelFamilyKey } from "./model-registry.js";
 import type { VisionProviderConfig } from "./provider-config.js";
@@ -67,7 +69,11 @@ async function runRoleProbe(
     ? config.nvidiaApiKey
     : entry.provider === "openrouter"
       ? config.openRouterApiKey
-      : config.openCodeApiKey || "public";
+      : entry.provider === "gemini"
+        ? config.geminiApiKey
+        : entry.provider === "mistral"
+          ? config.mistralApiKey
+          : config.openCodeApiKey || "public";
 
   const probeRole = (role === "auditor" || role === "fast_auditor") ? "auditor" as const
     : (role === "reviewer" || role === "escalation") ? "reviewer" as const
@@ -80,7 +86,13 @@ async function runRoleProbe(
       provider: entry.provider,
       model: entry.model,
       status: "not_checked",
-      detail: entry.provider === "nvidia" ? "NVIDIA_API_KEY not set" : "No OpenRouter API key provided",
+      detail: entry.provider === "nvidia"
+        ? "NVIDIA_API_KEY not set"
+        : entry.provider === "gemini"
+          ? "GEMINI_API_KEY not set"
+          : entry.provider === "mistral"
+            ? "MISTRAL_API_KEY not set"
+            : "No OpenRouter API key provided",
       schemaValid: null,
       contentAccurate: null
     };
@@ -102,7 +114,11 @@ async function runRoleProbe(
     ? makeNvidiaVisionCaller(key, entry.model, config.nvidiaBaseUrl)
     : entry.provider === "openrouter"
       ? makeOpenRouterVisionCaller(key, entry.model)
-      : makeOpenCodeVisionCaller(key, entry.model, config.openCodeBaseUrl);
+      : entry.provider === "gemini"
+        ? makeGeminiVisionCaller(key, entry.model, config.geminiBaseUrl)
+        : entry.provider === "mistral"
+          ? makeMistralVisionCaller(key, entry.model, config.mistralBaseUrl)
+          : makeOpenCodeVisionCaller(key, entry.model, config.openCodeBaseUrl);
 
   try {
     const result = await caller({

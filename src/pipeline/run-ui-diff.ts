@@ -22,6 +22,8 @@ import { probeRequiredModels, type ProbeResult } from "../models/probes.js";
 import { estimateFreeRunBudget, lookupOpenRouterQuota, checkFreeQuotaSufficiency } from "../models/free-quota.js";
 import { makeOpenRouterVisionCaller, makeNvidiaVisionCaller, type VisionMode } from "../models/vision-json.js";
 import { makeOpenCodeVisionCaller } from "../models/opencode-client.js";
+import { makeGeminiVisionCaller } from "../models/gemini-client.js";
+import { makeMistralVisionCaller } from "../models/mistral-client.js";
 import { resolveVisionProviderConfig, type VisionProviderConfig } from "../models/provider-config.js";
 import { auditElementPair, makeElementSlug, type AuditContext } from "../audit/audit-target.js";
 import { reviewAndMergeFindings } from "../audit/review-findings.js";
@@ -121,6 +123,10 @@ function makeVisionCaller(
       return makeNvidiaVisionCaller(config.nvidiaApiKey, entry.model, config.nvidiaBaseUrl);
     case "openrouter":
       return makeOpenRouterVisionCaller(config.openRouterApiKey, entry.model);
+    case "gemini":
+      return makeGeminiVisionCaller(config.geminiApiKey, entry.model, config.geminiBaseUrl);
+    case "mistral":
+      return makeMistralVisionCaller(config.mistralApiKey, entry.model, config.mistralBaseUrl);
   }
 }
 

@@ -76,6 +76,138 @@ export const CANONICAL_MODEL_RANKING: readonly (Omit<ModelEntry, "required" | "p
 })[] = [
   {
     role: "auditor",
+    provider: "gemini",
+    model: "gemini-3.1-pro-preview",
+    costClass: "free",
+    eligibleFreeProviderRoutes: [
+      { provider: "gemini", model: "gemini-3.1-pro-preview" }
+    ],
+    defaultFreeModeHandling: "Strongest Gemini direct route visible on this machine; free-tier quota may be zero and must be probe-gated.",
+    capabilities: { maxImages: 5, supportsJsonSchema: true, supportsJsonObject: true, supportsStreaming: false, allowedRoles: ["auditor", "reviewer", "target_recovery"] }
+  },
+  {
+    role: "reviewer",
+    provider: "gemini",
+    model: "gemini-3.1-pro-preview",
+    costClass: "free",
+    eligibleFreeProviderRoutes: [
+      { provider: "gemini", model: "gemini-3.1-pro-preview" }
+    ],
+    defaultFreeModeHandling: "Strongest Gemini direct reviewer route visible on this machine; free-tier quota may be zero and must be probe-gated.",
+    capabilities: { maxImages: 5, supportsJsonSchema: true, supportsJsonObject: true, supportsStreaming: false, allowedRoles: ["auditor", "reviewer", "target_recovery"] }
+  },
+  {
+    role: "target_recovery",
+    provider: "gemini",
+    model: "gemini-3.1-pro-preview",
+    costClass: "free",
+    eligibleFreeProviderRoutes: [
+      { provider: "gemini", model: "gemini-3.1-pro-preview" }
+    ],
+    defaultFreeModeHandling: "Strong Gemini direct recovery route when quota is available.",
+    capabilities: { maxImages: 5, supportsJsonSchema: true, supportsJsonObject: true, supportsStreaming: false, allowedRoles: ["auditor", "reviewer", "target_recovery"] }
+  },
+  {
+    role: "auditor",
+    provider: "gemini",
+    model: "gemini-3.5-flash",
+    costClass: "free",
+    eligibleFreeProviderRoutes: [
+      { provider: "gemini", model: "gemini-3.5-flash" }
+    ],
+    defaultFreeModeHandling: "Current Gemini Flash route available through the direct Gemini API; probe-gated for multimodal JSON.",
+    capabilities: { maxImages: 5, supportsJsonSchema: true, supportsJsonObject: true, supportsStreaming: false, allowedRoles: ["auditor", "reviewer", "target_recovery"] }
+  },
+  {
+    role: "reviewer",
+    provider: "gemini",
+    model: "gemini-3.5-flash",
+    costClass: "free",
+    eligibleFreeProviderRoutes: [
+      { provider: "gemini", model: "gemini-3.5-flash" }
+    ],
+    defaultFreeModeHandling: "Current Gemini Flash reviewer route available through the direct Gemini API; probe-gated for multimodal JSON.",
+    capabilities: { maxImages: 5, supportsJsonSchema: true, supportsJsonObject: true, supportsStreaming: false, allowedRoles: ["auditor", "reviewer", "target_recovery"] }
+  },
+  {
+    role: "target_recovery",
+    provider: "gemini",
+    model: "gemini-3.5-flash",
+    costClass: "free",
+    eligibleFreeProviderRoutes: [
+      { provider: "gemini", model: "gemini-3.5-flash" }
+    ],
+    defaultFreeModeHandling: "Gemini Flash recovery route available through the direct Gemini API; probe-gated for multimodal JSON.",
+    capabilities: { maxImages: 5, supportsJsonSchema: true, supportsJsonObject: true, supportsStreaming: false, allowedRoles: ["auditor", "reviewer", "target_recovery"] }
+  },
+  {
+    role: "auditor",
+    provider: "mistral",
+    model: "ministral-14b-2512",
+    costClass: "free",
+    eligibleFreeProviderRoutes: [
+      { provider: "mistral", model: "ministral-14b-2512" }
+    ],
+    defaultFreeModeHandling: "Direct Mistral Ministral 14B route passed the live five-image role probe; probe-gated for multimodal JSON.",
+    capabilities: { maxImages: 5, supportsJsonSchema: false, supportsJsonObject: true, supportsStreaming: false, allowedRoles: ["auditor", "reviewer", "target_recovery"] }
+  },
+  {
+    role: "reviewer",
+    provider: "mistral",
+    model: "ministral-14b-2512",
+    costClass: "free",
+    eligibleFreeProviderRoutes: [
+      { provider: "mistral", model: "ministral-14b-2512" }
+    ],
+    defaultFreeModeHandling: "Direct Mistral Ministral 14B reviewer route passed the live five-image role probe; probe-gated for multimodal JSON.",
+    capabilities: { maxImages: 5, supportsJsonSchema: false, supportsJsonObject: true, supportsStreaming: false, allowedRoles: ["auditor", "reviewer", "target_recovery"] }
+  },
+  {
+    role: "target_recovery",
+    provider: "mistral",
+    model: "ministral-14b-2512",
+    costClass: "free",
+    eligibleFreeProviderRoutes: [
+      { provider: "mistral", model: "ministral-14b-2512" }
+    ],
+    defaultFreeModeHandling: "Direct Mistral Ministral 14B recovery route passed the live five-image role probe; probe-gated for multimodal JSON.",
+    capabilities: { maxImages: 5, supportsJsonSchema: false, supportsJsonObject: true, supportsStreaming: false, allowedRoles: ["auditor", "reviewer", "target_recovery"] }
+  },
+  {
+    role: "auditor",
+    provider: "mistral",
+    model: "ministral-8b-2512",
+    costClass: "free",
+    eligibleFreeProviderRoutes: [
+      { provider: "mistral", model: "ministral-8b-2512" }
+    ],
+    defaultFreeModeHandling: "Direct Mistral Ministral 8B fallback passed the live five-image role probe.",
+    capabilities: { maxImages: 5, supportsJsonSchema: false, supportsJsonObject: true, supportsStreaming: false, allowedRoles: ["auditor", "reviewer", "target_recovery"] }
+  },
+  {
+    role: "reviewer",
+    provider: "mistral",
+    model: "ministral-8b-2512",
+    costClass: "free",
+    eligibleFreeProviderRoutes: [
+      { provider: "mistral", model: "ministral-8b-2512" }
+    ],
+    defaultFreeModeHandling: "Direct Mistral Ministral 8B reviewer fallback; content accuracy remains probe-gated.",
+    capabilities: { maxImages: 5, supportsJsonSchema: false, supportsJsonObject: true, supportsStreaming: false, allowedRoles: ["auditor", "reviewer", "target_recovery"] }
+  },
+  {
+    role: "target_recovery",
+    provider: "mistral",
+    model: "ministral-8b-2512",
+    costClass: "free",
+    eligibleFreeProviderRoutes: [
+      { provider: "mistral", model: "ministral-8b-2512" }
+    ],
+    defaultFreeModeHandling: "Direct Mistral Ministral 8B recovery fallback; content accuracy remains probe-gated.",
+    capabilities: { maxImages: 5, supportsJsonSchema: false, supportsJsonObject: true, supportsStreaming: false, allowedRoles: ["auditor", "reviewer", "target_recovery"] }
+  },
+  {
+    role: "auditor",
     provider: "opencode",
     model: "mimo-v2.5-free",
     costClass: "free",
@@ -475,6 +607,26 @@ export function selectModelForMode(
 
       const eligibleRoutes = candidate.eligibleFreeProviderRoutes;
 
+      if (mode === "free" || mode === "free_gemini") {
+        const geminiRoute = eligibleRoutes.find(r => r.provider === "gemini");
+        if (geminiRoute && !isExcluded(geminiRoute.provider, geminiRoute.model)) {
+          const probe = findValidProbe(probeResults, geminiRoute.provider, geminiRoute.model, logicalRole);
+          if (probe) {
+            return { ...candidate, provider: geminiRoute.provider, model: geminiRoute.model, required: true, probeTtlMs: 15 * 60 * 1000 };
+          }
+        }
+      }
+
+      if (mode === "free" || mode === "free_mistral") {
+        const mistralRoute = eligibleRoutes.find(r => r.provider === "mistral");
+        if (mistralRoute && !isExcluded(mistralRoute.provider, mistralRoute.model)) {
+          const probe = findValidProbe(probeResults, mistralRoute.provider, mistralRoute.model, logicalRole);
+          if (probe) {
+            return { ...candidate, provider: mistralRoute.provider, model: mistralRoute.model, required: true, probeTtlMs: 15 * 60 * 1000 };
+          }
+        }
+      }
+
       if (mode === "free" || mode === "free_opencode") {
         const openCodeRoute = eligibleRoutes.find(r => r.provider === "opencode");
         if (openCodeRoute && !isExcluded(openCodeRoute.provider, openCodeRoute.model)) {
@@ -530,14 +682,16 @@ export function selectFallbackModelsForMode(
   const seen = new Set<string>();
 
   if (mode === "free") {
-    const phases: VisionMode[] = ["free_opencode", "free_nvidia", "free_openrouter"];
+    const phases: VisionMode[] = ["free_gemini", "free_mistral", "free_opencode", "free_nvidia", "free_openrouter"];
     for (const phase of phases) {
+      if (results.length >= maxCandidates) break;
       const phaseExcluded = [...excludedRoutes, ...results.map(r => ({ provider: r.provider, model: r.model }))];
       const differentFamily: ModelEntry[] = [];
       const sameFamily: ModelEntry[] = [];
       const existingFamilies = new Set(results.map(r => modelFamilyKey(r.model)));
+      const remainingSlots = maxCandidates - results.length;
 
-      while (differentFamily.length + sameFamily.length < maxCandidates) {
+      while (differentFamily.length < remainingSlots) {
         const next = selectModelForMode(logicalRole, phase, probeResults, env, phaseExcluded);
         if (!next) break;
         phaseExcluded.push({ provider: next.provider, model: next.model });
@@ -549,6 +703,7 @@ export function selectFallbackModelsForMode(
 
       const selected = differentFamily.length > 0 ? differentFamily : sameFamily.slice(0, 1);
       for (const candidate of selected) {
+        if (results.length >= maxCandidates) break;
         const key = `${candidate.provider}:${candidate.model}`;
         if (!seen.has(key)) {
           seen.add(key);
@@ -579,7 +734,7 @@ export function resolveMode(rawMode: string | undefined): VisionMode {
     console.warn("Deprecation Warning: 'free_only' mode is deprecated and will be treated as 'free'. Please update your configuration.");
     return "free";
   }
-  const valid: VisionMode[] = ["free", "free_opencode", "free_openrouter", "free_nvidia", "paid", "deterministic_only"];
+  const valid: VisionMode[] = ["free", "free_gemini", "free_mistral", "free_opencode", "free_openrouter", "free_nvidia", "paid", "deterministic_only"];
   if (valid.includes(rawMode as VisionMode)) {
     return rawMode as VisionMode;
   }

@@ -17,6 +17,10 @@ beforeEach(async () => {
     NVIDIA_VLM_BASE_URL: "",
     OPENCODE_API_KEY: "",
     OPENCODE_ZEN_BASE_URL: "http://127.0.0.1:9",
+    GEMINI_API_KEY: "",
+    GEMINI_BASE_URL: "http://127.0.0.1:9",
+    MISTRAL_API_KEY: "",
+    MISTRAL_BASE_URL: "http://127.0.0.1:9",
     LOCATEANYTHING_SIDECAR_URL: "http://127.0.0.1:9"
   });
 });
@@ -142,6 +146,10 @@ describe("MCP stdio tool surface", () => {
       NVIDIA_VLM_BASE_URL: "",
       OPENCODE_API_KEY: "",
       OPENCODE_ZEN_BASE_URL: "http://127.0.0.1:9",
+      GEMINI_API_KEY: "",
+      GEMINI_BASE_URL: "http://127.0.0.1:9",
+      MISTRAL_API_KEY: "",
+      MISTRAL_BASE_URL: "http://127.0.0.1:9",
       LOCATEANYTHING_SIDECAR_URL: "http://127.0.0.1:9",
       UI_DIFF_FOREGROUND_BUDGET_MS: "100"
     });

@@ -6,9 +6,13 @@ Design spec: `docs/superpowers/specs/2026-06-12-ui-diff-mcp-research-design.md`
 
 ## Free-First Default
 
-The default mode (`free`) never calls paid models. It probes OpenCode Zen's image-capable `mimo-v2.5-free` route first, then native NVIDIA free VLM endpoints, then OpenRouter `:free` routes. Every route must pass the role's real image-count and JSON probe before selection. Paid models are disabled unless `mode: "paid"` is passed and `UI_DIFF_ENABLE_PAID_MODE=1` is set.
+The default mode (`free`) never calls paid OpenRouter routes. It probes direct Gemini routes first, then direct Mistral routes, OpenCode Zen's image-capable `mimo-v2.5-free`, native NVIDIA free VLM endpoints, and finally OpenRouter `:free` routes. Every route must pass the role's real image-count and JSON probe before selection. Paid OpenRouter models are disabled unless `mode: "paid"` is passed and `UI_DIFF_ENABLE_PAID_MODE=1` is set.
 
 OpenCode currently also lists `deepseek-v4-flash-free`, but its model metadata is text-only. It is intentionally excluded from auditor, reviewer, and target-recovery roles because those roles require four or five crop images. OpenCode documents its free models as limited-time routes, so catalog presence never replaces runtime probes.
+
+Gemini model-list probing on this machine showed `gemini-3.1-pro-preview`, `gemini-3.5-flash`, and `gemini-3.1-flash-lite` are visible. A direct live call to `gemini-3.1-pro-preview` returned free-tier quota limit 0, so it remains first in the quality ranking but is expected to fail closed unless quota is available. `gemini-3.5-flash` is the current direct Gemini live-gate model.
+
+Mistral model-list probing showed vision-capable routes including `mistral-large-2512`, `mistral-medium-2604`, `mistral-small-2603`, `ministral-14b-2512`, and `ministral-8b-2512`. Live role probing on this machine showed `ministral-14b-2512` and `ministral-8b-2512` correctly handle the five-image payload required by auditor/reviewer/recovery. `mistral-large-2512`, `mistral-medium-2604`, and `mistral-small-2603` miscounted or misclassified simple probe images, so they are not current pipeline routes.
 
 Before starting a free-model run, the pipeline estimates the required request count and checks available quota against the OpenRouter key info endpoint. If estimated calls exceed available free quota, the run exits immediately with `status: "insufficient_free_quota"` rather than consuming quota silently.
 
@@ -16,7 +20,9 @@ Before starting a free-model run, the pipeline estimates the required request co
 
 | Mode | Behavior |
 | --- | --- |
-| `free` | Default. OpenCode MiMo first, then NVIDIA free endpoints, then OpenRouter `:free`. Never paid. |
+| `free` | Default. Gemini direct, Mistral direct, OpenCode MiMo, NVIDIA free endpoints, then OpenRouter `:free`. Never paid OpenRouter. |
+| `free_gemini` | Only direct Gemini routes. Current live gate uses `gemini-3.5-flash`. |
+| `free_mistral` | Only direct Mistral routes. Current live gate uses `ministral-14b-2512`. |
 | `free_opencode` | Only OpenCode Zen visual routes. Currently `mimo-v2.5-free`. |
 | `free_openrouter` | Only OpenRouter `:free` routes. |
 | `free_nvidia` | Only native NVIDIA free endpoint routes. |
@@ -59,6 +65,10 @@ Copy `.env.example` and fill in the relevant keys.
 | --- | --- | --- | --- |
 | `OPENCODE_API_KEY` | No | `public` | Optional OpenCode Zen credential override. The current free route accepts the public credential. |
 | `OPENCODE_ZEN_BASE_URL` | No | `https://opencode.ai/zen/v1` | OpenCode Zen API base URL. |
+| `GEMINI_API_KEY` | For Gemini direct mode | — | Gemini API key from AI Studio. Routes are always probe-gated because visible models may have zero free-tier quota. |
+| `GEMINI_BASE_URL` | No | `https://generativelanguage.googleapis.com/v1beta` | Override Gemini API base URL. |
+| `MISTRAL_API_KEY` | For Mistral direct mode | — | Mistral API key for direct vision routes. |
+| `MISTRAL_BASE_URL` | No | `https://api.mistral.ai/v1` | Override Mistral API base URL. |
 | `OPENROUTER_API_KEY` | For OpenRouter free mode | — | OpenRouter API key. Free-tier account sufficient for `:free` routes. |
 | `NVIDIA_API_KEY` | For NVIDIA free mode | — | NVIDIA Build/NIM API key for native NVIDIA free VLM endpoints. |
 | `NVIDIA_VLM_BASE_URL` | No | `https://integrate.api.nvidia.com/v1` | Override NVIDIA base URL for self-hosted NIM. |
@@ -82,6 +92,26 @@ npm run verify:opencode-live
 ```
 
 The gate verifies the live catalog, a one-image structured response, and one deduplicated five-image probe shared across auditor, reviewer, and target recovery.
+
+## Configuring Direct Gemini Models
+
+Set `GEMINI_API_KEY` to an AI Studio key. The pipeline probes direct Gemini routes before using them; `gemini-3.1-pro-preview` may be visible but quota-blocked on the free tier, so `gemini-3.5-flash` is the current live-gate route.
+
+```powershell
+$env:GEMINI_API_KEY="..."
+$env:RUN_GEMINI_LIVE="1"
+npm run verify:gemini-live
+```
+
+## Configuring Direct Mistral Models
+
+Set `MISTRAL_API_KEY` to a Mistral API key. The pipeline starts with `ministral-14b-2512` because it passed the same five-image role probe used by the auditor/reviewer/recovery gates; `ministral-8b-2512` is the next Mistral fallback.
+
+```powershell
+$env:MISTRAL_API_KEY="..."
+$env:RUN_MISTRAL_LIVE="1"
+npm run verify:mistral-live
+```
 
 ## Configuring Native NVIDIA Free Models
 
@@ -177,6 +207,8 @@ enabled = true
 
 | Gate | Command | Required env |
 | --- | --- | --- |
+| Direct Gemini models | `npm run verify:gemini-live` | `RUN_GEMINI_LIVE=1`, `GEMINI_API_KEY` |
+| Direct Mistral models | `npm run verify:mistral-live` | `RUN_MISTRAL_LIVE=1`, `MISTRAL_API_KEY` |
 | OpenCode Zen MiMo | `npm run verify:opencode-live` | `RUN_OPENCODE_LIVE=1`; optional `OPENCODE_API_KEY` |
 | Free OpenRouter models | `npm run verify:free-live` | `RUN_FREE_LIVE=1`, `OPENROUTER_API_KEY` |
 | Native NVIDIA models | `npm run verify:nvidia-live` | `RUN_NVIDIA_LIVE=1`, `NVIDIA_API_KEY` |

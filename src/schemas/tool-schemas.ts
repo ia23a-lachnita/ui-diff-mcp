@@ -6,7 +6,7 @@ export const CompareUiImagesInputSchema = {
   actualImagePath: z.string().min(1),
   projectRoot: z.string().min(1).optional(),
   runLabel: z.string().min(1).max(80).optional(),
-  mode: z.enum(["free", "free_openrouter", "free_nvidia", "paid", "deterministic_only"]).default("free")
+  mode: z.enum(["free", "free_gemini", "free_mistral", "free_opencode", "free_openrouter", "free_nvidia", "paid", "deterministic_only"]).default("free")
 };
 
 export const CompareUiImagesOutputSchema = {
@@ -57,7 +57,7 @@ export const StartUiDiffRunInputSchema = {
   expectedImagePath: z.string().min(1),
   actualImagePath: z.string().min(1),
   projectRoot: z.string().min(1).optional(),
-  mode: z.enum(["free", "free_openrouter", "free_nvidia", "paid", "deterministic_only"]).default("free"),
+  mode: z.enum(["free", "free_gemini", "free_mistral", "free_opencode", "free_openrouter", "free_nvidia", "paid", "deterministic_only"]).default("free"),
   label: z.string().min(1).max(80).optional(),
   resumeRunId: z.string().regex(/^[a-zA-Z0-9_-]+$/).optional()
 };
