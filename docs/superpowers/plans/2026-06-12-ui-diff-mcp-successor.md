@@ -1242,7 +1242,7 @@ The first implementation milestone is complete when:
 
 ## Gemini Review
 
-Status: reviewed with legacy Gemini CLI on 2026-06-12, then re-reviewed with `gemini-3-pro-preview`. For new reviews, use `mcp__antigravity_mcp__ask_gemini`; do not use either CLI.
+Status: reviewed with legacy Gemini CLI on 2026-06-12, then re-reviewed with `gemini-3-pro-preview`. For new reviews, use `mcp__antigravity_mcp__ask_ai`; do not use either CLI.
 
 Requested model: `gemini-3-pro`.
 

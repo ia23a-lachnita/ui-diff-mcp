@@ -67,3 +67,38 @@ The same run finalized seconds after the gate's 24-minute poll loop, exposing a 
 - the strict poll window is 38 minutes.
 
 A fresh strict run is still required. Release remains blocked until that gate returns complete classification with zero failed/remaining audit pairs and zero unresolved regions.
+
+## 2026-06-30 Current-Head Rerun
+
+Production release is still **blocked**. The provider smoke gates and bounded diagnostic path are useful, but the unbounded full Calorix run did not finish inside the 40-minute gate window and therefore did not produce a final, non-checkpoint report.
+
+| Gate | Result | Evidence |
+| --- | --- | --- |
+| NVIDIA live | PASS | 4/4 tests, 163.7s. |
+| OpenRouter free live | PASS | 2 active tests passed, 3 skipped, 53.4s. |
+| MCP default live | PASS | 1/1 passed, 55.5s. |
+| OpenCode live | FLAKY | First scripted run failed the five-image role probe. Direct replay passed all three roles in 1.85s. Scripted rerun failed one-image JSON with `ProviderJsonParseError: invalid_json`; direct replay recovered with `retryDecision: same_route_compact_retry` and provider usage `prompt_tokens=281`, `completion_tokens=7`. |
+| Calorix bounded diagnostic | PASS (degraded by design) | `run-1782801862055-65807d`, 3/3 selected VLM pairs audited/reviewed, `auditLimited:true`, 42 diffs. Recovery completed 39 eligible components, accepted 34 recovery diffs, and left zero unclassified components. |
+| Calorix full diagnostic | FAIL / TIMEOUT | `run-1782802261817-8895d7` timed out at 40 minutes. The checkpoint has `status:"running"`, `visualClassificationStatus:"incomplete"`, 71/71 selected VLM pairs audited/reviewed, and 170 checkpoint diffs (8 deterministic projected mismatches, 162 VLM-reviewed accepted). It did not write a final report, provider-trace artifact, debug artifacts, or recovery summary before the test process ended. |
+| Calorix strict release | NOT RUN | Skipped after the full diagnostic timeout. Strict release remains blocked until full diagnostic completes as a final report. |
+
+### Diffs Visible In The Full Checkpoint
+
+The full checkpoint is not production evidence, but it does show the VLM audit path was exercised:
+
+- 8 deterministic projected mismatches, grouped around structural displacement/region mismatches.
+- 162 VLM-reviewed accepted diffs.
+- Criterion counts: 65 geometry, 56 spacing/alignment, 49 color/appearance.
+- Example accepted VLM findings include vertical shifts in the calorie summary text block, shifted/tighter nutrient-label spacing, the Chicken Rice Bowl list item being lower/differently spaced, and displaced ring/text content.
+
+The number of checkpoint diffs is still not a clean user-facing final count because consolidation and final recovery/report writing did not complete.
+
+### Follow-Up Implemented
+
+The timeout exposed an observability hole: checkpoint reports only contained `runArtifacts` from early deterministic stages, while `provider-trace.json` was written only during final report creation. Future interrupted runs now:
+
+- flush `provider-trace.json` on every checkpoint, including token usage when providers return it;
+- include the provider trace artifact in checkpoint `runArtifacts`;
+- write a `target_recovery` stage checkpoint with `status:"running"` before long recovery work starts.
+
+Verification after this change: `npm run verify` passed with 509 unit/e2e tests, 16 Python sidecar parser tests, and 22 integration tests.

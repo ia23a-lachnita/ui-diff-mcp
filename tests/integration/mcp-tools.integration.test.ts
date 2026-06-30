@@ -13,6 +13,10 @@ beforeEach(async () => {
   tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ui-diff-mcp-integration-"));
   started = await startUiDiffMcpClient({
     OPENROUTER_API_KEY: "",
+    NVIDIA_API_KEY: "",
+    NVIDIA_VLM_BASE_URL: "",
+    OPENCODE_API_KEY: "",
+    OPENCODE_ZEN_BASE_URL: "http://127.0.0.1:9",
     LOCATEANYTHING_SIDECAR_URL: "http://127.0.0.1:9"
   });
 });
@@ -134,6 +138,10 @@ describe("MCP stdio tool surface", () => {
     // Start a server with a 100ms foreground budget — well below any real probe+model round-trip.
     const fastBudgetClient = await startUiDiffMcpClient({
       OPENROUTER_API_KEY: "",
+      NVIDIA_API_KEY: "",
+      NVIDIA_VLM_BASE_URL: "",
+      OPENCODE_API_KEY: "",
+      OPENCODE_ZEN_BASE_URL: "http://127.0.0.1:9",
       LOCATEANYTHING_SIDECAR_URL: "http://127.0.0.1:9",
       UI_DIFF_FOREGROUND_BUDGET_MS: "100"
     });

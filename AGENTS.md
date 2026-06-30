@@ -29,7 +29,7 @@ The implementation status file is the persistent source of truth for where the p
 ## External Review Tooling
 
 - Do not use the deprecated Gemini CLI or the `agy` Antigravity CLI for new reviews.
-- Use the Antigravity MCP tool `mcp__antigravity_mcp__ask_gemini`.
+- Use the Antigravity MCP tool `mcp__antigravity_mcp__ask_ai`.
 - For production plans, request `model: "gemini-3.1-pro-preview"`, `approvalMode: "plan"`, and a persistent `conversationId` so revisions can be reviewed in the same conversation.
 - A review is green only when the response explicitly reports `AGREEMENT_STATUS: agree` and `MUST_FIX: none`. Apply must-fix feedback, then continue the same MCP conversation until green.
 - If the MCP tool or requested model is unavailable, record the exact tool error. Do not silently substitute a CLI review or count an empty response as successful.

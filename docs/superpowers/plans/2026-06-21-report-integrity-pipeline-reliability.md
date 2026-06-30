@@ -506,7 +506,7 @@ Commit message: `docs(release): record report integrity live gates`
 
 ## External Review
 
-Review this plan with `mcp__antigravity_mcp__ask_gemini`, model `gemini-3.1-pro-preview`, `approvalMode:"plan"`, and one persistent conversation ID. Required response format:
+Review this plan with `mcp__antigravity_mcp__ask_ai`, model `gemini-3.1-pro-preview`, `approvalMode:"plan"`, and one persistent conversation ID. Required response format:
 
 ```text
 AGREEMENT_STATUS: agree|disagree

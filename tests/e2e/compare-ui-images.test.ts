@@ -156,11 +156,22 @@ describe("runUiDiff with mock sidecar and models (full mode)", () => {
       { role: "target_recovery", provider: "opencode", model: "mimo-v2.5-free", status: "pass" as const, checkedAt: new Date().toISOString(), schemaValid: true, contentAccurate: true, maxImagesSupported: 5 }
     ];
 
+    const auditCheckpointSnapshots: Array<{ report: { runArtifacts: Array<{ role: string; path: string }> }; trace: Array<{ event: string; provider: string }> }> = [];
     const result = await runUiDiff({
       expectedImagePath: expected,
       actualImagePath: actual,
       projectRoot: tmpDir,
-      mode: "free_opencode"
+      mode: "free_opencode",
+      onCheckpoint: async progress => {
+        if (progress.stage !== "audit") return;
+        const checkpoint = JSON.parse(await fs.readFile(progress.checkpointPath, "utf8")) as {
+          runArtifacts: Array<{ role: string; path: string }>;
+        };
+        const providerTracePath = checkpoint.runArtifacts.find(artifact => artifact.role === "provider_trace")?.path;
+        expect(providerTracePath).toBeTruthy();
+        const providerTrace = JSON.parse(await fs.readFile(providerTracePath!, "utf8")) as Array<{ event: string; provider: string }>;
+        auditCheckpointSnapshots.push({ report: checkpoint, trace: providerTrace });
+      }
     }, { probeOverride });
 
     const report = JSON.parse(await fs.readFile(result.reportPath, "utf8")) as {
@@ -176,6 +187,11 @@ describe("runUiDiff with mock sidecar and models (full mode)", () => {
     expect(providerTracePath).toBeTruthy();
     const providerTrace = JSON.parse(await fs.readFile(providerTracePath!, "utf8")) as Array<{ provider: string; event: string }>;
     expect(providerTrace.some(event => event.provider === "opencode" && event.event === "call_success")).toBe(true);
+    expect(auditCheckpointSnapshots.length).toBeGreaterThan(0);
+    expect(auditCheckpointSnapshots.some(snapshot =>
+      snapshot.report.runArtifacts.some(artifact => artifact.role === "provider_trace") &&
+      snapshot.trace.some(event => event.provider === "opencode" && event.event === "call_success")
+    )).toBe(true);
     const stageMap = Object.fromEntries(report.stages.map(stage => [stage.name, stage]));
     expect(stageMap["model_probe"]).toMatchObject({ status: "complete", outcome: "success" });
     expect(stageMap["audit"]).toMatchObject({ status: "complete", outcome: "success" });

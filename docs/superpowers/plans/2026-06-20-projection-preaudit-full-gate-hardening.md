@@ -914,7 +914,7 @@ Type consistency:
 
 ## External Review Prompt
 
-Use the prompt below with `mcp__antigravity_mcp__ask_gemini` and `model: "gemini-3.1-pro-preview"`. Continue the same MCP conversation for revisions; do not use either CLI.
+Use the prompt below with `mcp__antigravity_mcp__ask_ai` and `model: "gemini-3.1-pro-preview"`. Continue the same MCP conversation for revisions; do not use either CLI.
 
 ```text
 You are reviewing a production-readiness implementation plan for C:\Users\xursc\projects\ui-diff-mcp.

@@ -812,7 +812,7 @@ git push origin master
 
 ## Gemini Review
 
-Legacy Gemini CLI using `gemini-3.1-pro-preview` reviewed the plan on 2026-06-15. For new reviews, use `mcp__antigravity_mcp__ask_gemini`; do not use either CLI.
+Legacy Gemini CLI using `gemini-3.1-pro-preview` reviewed the plan on 2026-06-15. For new reviews, use `mcp__antigravity_mcp__ask_ai`; do not use either CLI.
 
 - `AGREEMENT_STATUS: agree`.
 - Must-fix: foreground budget default was too close to likely MCP client timeouts. Applied: Task 7 now defaults to `45000 ms` and requires it to be shorter than client RPC timeout.

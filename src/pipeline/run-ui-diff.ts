@@ -215,6 +215,13 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     { role: "directional_overlay", path: directionalOverlayPath }
   ];
 
+  async function refreshProviderTraceArtifact(): Promise<void> {
+    const artifact = await writeProviderTrace(artifactRoot, providerTrace);
+    const existingIndex = runArtifacts.findIndex(a => a.role === "provider_trace");
+    if (existingIndex >= 0) runArtifacts[existingIndex] = artifact;
+    else runArtifacts.push(artifact);
+  }
+
   function upsertStage(
     stageName: string,
     stageStatus: StageStatus["status"],
@@ -242,6 +249,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     currentModelHealth: UiDiffReport["modelHealth"]
   ): Promise<void> {
     upsertStage(stageName, stageStatus, outcome, detail);
+    await refreshProviderTraceArtifact();
     const checkpointPath = await writeReportCheckpoint({
       schemaVersion: "0.1",
       runId,
@@ -825,6 +833,14 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
           const recoveryStageOutcome = deriveRecoveryStageOutcome(recoverySummary);
           await checkpoint("target_recovery", "complete", recoveryStageOutcome.outcome, recoveryStageOutcome.detail, pairs, modelHealth);
         } else if (uncoveredComponents.length > 0 && recoveryCaller) {
+          await checkpoint(
+            "target_recovery",
+            "running",
+            "incomplete",
+            "classifying_uncovered_regions",
+            pairs,
+            modelHealth
+          );
           const recoveryResult = await runTargetRecovery(uncoveredComponents, {
             expectedRgba: { data: expectedImg.rgba, width: expectedImg.width, height: expectedImg.height },
             actualRgba: { data: actualImg.rgba, width: actualImg.width, height: actualImg.height },
@@ -931,8 +947,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
 
   // Write provider-trace artifact: metadata-only record of all probe, call, route-health,
   // and fallback events. No prompts, image data, API keys, or raw response bodies.
-  const providerTraceArtifact = await writeProviderTrace(artifactRoot, providerTrace);
-  runArtifacts.push(providerTraceArtifact);
+  await refreshProviderTraceArtifact();
 
   const locatorMetadata = locatorCoverageStatus !== "not_run"
     ? {

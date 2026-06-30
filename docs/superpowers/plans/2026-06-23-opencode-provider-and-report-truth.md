@@ -458,6 +458,17 @@ Expected: catalog, one-image JSON, five-image JSON, and all three role probes PA
 
 - [ ] **Step 5: Run current-head pipeline gates**
 
+2026-06-30 partial rerun:
+
+- NVIDIA live: PASS, 4/4 tests in 163.7s.
+- OpenRouter free live: PASS, 2 active tests in 53.4s.
+- MCP default live: PASS, 1/1 in 55.5s.
+- OpenCode live: FLAKY. One scripted run failed the five-image role probe, immediate direct replay passed all roles in 1.85s, and the scripted rerun failed the one-image structured test with `ProviderJsonParseError: invalid_json`. Direct one-image replay then succeeded with `retryDecision: same_route_compact_retry` and provider usage `prompt_tokens=281`, `completion_tokens=7`.
+- Calorix bounded diagnostic: PASS at `run-1782801862055-65807d`, 3/3 selected VLM pairs audited/reviewed, `auditLimited:true`, 42 diffs, recovery completed 39 eligible components with 34 recovered diffs and zero unclassified components.
+- Calorix full diagnostic: FAIL/TIMEOUT at `run-1782802261817-8895d7`. The checkpoint shows 71/71 selected VLM pairs audited/reviewed and 170 checkpoint diffs (8 deterministic projected mismatches, 162 VLM-reviewed accepted), but the test timed out at 40 minutes before a final non-checkpoint report or recovery summary was written.
+- Calorix strict release: not run after the full diagnostic timeout. The strict gate remains blocked until full diagnostic completes as a final report.
+- Implementation follow-up from this run: checkpoints now flush `provider-trace.json` and write a `target_recovery` running checkpoint before long recovery work, so future interrupted runs retain token/provider diagnostics.
+
 Run in order:
 
 ```powershell
@@ -480,6 +491,8 @@ Expected strict result: visual classification complete, no audit failures/remain
 
 - [ ] **Step 6: Record exact evidence**
 
+2026-06-30 evidence is recorded in `docs/release/2026-06-24-opencode-provider-live-results.md` and `docs/implementation-status.md`. Step remains open because the strict release gate has not produced a complete final report.
+
 Record run IDs, provider routes, route transitions, final diff/unresolved counts, audit/recovery accounting, stage outcomes, durations, and gate results. A failed strict gate remains a release blocker and must be written as such.
 
 - [ ] **Step 7: Update tracking, commit, and push**
@@ -493,7 +506,7 @@ Commit: `test(live): gate opencode semantic pipeline`
 - Modify: `docs/implementation-status.md`
 - Modify: this plan's checkboxes/review appendix.
 
-- [ ] **Step 1: Request Gemini 3.1 Pro Preview review through Antigravity MCP**
+- [x] **Step 1: Request Gemini 3.1 Pro Preview review through Antigravity MCP**
 
 Use the same conversation as the plan review. Supply the approved plan, base/head SHAs, changed files, verification output, and live evidence. Require:
 
@@ -504,17 +517,29 @@ SHOULD_FIX: none|...
 QUESTIONS: none|...
 ```
 
-- [ ] **Step 2: Address every valid MUST_FIX with TDD**
+- [x] **Step 2: Address every valid MUST_FIX with TDD**
+
+Review result on 2026-06-30: `AGREEMENT_STATUS: agree`, `MUST_FIX: none`, so no code changes were required after review.
 
 Continue the same Antigravity conversation until it reports `AGREEMENT_STATUS: agree` and `MUST_FIX: none`.
 
-- [ ] **Step 3: Run final verification**
+- [x] **Step 3: Run final verification**
 
 Run `npm run verify`, focused changed tests, `npm run test:coverage`, `npm audit --audit-level=critical`, and `git diff --check`.
+
+Executed verification for this checkpoint-trace delta:
+
+- Red before implementation: focused e2e failed because the audit checkpoint lacked `provider_trace`.
+- Green after implementation: `npx vitest run tests/e2e/compare-ui-images.test.ts -t "routes free_opencode"` PASS.
+- Integration env regression: first `npm run verify` exposed live-provider env leakage in `ui_diff_model_health`; after credential sanitation, focused integration PASS.
+- Final: `npm run verify` PASS (509 unit/e2e, 16 Python sidecar parser, 22 integration), `git diff --check` PASS.
+- Coverage and npm audit were not rerun in this small follow-up; last recorded coverage/audit remain in `docs/implementation-status.md`.
 
 - [ ] **Step 4: Final tracking commit and push**
 
 Record the external review result, any unusual Antigravity MCP output, final HEAD, verification counts, live run IDs, and production decision.
+
+Antigravity MCP note: actual exposed tool is `mcp__antigravity_mcp__ask_ai`, not the stale `ask_gemini` name. The 2026-06-30 review response was green but included unrelated preface text claiming `npm run verify` was running and a timer was scheduled.
 
 ## Acceptance Criteria
 
