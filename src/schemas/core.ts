@@ -149,6 +149,8 @@ export const ProviderTraceEventSchema = z.object({
   // Safe usage metadata — no prompt text, image data, API keys, or raw response bodies
   inputTokens: z.number().int().min(0).optional(),
   outputTokens: z.number().int().min(0).optional(),
+  totalTokens: z.number().int().min(0).optional(),
+  reasoningTokens: z.number().int().min(0).optional(),
   ttftMs: z.number().min(0).optional(),
   finishReason: z.string().max(64).optional(),
   retryDecision: z.enum(["same_route_compact_retry"]).optional(),
@@ -494,6 +496,7 @@ export const RecoveryComponentTraceSchema = z.object({
   recoveryDurationMs: z.number().int().min(0).optional(),
   reviewerDurationMs: z.number().int().min(0).optional(),
   diffId: z.string().optional(),
+  rejectionReason: z.string().optional(),
   criterion: UiCriterionSchema.exclude(["unclassified_visual_change"]).optional(),
   errorKind: z.enum(["provider", "schema", "validation", "budget", "unexpected"]).optional(),
   errorMessage: z.string().max(500).optional(),

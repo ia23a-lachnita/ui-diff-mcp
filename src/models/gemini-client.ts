@@ -83,7 +83,12 @@ function makeGeminiSingleCaller(
 
     const completion = json as {
       candidates?: Array<{ content?: { parts?: Array<{ text?: string }> }; finishReason?: string }>;
-      usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
+      usageMetadata?: {
+        promptTokenCount?: number;
+        candidatesTokenCount?: number;
+        totalTokenCount?: number;
+        thoughtsTokenCount?: number;
+      };
     };
     const rawContent = completion.candidates?.[0]?.content?.parts?.map(part => part.text ?? "").join("") ?? "";
     const finishReason = completion.candidates?.[0]?.finishReason;
@@ -94,6 +99,12 @@ function makeGeminiSingleCaller(
         : {}),
       ...(completion.usageMetadata.candidatesTokenCount !== undefined
         ? { completion_tokens: completion.usageMetadata.candidatesTokenCount }
+        : {}),
+      ...(completion.usageMetadata.totalTokenCount !== undefined
+        ? { total_tokens: completion.usageMetadata.totalTokenCount }
+        : {}),
+      ...(completion.usageMetadata.thoughtsTokenCount !== undefined
+        ? { reasoning_tokens: completion.usageMetadata.thoughtsTokenCount }
         : {})
     };
 

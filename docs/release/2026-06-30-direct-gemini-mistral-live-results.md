@@ -55,7 +55,11 @@ Antigravity MCP with `gemini-3.1-pro-preview` independently reviewed the strict 
 - The reviewer found that diff `984e090cb0e3` is visually a missing-text/presence issue rather than a reliable spacing-baseline finding.
 - The reviewer confirmed the report/trace defect that reviewer reasons were parsed but not persisted onto final diff records. This is fixed for future reports by adding `reviewerReason` to VLM and target-recovery diff records.
 - MCP response noise: none.
+- **Gemini Runtime Update**: During the strict Calorix run runtime, the Gemini API routes failed with HTTP 429 due to quota limitations. However, the Gemini API itself works fine under ordinary quota.
+- **Bug Fixes Applied**:
+  1. Fixed a separate client bug where Gemini's `MAX_TOKENS` finishReason was not treated as a truncation signal, preventing `withStructuredRetry` from retrying the request.
+  2. Fixed target recovery tracing so reviewer rejection reasons are successfully persisted in `recovery-trace.json` and outcome summaries for future reports.
 
 ## Production Decision
 
-Not production-ready yet. The provider capacity blocker is materially improved: the full run no longer times out, and Mistral completed all audit pairs. The remaining blockers are now pipeline/report semantics around unresolved recovery rejection and `needs_escalation` final diff handling, not total provider unavailability.
+Not production-ready yet. The provider capacity blocker is materially improved: the full run no longer times out, and Mistral completed all audit pairs. The remaining blockers are now pipeline/report semantics around unresolved recovery rejection and `needs_escalation` final diff handling, not total provider unavailability. The new MAX_TOKENS fix and recovery rejection reason persistence are verified and active for the next run.

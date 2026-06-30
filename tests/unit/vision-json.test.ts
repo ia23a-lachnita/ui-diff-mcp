@@ -61,4 +61,30 @@ describe("parseVisionJsonContent", () => {
       expect((caught as ProviderJsonParseError).diagnostic).toMatchObject({ kind: "schema_invalid", startsWithJson: true, endsWithJson: true });
     }
   });
+
+  it("classifies Gemini finishReason MAX_TOKENS as truncated_json", () => {
+    const raw = truncatedJson(500);
+    try {
+      parseVisionJsonContent("gemini", raw, schema, true, "MAX_TOKENS");
+      throw new Error("expected to throw");
+    } catch (caught) {
+      expect(caught).toBeInstanceOf(ProviderJsonParseError);
+      const diagnostic = (caught as ProviderJsonParseError).diagnostic;
+      expect(diagnostic.kind).toBe("truncated_json");
+      expect(diagnostic.finishReason).toBe("MAX_TOKENS");
+    }
+  });
+
+  it("classifies finishReason max_output_tokens case-insensitively as truncated_json", () => {
+    const raw = truncatedJson(300);
+    try {
+      parseVisionJsonContent("gemini", raw, schema, true, "max_output_tokens");
+      throw new Error("expected to throw");
+    } catch (caught) {
+      expect(caught).toBeInstanceOf(ProviderJsonParseError);
+      const diagnostic = (caught as ProviderJsonParseError).diagnostic;
+      expect(diagnostic.kind).toBe("truncated_json");
+      expect(diagnostic.finishReason).toBe("max_output_tokens");
+    }
+  });
 });

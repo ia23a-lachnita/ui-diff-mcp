@@ -89,7 +89,11 @@ export function parseVisionJsonContent(
   } catch {
     const startsWithJson = normalized.startsWith("{") || normalized.startsWith("[");
     const endsWithJson = normalized.endsWith("}") || normalized.endsWith("]");
-    const providerStoppedAtLength = finishReason === "length";
+    const stopReasonLower = finishReason?.toLowerCase();
+    const providerStoppedAtLength =
+      stopReasonLower === "length" ||
+      stopReasonLower === "max_tokens" ||
+      stopReasonLower === "max_output_tokens";
     throw new ProviderJsonParseError(
       provider,
       buildContentDiagnostic(rawContent, streamCompleted, startsWithJson && (!endsWithJson || providerStoppedAtLength) ? "truncated_json" : "invalid_json", finishReason)
@@ -115,7 +119,7 @@ export interface VisionJsonResponse {
   rawContent: string;
   model: string;
   provider: string;
-  usage?: { prompt_tokens?: number; completion_tokens?: number };
+  usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number; reasoning_tokens?: number };
   ttftMs?: number | null;
   finishReason?: string;
   retryDecision?: "same_route_compact_retry";

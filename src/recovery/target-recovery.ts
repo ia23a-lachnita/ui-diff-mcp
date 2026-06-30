@@ -191,6 +191,7 @@ export interface RecoveryRegionOutcome {
   reason: string;
   artifactPaths: UiArtifact[];
   findingId?: string;
+  rejectionReason?: string;
 }
 
 export type RecoveryRegionInput = PixelComponent & { id?: string };
@@ -462,9 +463,24 @@ export async function runTargetRecovery(
 
     if (reviewDecision === "rejected") {
       countStatus("recovery_rejected");
-      trace.push({ ...baseTrace, status: "recovery_rejected", model: componentRecoveryModel, reviewerModel, recoveryDurationMs, reviewerDurationMs, criterion: vlmResponse.criterion });
+      trace.push({
+        ...baseTrace,
+        status: "recovery_rejected",
+        model: componentRecoveryModel,
+        reviewerModel,
+        recoveryDurationMs,
+        reviewerDurationMs,
+        criterion: vlmResponse.criterion,
+        ...(reviewReason !== undefined ? { rejectionReason: reviewReason } : {})
+      });
       unclassifiedCount++;
-      regionOutcomes.push({ regionId: componentId, state: "unresolved", reason: "reviewer_rejected", artifactPaths: artifacts });
+      regionOutcomes.push({
+        regionId: componentId,
+        state: "unresolved",
+        reason: `reviewer_rejected${reviewReason ? `: ${reviewReason.slice(0, 150)}` : ""}`,
+        artifactPaths: artifacts,
+        ...(reviewReason !== undefined ? { rejectionReason: reviewReason } : {})
+      });
       continue;
     }
 

@@ -72,4 +72,38 @@ describe("makeGeminiVisionCaller", () => {
       timeoutMs: 1000
     })).rejects.toThrow("Gemini HTTP 429: quota exceeded detail");
   });
+
+  it("extracts totalTokenCount and thoughtsTokenCount from usageMetadata and maps them correctly", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      candidates: [{
+        content: { parts: [{ text: '{"color":"green"}' }] },
+        finishReason: "MAX_TOKENS"
+      }],
+      usageMetadata: {
+        promptTokenCount: 10,
+        candidatesTokenCount: 15,
+        totalTokenCount: 25,
+        thoughtsTokenCount: 5
+      }
+    }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await makeGeminiVisionCaller("g-key", "gemini-3.5-flash")({
+      prompt: "Identify the color.",
+      images: [],
+      jsonSchema: schema,
+      timeoutMs: 1000
+    });
+
+    expect(result).toMatchObject({
+      parsed: { color: "green" },
+      usage: {
+        prompt_tokens: 10,
+        completion_tokens: 15,
+        total_tokens: 25,
+        reasoning_tokens: 5
+      },
+      finishReason: "MAX_TOKENS"
+    });
+  });
 });

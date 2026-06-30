@@ -104,6 +104,8 @@ export function makeFallbackVisionCaller(
           status: "ok",
           ...(result.usage?.prompt_tokens !== undefined ? { inputTokens: result.usage.prompt_tokens } : {}),
           ...(result.usage?.completion_tokens !== undefined ? { outputTokens: result.usage.completion_tokens } : {}),
+          ...(result.usage?.total_tokens !== undefined ? { totalTokens: result.usage.total_tokens } : {}),
+          ...(result.usage?.reasoning_tokens !== undefined ? { reasoningTokens: result.usage.reasoning_tokens } : {}),
           ...(result.ttftMs != null ? { ttftMs: result.ttftMs } : {}),
           ...(result.finishReason !== undefined ? { finishReason: result.finishReason } : {}),
           ...(result.retryDecision !== undefined ? { retryDecision: result.retryDecision } : {})

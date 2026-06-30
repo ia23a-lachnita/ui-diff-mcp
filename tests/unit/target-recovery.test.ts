@@ -258,7 +258,7 @@ describe("runTargetRecovery", () => {
     expect(result.trace[0]).toMatchObject({ status: "classified_false", pixelCount: component.pixelCount });
   });
 
-  it("traces reviewer rejection", async () => {
+  it("traces reviewer rejection and stores rejection reason", async () => {
     const result = await runTargetRecovery([component], makeCtx({
       recoveryCaller: vi.fn().mockResolvedValue({
         parsed: { classified: true, criterion: "geometry", severity: "medium", label: "Button", coordinateFrame: "expected", box: component.box, evidence: ["visible"] },
@@ -269,7 +269,18 @@ describe("runTargetRecovery", () => {
         rawContent: "", model: "review-model", provider: "nvidia"
       })
     }), unlimitedBudget);
-    expect(result.trace[0]).toMatchObject({ status: "recovery_rejected", model: "recovery-model", reviewerModel: "review-model" });
+    expect(result.trace[0]).toMatchObject({
+      status: "recovery_rejected",
+      model: "recovery-model",
+      reviewerModel: "review-model",
+      rejectionReason: "not supported"
+    });
+    expect(result.regionOutcomes[0]).toMatchObject({
+      regionId: "component-0001",
+      state: "unresolved",
+      reason: "reviewer_rejected: not supported",
+      rejectionReason: "not supported"
+    });
   });
 
   it("uses maxComponents as a batch size instead of skipping later components", async () => {
