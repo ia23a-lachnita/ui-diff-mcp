@@ -189,7 +189,10 @@ export const UiArtifactSchema = z.object({
     "coverage_trace",
     "recovery_trace",
     "debug_summary",
-    "provider_trace"
+    "provider_trace",
+    "unresolved_regions_overlay",
+    "final_diff_regions_overlay",
+    "region_context_overlay"
   ]),
   path: z.string().min(1),
   pairId: z.string().optional(),
@@ -203,6 +206,8 @@ export const UnresolvedRegionSchema = z.object({
   location: BoxSchema,
   pixelCount: z.number().int().positive(),
   sourceComponentIds: z.array(z.string().min(1)).min(1),
+  relatedFindingIds: z.array(z.string().min(1)).default([]),
+  relation: z.enum(["nearby_larger_finding", "inside_larger_finding", "none"]).default("none"),
   reason: z.enum([
     "not_classified",
     "audit_route_exhausted",
@@ -455,6 +460,8 @@ export type AuditCriterionTrace = z.infer<typeof AuditCriterionTraceSchema>;
 export const CoverageDecisionStatusSchema = z.enum([
   "below_threshold",
   "covered_by_diff",
+  "covered_by_residual_rule",
+  "noise_residual_fragment",
   "uncovered"
 ]);
 
@@ -515,6 +522,8 @@ export const RunDebugSummarySchema = z.object({
   coverageCovered: z.number().int().min(0),
   coverageUncovered: z.number().int().min(0),
   coverageBelowThreshold: z.number().int().min(0),
+  coverageResidualCovered: z.number().int().min(0).default(0),
+  coverageResidualNoise: z.number().int().min(0).default(0),
   recoveryAttempted: z.number().int().min(0),
   recoveryAccepted: z.number().int().min(0),
   recoveryRejected: z.number().int().min(0),

@@ -67,7 +67,7 @@ The current report preserves `unresolvedRegions[].location`, but the run-level a
   - `relatedFindingIds?: string[]`
   - `relation?: "nearby_larger_finding" | "inside_larger_finding" | "none"`
 
-- [ ] **Step 1: Write failing schema tests**
+- [x] **Step 1: Write failing schema tests**
 
 Add tests that assert:
 
@@ -99,7 +99,7 @@ expect(UnresolvedRegionSchema.parse({
 }).relatedFindingIds).toEqual(["diff-large"]);
 ```
 
-- [ ] **Step 2: Verify red**
+- [x] **Step 2: Verify red**
 
 Run:
 
@@ -109,7 +109,7 @@ npx vitest run tests/unit/schemas.test.ts
 
 Expected: FAIL because the new enum values/fields do not exist.
 
-- [ ] **Step 3: Implement schema additions**
+- [x] **Step 3: Implement schema additions**
 
 Update `UiArtifactSchema.role`, `CoverageDecisionStatusSchema`, `CoverageDecisionTraceSchema`, `UnresolvedRegionSchema`, and `RunDebugSummarySchema` with the new fields. In `summarizeRunDebug()`, populate:
 
@@ -120,7 +120,7 @@ coverageResidualNoise: trace.coverage.filter(t => t.status === "noise_residual_f
 
 This is required because `RunDebugSummarySchema.parse(summary)` validates the object at runtime.
 
-- [ ] **Step 4: Verify green**
+- [x] **Step 4: Verify green**
 
 Run:
 
@@ -130,7 +130,7 @@ npx vitest run tests/unit/schemas.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit and push**
+- [x] **Step 5: Commit and push**
 
 Update `docs/implementation-status.md`, then:
 

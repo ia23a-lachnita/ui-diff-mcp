@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { DiffRecordSchema, StageStatusSchema, UiArtifactSchema, UiDiffReportSchema, ModelSelectionSchema } from "../../src/schemas/core.js";
+import {
+  CoverageDecisionTraceSchema,
+  DiffRecordSchema,
+  ModelSelectionSchema,
+  RunDebugSummarySchema,
+  StageStatusSchema,
+  UiArtifactSchema,
+  UiDiffReportSchema,
+  UnresolvedRegionSchema
+} from "../../src/schemas/core.js";
 
 function makeMinimalReport(overrides: Record<string, unknown> = {}) {
   return {
@@ -25,6 +34,69 @@ describe("core schemas", () => {
       role: "actual_comparison_space",
       path: "C:/run/actual-comparison-space.png"
     })).toMatchObject({ role: "actual_comparison_space" });
+  });
+
+  it("accepts full-screen context overlay artifacts", () => {
+    expect(UiArtifactSchema.parse({
+      role: "region_context_overlay",
+      path: "C:/run/region-context-overlay.png"
+    })).toMatchObject({ role: "region_context_overlay" });
+    expect(UiArtifactSchema.parse({
+      role: "unresolved_regions_overlay",
+      path: "C:/run/unresolved-regions-overlay.png"
+    })).toMatchObject({ role: "unresolved_regions_overlay" });
+    expect(UiArtifactSchema.parse({
+      role: "final_diff_regions_overlay",
+      path: "C:/run/final-diff-regions-overlay.png"
+    })).toMatchObject({ role: "final_diff_regions_overlay" });
+  });
+
+  it("accepts residual coverage trace statuses and unresolved region relation metadata", () => {
+    expect(CoverageDecisionTraceSchema.parse({
+      componentId: "component-1",
+      componentBox: { x: 10, y: 10, width: 3, height: 30 },
+      pixelCount: 90,
+      status: "noise_residual_fragment",
+      coveringDiffId: "diff-large",
+      coveringCriterion: "geometry",
+      overlapRatio: 0
+    }).status).toBe("noise_residual_fragment");
+
+    expect(UnresolvedRegionSchema.parse({
+      id: "region-1",
+      location: { x: 10, y: 10, width: 3, height: 30 },
+      pixelCount: 90,
+      sourceComponentIds: ["component-1"],
+      reason: "not_classified",
+      relatedFindingIds: ["diff-large"],
+      relation: "nearby_larger_finding",
+      artifactPaths: []
+    }).relatedFindingIds).toEqual(["diff-large"]);
+  });
+
+  it("debug summary records residual coverage counters", () => {
+    const parsed = RunDebugSummarySchema.parse({
+      auditPairs: 0,
+      auditCriterionCalls: 0,
+      auditAccepted: 0,
+      auditRejected: 0,
+      auditNoDiff: 0,
+      auditErrors: 0,
+      coverageComponents: 2,
+      coverageCovered: 0,
+      coverageUncovered: 0,
+      coverageBelowThreshold: 0,
+      coverageResidualCovered: 1,
+      coverageResidualNoise: 1,
+      recoveryAttempted: 0,
+      recoveryAccepted: 0,
+      recoveryRejected: 0,
+      recoveryClassifiedFalse: 0,
+      recoveryErrors: 0,
+      recoverySkipped: 0
+    });
+
+    expect(parsed.coverageResidualNoise).toBe(1);
   });
 
   it("parses legacy complete stage records fail-closed as incomplete", () => {

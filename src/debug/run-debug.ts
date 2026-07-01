@@ -76,6 +76,8 @@ export function summarizeRunDebug(trace: RunDebugTrace): RunDebugSummary {
     coverageCovered: trace.coverage.filter(t => t.status === "covered_by_diff").length,
     coverageUncovered: trace.coverage.filter(t => t.status === "uncovered").length,
     coverageBelowThreshold: trace.coverage.filter(t => t.status === "below_threshold").length,
+    coverageResidualCovered: trace.coverage.filter(t => t.status === "covered_by_residual_rule").length,
+    coverageResidualNoise: trace.coverage.filter(t => t.status === "noise_residual_fragment").length,
     recoveryAttempted: trace.recovery.filter(t =>
       !t.status.startsWith("skipped_") && t.status !== "below_threshold"
     ).length,
