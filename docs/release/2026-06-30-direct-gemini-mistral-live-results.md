@@ -163,3 +163,72 @@ External post-implementation review:
 Updated production decision:
 
 The core UI-diff pipeline and Calorix strict release path are green as of run `run-1782901487720-7911f4`. Remaining caveats are provider-specific: OpenRouter-only free-mode route selection and OpenCode public/free quota are not green. Do not describe visual validation as exhaustive; only sampled artifact inspection was performed.
+
+## Fresh Live Gate Rerun - 2026-07-01
+
+Purpose: rerun the live gates after the region-context/residual-dedup implementation instead of relying only on the earlier strict evidence.
+
+Verification:
+
+| Gate | Result | Notes |
+| --- | --- | --- |
+| `verify:gemini-live` | FAIL | Gemini API returned HTTP 429 quota before structured parsing. This is provider quota, not a local JSON/parser failure. |
+| `verify:mistral-live` | PASS | 2/2 direct Mistral tests. |
+| `verify:nvidia-live` | PASS | 4/4 NVIDIA tests. |
+| `verify:mcp-live` | PASS | 1/1 default MCP live test. |
+| `verify:calorix-live` | PASS | Bounded smoke with `UI_DIFF_MAX_AUDIT_PAIRS=3`, run `run-1782905015156-4946dc`. |
+| `verify:calorix-full-live` | PASS diagnostic | Full unbounded diagnostic, run `run-1782905395846-f0ed65`. |
+| `verify:calorix-release-live` | PASS release | Strict release run `run-1782907345216-1d5c56`. |
+| `verify:openrouter-free-live` | FAIL | Direct OpenRouter test passed, but OpenRouter-only MCP report had no selected OpenRouter auditor/reviewer route (`report.modelSelection?.auditor?.provider === undefined`). |
+| `verify:opencode-live` | FAIL | One-image/simple OpenCode checks passed, but the five-image auditor/reviewer/recovery role probe did not pass. |
+
+Strict release run: `run-1782907345216-1d5c56`.
+
+Report summary:
+
+- `status:"complete"`
+- `visualClassificationStatus:"complete"`
+- `locatorCoverageStatus:"complete"`
+- `viewportCompatibilityStatus:"mismatch"` with source crops preserved and safe classification sources
+- `auditLimited:false`
+- Audit scope: 79 total pairs, 8 deterministic pre-audit pairs, 71 VLM-audited/provider-called pairs, 0 failed pairs, 0 remaining pairs, `stoppedReason:"none"`
+- Recovery: 24 uncovered regions after clustering, 23 eligible/attempted, 23 completed, 21 recovered final diffs, 2 `classified_false`, 1 below threshold, 0 unclassified, `stoppedReason:"none"`
+- Final diffs: 206 total; 204 accepted, 2 deterministic `not_reviewed`, 0 `needs_escalation`
+- Classification sources: 183 `vlm_reviewed`, 21 `target_recovery`, 2 `deterministic_projected_mismatch`
+- Criteria: 71 `geometry`, 67 `spacing_alignment`, 57 `color_appearance`, 6 `icon_image`, 3 `typography_content`, 2 `presence`
+- `unresolvedRegions.length === 0`
+- Residual fragment handling: `debugSummary.coverageResidualNoise === 7`
+
+Selected routes:
+
+- Auditor: `mistral/ministral-14b-2512`, `costClass:"free"`
+- Reviewer: `mistral/ministral-14b-2512`, `costClass:"free"`
+- Target recovery: `mistral/ministral-14b-2512`, `costClass:"free"`
+
+Provider behavior:
+
+- Provider trace: 425 `call_start`, 425 `call_success`, 0 `call_error`, 0 `fallback`, 0 `route_exhausted`.
+- Gemini route probes failed in this run: `gemini-3.1-pro-preview` returned HTTP 429 quota; `gemini-3.5-flash` timed out during probes.
+- The successful full audit/review/recovery workload ran on Mistral, not Gemini.
+
+Primary artifacts:
+
+- `C:\Users\xursc\projects\calorix\.ui-diff\runs\run-1782907345216-1d5c56\artifacts\final-diff-regions-overlay.png`
+- `C:\Users\xursc\projects\calorix\.ui-diff\runs\run-1782907345216-1d5c56\artifacts\unresolved-regions-overlay.png`
+- `C:\Users\xursc\projects\calorix\.ui-diff\runs\run-1782907345216-1d5c56\artifacts\region-context-overlay.png`
+- `C:\Users\xursc\projects\calorix\.ui-diff\runs\run-1782907345216-1d5c56\artifacts\coverage-trace.json`
+- `C:\Users\xursc\projects\calorix\.ui-diff\runs\run-1782907345216-1d5c56\artifacts\recovery-trace.json`
+- `C:\Users\xursc\projects\calorix\.ui-diff\runs\run-1782907345216-1d5c56\artifacts\provider-trace.json`
+
+Visual validation performed: sampled, not exhaustive. The run was validated through strict gate assertions and report/trace inspection; only representative final records and artifact paths were inspected manually in this rerun.
+
+Production decision update:
+
+The core UI-diff pipeline and Calorix strict release path remain green as of `run-1782907345216-1d5c56`. Provider-specific optional paths are still not green: Gemini is quota-blocked in this shell, OpenRouter-only MCP mode still fails route selection, and OpenCode does not pass the five-image role probe.
+
+External post-rerun review:
+
+- Antigravity MCP with `gemini-3.1-pro-preview`: `AGREEMENT_STATUS: agree`, `MUST_FIX: none`.
+- Reviewer confirmed the strict run/report/provider-trace statistics and accepted the production wording: core pipeline plus Calorix strict release path are green, optional provider-specific gates still have caveats.
+- SHOULD_FIX only: later cleanup can replace old progress-log `this commit` placeholders with concrete SHAs and consider moving the accumulated 2026-07-01 results into a date-specific release file.
+- MCP response noise: none observed beyond the normal footer identifying the model/backend.
