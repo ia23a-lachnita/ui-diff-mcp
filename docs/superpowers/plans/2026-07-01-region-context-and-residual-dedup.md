@@ -273,11 +273,11 @@ git push
   - `unresolved-regions-overlay.png`
   - `region-context-overlay.png`
 
-- [ ] **Step 1: Write failing artifact test**
+- [x] **Step 1: Write failing artifact test**
 
 Create `tests/unit/context-overlays.test.ts` that writes a 200x400 base image, one accepted diff, one unresolved region, one card element, and asserts all three PNG paths exist and appear as `UiArtifact` roles.
 
-- [ ] **Step 2: Verify red**
+- [x] **Step 2: Verify red**
 
 Run:
 
@@ -287,7 +287,7 @@ npx vitest run tests/unit/context-overlays.test.ts
 
 Expected: FAIL because the module does not exist.
 
-- [ ] **Step 3: Implement SVG annotation overlay helper**
+- [x] **Step 3: Implement SVG annotation overlay helper**
 
 Use Sharp compositing with generated SVG:
 
@@ -299,7 +299,7 @@ Use Sharp compositing with generated SVG:
 
 Element outlines are drawn in comparison space. Expected elements can be drawn directly. Actual elements in dual-locator mode must be transformed into comparison space before drawing; projected actual elements already live in expected/comparison space.
 
-- [ ] **Step 4: Verify green**
+- [x] **Step 4: Verify green**
 
 Run:
 
@@ -309,7 +309,7 @@ npx vitest run tests/unit/context-overlays.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit and push**
+- [x] **Step 5: Commit and push**
 
 Update `docs/implementation-status.md`, then:
 
