@@ -28,7 +28,7 @@ import { makeGeminiVisionCaller } from "../models/gemini-client.js";
 import { makeMistralVisionCaller } from "../models/mistral-client.js";
 import { resolveVisionProviderConfig, type VisionProviderConfig } from "../models/provider-config.js";
 import { auditElementPair, makeElementSlug, type AuditContext } from "../audit/audit-target.js";
-import { reviewAndMergeFindings } from "../audit/review-findings.js";
+import { filterAcceptedDiffs, reviewAndMergeFindings } from "../audit/review-findings.js";
 import { prepareRecoveryRegionArtifacts, runTargetRecovery } from "../recovery/target-recovery.js";
 import { writeRunDebugArtifacts, summarizeAuditPairOutcomes, type AuditPairOutcome, type RunDebugTrace } from "../debug/run-debug.js";
 import { ProviderTraceWriter, writeProviderTrace } from "../debug/provider-trace.js";
@@ -871,8 +871,9 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
             reviewerCaller
           });
           debugTrace.recovery.push(...recoveryResult.trace);
-          allDiffs.push(...recoveryResult.recovered);
-          applyFindingCoverage(regionLedger, recoveryResult.recovered);
+          const activeRecovered = filterAcceptedDiffs(recoveryResult.recovered);
+          allDiffs.push(...activeRecovered);
+          applyFindingCoverage(regionLedger, activeRecovered);
           applyRecoveryOutcomes(regionLedger, recoveryResult.regionOutcomes);
           applyResidualSuppression(regionLedger);
           debugTrace.coverage = regionLedger.coverageTrace;
@@ -885,7 +886,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
             batchCount: recoveryResult.batchCount,
             attemptedComponents: recoveryResult.attemptedComponents,
             skippedComponents: recoveryResult.skippedComponents,
-            recoveredDiffs: recoveryResult.recovered.length,
+            recoveredDiffs: activeRecovered.length,
             unclassifiedCount: recoveryResult.unclassifiedCount,
             stoppedReason: recoveryResult.stoppedReason,
             preClusterUncoveredComponents,
@@ -931,7 +932,8 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     imageWidth: expectedImg.width,
     imageHeight: expectedImg.height
   });
-  applyFindingCoverage(regionLedger, allDiffs);
+  const activeDiffs = filterAcceptedDiffs(allDiffs);
+  applyFindingCoverage(regionLedger, activeDiffs);
   applyResidualSuppression(regionLedger);
   debugTrace.coverage = regionLedger.coverageTrace;
   const artifactlessRegions = regionLedger.regions.filter(region => region.state === "unresolved" && region.artifactPaths.length === 0);
@@ -961,7 +963,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
       : recoverySummary?.stoppedReason && recoverySummary.stoppedReason !== "none"
         ? "recovery_budget_exhausted" as const
         : "not_classified" as const;
-  const finalDiffs = consolidateFindings(allDiffs, [...expectedElements, ...actualElements], pairs);
+  const finalDiffs = consolidateFindings(activeDiffs, [...expectedElements, ...actualElements], pairs);
   const unresolvedRegions = unresolvedRegionsFromLedger(regionLedger, unresolvedReason);
 
   const contextArtifacts = await writeRegionContextOverlays({

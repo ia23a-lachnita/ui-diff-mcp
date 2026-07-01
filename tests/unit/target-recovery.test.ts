@@ -401,7 +401,7 @@ describe("runTargetRecovery", () => {
     const { recovered, unclassifiedCount } = await runTargetRecovery([component], ctx, unlimitedBudget);
     expect(recovered).toHaveLength(1);
     expect(recovered[0]?.reviewerStatus).toBe("needs_escalation");
-    expect(unclassifiedCount).toBe(0);
+    expect(unclassifiedCount).toBe(1);
   });
 
   it("returns the recovery model name in the result", async () => {

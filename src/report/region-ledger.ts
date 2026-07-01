@@ -117,6 +117,8 @@ export function unresolvedRegionsFromLedger(
       location: region.box,
       pixelCount: region.pixelCount,
       sourceComponentIds: region.sourceComponentIds,
+      relatedFindingIds: region.coveringFindingIds,
+      relation: region.coveringFindingIds.length > 0 ? "nearby_larger_finding" : "none",
       reason,
       ...(region.unresolvedDetail ? { detail: region.unresolvedDetail } : {}),
       artifactPaths: region.artifactPaths

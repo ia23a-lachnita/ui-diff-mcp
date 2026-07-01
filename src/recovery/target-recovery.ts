@@ -485,6 +485,9 @@ export async function runTargetRecovery(
     }
 
     const diffId = crypto.randomBytes(6).toString("hex");
+    if (reviewDecision === "needs_escalation") {
+      unclassifiedCount++;
+    }
     const baseMeasurements = (vlmResponse.measurements ?? []).map(m => ({
       name: m.name,
       value: m.value as string | number | boolean,

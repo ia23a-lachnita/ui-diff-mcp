@@ -38,6 +38,8 @@ function region(id: string): UnresolvedRegion {
     location: { x: 120, y: 160, width: 3, height: 28 },
     pixelCount: 80,
     sourceComponentIds: ["component-1"],
+    relatedFindingIds: [],
+    relation: "none",
     reason: "not_classified",
     artifactPaths: []
   };

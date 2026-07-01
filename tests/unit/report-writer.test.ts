@@ -110,6 +110,8 @@ describe("writeUiDiffReport", () => {
           location: { x: 1, y: 2, width: 10, height: 11 },
           pixelCount: 45,
           sourceComponentIds: ["component-1"],
+          relatedFindingIds: [],
+          relation: "none",
           reason: "not_classified",
           artifactPaths: []
         },
@@ -118,6 +120,8 @@ describe("writeUiDiffReport", () => {
           location: { x: 30, y: 40, width: 20, height: 10 },
           pixelCount: 80,
           sourceComponentIds: ["component-2", "component-3"],
+          relatedFindingIds: [],
+          relation: "none",
           reason: "recovery_budget_exhausted",
           artifactPaths: []
         }

@@ -103,3 +103,63 @@ Antigravity MCP with `gemini-3.1-pro-preview` independently reviewed the strict 
 ## Production Decision
 
 Not production-ready yet. The provider capacity blocker is materially improved: the full run no longer times out, and Mistral completed all audit pairs. The remaining blockers are now pipeline/report semantics around unresolved recovery rejection and `needs_escalation` final diff handling, not total provider unavailability. The new MAX_TOKENS fix and recovery rejection reason persistence are verified and active for the next run.
+
+## Region Context And Residual Dedup Rerun - 2026-07-01
+
+Implementation plan: `docs/superpowers/plans/2026-07-01-region-context-and-residual-dedup.md`.
+
+Verification:
+
+| Gate | Result | Notes |
+| --- | --- | --- |
+| `npm run verify` | PASS | 530 unit/e2e tests, 16 Python sidecar parser tests, build/typecheck clean, 22 integration tests. |
+| `verify:gemini-live` | PASS | 2/2. |
+| `verify:mistral-live` | PASS | 2/2. |
+| `verify:nvidia-live` | PASS | 4/4. |
+| `verify:mcp-live` | PASS | 1/1 after final escalation filtering. |
+| `verify:calorix-live` | PASS | Bounded smoke passed with `UI_DIFF_MAX_AUDIT_PAIRS=3`. |
+| `verify:calorix-full-live` | PASS diagnostic | Passed before the final escalation filtering patch. |
+| `verify:calorix-release-live` | PASS release | Strict run `run-1782901487720-7911f4`. |
+| `verify:openrouter-free-live` | FAIL | OpenRouter-only MCP run did not select an OpenRouter auditor/reviewer route. Treat as provider-route availability, not core pipeline evidence. |
+| `verify:opencode-live` | FAIL | OpenCode public/free route returned HTTP 429 `Too many requests`. |
+
+Strict release run: `run-1782901487720-7911f4`.
+
+Report summary:
+
+- `status:"complete"`
+- `visualClassificationStatus:"complete"`
+- `locatorCoverageStatus:"complete"`
+- `viewportCompatibilityStatus:"mismatch"` with source crops preserved and safe classification sources
+- `auditLimited:false`
+- Audit scope: 79 total pairs, 8 deterministic pre-audit pairs, 71 VLM-audited pairs, 0 failed pairs, 0 remaining pairs, `stoppedReason:"none"`
+- Recovery: 24 uncovered regions after clustering, 23 eligible/attempted, 23 completed, 21 recovered final diffs, 2 `classified_false`, 1 below threshold, 0 unclassified, `stoppedReason:"none"`
+- Final diffs: 210 total; 208 accepted, 2 deterministic `not_reviewed`, 0 `needs_escalation`
+- Classification sources: 187 `vlm_reviewed`, 21 `target_recovery`, 2 `deterministic_projected_mismatch`
+- `unresolvedRegions.length === 0`
+- Residual fragment handling: `debugSummary.coverageResidualNoise === 7`
+
+Provider behavior:
+
+- Selected route for auditor/reviewer/target recovery: `mistral/ministral-14b-2512` with `costClass:"free"`.
+- Provider trace: 427 `call_success`, 0 `call_error`, 0 `fallback`, 0 `route_exhausted`.
+- Provider trace total token count: 474,409.
+
+New artifacts:
+
+- `artifacts/final-diff-regions-overlay.png`
+- `artifacts/unresolved-regions-overlay.png`
+- `artifacts/region-context-overlay.png`
+- `artifacts/coverage-trace.json`
+- `artifacts/recovery-trace.json`
+
+Visual validation performed: sampled, not exhaustive. The latest unresolved overlay was inspected and contains no unresolved magenta boxes because the final report has zero unresolved regions. The combined context overlay was inspected and shows final finding boxes plus element/card outlines, making the full-screen origin of diffs visible. The overlay is dense on Calorix-scale screens, so later polish can improve readability, but it satisfies the report-truth/debuggability requirement.
+
+External post-implementation review:
+
+- Antigravity MCP with `gemini-3.1-pro-preview`: `AGREEMENT_STATUS: agree`, `MUST_FIX: none`, `SHOULD_FIX: none`.
+- No unrelated MCP wrapper/noise was observed in the post-implementation review response.
+
+Updated production decision:
+
+The core UI-diff pipeline and Calorix strict release path are green as of run `run-1782901487720-7911f4`. Remaining caveats are provider-specific: OpenRouter-only free-mode route selection and OpenCode public/free quota are not green. Do not describe visual validation as exhaustive; only sampled artifact inspection was performed.

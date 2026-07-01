@@ -65,7 +65,17 @@ export function deduplicateDiffs(diffs: DiffRecord[]): DiffRecord[] {
 }
 
 export function filterAcceptedDiffs(diffs: DiffRecord[]): DiffRecord[] {
-  return diffs.filter(d => d.reviewerStatus !== "rejected");
+  return diffs.filter(d =>
+    d.reviewerStatus === "accepted" ||
+    (
+      d.reviewerStatus === "not_reviewed" &&
+      (
+        d.classificationSource === "deterministic_projected_mismatch" ||
+        d.classificationSource === "deterministic_geometry" ||
+        d.classificationSource === "deterministic_presence"
+      )
+    )
+  );
 }
 
 export function reviewAndMergeFindings(rawDiffs: DiffRecord[]): DiffRecord[] {

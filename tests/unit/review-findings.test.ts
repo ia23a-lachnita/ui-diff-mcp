@@ -48,6 +48,21 @@ describe("filterAcceptedDiffs", () => {
     const rejected = makeDiff({ id: "b", reviewerStatus: "rejected" });
     expect(filterAcceptedDiffs([accepted, rejected])).toEqual([accepted]);
   });
+
+  it("removes needs_escalation diffs from final findings", () => {
+    const accepted = makeDiff({ id: "a", reviewerStatus: "accepted" });
+    const escalated = makeDiff({ id: "b", reviewerStatus: "needs_escalation" });
+    expect(filterAcceptedDiffs([accepted, escalated])).toEqual([accepted]);
+  });
+
+  it("keeps deterministic not_reviewed findings as final evidence", () => {
+    const deterministic = makeDiff({
+      id: "det",
+      reviewerStatus: "not_reviewed",
+      classificationSource: "deterministic_projected_mismatch"
+    });
+    expect(filterAcceptedDiffs([deterministic])).toEqual([deterministic]);
+  });
 });
 
 describe("reviewAndMergeFindings", () => {
