@@ -336,7 +336,7 @@ git push
 - Context overlays run after `finalDiffs` and `unresolvedRegions` are computed.
 - `index.json` includes run-level context overlays in `runArtifacts`.
 
-- [ ] **Step 1: Write failing e2e assertions**
+- [x] **Step 1: Write failing e2e assertions**
 
 In the deterministic-only e2e test, assert:
 
@@ -346,7 +346,7 @@ expect(report.runArtifacts.some(a => a.role === "unresolved_regions_overlay")).t
 expect(report.runArtifacts.some(a => a.role === "final_diff_regions_overlay")).toBe(true);
 ```
 
-- [ ] **Step 2: Verify red**
+- [x] **Step 2: Verify red**
 
 Run:
 
@@ -356,7 +356,7 @@ npx vitest run tests/e2e/compare-ui-images.test.ts
 
 Expected: FAIL because the pipeline does not write those run artifacts.
 
-- [ ] **Step 3: Wire residual classifier**
+- [x] **Step 3: Wire residual classifier**
 
 Create a local helper in `run-ui-diff.ts`:
 
@@ -380,11 +380,11 @@ Call it:
 
 Then build `uncoveredComponents` only from regions that remain `state:"unresolved"`.
 
-- [ ] **Step 4: Wire context overlays**
+- [x] **Step 4: Wire context overlays**
 
 After `finalDiffs` and `unresolvedRegions` are computed, call `writeRegionContextOverlays()` and append its artifacts to `runArtifacts` before building the final `UiDiffReport`. Pass `imagePairTransform` so any actual-source element outlines can be drawn in comparison space.
 
-- [ ] **Step 5: Verify green**
+- [x] **Step 5: Verify green**
 
 Run:
 
@@ -394,7 +394,7 @@ npx vitest run tests/e2e/compare-ui-images.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit and push**
+- [x] **Step 6: Commit and push**
 
 Update `docs/implementation-status.md`, then:
 

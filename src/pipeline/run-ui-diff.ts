@@ -7,6 +7,8 @@ import { createImagePairTransform } from "../images/coordinates.js";
 import { computeViewportCompatibility } from "../images/viewport.js";
 import { buildRegionLedger, applyFindingCoverage, applyRecoveryOutcomes, unresolvedRegionsFromLedger, type RegionLedger } from "../report/region-ledger.js";
 import { consolidateFindings } from "../report/finding-consolidation.js";
+import { applyResidualFragmentDecisions, classifyResidualFragments } from "../report/residual-fragments.js";
+import { writeRegionContextOverlays } from "../report/context-overlays.js";
 import { writeOverlay, writeJsonArtifact } from "../images/artifacts.js";
 import { computePixelDiff } from "../signals/pixel-diff.js";
 import { extractEdgeMask } from "../signals/edge.js";
@@ -220,6 +222,16 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     { role: "pixel_diff_mask", path: pixelDiffMaskPath },
     { role: "directional_overlay", path: directionalOverlayPath }
   ];
+
+  function applyResidualSuppression(ledger: RegionLedger): void {
+    const decisions = classifyResidualFragments(ledger.regions, allDiffs, {
+      maxDistancePx: 24,
+      maxResidualPixels: 120,
+      maxThinSidePx: 4,
+      minAreaMultiplier: 8
+    });
+    applyResidualFragmentDecisions(ledger, decisions);
+  }
 
   async function refreshProviderTraceArtifact(): Promise<void> {
     const artifact = await writeProviderTrace(artifactRoot, providerTrace);
@@ -787,6 +799,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
           imageWidth: expectedImg.width,
           imageHeight: expectedImg.height
         });
+        applyResidualSuppression(regionLedger);
         debugTrace.coverage = regionLedger.coverageTrace;
         const uncoveredComponents = regionLedger.regions
           .filter(region => region.state === "unresolved")
@@ -861,6 +874,8 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
           allDiffs.push(...recoveryResult.recovered);
           applyFindingCoverage(regionLedger, recoveryResult.recovered);
           applyRecoveryOutcomes(regionLedger, recoveryResult.regionOutcomes);
+          applyResidualSuppression(regionLedger);
+          debugTrace.coverage = regionLedger.coverageTrace;
           recoveryCursor = recoveryResult.cursor;
           recoverySummary = {
             totalUncoveredComponents: uncoveredComponents.length,
@@ -917,6 +932,8 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     imageHeight: expectedImg.height
   });
   applyFindingCoverage(regionLedger, allDiffs);
+  applyResidualSuppression(regionLedger);
+  debugTrace.coverage = regionLedger.coverageTrace;
   const artifactlessRegions = regionLedger.regions.filter(region => region.state === "unresolved" && region.artifactPaths.length === 0);
   if (artifactlessRegions.length > 0) {
     const prepared = await prepareRecoveryRegionArtifacts(
@@ -944,8 +961,20 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
       : recoverySummary?.stoppedReason && recoverySummary.stoppedReason !== "none"
         ? "recovery_budget_exhausted" as const
         : "not_classified" as const;
-  const unresolvedRegions = unresolvedRegionsFromLedger(regionLedger, unresolvedReason);
   const finalDiffs = consolidateFindings(allDiffs, [...expectedElements, ...actualElements], pairs);
+  const unresolvedRegions = unresolvedRegionsFromLedger(regionLedger, unresolvedReason);
+
+  const contextArtifacts = await writeRegionContextOverlays({
+    actualComparisonPath,
+    directionalOverlayPath,
+    artifactDir: artifactRoot,
+    diffs: finalDiffs,
+    unresolvedRegions,
+    elements: expectedElements,
+    actualElements,
+    imagePairTransform
+  });
+  runArtifacts.push(...contextArtifacts);
 
   // Write debug trace artifacts and attach summary to the report
   const debugArtifactsResult = await writeRunDebugArtifacts(artifactRoot, debugTrace);

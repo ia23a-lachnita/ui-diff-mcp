@@ -53,6 +53,12 @@ describe("runUiDiff end-to-end (deterministic_only mode)", () => {
     expect(report.visualClassificationStatus).toBe("not_run");
     expect(report.unresolvedRegions.length).toBeGreaterThan(0);
     expect(report.unresolvedRegions.every(region => region.artifactPaths.length === 4)).toBe(true);
+    const artifactRoles = (report as unknown as { runArtifacts: Array<{ role: string }> }).runArtifacts.map(artifact => artifact.role);
+    expect(artifactRoles).toEqual(expect.arrayContaining([
+      "region_context_overlay",
+      "unresolved_regions_overlay",
+      "final_diff_regions_overlay"
+    ]));
     const stageMap = Object.fromEntries((report as unknown as { stages: Array<{ name: string; status: string; outcome: string }> }).stages
       .map(stage => [stage.name, stage]));
     for (const name of ["model_probe", "audit", "target_recovery"]) {
