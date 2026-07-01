@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { findUncoveredComponents, assignDiffComponentsToRecords, traceCoverageDecisions } from "../../src/report/coverage.js";
 import { clusterUncoveredComponents } from "../../src/report/component-clustering.js";
 import { buildRegionLedger, unresolvedRegionsFromLedger } from "../../src/report/region-ledger.js";
+import { applyResidualFragmentDecisions, classifyResidualFragments } from "../../src/report/residual-fragments.js";
 import type { PixelComponent } from "../../src/signals/pixel-diff.js";
 import type { DiffRecord } from "../../src/schemas/core.js";
 
@@ -209,5 +210,65 @@ describe("buildRegionLedger", () => {
     expect(ledger.regions).toHaveLength(2);
     expect(ledger.regions.map(region => region.sourceComponentIds.length)).toEqual([2, 2]);
     expect(unresolvedRegionsFromLedger(ledger, "not_classified")).toHaveLength(2);
+  });
+});
+
+describe("residual fragment classification", () => {
+  it("marks a tiny sliver near a larger accepted finding as residual noise", () => {
+    const ledger = buildRegionLedger([makeComponent(544, 2241, 3, 28, 80)], [], {
+      minPixelCount: 50,
+      maxGapPx: 12,
+      maxClusterAreaRatio: 0.5,
+      imageWidth: 1200,
+      imageHeight: 2600
+    });
+    const largeFinding = {
+      ...makeDiff(500, 2200, 250, 220),
+      id: "diff-large",
+      classificationSource: "vlm_reviewed" as const,
+      reviewerStatus: "accepted" as const
+    };
+
+    const decisions = classifyResidualFragments(ledger.regions, [largeFinding], {
+      maxDistancePx: 24,
+      maxResidualPixels: 120,
+      maxThinSidePx: 4,
+      minAreaMultiplier: 8
+    });
+    applyResidualFragmentDecisions(ledger, decisions);
+
+    expect(unresolvedRegionsFromLedger(ledger, "not_classified")).toHaveLength(0);
+    expect(ledger.regions[0]).toMatchObject({
+      state: "noise",
+      coveringFindingIds: ["diff-large"],
+      unresolvedDetail: expect.stringContaining("residual")
+    });
+    expect(ledger.coverageTrace[0]).toMatchObject({
+      status: "noise_residual_fragment",
+      coveringDiffId: "diff-large",
+      coveringCriterion: "geometry"
+    });
+  });
+
+  it("keeps a meaningful uncovered region unresolved", () => {
+    const ledger = buildRegionLedger([makeComponent(100, 100, 80, 60, 1000)], [], {
+      minPixelCount: 50,
+      maxGapPx: 12,
+      maxClusterAreaRatio: 0.5,
+      imageWidth: 1200,
+      imageHeight: 2600
+    });
+
+    const decisions = classifyResidualFragments(ledger.regions, [
+      { ...makeDiff(400, 400, 200, 200), id: "far-diff", reviewerStatus: "accepted" }
+    ], {
+      maxDistancePx: 24,
+      maxResidualPixels: 120,
+      maxThinSidePx: 4,
+      minAreaMultiplier: 8
+    });
+    applyResidualFragmentDecisions(ledger, decisions);
+
+    expect(unresolvedRegionsFromLedger(ledger, "not_classified")).toHaveLength(1);
   });
 });

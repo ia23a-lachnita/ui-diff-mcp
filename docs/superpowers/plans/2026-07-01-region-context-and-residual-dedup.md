@@ -162,7 +162,7 @@ git push
   - and the larger finding area is at least `minAreaMultiplier` times the residual area
   - and the larger finding has `reviewerStatus:"accepted"` or a deterministic classification source
 
-- [ ] **Step 1: Write failing residual tests**
+- [x] **Step 1: Write failing residual tests**
 
 Add tests:
 
@@ -213,7 +213,7 @@ it("keeps a meaningful uncovered region unresolved", () => {
 });
 ```
 
-- [ ] **Step 2: Verify red**
+- [x] **Step 2: Verify red**
 
 Run:
 
@@ -223,11 +223,11 @@ npx vitest run tests/unit/coverage.test.ts
 
 Expected: FAIL because `classifyResidualFragments` does not exist.
 
-- [ ] **Step 3: Implement classifier and trace mutation**
+- [x] **Step 3: Implement classifier and trace mutation**
 
 Implement box area, expanded containment, nearest larger finding selection, deterministic/accepted finding eligibility, and ledger application. Ledger application must mutate the coverage trace for all `sourceComponentIds` so `coverage-trace.json` and `debug-summary.json` explain why a component disappeared from recovery.
 
-- [ ] **Step 4: Verify green**
+- [x] **Step 4: Verify green**
 
 Run:
 
@@ -237,7 +237,7 @@ npx vitest run tests/unit/coverage.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit and push**
+- [x] **Step 5: Commit and push**
 
 Update `docs/implementation-status.md`, then:
 
