@@ -31,6 +31,7 @@ Calorix gates:
 | `verify:calorix-live` | PASS diagnostic | `run-1782825610895-462a0a` | Bounded 3-pair smoke, `auditLimited:true`, `visualClassificationStatus:"incomplete"` as expected for bounded mode. |
 | `verify:calorix-full-live` | PASS diagnostic | `run-1782826139774-c53fd4` | Full unbounded diagnostic completed in about 16 minutes using Gemini 3.5 Flash, but remained `visualClassificationStatus:"incomplete"` with 2 unresolved regions. |
 | `verify:calorix-release-live` | FAIL release | `run-1782827119715-d751f4` | Completed all 71 selected audit pairs with zero audit failures using Mistral Ministral 14B, but release failed because visual classification remained incomplete. |
+| `verify:calorix-release-live` | FAIL release | `run-1782886503519-a3233c` | Fresh 2026-07-01 strict run reached the full pipeline with `LOCATEANYTHING_SKIP_MODEL=1`. It completed all 71 selected/provider-called audit pairs with zero failed or remaining audit pairs, `auditLimited:false`, and no `needs_escalation`, but release still failed because recovery left 2 unresolved edge-fragment regions. |
 
 ## Strict Release Blocker
 
@@ -45,6 +46,44 @@ The strict release run is not production-ready:
 The one unresolved region (`region-0871`) is a small curved/ring edge around `x=860,y=173,w=41,h=76`. Its artifacts show expected nearly black pixels and an actual visible gray arc, so it appears to be a real visual difference that recovery did not resolve.
 
 The `needs_escalation` diff (`984e090cb0e3`) concerns the text crop for `left`: expected shows the word `left`, actual is essentially a green bar/blank region, and the overlay shows missing/misaligned expected text. This is also a real mismatch, but the reviewer left it unresolved, so the release gate correctly failed.
+
+## Fresh Strict Release Rerun - 2026-07-01
+
+Run ID: `run-1782886503519-a3233c`.
+
+Startup note: two attempts without `LOCATEANYTHING_SKIP_MODEL=1` failed before the pipeline because `/health` returned HTTP 200 but did not report `ready:true` inside the 120s helper window while the heavyweight LocateAnything worker loaded. The successful pipeline run used the sidecar v2 deterministic parser lanes with the worker skipped.
+
+Report summary:
+
+- `status:"complete"`
+- `visualClassificationStatus:"incomplete"`
+- `locatorCoverageStatus:"complete"`
+- `viewportCompatibilityStatus:"mismatch"`
+- `auditLimited:false`
+- Audit scope: 79 total pairs, 71 selected, 71 audited/provider-called, 0 failed pairs, 0 remaining pairs, `stoppedReason:"none"`
+- Final diffs: 167 total; 165 accepted, 2 `not_reviewed`
+- Classification sources: 141 `vlm_reviewed`, 24 `target_recovery`, 2 `deterministic_projected_mismatch`
+- Criteria: 59 geometry, 51 spacing/alignment, 44 color/appearance, 7 icon/image, 5 typography/content, 1 presence
+
+Model/provider behavior:
+
+- Probe ranking selected `gemini/gemini-3.5-flash` as auditor, reviewer, and target-recovery route. `gemini/gemini-3.1-pro-preview` still failed probes with HTTP 429 quota.
+- Runtime fallback worked: Gemini 3.5 hit HTTP 429 after initial calls, then Mistral 14B was tried, then Mistral 8B handled most audit/reviewer calls after Mistral 14B rate-limited on audit/reviewer.
+- Provider trace call successes: 436 total. Token trace total: 485,933 total tokens and 1,266 reasoning tokens where providers reported them.
+- Recovery used Mistral 14B successfully for 28 target-recovery calls after Gemini 3.5 recovery hit HTTP 429.
+
+Release blocker after rerun:
+
+- No `needs_escalation` diffs remain.
+- The two deterministic `not_reviewed` projected mismatches are valid final deterministic findings, not blockers:
+  - `396c1ca6c6b3` / `projected_crop_low_overlap`
+  - `6f642ae8f9e7` / `projected_crop_high_diff_mass`
+- Recovery remains incomplete:
+  - `recoverySummary.unclassifiedCount === 2`
+  - unresolved `region-0847`
+  - unresolved `region-0861`
+
+Visual validation performed: sampled, not exhaustive. The two deterministic projected group overlays were inspected and both looked like real structural UI mismatches. The two unresolved recovery regions were inspected and both looked like tiny edge/corner fragments rather than meaningful standalone UI diffs. This suggests the next pipeline work should focus on residual edge-fragment filtering or coverage attribution after structural projected findings, not broad provider failure.
 
 ## External Run Review
 
