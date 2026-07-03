@@ -49,7 +49,7 @@ function overlappingSemanticParent(finding: DiffRecord, elements: UiElement[]): 
   return elements
     .filter(eligibleParent)
     .map(element => ({ element, overlap: intersect(finding.location, element.box) }))
-    .filter((entry): entry is { element: UiElement; overlap: Box } => entry.overlap !== undefined)
+    .filter((entry): entry is { element: UiElement; overlap: Box } => entry.overlap !== undefined && entry.overlap !== null)
     .filter(entry => boxArea(entry.overlap) / boxArea(finding.location) >= 0.5)
     .sort((a, b) => boxArea(a.element.box) - boxArea(b.element.box))[0]?.element;
 }

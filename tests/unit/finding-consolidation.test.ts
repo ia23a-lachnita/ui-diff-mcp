@@ -199,4 +199,17 @@ describe("consolidateFindings", () => {
     expect(result[0]?.id).toBe("region-layout");
     expect(result[0]?.childFindingIds).toEqual(expect.arrayContaining(["region-layout", "label-layout"]));
   });
+
+  it("does not crash when a scope finding has no overlap with semantic parents", () => {
+    const card = element("card", "card", 20, 100, 200, 180);
+    const scopeFinding = finding("screen-color", undefined, "color_appearance", 400, 800, 120, 120);
+    scopeFinding.scopeId = "screen";
+    scopeFinding.scopeKind = "screen";
+    scopeFinding.scopeLabel = "Screen";
+
+    const result = consolidateFindings([scopeFinding], [card], []);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]?.id).toBe("screen-color");
+  });
 });
