@@ -192,7 +192,7 @@ describe("server tool handlers", () => {
       reportParts: [{ role: "diffs", path: "parts/diffs.json" }]
     };
     const d = deps({
-      readFile: vi.fn(async (filePath: fs.PathLike) => {
+      readFile: vi.fn(async (filePath: string | Buffer | URL) => {
         const p = String(filePath);
         if (p.endsWith("report.json")) return JSON.stringify(compact);
         if (p.endsWith(path.join("parts", "diffs.json"))) {

@@ -272,11 +272,11 @@ Threshold env overrides are not part of this implementation. They can be added l
 
 - [x] Document `diffScope` examples for `screen`, `regions`, `target`, and `full`.
 - [x] Document report parts and where to inspect token accounting.
-- [ ] Run `npm run verify`.
+- [x] Run `npm run verify`.
 - [ ] Run relevant live gates if credentials/sidecar/quota permit: at minimum `verify:mcp-live` and `verify:calorix-release-live` for report-contract changes.
 - [ ] Get Antigravity MCP post-implementation review green.
-- [ ] Record exact run IDs, model routes, final diff counts, `auditLimited`, visual classification status, usage summary, and any skipped gates.
-- [ ] Commit and push final docs/status.
+- [x] Record exact run IDs, model routes, final diff counts, `auditLimited`, visual classification status, usage summary, and any skipped gates.
+- [x] Commit and push final docs/status.
 
 ## Antigravity Review
 

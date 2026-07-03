@@ -64,8 +64,8 @@ describe("buildUsageSummary", () => {
     expect(summary.fallbackCalls).toBe(1);
     expect(summary.routeExhaustedCount).toBe(1);
     expect(summary.durationMs).toBe(80);
-    expect(summary.byPhase.audit.inputTokens).toBe(100);
-    expect(summary.byRole.auditor.outputTokens).toBe(20);
+    expect(summary.byPhase.audit?.inputTokens).toBe(100);
+    expect(summary.byRole.auditor?.outputTokens).toBe(20);
     expect(summary.byRoute["mistral/ministral-14b-2512"]?.totalTokens).toBe(200);
   });
 

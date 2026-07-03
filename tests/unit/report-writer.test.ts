@@ -188,7 +188,7 @@ describe("writeUiDiffReport", () => {
     const output = await writeUiDiffReport(report);
     const written = UiDiffReportSchema.parse(JSON.parse(await fs.readFile(output.reportPath, "utf8")));
 
-    expect(written.reportParts.map(part => part.role)).toEqual(expect.arrayContaining([
+    expect((written.reportParts ?? []).map(part => part.role)).toEqual(expect.arrayContaining([
       "elements",
       "pairs",
       "diffs",
@@ -197,7 +197,7 @@ describe("writeUiDiffReport", () => {
       "usage_summary",
       "scope_summary"
     ]));
-    expect(written.reportParts.every(part => !path.isAbsolute(part.path))).toBe(true);
+    expect((written.reportParts ?? []).every(part => !path.isAbsolute(part.path))).toBe(true);
     await expect(fs.access(path.join(tmpDir, "parts", "usage-summary.json"))).resolves.toBeUndefined();
     await expect(fs.access(path.join(tmpDir, "parts", "elements.json"))).resolves.toBeUndefined();
   });

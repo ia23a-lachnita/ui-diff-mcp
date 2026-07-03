@@ -638,7 +638,7 @@ export const UiDiffReportSchema = z.object({
   pairs: z.array(ElementPairSchema),
   diffs: z.array(DiffRecordSchema),
   unresolvedRegions: z.array(UnresolvedRegionSchema).default([]),
-  reportParts: z.array(ReportPartSchema).default([]),
+  reportParts: z.preprocess(value => value ?? [], z.array(ReportPartSchema).optional()),
   usageSummary: UsageSummarySchema.optional(),
   diffSummary: DiffSummarySchema.optional(),
   modelHealth: z.array(z.object({

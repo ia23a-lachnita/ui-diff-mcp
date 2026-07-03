@@ -91,10 +91,11 @@ export async function hydrateReportParts(
   reportPath: string,
   readFile: ReadFile = fs.readFile
 ): Promise<UiDiffReport> {
-  if (report.reportParts.length === 0) return report;
+  const reportParts = report.reportParts ?? [];
+  if (reportParts.length === 0) return report;
 
   let hydrated: UiDiffReport = report;
-  const findPart = (role: ReportPart["role"]) => report.reportParts.find(part => part.role === role);
+  const findPart = (role: ReportPart["role"]) => reportParts.find(part => part.role === role);
 
   const elementsPart = findPart("elements");
   if (elementsPart !== undefined && report.elements.expected.length === 0 && report.elements.actual.length === 0) {
