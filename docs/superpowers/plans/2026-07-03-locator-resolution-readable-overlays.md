@@ -71,7 +71,7 @@ Round 1:
 - Consumes: `locateUiElements({ maxDimension })`, `buildElementMap()`, `computeImageLocatorCoverage()`.
 - Produces: `docs/research/locator-lane-benchmark.md` and `docs/research/locator-lane-benchmark.json` with per-dimension timing and quality evidence.
 
-- [ ] **Step 1: Add dimension parsing testable helper**
+- [x] **Step 1: Add dimension parsing testable helper**
 
 Add a helper in `scripts/benchmark-locator-lanes.ts`:
 
@@ -85,7 +85,7 @@ export function parseBenchmarkDimensions(value: string | undefined): number[] {
 }
 ```
 
-- [ ] **Step 2: Run trials sequentially**
+- [x] **Step 2: Run trials sequentially**
 
 Replace the single `Promise.all` benchmark call with a `for...of` loop over parsed dimensions. For each dimension, run expected then actual sequentially, record:
 
@@ -115,7 +115,7 @@ Replace the single `Promise.all` benchmark call with a `for...of` loop over pars
 }
 ```
 
-- [ ] **Step 3: Add stability comparison**
+- [x] **Step 3: Add stability comparison**
 
 Use the largest completed dimension as reference. For each smaller dimension, compare element labels/types/query IDs against the reference and write counts:
 
@@ -129,7 +129,7 @@ Use the largest completed dimension as reference. For each smaller dimension, co
 }
 ```
 
-- [ ] **Step 4: Write Markdown plus JSON**
+- [x] **Step 4: Write Markdown plus JSON**
 
 Write `docs/research/locator-lane-benchmark.json` with the full structured result. Write `docs/research/locator-lane-benchmark.md` with:
 
@@ -141,7 +141,7 @@ Write `docs/research/locator-lane-benchmark.json` with the full structured resul
 - stability summary,
 - explicit conclusion field left as `needs_live_data` until the benchmark is run.
 
-- [ ] **Step 5: Verify and commit**
+- [x] **Step 5: Verify and commit**
 
 Run:
 
@@ -427,4 +427,3 @@ git push
 - `final-diff-regions-overlay.png` no longer floods the screen with opaque green.
 - New grouped overlay, legend, and zoom panels make the major findings readable.
 - Documentation states that `600` is a timeout workaround and must not be treated as a production-quality default without benchmark evidence.
-
