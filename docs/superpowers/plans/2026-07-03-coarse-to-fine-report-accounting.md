@@ -273,8 +273,8 @@ Threshold env overrides are not part of this implementation. They can be added l
 - [x] Document `diffScope` examples for `screen`, `regions`, `target`, and `full`.
 - [x] Document report parts and where to inspect token accounting.
 - [x] Run `npm run verify`.
-- [ ] Run relevant live gates if credentials/sidecar/quota permit: at minimum `verify:mcp-live` and `verify:calorix-release-live` for report-contract changes.
-- [ ] Get Antigravity MCP post-implementation review green.
+- [x] Run relevant live gates if credentials/sidecar/quota permit: at minimum `verify:mcp-live` and `verify:calorix-release-live` for report-contract changes.
+- [x] Get Antigravity MCP post-implementation review green.
 - [x] Record exact run IDs, model routes, final diff counts, `auditLimited`, visual classification status, usage summary, and any skipped gates.
 - [x] Commit and push final docs/status.
 
@@ -284,4 +284,8 @@ Threshold env overrides are not part of this implementation. They can be added l
   - Round 1: `AGREEMENT_STATUS: disagree`; must-fix blockers were missing `DiffRecord` scope schema fields, no deterministic VLM triggers for screen/region criteria, and partitioned checkpoint/resume breakage.
   - Round 2: `AGREEMENT_STATUS: agree`, `MUST_FIX: none`. Should-fix improvements incorporated: explicit `DiffSummarySchema`/`ScopeDiffSummarySchema`, complete Task 3 file list, relative `reportParts` paths, hydration skip optimization, fixed trigger thresholds, and region-scoped recovery.
   - MCP response noise: none observed beyond the standard `AI response:` wrapper and model footer.
-- Post-implementation review: pending.
+- Post-implementation review:
+  - Round 1: `AGREEMENT_STATUS: agree`, `MUST_FIX: none`; should-fix asked for real slim manifest writing rather than duplicated embedded arrays. Implemented default slim `report.json` plus transparent hydration.
+  - Round 2: `AGREEMENT_STATUS: agree`, `MUST_FIX: none`; should-fix asked for live gates before production sign-off.
+  - Final round after live-gate fixes and validation: `AGREEMENT_STATUS: agree`, `MUST_FIX: none`; should-fix asked to document `LOCATEANYTHING_MAX_DIMENSION=600` for strict local release gates under a 10-minute locator budget.
+  - MCP response noise: none observed beyond the standard `AI response:` wrapper and model footer.

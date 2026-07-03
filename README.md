@@ -90,6 +90,16 @@ All generated images (pixel diff, directional overlay, crop pairs, recovery crop
 
 `usageSummary` is first-class run-level accounting. It records input tokens, output tokens, total tokens, reasoning tokens, successful calls, failed calls, fallbacks, route exhaustion, and duration totals by phase, role, and provider/model route. If a provider reports only total tokens, input/output are left as zero and `totalOnlyUsageCalls` increments; the MCP does not invent a fake split.
 
+## LocateAnything Live Gate Sizing
+
+`LOCATEANYTHING_MAX_DIMENSION` controls the largest image dimension sent to the LocateAnything sidecar. The default remains `1200` for detail, but large Calorix screenshots can exceed a 10-minute locator budget on local GPU/CPU-constrained sidecars. For release gates using the current `LOCATEANYTHING_TIMEOUT_MS=600000` setting, use:
+
+```powershell
+$env:LOCATEANYTHING_MAX_DIMENSION = "600"
+```
+
+This keeps the locator request inside the live-gate budget while preserving enough structure for the strict Calorix release gate.
+
 ## Installation
 
 ```bash
