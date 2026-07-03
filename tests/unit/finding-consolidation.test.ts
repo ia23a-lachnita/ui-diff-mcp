@@ -212,4 +212,26 @@ describe("consolidateFindings", () => {
     expect(result).toHaveLength(1);
     expect(result[0]?.id).toBe("screen-color");
   });
+
+  it("prefers locator parents over projected clones when consolidating shared targets", () => {
+    const button = element("today-button", "button", 0, 100, 180, 40);
+    const projectedButton = element("proj-today-button", "button", 0, 102, 160, 36, undefined, "projected");
+    const text = element("today-text", "text", 60, 96, 90, 44, button.id);
+    button.childIds = [text.id];
+
+    const textFinding = finding("today-text-geometry", "pair-text", "geometry", 60, 96, 90, 44);
+    textFinding.targetIds = [text.id, button.id];
+    const buttonFinding = finding("today-button-geometry", "pair-button", "geometry", 0, 102, 180, 38);
+    buttonFinding.targetIds = [button.id, projectedButton.id];
+
+    const result = consolidateFindings(
+      [textFinding, buttonFinding],
+      [button, projectedButton, text],
+      [pair("pair-text", text.id), pair("pair-button", button.id)]
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0]?.targetIds).toContain(button.id);
+    expect(result[0]?.childFindingIds).toEqual(expect.arrayContaining(["today-text-geometry", "today-button-geometry"]));
+  });
 });

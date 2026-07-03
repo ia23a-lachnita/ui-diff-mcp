@@ -68,7 +68,10 @@ function resolveOwnership(
     .filter((element): element is UiElement => element !== undefined)
     .map(element => ascendToSemanticParent(element, elementMap))
     .filter((element): element is UiElement => element !== undefined)
-    .sort((a, b) => boxArea(a.box) - boxArea(b.box));
+    .sort((a, b) => {
+      const sourceRank = (element: UiElement) => element.source === "projected" ? 1 : 0;
+      return sourceRank(a) - sourceRank(b) || boxArea(a.box) - boxArea(b.box);
+    });
   const parent = semanticParents[0] ?? overlappingSemanticParent(finding, elements);
   if (parent && !targetIds.includes(parent.id)) targetIds.push(parent.id);
   return {
