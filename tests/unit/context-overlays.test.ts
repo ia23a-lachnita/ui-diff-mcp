@@ -78,6 +78,24 @@ describe("writeRegionContextOverlays", () => {
     expect(style.diffFillOpacity).toBeLessThanOrEqual(0.06);
   });
 
+  it("does not let screen-wide findings swallow localized finding groups", () => {
+    const screen = {
+      ...diff("screen"),
+      location: { x: 0, y: 0, width: 1206, height: 2622 },
+      criterion: "color_appearance" as const
+    };
+    const local = {
+      ...diff("local"),
+      location: { x: 75, y: 1808, width: 165, height: 168 },
+      criterion: "geometry" as const
+    };
+
+    const groups = buildFindingGroups([screen, local]);
+
+    expect(groups).toHaveLength(2);
+    expect(groups.map(group => group.diffIds)).toEqual(expect.arrayContaining([["screen"], ["local"]]));
+  });
+
   it("writes final, unresolved, and combined full-screen context overlays", async () => {
     const actualComparisonPath = await writeSolidPng(tmpDir, "actual-comparison.png", 200, 400, 30, 30, 30);
     const directionalOverlayPath = await writeSolidPng(tmpDir, "directional-overlay.png", 200, 400, 10, 10, 10);

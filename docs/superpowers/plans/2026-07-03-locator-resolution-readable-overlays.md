@@ -355,7 +355,7 @@ git push
 - Modify: `docs/implementation-status.md`
 - Optional live-generated, committed docs only: `docs/release/2026-07-03-locator-resolution-overlay-results.md`
 
-- [ ] **Step 1: Correct README wording**
+- [x] **Step 1: Correct README wording**
 
 Replace “use `600` for strict local release gates” with:
 
@@ -367,7 +367,7 @@ sidecar budget, and run `npm run benchmark:locator` to compare 600/900/1200 on
 the current machine before production sign-off.
 ```
 
-- [ ] **Step 2: Run deterministic verification**
+- [x] **Step 2: Run deterministic verification**
 
 Run:
 
@@ -375,7 +375,7 @@ Run:
 npm run verify
 ```
 
-- [ ] **Step 3: Run locator benchmark if sidecar is available**
+- [x] **Step 3: Run locator benchmark if sidecar is available**
 
 Run:
 
@@ -389,7 +389,7 @@ npm run benchmark:locator
 
 If `1200` times out, the benchmark must still write partial results and mark that dimension as `timeout`.
 
-- [ ] **Step 4: Run relevant live gate if provider quota permits**
+- [x] **Step 4: Run relevant live gate if provider quota permits**
 
 Run at least:
 
@@ -405,11 +405,13 @@ $env:RUN_CALORIX_RELEASE_LIVE="1"
 npm run verify:calorix-release-live
 ```
 
-- [ ] **Step 5: Post-implementation Antigravity review**
+- [x] **Step 5: Post-implementation Antigravity review**
 
 Ask Antigravity MCP to review code, tests, benchmark evidence, overlay readability, and docs. Green requires `AGREEMENT_STATUS: agree` and `MUST_FIX: none`.
 
-- [ ] **Step 6: Commit and push**
+Result: green. Antigravity MCP returned `AGREEMENT_STATUS: agree`, `MUST_FIX: none`, `SHOULD_FIX: none`, `QUESTIONS: none`. Response noise observed: the review response was prefixed with “I am waiting for the verification task (`npm run verify`) to complete in the background” even though local verification had already completed and the structured green verdict was included in the same response.
+
+- [x] **Step 6: Commit and push**
 
 Commit:
 

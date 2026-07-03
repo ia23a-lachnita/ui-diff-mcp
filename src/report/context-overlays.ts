@@ -108,6 +108,9 @@ function severityRank(severity: "low" | "medium" | "high"): number {
 }
 
 function groupShouldAbsorb(group: FindingGroup, diff: DiffRecord): boolean {
+  const smaller = Math.max(1, Math.min(boxArea(group.box), boxArea(diff.location)));
+  const larger = Math.max(boxArea(group.box), boxArea(diff.location));
+  if (larger / smaller > 8) return false;
   return overlapRatio(group.box, diff.location) >= 0.35 || centerDistanceRatio(group.box, diff.location) <= 0.45;
 }
 

@@ -200,6 +200,78 @@ describe("consolidateFindings", () => {
     expect(result[0]?.childFindingIds).toEqual(expect.arrayContaining(["region-layout", "label-layout"]));
   });
 
+  it("folds explicit projected structural groups into an overlapping scope finding for the same target and criterion", () => {
+    const nav = element("nav", "nav", 0, 80, 500, 420);
+    const tab = element("today-tab", "button", 40, 360, 80, 80, nav.id);
+    nav.childIds = [tab.id];
+    const scopeFinding = finding("nav-layout", undefined, "geometry", 0, 80, 500, 420);
+    scopeFinding.scopeId = "nav";
+    scopeFinding.scopeKind = "region";
+    scopeFinding.scopeLabel = "Navigation";
+    scopeFinding.targetIds = [nav.id, tab.id];
+    const projected = finding(
+      "projected-tab",
+      "pair-tab",
+      "geometry",
+      50,
+      370,
+      70,
+      70,
+      "deterministic_projected_mismatch"
+    );
+    projected.reviewerStatus = "not_reviewed";
+    projected.targetIds = [nav.id, tab.id];
+    projected.findingGroupId = "structural-nav";
+    projected.findingGroupKind = "structural_region_mismatch";
+    projected.groupLabel = "Navigation tab";
+
+    const result = consolidateFindings([projected, scopeFinding], [nav, tab], [pair("pair-tab", tab.id)]);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]?.id).toBe("nav-layout");
+    expect(result[0]?.childFindingIds).toEqual(expect.arrayContaining(["nav-layout", "projected-tab"]));
+    expect(result[0]?.reviewerStatus).toBe("accepted");
+  });
+
+  it("folds projected groups into a broad final finding created by child consolidation", () => {
+    const nav = element("nav", "nav", 0, 0, 500, 500);
+    const top = element("top-control", "button", 0, 0, 80, 80, nav.id);
+    const bottom = element("bottom-control", "button", 0, 420, 80, 80, nav.id);
+    const middle = element("middle-control", "button", 0, 220, 80, 80, nav.id);
+    nav.childIds = [top.id, bottom.id, middle.id];
+    const topFinding = finding("top-layout", undefined, "geometry", 0, 0, 80, 80);
+    topFinding.scopeId = "nav";
+    topFinding.scopeKind = "region";
+    topFinding.targetIds = [nav.id];
+    const bottomFinding = finding("bottom-layout", undefined, "geometry", 0, 420, 80, 80);
+    bottomFinding.scopeId = "nav";
+    bottomFinding.scopeKind = "region";
+    bottomFinding.targetIds = [nav.id];
+    const projected = finding(
+      "projected-middle",
+      "pair-middle",
+      "geometry",
+      0,
+      220,
+      80,
+      80,
+      "deterministic_projected_mismatch"
+    );
+    projected.reviewerStatus = "not_reviewed";
+    projected.targetIds = [nav.id, middle.id];
+    projected.findingGroupId = "structural-middle";
+    projected.findingGroupKind = "structural_region_mismatch";
+
+    const result = consolidateFindings(
+      [topFinding, bottomFinding, projected],
+      [nav, top, bottom, middle],
+      [pair("pair-top", top.id), pair("pair-bottom", bottom.id), pair("pair-middle", middle.id)]
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0]?.childFindingIds).toEqual(expect.arrayContaining(["top-layout", "bottom-layout", "projected-middle"]));
+  });
+
   it("does not crash when a scope finding has no overlap with semantic parents", () => {
     const card = element("card", "card", 20, 100, 200, 180);
     const scopeFinding = finding("screen-color", undefined, "color_appearance", 400, 800, 120, 120);

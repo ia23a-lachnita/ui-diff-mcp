@@ -41,4 +41,19 @@ describe("computeImageLocatorCoverage", () => {
     const box = el("giant", "text_labels", 0, 0, 1000, 2000);
     expect(isUsefulLocatorBox(box, { width: 1000, height: 2000 })).toBe(false);
   });
+
+  it("caps query coverage ratio at 1 when merged query ids exceed prompt count", () => {
+    const result = computeImageLocatorCoverage({
+      elements: [
+        el("a", "text_labels", 10, 10, 100, 30),
+        el("b", "buttons+icons+text_labels", 20, 100, 100, 50),
+        el("c", "cv_components+text_labels", 40, 190, 40, 40)
+      ],
+      promptCount: 2,
+      imageSize: { width: 1000, height: 2000 },
+      minElementCount: 1
+    });
+
+    expect(result.queryCoverageRatio).toBe(1);
+  });
 });

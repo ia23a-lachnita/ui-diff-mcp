@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildLocatorBenchmarkMarkdown, parseBenchmarkDimensions, summarizeLabelStability } from "../../scripts/benchmark-locator-lanes.js";
+import { buildLocatorBenchmarkMarkdown, determineBenchmarkConclusion, parseBenchmarkDimensions, summarizeLabelStability } from "../../scripts/benchmark-locator-lanes.js";
 
 describe("locator benchmark helpers", () => {
   it("parses sorted unique benchmark dimensions with safe defaults", () => {
@@ -17,6 +17,16 @@ describe("locator benchmark helpers", () => {
     expect(summary.actualMissingLabels).toEqual(["icon:Eye"]);
     expect(summary.expectedExtraLabels).toEqual([]);
     expect(summary.actualExtraLabels).toEqual([]);
+  });
+
+  it("marks the benchmark complete once any live dimension completed", () => {
+    expect(determineBenchmarkConclusion([
+      { maxDimension: 1200, status: "timeout", error: "timed out" }
+    ])).toBe("needs_live_data");
+    expect(determineBenchmarkConclusion([
+      { maxDimension: 600, status: "complete", expected: { elapsedMs: 1, imageWidth: 1, imageHeight: 1, usefulElementCount: 1, queryCoverageRatio: 1, queryCounts: {}, laneMetadata: {}, elements: [] }, actual: { elapsedMs: 1, imageWidth: 1, imageHeight: 1, usefulElementCount: 1, queryCoverageRatio: 1, queryCounts: {}, laneMetadata: {}, elements: [] } },
+      { maxDimension: 1200, status: "timeout", error: "timed out" }
+    ])).toBe("complete");
   });
 
   it("builds markdown that marks timeout trials and sequential execution", () => {

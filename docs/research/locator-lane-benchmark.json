@@ -1,5 +1,4329 @@
 {
-  "generatedAt": null,
-  "conclusion": "needs_live_data",
-  "trials": []
+  "generatedAt": "2026-07-03T19:19:02.959Z",
+  "sidecarUrl": "http://127.0.0.1:39731",
+  "expectedImagePath": "C:\\Users\\xursc\\projects\\calorix\\docs\\mockups\\image\\dark\\single\\Today.png",
+  "actualImagePath": "C:\\Users\\xursc\\projects\\calorix\\docs\\screenshots\\today-screen-2026-07-02-static-scan-fab.png",
+  "conclusion": "complete",
+  "trials": [
+    {
+      "maxDimension": 600,
+      "status": "complete",
+      "expected": {
+        "elapsedMs": 109875,
+        "imageWidth": 1206,
+        "imageHeight": 2622,
+        "usefulElementCount": 74,
+        "queryCoverageRatio": 0.875,
+        "queryCounts": {
+          "text_labels": 16,
+          "icons+text_labels": 7,
+          "cv_components+text_labels": 1,
+          "buttons": 19,
+          "icons": 5,
+          "cv_components+icons": 1,
+          "cv_components": 25
+        },
+        "laneMetadata": {
+          "cv_components": {
+            "status": "complete",
+            "count": 37,
+            "model": "opencv"
+          },
+          "ocr_text": {
+            "status": "complete",
+            "count": 0,
+            "model": "disabled"
+          },
+          "omniparser": {
+            "status": "not_configured",
+            "count": 0,
+            "detail": "Set UI_DIFF_ENABLE_OMNIPARSER=1 and install OmniParser dependencies to enable.",
+            "model": "microsoft/OmniParser",
+            "license": "AGPL-3.0"
+          },
+          "yolo_ui": {
+            "status": "not_configured",
+            "count": 0,
+            "detail": "Set UI_DIFF_YOLO_UI_MODEL_PATH to enable local YOLO UI detection.",
+            "model": "unset"
+          }
+        },
+        "elements": [
+          {
+            "id": "ac4ac86fa2d0",
+            "label": "F</ref>AYDAY MAY IS15",
+            "type": "text",
+            "queryId": "text_labels",
+            "box": {
+              "x": 48,
+              "y": 152,
+              "width": 357,
+              "height": 45
+            }
+          },
+          {
+            "id": "8407403a3077",
+            "label": "Recent scans",
+            "type": "text",
+            "queryId": "icons+text_labels",
+            "box": {
+              "x": 51,
+              "y": 1851,
+              "width": 281,
+              "height": 50
+            }
+          },
+          {
+            "id": "2eff45dbc526",
+            "label": "Today",
+            "type": "text",
+            "queryId": "text_labels",
+            "box": {
+              "x": 72,
+              "y": 2454,
+              "width": 117,
+              "height": 50
+            }
+          },
+          {
+            "id": "21bf119a77b4",
+            "label": "9tein",
+            "type": "text",
+            "queryId": "text_labels",
+            "box": {
+              "x": 123,
+              "y": 1180,
+              "width": 215,
+              "height": 55
+            }
+          },
+          {
+            "id": "96ef9f885e9e",
+            "label": "Car",
+            "type": "text",
+            "queryId": "text_labels",
+            "box": {
+              "x": 127,
+              "y": 1395,
+              "width": 141,
+              "height": 50
+            }
+          },
+          {
+            "id": "1702e4dc3120",
+            "label": "Fat",
+            "type": "text",
+            "queryId": "text_labels",
+            "box": {
+              "x": 129,
+              "y": 1605,
+              "width": 130,
+              "height": 50
+            }
+          },
+          {
+            "id": "564c7324b35e",
+            "label": "9:41",
+            "type": "text",
+            "queryId": "text_labels",
+            "box": {
+              "x": 159,
+              "y": 68,
+              "width": 118,
+              "height": 63
+            }
+          },
+          {
+            "id": "d7ae9eec26f5",
+            "label": "Chicken2 Bowl Bowl",
+            "type": "text",
+            "queryId": "text_labels",
+            "box": {
+              "x": 292,
+              "y": 1972,
+              "width": 404,
+              "height": 42
+            }
+          },
+          {
+            "id": "898b9c3dbe98",
+            "label": "12:48·Lunch</ref>46g+72g",
+            "type": "text",
+            "queryId": "text_labels",
+            "box": {
+              "x": 302,
+              "y": 2035,
+              "width": 624,
+              "height": 42
+            }
+          },
+          {
+            "id": "4969c94eb81b",
+            "label": "91%Confirmed",
+            "type": "text",
+            "queryId": "cv_components+text_labels",
+            "box": {
+              "x": 320,
+              "y": 2113,
+              "width": 332,
+              "height": 39
+            }
+          },
+          {
+            "id": "9b1ed9a0a677",
+            "label": "9,420",
+            "type": "text",
+            "queryId": "text_labels",
+            "box": {
+              "x": 431,
+              "y": 669,
+              "width": 344,
+              "height": 123
+            }
+          },
+          {
+            "id": "55a605160502",
+            "label": "KAL E EATEN",
+            "type": "text",
+            "queryId": "icons+text_labels",
+            "box": {
+              "x": 476,
+              "y": 621,
+              "width": 235,
+              "height": 39
+            }
+          },
+          {
+            "id": "f4a7323780e6",
+            "label": "SCAN",
+            "type": "text",
+            "queryId": "icons+text_labels",
+            "box": {
+              "x": 545,
+              "y": 2533,
+              "width": 100,
+              "height": 42
+            }
+          },
+          {
+            "id": "80b57fbc65a6",
+            "label": "text-text_labels-53",
+            "type": "text",
+            "queryId": "text_labels",
+            "box": {
+              "x": 724,
+              "y": 1398,
+              "width": 227,
+              "height": 45
+            }
+          },
+          {
+            "id": "f013371ad3cd",
+            "label": "96/170g",
+            "type": "text",
+            "queryId": "text_labels",
+            "box": {
+              "x": 744,
+              "y": 1183,
+              "width": 209,
+              "height": 50
+            }
+          },
+          {
+            "id": "c318461d0bcd",
+            "label": "38/25gg",
+            "type": "text",
+            "queryId": "icons+text_labels",
+            "box": {
+              "x": 766,
+              "y": 1602,
+              "width": 181,
+              "height": 50
+            }
+          },
+          {
+            "id": "562c7a0855f3",
+            "label": "Goals",
+            "type": "text",
+            "queryId": "text_labels",
+            "box": {
+              "x": 780,
+              "y": 2462,
+              "width": 109,
+              "height": 45
+            }
+          },
+          {
+            "id": "5eff3ee54842",
+            "label": "text-text_labels-57",
+            "type": "text",
+            "queryId": "text_labels",
+            "box": {
+              "x": 959,
+              "y": 1967,
+              "width": 96,
+              "height": 52
+            }
+          },
+          {
+            "id": "29e2e78a1c9b",
+            "label": "3 TODAYOD",
+            "type": "text",
+            "queryId": "icons+text_labels",
+            "box": {
+              "x": 973,
+              "y": 1856,
+              "width": 172,
+              "height": 42
+            }
+          },
+          {
+            "id": "1bae48570469",
+            "label": "text-text_labels-59",
+            "type": "text",
+            "queryId": "icons+text_labels",
+            "box": {
+              "x": 983,
+              "y": 1188,
+              "width": 69,
+              "height": 39
+            }
+          },
+          {
+            "id": "0ca442d137ee",
+            "label": "text-text_labels-60",
+            "type": "text",
+            "queryId": "text_labels",
+            "box": {
+              "x": 983,
+              "y": 1400,
+              "width": 69,
+              "height": 39
+            }
+          },
+          {
+            "id": "8c1356862b00",
+            "label": "text-text_labels-61",
+            "type": "text",
+            "queryId": "text_labels",
+            "box": {
+              "x": 983,
+              "y": 1610,
+              "width": 69,
+              "height": 37
+            }
+          },
+          {
+            "id": "09e18f483320",
+            "label": "k",
+            "type": "text",
+            "queryId": "icons+text_labels",
+            "box": {
+              "x": 1061,
+              "y": 210,
+              "width": 54,
+              "height": 45
+            }
+          },
+          {
+            "id": "aad358d4d232",
+            "label": "AI",
+            "type": "text",
+            "queryId": "text_labels",
+            "box": {
+              "x": 1064,
+              "y": 2465,
+              "width": 46,
+              "height": 31
+            }
+          },
+          {
+            "id": "e567aed0330e",
+            "label": "tate",
+            "type": "button",
+            "queryId": "buttons",
+            "box": {
+              "x": 0,
+              "y": 210,
+              "width": 1206,
+              "height": 105
+            }
+          },
+          {
+            "id": "c664cc0b921f",
+            "label": "D",
+            "type": "button",
+            "queryId": "buttons",
+            "box": {
+              "x": 0,
+              "y": 341,
+              "width": 1206,
+              "height": 84
+            }
+          },
+          {
+            "id": "a5cdd40ec24b",
+            "label": "G",
+            "type": "button",
+            "queryId": "buttons",
+            "box": {
+              "x": 0,
+              "y": 433,
+              "width": 1206,
+              "height": 113
+            }
+          },
+          {
+            "id": "dc24069bbd6e",
+            "label": "C",
+            "type": "button",
+            "queryId": "buttons",
+            "box": {
+              "x": 0,
+              "y": 543,
+              "width": 1206,
+              "height": 92
+            }
+          },
+          {
+            "id": "0ebf72ef1e24",
+            "label": "S",
+            "type": "button",
+            "queryId": "buttons",
+            "box": {
+              "x": 0,
+              "y": 629,
+              "width": 1206,
+              "height": 92
+            }
+          },
+          {
+            "id": "3346189aa1dc",
+            "label": "O",
+            "type": "button",
+            "queryId": "buttons",
+            "box": {
+              "x": 0,
+              "y": 721,
+              "width": 1206,
+              "height": 92
+            }
+          },
+          {
+            "id": "2d37f3267b92",
+            "label": "N",
+            "type": "button",
+            "queryId": "buttons",
+            "box": {
+              "x": 0,
+              "y": 813,
+              "width": 1206,
+              "height": 79
+            }
+          },
+          {
+            "id": "e74e318c57f8",
+            "label": "M",
+            "type": "button",
+            "queryId": "buttons",
+            "box": {
+              "x": 0,
+              "y": 891,
+              "width": 1206,
+              "height": 92
+            }
+          },
+          {
+            "id": "88fc2713c670",
+            "label": "K",
+            "type": "button",
+            "queryId": "buttons",
+            "box": {
+              "x": 0,
+              "y": 983,
+              "width": 1206,
+              "height": 79
+            }
+          },
+          {
+            "id": "4ecb9273a911",
+            "label": "J",
+            "type": "button",
+            "queryId": "buttons",
+            "box": {
+              "x": 0,
+              "y": 1062,
+              "width": 1206,
+              "height": 79
+            }
+          },
+          {
+            "id": "ee9bee79145c",
+            "label": "H",
+            "type": "button",
+            "queryId": "buttons",
+            "box": {
+              "x": 0,
+              "y": 1141,
+              "width": 1206,
+              "height": 105
+            }
+          },
+          {
+            "id": "6a56a84447b3",
+            "label": "F",
+            "type": "button",
+            "queryId": "buttons",
+            "box": {
+              "x": 0,
+              "y": 1245,
+              "width": 1206,
+              "height": 92
+            }
+          },
+          {
+            "id": "8fe1d1ba0905",
+            "label": "T",
+            "type": "button",
+            "queryId": "buttons",
+            "box": {
+              "x": 0,
+              "y": 1337,
+              "width": 1206,
+              "height": 92
+            }
+          },
+          {
+            "id": "afcd9d4a3b84",
+            "label": "Y",
+            "type": "button",
+            "queryId": "buttons",
+            "box": {
+              "x": 0,
+              "y": 1429,
+              "width": 1206,
+              "height": 92
+            }
+          },
+          {
+            "id": "89ea94e44f9b",
+            "label": "U",
+            "type": "button",
+            "queryId": "buttons",
+            "box": {
+              "x": 0,
+              "y": 1516,
+              "width": 1206,
+              "height": 97
+            }
+          },
+          {
+            "id": "610b4a658bf7",
+            "label": "I",
+            "type": "button",
+            "queryId": "buttons",
+            "box": {
+              "x": 0,
+              "y": 1613,
+              "width": 1206,
+              "height": 92
+            }
+          },
+          {
+            "id": "7cd8dfce6da6",
+            "label": "O",
+            "type": "button",
+            "queryId": "buttons",
+            "box": {
+              "x": 0,
+              "y": 1704,
+              "width": 1206,
+              "height": 79
+            }
+          },
+          {
+            "id": "13de2bd1b82c",
+            "label": "P",
+            "type": "button",
+            "queryId": "buttons",
+            "box": {
+              "x": 0,
+              "y": 1783,
+              "width": 1206,
+              "height": 92
+            }
+          },
+          {
+            "id": "7f3ae223b3db",
+            "label": "button-buttons-82",
+            "type": "button",
+            "queryId": "buttons",
+            "box": {
+              "x": 0,
+              "y": 2417,
+              "width": 1206,
+              "height": 87
+            }
+          },
+          {
+            "id": "805ba82decb0",
+            "label": "F",
+            "type": "icon",
+            "queryId": "icons",
+            "box": {
+              "x": 60,
+              "y": 160,
+              "width": 40,
+              "height": 34
+            }
+          },
+          {
+            "id": "407f8c1bd0ef",
+            "label": "icon-icons-86",
+            "type": "icon",
+            "queryId": "icons",
+            "box": {
+              "x": 169,
+              "y": 79,
+              "width": 30,
+              "height": 39
+            }
+          },
+          {
+            "id": "e3618d6f7d39",
+            "label": "History2 Rice Bowl1",
+            "type": "icon",
+            "queryId": "icons",
+            "box": {
+              "x": 299,
+              "y": 2465,
+              "width": 630,
+              "height": 47
+            }
+          },
+          {
+            "id": "8969381e923d",
+            "label": "96 kcalcal left",
+            "type": "icon",
+            "queryId": "icons",
+            "box": {
+              "x": 470,
+              "y": 868,
+              "width": 259,
+              "height": 45
+            }
+          },
+          {
+            "id": "7f848a08077d",
+            "label": "of, 240g",
+            "type": "icon",
+            "queryId": "icons",
+            "box": {
+              "x": 533,
+              "y": 802,
+              "width": 142,
+              "height": 37
+            }
+          },
+          {
+            "id": "b6a5461ffd26",
+            "label": "620k",
+            "type": "icon",
+            "queryId": "cv_components+icons",
+            "box": {
+              "x": 965,
+              "y": 1974,
+              "width": 159,
+              "height": 47
+            }
+          },
+          {
+            "id": "41738e3f2ca4",
+            "label": "cv-component-0",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 44,
+              "y": 367,
+              "width": 1119,
+              "height": 1429
+            }
+          },
+          {
+            "id": "3bdb37463028",
+            "label": "cv-component-2",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 0,
+              "y": 1857,
+              "width": 1162,
+              "height": 367
+            }
+          },
+          {
+            "id": "312b000cb433",
+            "label": "cv-component-5",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 280,
+              "y": 454,
+              "width": 437,
+              "height": 594
+            }
+          },
+          {
+            "id": "a4e81c85c26c",
+            "label": "cv-component-6",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 135,
+              "y": 1403,
+              "width": 935,
+              "height": 96
+            }
+          },
+          {
+            "id": "e4e365790825",
+            "label": "cv-component-7",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 546,
+              "y": 704,
+              "width": 267,
+              "height": 197
+            }
+          },
+          {
+            "id": "cdbfb0743a4d",
+            "label": "cv-component-8",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 135,
+              "y": 1193,
+              "width": 529,
+              "height": 96
+            }
+          },
+          {
+            "id": "a3ed535d90e5",
+            "label": "cv-component-10",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 57,
+              "y": 166,
+              "width": 341,
+              "height": 140
+            }
+          },
+          {
+            "id": "d0aa00363c9d",
+            "label": "cv-component-11",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 511,
+              "y": 2303,
+              "width": 184,
+              "height": 188
+            }
+          },
+          {
+            "id": "81a4e6131e69",
+            "label": "cv-component-12",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 83,
+              "y": 1975,
+              "width": 188,
+              "height": 184
+            }
+          },
+          {
+            "id": "5417e456e978",
+            "label": "cv-component-13",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 896,
+              "y": 175,
+              "width": 253,
+              "height": 122
+            }
+          },
+          {
+            "id": "a720f362f336",
+            "label": "cv-component-14",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 393,
+              "y": 2543,
+              "width": 419,
+              "height": 57
+            }
+          },
+          {
+            "id": "54dbf653ffe2",
+            "label": "cv-component-15",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 1071,
+              "y": 0,
+              "width": 135,
+              "height": 135
+            }
+          },
+          {
+            "id": "06a5e312bec7",
+            "label": "cv-component-16",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 0,
+              "y": 0,
+              "width": 135,
+              "height": 135
+            }
+          },
+          {
+            "id": "7f7d27127605",
+            "label": "cv-component-17",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 1075,
+              "y": 2487,
+              "width": 131,
+              "height": 135
+            }
+          },
+          {
+            "id": "9d0708e169ee",
+            "label": "cv-component-18",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 0,
+              "y": 2491,
+              "width": 131,
+              "height": 131
+            }
+          },
+          {
+            "id": "19bf098b4a0e",
+            "label": "cv-component-19",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 315,
+              "y": 2390,
+              "width": 109,
+              "height": 114
+            }
+          },
+          {
+            "id": "011eb2bd6108",
+            "label": "cv-component-20",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 87,
+              "y": 2390,
+              "width": 96,
+              "height": 122
+            }
+          },
+          {
+            "id": "0d40f475df61",
+            "label": "cv-component-21",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 791,
+              "y": 2390,
+              "width": 92,
+              "height": 109
+            }
+          },
+          {
+            "id": "3ce838cc57a6",
+            "label": "cv-component-23",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 865,
+              "y": 79,
+              "width": 236,
+              "height": 39
+            }
+          },
+          {
+            "id": "94b1273dc3b0",
+            "label": "cv-component-27",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 704,
+              "y": 621,
+              "width": 66,
+              "height": 70
+            }
+          },
+          {
+            "id": "c45d4ca3013a",
+            "label": "cv-component-28",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 109,
+              "y": 188,
+              "width": 83,
+              "height": 52
+            }
+          },
+          {
+            "id": "a6a2ba720432",
+            "label": "cv-component-29",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 1053,
+              "y": 2404,
+              "width": 44,
+              "height": 96
+            }
+          },
+          {
+            "id": "9eb7df72bbff",
+            "label": "cv-component-31",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 568,
+              "y": 2417,
+              "width": 70,
+              "height": 52
+            }
+          },
+          {
+            "id": "5175a01bc3c1",
+            "label": "cv-component-32",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 568,
+              "y": 2325,
+              "width": 70,
+              "height": 52
+            }
+          },
+          {
+            "id": "482057c9ab95",
+            "label": "cv-component-33",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 564,
+              "y": 2010,
+              "width": 70,
+              "height": 48
+            }
+          }
+        ]
+      },
+      "actual": {
+        "elapsedMs": 144416,
+        "imageWidth": 1080,
+        "imageHeight": 2400,
+        "usefulElementCount": 75,
+        "queryCoverageRatio": 1.25,
+        "queryCounts": {
+          "text_labels": 9,
+          "buttons+text_labels": 4,
+          "icons+text_labels": 8,
+          "buttons+icons+text_labels": 4,
+          "cv_components+text_labels": 1,
+          "buttons": 8,
+          "buttons+cv_components": 1,
+          "icons": 16,
+          "cv_components+icons": 3,
+          "cv_components": 21
+        },
+        "laneMetadata": {
+          "cv_components": {
+            "status": "complete",
+            "count": 32,
+            "model": "opencv"
+          },
+          "ocr_text": {
+            "status": "complete",
+            "count": 0,
+            "model": "disabled"
+          },
+          "omniparser": {
+            "status": "not_configured",
+            "count": 0,
+            "detail": "Set UI_DIFF_ENABLE_OMNIPARSER=1 and install OmniParser dependencies to enable.",
+            "model": "microsoft/OmniParser",
+            "license": "AGPL-3.0"
+          },
+          "yolo_ui": {
+            "status": "not_configured",
+            "count": 0,
+            "detail": "Set UI_DIFF_YOLO_UI_MODEL_PATH to enable local YOLO UI detection.",
+            "model": "unset"
+          }
+        },
+        "elements": [
+          {
+            "id": "278119a7343a",
+            "label": "16:14",
+            "type": "text",
+            "queryId": "text_labels",
+            "box": {
+              "x": 36,
+              "y": 41,
+              "width": 132,
+              "height": 46
+            }
+          },
+          {
+            "id": "a841fc81592e",
+            "label": "Recent scans",
+            "type": "text",
+            "queryId": "text_labels",
+            "box": {
+              "x": 38,
+              "y": 1735,
+              "width": 282,
+              "height": 48
+            }
+          },
+          {
+            "id": "14a2f0706731",
+            "label": "FRIDAY",
+            "type": "text",
+            "queryId": "buttons+text_labels",
+            "box": {
+              "x": 43,
+              "y": 103,
+              "width": 144,
+              "height": 36
+            }
+          },
+          {
+            "id": "56b9c2117e35",
+            "label": "Today",
+            "type": "text",
+            "queryId": "buttons+text_labels",
+            "box": {
+              "x": 49,
+              "y": 2232,
+              "width": 114,
+              "height": 48
+            }
+          },
+          {
+            "id": "ac14b6809ebe",
+            "label": "Protein",
+            "type": "text",
+            "queryId": "text_labels",
+            "box": {
+              "x": 173,
+              "y": 1104,
+              "width": 156,
+              "height": 53
+            }
+          },
+          {
+            "id": "32d35ec74f2a",
+            "label": "Fat",
+            "type": "text",
+            "queryId": "buttons+text_labels",
+            "box": {
+              "x": 173,
+              "y": 1490,
+              "width": 82,
+              "height": 48
+            }
+          },
+          {
+            "id": "91398c73392e",
+            "label": "MAY155",
+            "type": "text",
+            "queryId": "text_labels",
+            "box": {
+              "x": 244,
+              "y": 101,
+              "width": 149,
+              "height": 34
+            }
+          },
+          {
+            "id": "bc8b539da233",
+            "label": "Chicken2 Bowlowl",
+            "type": "text",
+            "queryId": "icons+text_labels",
+            "box": {
+              "x": 293,
+              "y": 1870,
+              "width": 401,
+              "height": 50
+            }
+          },
+          {
+            "id": "3489f108fb88",
+            "label": "12:48·Lunch48g",
+            "type": "text",
+            "queryId": "icons+text_labels",
+            "box": {
+              "x": 296,
+              "y": 1934,
+              "width": 378,
+              "height": 43
+            }
+          },
+          {
+            "id": "eb29f0094ded",
+            "label": "91% Confirmed",
+            "type": "text",
+            "queryId": "icons+text_labels",
+            "box": {
+              "x": 341,
+              "y": 2004,
+              "width": 307,
+              "height": 41
+            }
+          },
+          {
+            "id": "2e6aadde5067",
+            "label": "1,420",
+            "type": "text",
+            "queryId": "buttons+icons+text_labels",
+            "box": {
+              "x": 369,
+              "y": 607,
+              "width": 337,
+              "height": 120
+            }
+          },
+          {
+            "id": "8301ec00aba1",
+            "label": "980 E left",
+            "type": "text",
+            "queryId": "icons+text_labels",
+            "box": {
+              "x": 409,
+              "y": 806,
+              "width": 260,
+              "height": 41
+            }
+          },
+          {
+            "id": "dfec58661c99",
+            "label": "KCAL EATED",
+            "type": "text",
+            "queryId": "icons+text_labels",
+            "box": {
+              "x": 434,
+              "y": 540,
+              "width": 208,
+              "height": 41
+            }
+          },
+          {
+            "id": "8f726bdf6e12",
+            "label": "of 2,400",
+            "type": "text",
+            "queryId": "icons+text_labels",
+            "box": {
+              "x": 462,
+              "y": 739,
+              "width": 154,
+              "height": 43
+            }
+          },
+          {
+            "id": "e599aebb82f6",
+            "label": "SCAN",
+            "type": "text",
+            "queryId": "buttons+icons+text_labels",
+            "box": {
+              "x": 490,
+              "y": 2292,
+              "width": 95,
+              "height": 38
+            }
+          },
+          {
+            "id": "3012f652c68a",
+            "label": "132·250g",
+            "type": "text",
+            "queryId": "text_labels",
+            "box": {
+              "x": 619,
+              "y": 1296,
+              "width": 224,
+              "height": 53
+            }
+          },
+          {
+            "id": "8370407cbcba",
+            "label": "96·170g",
+            "type": "text",
+            "queryId": "text_labels",
+            "box": {
+              "x": 639,
+              "y": 1106,
+              "width": 205,
+              "height": 53
+            }
+          },
+          {
+            "id": "31622ba694ae",
+            "label": "Goals",
+            "type": "text",
+            "queryId": "buttons+icons+text_labels",
+            "box": {
+              "x": 700,
+              "y": 2237,
+              "width": 112,
+              "height": 41
+            }
+          },
+          {
+            "id": "24335b75ae73",
+            "label": "text-text_labels-54",
+            "type": "text",
+            "queryId": "cv_components+text_labels",
+            "box": {
+              "x": 726,
+              "y": 1937,
+              "width": 84,
+              "height": 43
+            }
+          },
+          {
+            "id": "72a5cc9e9173",
+            "label": "620kcal",
+            "type": "text",
+            "queryId": "icons+text_labels",
+            "box": {
+              "x": 846,
+              "y": 1867,
+              "width": 156,
+              "height": 60
+            }
+          },
+          {
+            "id": "57999728ad7f",
+            "label": "516g",
+            "type": "text",
+            "queryId": "text_labels",
+            "box": {
+              "x": 859,
+              "y": 1109,
+              "width": 93,
+              "height": 46
+            }
+          },
+          {
+            "id": "41326f36c2d2",
+            "label": "1 TODAY TODAYg",
+            "type": "text",
+            "queryId": "icons+text_labels",
+            "box": {
+              "x": 861,
+              "y": 1740,
+              "width": 143,
+              "height": 48
+            }
+          },
+          {
+            "id": "dc94fe9e801a",
+            "label": "54g",
+            "type": "text",
+            "queryId": "text_labels",
+            "box": {
+              "x": 868,
+              "y": 1495,
+              "width": 77,
+              "height": 41
+            }
+          },
+          {
+            "id": "355dfb648eac",
+            "label": "84%",
+            "type": "text",
+            "queryId": "text_labels",
+            "box": {
+              "x": 937,
+              "y": 38,
+              "width": 91,
+              "height": 50
+            }
+          },
+          {
+            "id": "31100bc03587",
+            "label": "EK",
+            "type": "text",
+            "queryId": "buttons+icons+text_labels",
+            "box": {
+              "x": 941,
+              "y": 144,
+              "width": 67,
+              "height": 53
+            }
+          },
+          {
+            "id": "219580bfbf47",
+            "label": "AI",
+            "type": "text",
+            "queryId": "buttons+text_labels",
+            "box": {
+              "x": 947,
+              "y": 2237,
+              "width": 50,
+              "height": 36
+            }
+          },
+          {
+            "id": "b32dc6ae3a12",
+            "label": "Pro",
+            "type": "button",
+            "queryId": "buttons",
+            "box": {
+              "x": 176,
+              "y": 1111,
+              "width": 32,
+              "height": 41
+            }
+          },
+          {
+            "id": "8a0379d1ae91",
+            "label": "Car",
+            "type": "button",
+            "queryId": "buttons",
+            "box": {
+              "x": 176,
+              "y": 1303,
+              "width": 35,
+              "height": 43
+            }
+          },
+          {
+            "id": "efbd400b395e",
+            "label": "Carbs",
+            "type": "button",
+            "queryId": "buttons",
+            "box": {
+              "x": 213,
+              "y": 1301,
+              "width": 92,
+              "height": 48
+            }
+          },
+          {
+            "id": "72e2786d5ff4",
+            "label": "button-buttons-77",
+            "type": "button",
+            "queryId": "buttons",
+            "box": {
+              "x": 312,
+              "y": 2014,
+              "width": 13,
+              "height": 24
+            }
+          },
+          {
+            "id": "ce3079369be1",
+            "label": "button-buttons-79",
+            "type": "button",
+            "queryId": "buttons",
+            "box": {
+              "x": 351,
+              "y": 2011,
+              "width": 41,
+              "height": 31
+            }
+          },
+          {
+            "id": "193b8c9526cf",
+            "label": "Chicken,48g",
+            "type": "button",
+            "queryId": "buttons+cv_components",
+            "box": {
+              "x": 356,
+              "y": 1872,
+              "width": 314,
+              "height": 106
+            }
+          },
+          {
+            "id": "893d679126a0",
+            "label": "button-buttons-97",
+            "type": "button",
+            "queryId": "buttons",
+            "box": {
+              "x": 869,
+              "y": 1942,
+              "width": 14,
+              "height": 31
+            }
+          },
+          {
+            "id": "4bceba5351e4",
+            "label": "button-buttons-98",
+            "type": "button",
+            "queryId": "buttons",
+            "box": {
+              "x": 875,
+              "y": 1745,
+              "width": 28,
+              "height": 38
+            }
+          },
+          {
+            "id": "2c2faa3688aa",
+            "label": "TODAY",
+            "type": "button",
+            "queryId": "buttons",
+            "box": {
+              "x": 910,
+              "y": 1742,
+              "width": 118,
+              "height": 48
+            }
+          },
+          {
+            "id": "df42894b2f15",
+            "label": "icon-icons-108",
+            "type": "icon",
+            "queryId": "icons",
+            "box": {
+              "x": 40,
+              "y": 43,
+              "width": 18,
+              "height": 36
+            }
+          },
+          {
+            "id": "6de836b15eca",
+            "label": "icon-icons-109",
+            "type": "icon",
+            "queryId": "icons",
+            "box": {
+              "x": 40,
+              "y": 106,
+              "width": 22,
+              "height": 34
+            }
+          },
+          {
+            "id": "136c74574d75",
+            "label": "icon-icons-110",
+            "type": "icon",
+            "queryId": "icons",
+            "box": {
+              "x": 68,
+              "y": 43,
+              "width": 10,
+              "height": 36
+            }
+          },
+          {
+            "id": "a3c54ce552fd",
+            "label": "icon-icons-111",
+            "type": "icon",
+            "queryId": "icons",
+            "box": {
+              "x": 81,
+              "y": 106,
+              "width": 8,
+              "height": 34
+            }
+          },
+          {
+            "id": "33e5a2bf6136",
+            "label": "icon-icons-112",
+            "type": "icon",
+            "queryId": "icons",
+            "box": {
+              "x": 95,
+              "y": 43,
+              "width": 18,
+              "height": 36
+            }
+          },
+          {
+            "id": "67d208cc9219",
+            "label": "icon-icons-113",
+            "type": "icon",
+            "queryId": "icons",
+            "box": {
+              "x": 110,
+              "y": 106,
+              "width": 11,
+              "height": 34
+            }
+          },
+          {
+            "id": "1cfb076d1713",
+            "label": "icon-icons-114",
+            "type": "icon",
+            "queryId": "icons",
+            "box": {
+              "x": 135,
+              "y": 43,
+              "width": 11,
+              "height": 96
+            }
+          },
+          {
+            "id": "1a174edab486",
+            "label": "icon-icons-115",
+            "type": "icon",
+            "queryId": "icons",
+            "box": {
+              "x": 157,
+              "y": 106,
+              "width": 11,
+              "height": 34
+            }
+          },
+          {
+            "id": "e79df2b196e3",
+            "label": "icon-icons-116",
+            "type": "icon",
+            "queryId": "icons",
+            "box": {
+              "x": 173,
+              "y": 43,
+              "width": 11,
+              "height": 36
+            }
+          },
+          {
+            "id": "ab57824331e1",
+            "label": "icon-icons-117",
+            "type": "icon",
+            "queryId": "icons",
+            "box": {
+              "x": 194,
+              "y": 106,
+              "width": 8,
+              "height": 34
+            }
+          },
+          {
+            "id": "ea5472212741",
+            "label": "icon-icons-118",
+            "type": "icon",
+            "queryId": "icons",
+            "box": {
+              "x": 216,
+              "y": 43,
+              "width": 5,
+              "height": 36
+            }
+          },
+          {
+            "id": "ee638516c839",
+            "label": "icon-icons-119",
+            "type": "icon",
+            "queryId": "icons",
+            "box": {
+              "x": 232,
+              "y": 43,
+              "width": 16,
+              "height": 96
+            }
+          },
+          {
+            "id": "47f77ffc0743",
+            "label": "HistoryAY",
+            "type": "icon",
+            "queryId": "icons",
+            "box": {
+              "x": 256,
+              "y": 2232,
+              "width": 757,
+              "height": 48
+            }
+          },
+          {
+            "id": "b09cd6932e7b",
+            "label": "MAY</ref>55",
+            "type": "icon",
+            "queryId": "icons",
+            "box": {
+              "x": 261,
+              "y": 103,
+              "width": 130,
+              "height": 38
+            }
+          },
+          {
+            "id": "6bec574e9db4",
+            "label": "132-250g55",
+            "type": "icon",
+            "queryId": "cv_components+icons",
+            "box": {
+              "x": 626,
+              "y": 1303,
+              "width": 305,
+              "height": 46
+            }
+          },
+          {
+            "id": "87fc66d3a86f",
+            "label": "96-170g56",
+            "type": "icon",
+            "queryId": "cv_components+icons",
+            "box": {
+              "x": 645,
+              "y": 1111,
+              "width": 289,
+              "height": 46
+            }
+          },
+          {
+            "id": "883819675e37",
+            "label": "38-70g54",
+            "type": "icon",
+            "queryId": "cv_components+icons",
+            "box": {
+              "x": 667,
+              "y": 1495,
+              "width": 265,
+              "height": 46
+            }
+          },
+          {
+            "id": "16b5b761eb54",
+            "label": "722 kcal",
+            "type": "icon",
+            "queryId": "icons",
+            "box": {
+              "x": 751,
+              "y": 1934,
+              "width": 194,
+              "height": 48
+            }
+          },
+          {
+            "id": "c98baf1a68cd",
+            "label": "+",
+            "type": "icon",
+            "queryId": "icons",
+            "box": {
+              "x": 950,
+              "y": 2165,
+              "width": 49,
+              "height": 50
+            }
+          },
+          {
+            "id": "b226a237e351",
+            "label": "listate",
+            "type": "list_item",
+            "queryId": "list_items",
+            "box": {
+              "x": 0,
+              "y": 65,
+              "width": 1080,
+              "height": 2335
+            }
+          },
+          {
+            "id": "d60d45ff60d7",
+            "label": "cv-component-0",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 396,
+              "y": 368,
+              "width": 480,
+              "height": 672
+            }
+          },
+          {
+            "id": "5306d288b3c0",
+            "label": "cv-component-1",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 0,
+              "y": 2104,
+              "width": 1080,
+              "height": 296
+            }
+          },
+          {
+            "id": "098761a14897",
+            "label": "cv-component-2",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 44,
+              "y": 44,
+              "width": 344,
+              "height": 192
+            }
+          },
+          {
+            "id": "cf7557a44ab9",
+            "label": "cv-component-3",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 760,
+              "y": 44,
+              "width": 284,
+              "height": 192
+            }
+          },
+          {
+            "id": "b6d4ba5bcf07",
+            "label": "cv-component-4",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 388,
+              "y": 624,
+              "width": 308,
+              "height": 160
+            }
+          },
+          {
+            "id": "5f6944889fdc",
+            "label": "cv-component-5",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 132,
+              "y": 1112,
+              "width": 460,
+              "height": 88
+            }
+          },
+          {
+            "id": "667abe259a48",
+            "label": "cv-component-7",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 132,
+              "y": 1496,
+              "width": 444,
+              "height": 88
+            }
+          },
+          {
+            "id": "4ce9d6ab40be",
+            "label": "cv-component-8",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 132,
+              "y": 1304,
+              "width": 432,
+              "height": 88
+            }
+          },
+          {
+            "id": "27939b935852",
+            "label": "cv-component-9",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 84,
+              "y": 1868,
+              "width": 180,
+              "height": 184
+            }
+          },
+          {
+            "id": "66afe847bc0c",
+            "label": "cv-component-11",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 856,
+              "y": 1876,
+              "width": 140,
+              "height": 100
+            }
+          },
+          {
+            "id": "9711f37e588b",
+            "label": "cv-component-12",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 268,
+              "y": 2160,
+              "width": 116,
+              "height": 116
+            }
+          },
+          {
+            "id": "c70ba3b40b9b",
+            "label": "cv-component-15",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 708,
+              "y": 2160,
+              "width": 96,
+              "height": 112
+            }
+          },
+          {
+            "id": "e7bc4c43b1af",
+            "label": "cv-component-22",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 64,
+              "y": 2244,
+              "width": 92,
+              "height": 56
+            }
+          },
+          {
+            "id": "f6a859edf734",
+            "label": "cv-component-23",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 876,
+              "y": 1748,
+              "width": 156,
+              "height": 28
+            }
+          },
+          {
+            "id": "a1672b910e3e",
+            "label": "cv-component-24",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 956,
+              "y": 2176,
+              "width": 40,
+              "height": 96
+            }
+          },
+          {
+            "id": "924e22d25702",
+            "label": "cv-component-25",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 96,
+              "y": 128,
+              "width": 80,
+              "height": 48
+            }
+          },
+          {
+            "id": "3ee717dac2d6",
+            "label": "cv-component-26",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 944,
+              "y": 184,
+              "width": 64,
+              "height": 48
+            }
+          },
+          {
+            "id": "be4e4aa8e232",
+            "label": "cv-component-27",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 944,
+              "y": 112,
+              "width": 64,
+              "height": 48
+            }
+          },
+          {
+            "id": "98961ab18075",
+            "label": "cv-component-29",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 400,
+              "y": 1912,
+              "width": 68,
+              "height": 44
+            }
+          },
+          {
+            "id": "9ddc6473bf4a",
+            "label": "cv-component-30",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 468,
+              "y": 1908,
+              "width": 64,
+              "height": 44
+            }
+          },
+          {
+            "id": "28525d30acca",
+            "label": "cv-component-31",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 80,
+              "y": 2168,
+              "width": 56,
+              "height": 40
+            }
+          }
+        ]
+      },
+      "stability": {
+        "comparedTo": 900,
+        "expectedMissingLabels": [
+          "chart:bar</ref><box>None</box><ref>indicators",
+          "chart:bars<34>",
+          "chart:charts</ref><box>None</box><ref>rings",
+          "chart:charts_indicators",
+          "chart:charts_indicators",
+          "chart:charts_indicators",
+          "chart:charts_indicators",
+          "chart:charts_indicators",
+          "chart:charts_indicators",
+          "chart:charts_indicators",
+          "chart:charts_indicators",
+          "chart:charts_indicators",
+          "chart:charts_indicators",
+          "chart:charts_indicators",
+          "chart:charts_indicators",
+          "chart:progress indicators",
+          "icon:A",
+          "icon:E",
+          "icon:N",
+          "icon:T",
+          "icon:icon-icons-132",
+          "nav:tab bar bar and navigation elements",
+          "text:1,420",
+          "text:132/25055%",
+          "text:3877054%",
+          "text:620kcal",
+          "text:96/170g56%",
+          "text:98 kcalleftleft",
+          "text:Carbs",
+          "text:Chicken2 Bowlowl",
+          "text:EK",
+          "text:FRIDAY·MAY155",
+          "text:History",
+          "text:History2:48·LL4827766gg",
+          "text:KCAL EATED",
+          "text:Protein",
+          "text:cv-component-22",
+          "text:cv-component-34",
+          "text:cv-component-36",
+          "text:cv-component-37",
+          "text:cv-component-39",
+          "text:cv-component-40",
+          "text:cv-component-41",
+          "text:cv-component-42",
+          "text:cv-component-43",
+          "text:cv-component-44",
+          "text:cv-component-45",
+          "text:cv-component-49",
+          "text:cv-component-52",
+          "text:cv-component-53",
+          "text:cv-component-56",
+          "text:cv-component-57",
+          "text:cv-component-58",
+          "text:cv-component-60",
+          "text:cv-component-61",
+          "text:cv-component-63",
+          "text:cv-component-64",
+          "text:cv-component-65",
+          "text:cv-component-66",
+          "text:cv-component-68",
+          "text:cv-component-69",
+          "text:cv-component-70",
+          "text:cv-component-71",
+          "text:cv-component-72",
+          "text:cv-component-73",
+          "text:cv-component-74",
+          "text:cv-component-75",
+          "text:cv-component-76",
+          "text:cv-component-77",
+          "text:cv-component-79",
+          "text:of2,,400"
+        ],
+        "actualMissingLabels": [
+          "button:Fat",
+          "button:G",
+          "button:G",
+          "button:G",
+          "button:G",
+          "button:History",
+          "button:K",
+          "button:S",
+          "button:tate",
+          "chart:charts_indicators",
+          "chart:charts_indicators",
+          "chart:progress",
+          "icon:AI",
+          "icon:EK",
+          "icon:FRID",
+          "icon:T",
+          "icon:icon-icons-130",
+          "nav:tab bar and and navigation elements",
+          "text:12 Rice Bowl8g",
+          "text:3 TODAY",
+          "text:53%",
+          "text:54%",
+          "text:56%",
+          "text:Cartein",
+          "text:Chicken Rice Rice Bowl",
+          "text:Confirmed",
+          "text:History",
+          "text:MAY",
+          "text:cv-component-13",
+          "text:cv-component-14",
+          "text:cv-component-18",
+          "text:cv-component-19",
+          "text:cv-component-20",
+          "text:cv-component-21",
+          "text:cv-component-28",
+          "text:cv-component-32",
+          "text:cv-component-33",
+          "text:cv-component-35",
+          "text:cv-component-38",
+          "text:cv-component-40",
+          "text:cv-component-42",
+          "text:cv-component-45",
+          "text:cv-component-47",
+          "text:cv-component-48",
+          "text:cv-component-49",
+          "text:cv-component-50",
+          "text:cv-component-51",
+          "text:cv-component-52",
+          "text:cv-component-54",
+          "text:cv-component-65",
+          "text:cv-component-66",
+          "text:cv-component-67",
+          "text:cv-component-69",
+          "text:cv-component-70",
+          "text:cv-component-71",
+          "text:cv-component-72",
+          "text:of 2,000",
+          "text:text-text_labels-85",
+          "text:text-text_labels-94",
+          "text:text-text_labels-95",
+          "text:text-text_labels-96"
+        ],
+        "expectedExtraLabels": [
+          "button:C",
+          "button:D",
+          "button:F",
+          "button:G",
+          "button:H",
+          "button:I",
+          "button:J",
+          "button:K",
+          "button:M",
+          "button:N",
+          "button:O",
+          "button:O",
+          "button:P",
+          "button:S",
+          "button:T",
+          "button:U",
+          "button:Y",
+          "button:button-buttons-82",
+          "button:tate",
+          "icon:620k",
+          "icon:96 kcalcal left",
+          "icon:F",
+          "icon:History2 Rice Bowl1",
+          "icon:icon-icons-86",
+          "icon:of, 240g",
+          "text:12:48·Lunch</ref>46g+72g",
+          "text:38/25gg",
+          "text:9,420",
+          "text:91%Confirmed",
+          "text:96/170g",
+          "text:9tein",
+          "text:Car",
+          "text:Chicken2 Bowl Bowl",
+          "text:F</ref>AYDAY MAY IS15",
+          "text:KAL E EATEN",
+          "text:cv-component-0",
+          "text:cv-component-10",
+          "text:cv-component-11",
+          "text:cv-component-13",
+          "text:cv-component-17",
+          "text:cv-component-18",
+          "text:cv-component-23",
+          "text:cv-component-27",
+          "text:cv-component-28",
+          "text:cv-component-29",
+          "text:cv-component-31",
+          "text:cv-component-32",
+          "text:cv-component-8",
+          "text:k",
+          "text:text-text_labels-53",
+          "text:text-text_labels-57",
+          "text:text-text_labels-59",
+          "text:text-text_labels-60",
+          "text:text-text_labels-61"
+        ],
+        "actualExtraLabels": [
+          "button:Carbs",
+          "button:Chicken,48g",
+          "button:TODAY",
+          "button:button-buttons-77",
+          "button:button-buttons-79",
+          "button:button-buttons-97",
+          "button:button-buttons-98",
+          "icon:+",
+          "icon:132-250g55",
+          "icon:38-70g54",
+          "icon:722 kcal",
+          "icon:96-170g56",
+          "icon:HistoryAY",
+          "icon:MAY</ref>55",
+          "icon:icon-icons-108",
+          "icon:icon-icons-109",
+          "icon:icon-icons-110",
+          "icon:icon-icons-111",
+          "icon:icon-icons-112",
+          "icon:icon-icons-113",
+          "icon:icon-icons-114",
+          "icon:icon-icons-115",
+          "icon:icon-icons-116",
+          "icon:icon-icons-117",
+          "icon:icon-icons-118",
+          "icon:icon-icons-119",
+          "list_item:listate",
+          "text:1 TODAY TODAYg",
+          "text:12:48·Lunch48g",
+          "text:132·250g",
+          "text:516g",
+          "text:54g",
+          "text:84%",
+          "text:91% Confirmed",
+          "text:96·170g",
+          "text:980 E left",
+          "text:AI",
+          "text:Chicken2 Bowlowl",
+          "text:EK",
+          "text:FRIDAY",
+          "text:KCAL EATED",
+          "text:MAY155",
+          "text:Protein",
+          "text:SCAN",
+          "text:cv-component-12",
+          "text:cv-component-15",
+          "text:cv-component-22",
+          "text:cv-component-25",
+          "text:cv-component-26",
+          "text:cv-component-29",
+          "text:cv-component-31",
+          "text:cv-component-5",
+          "text:cv-component-7",
+          "text:cv-component-8",
+          "text:cv-component-9",
+          "text:of 2,400",
+          "text:text-text_labels-54"
+        ]
+      }
+    },
+    {
+      "maxDimension": 900,
+      "status": "complete",
+      "expected": {
+        "elapsedMs": 254381,
+        "imageWidth": 1206,
+        "imageHeight": 2622,
+        "usefulElementCount": 91,
+        "queryCoverageRatio": 1,
+        "queryCounts": {
+          "buttons+icons+text_labels": 4,
+          "icons+text_labels": 1,
+          "text_labels": 12,
+          "cv_components+text_labels": 1,
+          "buttons+text_labels": 6,
+          "icons": 5,
+          "charts_indicators": 16,
+          "cv_components": 46
+        },
+        "laneMetadata": {
+          "cv_components": {
+            "status": "complete",
+            "count": 80,
+            "model": "opencv"
+          },
+          "ocr_text": {
+            "status": "complete",
+            "count": 0,
+            "model": "disabled"
+          },
+          "omniparser": {
+            "status": "not_configured",
+            "count": 0,
+            "detail": "Set UI_DIFF_ENABLE_OMNIPARSER=1 and install OmniParser dependencies to enable.",
+            "model": "microsoft/OmniParser",
+            "license": "AGPL-3.0"
+          },
+          "yolo_ui": {
+            "status": "not_configured",
+            "count": 0,
+            "detail": "Set UI_DIFF_YOLO_UI_MODEL_PATH to enable local YOLO UI detection.",
+            "model": "unset"
+          }
+        },
+        "elements": [
+          {
+            "id": "d4bc7bd6a778",
+            "label": "Today",
+            "type": "text",
+            "queryId": "buttons+icons+text_labels",
+            "box": {
+              "x": 40,
+              "y": 202,
+              "width": 271,
+              "height": 108
+            }
+          },
+          {
+            "id": "8ac5471035ea",
+            "label": "FRIDAY·MAY155",
+            "type": "text",
+            "queryId": "buttons+icons+text_labels",
+            "box": {
+              "x": 51,
+              "y": 157,
+              "width": 353,
+              "height": 39
+            }
+          },
+          {
+            "id": "bd900621318b",
+            "label": "Recent scans",
+            "type": "text",
+            "queryId": "buttons+icons+text_labels",
+            "box": {
+              "x": 53,
+              "y": 1851,
+              "width": 279,
+              "height": 47
+            }
+          },
+          {
+            "id": "5b5c66df2755",
+            "label": "Today",
+            "type": "text",
+            "queryId": "icons+text_labels",
+            "box": {
+              "x": 77,
+              "y": 2449,
+              "width": 111,
+              "height": 55
+            }
+          },
+          {
+            "id": "405e0a7de2f9",
+            "label": "9:41",
+            "type": "text",
+            "queryId": "text_labels",
+            "box": {
+              "x": 164,
+              "y": 68,
+              "width": 110,
+              "height": 63
+            }
+          },
+          {
+            "id": "0d85ee78a589",
+            "label": "Protein",
+            "type": "text",
+            "queryId": "text_labels",
+            "box": {
+              "x": 177,
+              "y": 1183,
+              "width": 157,
+              "height": 52
+            }
+          },
+          {
+            "id": "6de02f122e66",
+            "label": "Carbs",
+            "type": "text",
+            "queryId": "text_labels",
+            "box": {
+              "x": 181,
+              "y": 1395,
+              "width": 127,
+              "height": 50
+            }
+          },
+          {
+            "id": "b95ffd7e65de",
+            "label": "Fat",
+            "type": "text",
+            "queryId": "text_labels",
+            "box": {
+              "x": 181,
+              "y": 1605,
+              "width": 78,
+              "height": 50
+            }
+          },
+          {
+            "id": "0649e5823154",
+            "label": "Chicken2 Bowlowl",
+            "type": "text",
+            "queryId": "cv_components+text_labels",
+            "box": {
+              "x": 295,
+              "y": 1969,
+              "width": 404,
+              "height": 50
+            }
+          },
+          {
+            "id": "44071f719a50",
+            "label": "History2:48·LL4827766gg",
+            "type": "text",
+            "queryId": "text_labels",
+            "box": {
+              "x": 298,
+              "y": 2032,
+              "width": 627,
+              "height": 45
+            }
+          },
+          {
+            "id": "beb8f470708f",
+            "label": "History",
+            "type": "text",
+            "queryId": "buttons+icons+text_labels",
+            "box": {
+              "x": 304,
+              "y": 2459,
+              "width": 124,
+              "height": 47
+            }
+          },
+          {
+            "id": "3a4299933549",
+            "label": "1,420",
+            "type": "text",
+            "queryId": "buttons+text_labels",
+            "box": {
+              "x": 434,
+              "y": 666,
+              "width": 334,
+              "height": 123
+            }
+          },
+          {
+            "id": "56554974e6b0",
+            "label": "98 kcalleftleft",
+            "type": "text",
+            "queryId": "buttons+text_labels",
+            "box": {
+              "x": 467,
+              "y": 868,
+              "width": 263,
+              "height": 37
+            }
+          },
+          {
+            "id": "625c1454bd2c",
+            "label": "KCAL EATED",
+            "type": "text",
+            "queryId": "text_labels",
+            "box": {
+              "x": 485,
+              "y": 621,
+              "width": 227,
+              "height": 37
+            }
+          },
+          {
+            "id": "768612296b87",
+            "label": "of2,,400",
+            "type": "text",
+            "queryId": "buttons+text_labels",
+            "box": {
+              "x": 525,
+              "y": 797,
+              "width": 151,
+              "height": 42
+            }
+          },
+          {
+            "id": "6ddfe0b83d12",
+            "label": "SCAN",
+            "type": "text",
+            "queryId": "text_labels",
+            "box": {
+              "x": 549,
+              "y": 2538,
+              "width": 99,
+              "height": 37
+            }
+          },
+          {
+            "id": "3192934dc3bc",
+            "label": "132/25055%",
+            "type": "text",
+            "queryId": "buttons+text_labels",
+            "box": {
+              "x": 726,
+              "y": 1390,
+              "width": 335,
+              "height": 52
+            }
+          },
+          {
+            "id": "059d91b1d658",
+            "label": "96/170g56%",
+            "type": "text",
+            "queryId": "buttons+text_labels",
+            "box": {
+              "x": 750,
+              "y": 1180,
+              "width": 308,
+              "height": 52
+            }
+          },
+          {
+            "id": "cfeafef76593",
+            "label": "3877054%",
+            "type": "text",
+            "queryId": "text_labels",
+            "box": {
+              "x": 766,
+              "y": 1602,
+              "width": 298,
+              "height": 50
+            }
+          },
+          {
+            "id": "91b57ff73cca",
+            "label": "Goals",
+            "type": "text",
+            "queryId": "text_labels",
+            "box": {
+              "x": 784,
+              "y": 2462,
+              "width": 103,
+              "height": 39
+            }
+          },
+          {
+            "id": "7c0d4b1d261b",
+            "label": "620kcal",
+            "type": "text",
+            "queryId": "text_labels",
+            "box": {
+              "x": 959,
+              "y": 1967,
+              "width": 169,
+              "height": 55
+            }
+          },
+          {
+            "id": "7c3a9d3f131e",
+            "label": "3 TODAYOD",
+            "type": "text",
+            "queryId": "buttons+text_labels",
+            "box": {
+              "x": 977,
+              "y": 1856,
+              "width": 169,
+              "height": 45
+            }
+          },
+          {
+            "id": "c907b05ccebe",
+            "label": "AI",
+            "type": "text",
+            "queryId": "text_labels",
+            "box": {
+              "x": 1046,
+              "y": 2465,
+              "width": 46,
+              "height": 34
+            }
+          },
+          {
+            "id": "3ba2166c02b3",
+            "label": "EK",
+            "type": "text",
+            "queryId": "text_labels",
+            "box": {
+              "x": 1055,
+              "y": 205,
+              "width": 69,
+              "height": 50
+            }
+          },
+          {
+            "id": "64d3b325609a",
+            "label": "E",
+            "type": "icon",
+            "queryId": "icons",
+            "box": {
+              "x": 603,
+              "y": 632,
+              "width": 24,
+              "height": 26
+            }
+          },
+          {
+            "id": "445c462a099e",
+            "label": "T",
+            "type": "icon",
+            "queryId": "icons",
+            "box": {
+              "x": 633,
+              "y": 635,
+              "width": 30,
+              "height": 24
+            }
+          },
+          {
+            "id": "ac84146cc718",
+            "label": "A",
+            "type": "icon",
+            "queryId": "icons",
+            "box": {
+              "x": 669,
+              "y": 635,
+              "width": 24,
+              "height": 24
+            }
+          },
+          {
+            "id": "057f7e2e3b73",
+            "label": "N",
+            "type": "icon",
+            "queryId": "icons",
+            "box": {
+              "x": 696,
+              "y": 637,
+              "width": 16,
+              "height": 21
+            }
+          },
+          {
+            "id": "ae3ed5fbb408",
+            "label": "icon-icons-132",
+            "type": "icon",
+            "queryId": "icons",
+            "box": {
+              "x": 985,
+              "y": 1867,
+              "width": 22,
+              "height": 31
+            }
+          },
+          {
+            "id": "ecfa966eea03",
+            "label": "charts</ref><box>None</box><ref>rings",
+            "type": "chart",
+            "queryId": "charts_indicators",
+            "box": {
+              "x": 277,
+              "y": 446,
+              "width": 646,
+              "height": 645
+            }
+          },
+          {
+            "id": "b410cc11c597",
+            "label": "charts_indicators",
+            "type": "chart",
+            "queryId": "charts_indicators",
+            "box": {
+              "x": 514,
+              "y": 2310,
+              "width": 178,
+              "height": 309
+            }
+          },
+          {
+            "id": "7c93a87e5f09",
+            "label": "progress indicators",
+            "type": "chart",
+            "queryId": "charts_indicators",
+            "box": {
+              "x": 135,
+              "y": 1261,
+              "width": 529,
+              "height": 34
+            }
+          },
+          {
+            "id": "a01402da14d6",
+            "label": "charts_indicators",
+            "type": "chart",
+            "queryId": "charts_indicators",
+            "box": {
+              "x": 135,
+              "y": 1474,
+              "width": 498,
+              "height": 29
+            }
+          },
+          {
+            "id": "fc22dcd73edf",
+            "label": "charts_indicators",
+            "type": "chart",
+            "queryId": "charts_indicators",
+            "box": {
+              "x": 135,
+              "y": 1681,
+              "width": 509,
+              "height": 34
+            }
+          },
+          {
+            "id": "6731c94b4bc3",
+            "label": "bar</ref><box>None</box><ref>indicators",
+            "type": "chart",
+            "queryId": "charts_indicators",
+            "box": {
+              "x": 133,
+              "y": 1193,
+              "width": 34,
+              "height": 34
+            }
+          },
+          {
+            "id": "b4a411ee7499",
+            "label": "charts_indicators",
+            "type": "chart",
+            "queryId": "charts_indicators",
+            "box": {
+              "x": 133,
+              "y": 1405,
+              "width": 37,
+              "height": 34
+            }
+          },
+          {
+            "id": "bb82c221d030",
+            "label": "charts_indicators",
+            "type": "chart",
+            "queryId": "charts_indicators",
+            "box": {
+              "x": 133,
+              "y": 1615,
+              "width": 33,
+              "height": 34
+            }
+          },
+          {
+            "id": "fbd16164279d",
+            "label": "charts_indicators",
+            "type": "chart",
+            "queryId": "charts_indicators",
+            "box": {
+              "x": 324,
+              "y": 2121,
+              "width": 25,
+              "height": 26
+            }
+          },
+          {
+            "id": "388ba0941a6e",
+            "label": "charts_indicators",
+            "type": "chart",
+            "queryId": "charts_indicators",
+            "box": {
+              "x": 614,
+              "y": 2040,
+              "width": 23,
+              "height": 34
+            }
+          },
+          {
+            "id": "d6bbb0ba41c8",
+            "label": "charts_indicators",
+            "type": "chart",
+            "queryId": "charts_indicators",
+            "box": {
+              "x": 730,
+              "y": 2043,
+              "width": 27,
+              "height": 29
+            }
+          },
+          {
+            "id": "82155b5addd0",
+            "label": "charts_indicators",
+            "type": "chart",
+            "queryId": "charts_indicators",
+            "box": {
+              "x": 829,
+              "y": 2048,
+              "width": 24,
+              "height": 24
+            }
+          },
+          {
+            "id": "da1d28e9a690",
+            "label": "charts_indicators",
+            "type": "chart",
+            "queryId": "charts_indicators",
+            "box": {
+              "x": 935,
+              "y": 1196,
+              "width": 27,
+              "height": 34
+            }
+          },
+          {
+            "id": "b846c78280e8",
+            "label": "charts_indicators",
+            "type": "chart",
+            "queryId": "charts_indicators",
+            "box": {
+              "x": 937,
+              "y": 1620,
+              "width": 22,
+              "height": 26
+            }
+          },
+          {
+            "id": "23ce444bc047",
+            "label": "charts_indicators",
+            "type": "chart",
+            "queryId": "charts_indicators",
+            "box": {
+              "x": 941,
+              "y": 1408,
+              "width": 30,
+              "height": 29
+            }
+          },
+          {
+            "id": "a81127aded5c",
+            "label": "bars<34>",
+            "type": "chart",
+            "queryId": "charts_indicators",
+            "box": {
+              "x": 859,
+              "y": 92,
+              "width": 64,
+              "height": 31
+            }
+          },
+          {
+            "id": "27b75494a4a9",
+            "label": "tab bar bar and navigation elements",
+            "type": "nav",
+            "queryId": "tab_bar_nav_elements",
+            "box": {
+              "x": 0,
+              "y": 0,
+              "width": 1206,
+              "height": 2622
+            }
+          },
+          {
+            "id": "229c9922e479",
+            "label": "cv-component-2",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 17,
+              "y": 1926,
+              "width": 1142,
+              "height": 300
+            }
+          },
+          {
+            "id": "0c59973ab31e",
+            "label": "cv-component-5",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 90,
+              "y": 1564,
+              "width": 1025,
+              "height": 184
+            }
+          },
+          {
+            "id": "5f49f713e7d5",
+            "label": "cv-component-6",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 90,
+              "y": 1355,
+              "width": 1025,
+              "height": 184
+            }
+          },
+          {
+            "id": "326148ed336f",
+            "label": "cv-component-7",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 90,
+              "y": 1145,
+              "width": 1025,
+              "height": 184
+            }
+          },
+          {
+            "id": "9108f3ca9d3c",
+            "label": "cv-component-12",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 84,
+              "y": 1975,
+              "width": 184,
+              "height": 184
+            }
+          },
+          {
+            "id": "8e42b3027797",
+            "label": "cv-component-14",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 897,
+              "y": 175,
+              "width": 251,
+              "height": 119
+            }
+          },
+          {
+            "id": "f28c18a52645",
+            "label": "cv-component-15",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 300,
+              "y": 2101,
+              "width": 382,
+              "height": 67
+            }
+          },
+          {
+            "id": "84801efe2f90",
+            "label": "cv-component-16",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 396,
+              "y": 2546,
+              "width": 417,
+              "height": 52
+            }
+          },
+          {
+            "id": "1bba4475e14d",
+            "label": "cv-component-19",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 1069,
+              "y": 0,
+              "width": 137,
+              "height": 137
+            }
+          },
+          {
+            "id": "4f89e856a2cb",
+            "label": "cv-component-20",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 0,
+              "y": 0,
+              "width": 137,
+              "height": 137
+            }
+          },
+          {
+            "id": "d99eb958536e",
+            "label": "cv-component-21",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 1072,
+              "y": 2488,
+              "width": 134,
+              "height": 134
+            }
+          },
+          {
+            "id": "12a3f764a68d",
+            "label": "cv-component-22",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 0,
+              "y": 2488,
+              "width": 134,
+              "height": 134
+            }
+          },
+          {
+            "id": "2eb02dcfee03",
+            "label": "cv-component-33",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 950,
+              "y": 76,
+              "width": 149,
+              "height": 44
+            }
+          },
+          {
+            "id": "4ba60279c8d4",
+            "label": "cv-component-34",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 137,
+              "y": 1197,
+              "width": 189,
+              "height": 32
+            }
+          },
+          {
+            "id": "0f9cfb93f3b1",
+            "label": "cv-component-36",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 137,
+              "y": 1407,
+              "width": 166,
+              "height": 32
+            }
+          },
+          {
+            "id": "afdef1845090",
+            "label": "cv-component-37",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 87,
+              "y": 2462,
+              "width": 93,
+              "height": 52
+            }
+          },
+          {
+            "id": "835e4524cfe3",
+            "label": "cv-component-39",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 888,
+              "y": 705,
+              "width": 38,
+              "height": 117
+            }
+          },
+          {
+            "id": "d27b6ecddbc8",
+            "label": "cv-component-40",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 452,
+              "y": 688,
+              "width": 55,
+              "height": 79
+            }
+          },
+          {
+            "id": "741a052a8071",
+            "label": "cv-component-41",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 542,
+              "y": 1058,
+              "width": 122,
+              "height": 35
+            }
+          },
+          {
+            "id": "eb9303d06f33",
+            "label": "cv-component-42",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 408,
+              "y": 2101,
+              "width": 67,
+              "height": 61
+            }
+          },
+          {
+            "id": "56d86a780260",
+            "label": "cv-component-43",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 848,
+              "y": 714,
+              "width": 35,
+              "height": 114
+            }
+          },
+          {
+            "id": "13fffe1d68d2",
+            "label": "cv-component-44",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 137,
+              "y": 1617,
+              "width": 114,
+              "height": 32
+            }
+          },
+          {
+            "id": "17055f80459e",
+            "label": "cv-component-45",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 551,
+              "y": 1017,
+              "width": 102,
+              "height": 35
+            }
+          },
+          {
+            "id": "3d245d961f2d",
+            "label": "cv-component-49",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 807,
+              "y": 2392,
+              "width": 58,
+              "height": 55
+            }
+          },
+          {
+            "id": "ed4fae41760c",
+            "label": "cv-component-52",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 306,
+              "y": 2042,
+              "width": 99,
+              "height": 32
+            }
+          },
+          {
+            "id": "1148c5d23221",
+            "label": "cv-component-53",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 807,
+              "y": 725,
+              "width": 35,
+              "height": 90
+            }
+          },
+          {
+            "id": "7efc62bc80f9",
+            "label": "cv-component-56",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 466,
+              "y": 2045,
+              "width": 102,
+              "height": 29
+            }
+          },
+          {
+            "id": "171ee9b356f1",
+            "label": "cv-component-57",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 571,
+              "y": 2374,
+              "width": 64,
+              "height": 44
+            }
+          },
+          {
+            "id": "6a1ee9324310",
+            "label": "cv-component-58",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 344,
+              "y": 2392,
+              "width": 52,
+              "height": 52
+            }
+          },
+          {
+            "id": "c154776fbed0",
+            "label": "cv-component-60",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 760,
+              "y": 1194,
+              "width": 73,
+              "height": 35
+            }
+          },
+          {
+            "id": "573bb956912c",
+            "label": "cv-component-61",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 562,
+              "y": 976,
+              "width": 79,
+              "height": 32
+            }
+          },
+          {
+            "id": "b8beaa1a9f8c",
+            "label": "cv-component-63",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 784,
+              "y": 1617,
+              "width": 73,
+              "height": 32
+            }
+          },
+          {
+            "id": "2cb69527532b",
+            "label": "cv-component-64",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 108,
+              "y": 2386,
+              "width": 55,
+              "height": 41
+            }
+          },
+          {
+            "id": "5e53ca4fd1cb",
+            "label": "cv-component-65",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 865,
+              "y": 79,
+              "width": 55,
+              "height": 41
+            }
+          },
+          {
+            "id": "708a8018e5ac",
+            "label": "cv-component-66",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 594,
+              "y": 449,
+              "width": 64,
+              "height": 35
+            }
+          },
+          {
+            "id": "73cceb5fea93",
+            "label": "cv-component-68",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 883,
+              "y": 1617,
+              "width": 61,
+              "height": 35
+            }
+          },
+          {
+            "id": "b8265750e7e6",
+            "label": "cv-component-69",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 594,
+              "y": 533,
+              "width": 58,
+              "height": 35
+            }
+          },
+          {
+            "id": "527ee4b1b572",
+            "label": "cv-component-70",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 597,
+              "y": 492,
+              "width": 52,
+              "height": 32
+            }
+          },
+          {
+            "id": "b0cf30ef4411",
+            "label": "cv-component-71",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 993,
+              "y": 1620,
+              "width": 58,
+              "height": 26
+            }
+          },
+          {
+            "id": "8902dfe8a375",
+            "label": "cv-component-72",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 993,
+              "y": 1410,
+              "width": 58,
+              "height": 26
+            }
+          },
+          {
+            "id": "2f5b002402d7",
+            "label": "cv-component-73",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 993,
+              "y": 1200,
+              "width": 58,
+              "height": 26
+            }
+          },
+          {
+            "id": "e28a0c84d2d8",
+            "label": "cv-component-74",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 265,
+              "y": 169,
+              "width": 64,
+              "height": 23
+            }
+          },
+          {
+            "id": "4ea08cf87e97",
+            "label": "cv-component-75",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 128,
+              "y": 2007,
+              "width": 44,
+              "height": 32
+            }
+          },
+          {
+            "id": "f723d27aa8e9",
+            "label": "cv-component-76",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 358,
+              "y": 169,
+              "width": 41,
+              "height": 26
+            }
+          },
+          {
+            "id": "fcb25ce8ca4a",
+            "label": "cv-component-77",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 1057,
+              "y": 2398,
+              "width": 26,
+              "height": 35
+            }
+          },
+          {
+            "id": "91a646da661a",
+            "label": "cv-component-79",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 533,
+              "y": 749,
+              "width": 17,
+              "height": 35
+            }
+          }
+        ]
+      },
+      "actual": {
+        "elapsedMs": 254261,
+        "imageWidth": 1080,
+        "imageHeight": 2400,
+        "usefulElementCount": 80,
+        "queryCoverageRatio": 1,
+        "queryCounts": {
+          "icons+text_labels": 3,
+          "cv_components+icons+text_labels": 3,
+          "cv_components+text_labels": 14,
+          "text_labels": 3,
+          "buttons": 11,
+          "icons": 5,
+          "charts_indicators": 3,
+          "cv_components": 38
+        },
+        "laneMetadata": {
+          "cv_components": {
+            "status": "complete",
+            "count": 73,
+            "model": "opencv"
+          },
+          "ocr_text": {
+            "status": "complete",
+            "count": 0,
+            "model": "disabled"
+          },
+          "omniparser": {
+            "status": "not_configured",
+            "count": 0,
+            "detail": "Set UI_DIFF_ENABLE_OMNIPARSER=1 and install OmniParser dependencies to enable.",
+            "model": "microsoft/OmniParser",
+            "license": "AGPL-3.0"
+          },
+          "yolo_ui": {
+            "status": "not_configured",
+            "count": 0,
+            "detail": "Set UI_DIFF_YOLO_UI_MODEL_PATH to enable local YOLO UI detection.",
+            "model": "unset"
+          }
+        },
+        "elements": [
+          {
+            "id": "5169865a7a9c",
+            "label": "16:14",
+            "type": "text",
+            "queryId": "icons+text_labels",
+            "box": {
+              "x": 41,
+              "y": 38,
+              "width": 99,
+              "height": 41
+            }
+          },
+          {
+            "id": "f4f9cc4ca3ec",
+            "label": "Today",
+            "type": "text",
+            "queryId": "cv_components+icons+text_labels",
+            "box": {
+              "x": 43,
+              "y": 139,
+              "width": 245,
+              "height": 98
+            }
+          },
+          {
+            "id": "f7d4a4b80e97",
+            "label": "Recent scans",
+            "type": "text",
+            "queryId": "cv_components+text_labels",
+            "box": {
+              "x": 51,
+              "y": 1740,
+              "width": 265,
+              "height": 41
+            }
+          },
+          {
+            "id": "39744137c204",
+            "label": "Today",
+            "type": "text",
+            "queryId": "icons+text_labels",
+            "box": {
+              "x": 56,
+              "y": 2237,
+              "width": 100,
+              "height": 43
+            }
+          },
+          {
+            "id": "22db7ef4cd05",
+            "label": "Cartein",
+            "type": "text",
+            "queryId": "cv_components+text_labels",
+            "box": {
+              "x": 178,
+              "y": 1111,
+              "width": 146,
+              "height": 36
+            }
+          },
+          {
+            "id": "8ff68f5fc4fd",
+            "label": "Fat",
+            "type": "text",
+            "queryId": "cv_components+text_labels",
+            "box": {
+              "x": 181,
+              "y": 1495,
+              "width": 67,
+              "height": 38
+            }
+          },
+          {
+            "id": "c6517215ff3c",
+            "label": "MAY",
+            "type": "text",
+            "queryId": "cv_components+text_labels",
+            "box": {
+              "x": 254,
+              "y": 106,
+              "width": 68,
+              "height": 24
+            }
+          },
+          {
+            "id": "ec84f537bf3f",
+            "label": "History",
+            "type": "text",
+            "queryId": "cv_components+icons+text_labels",
+            "box": {
+              "x": 261,
+              "y": 2239,
+              "width": 122,
+              "height": 38
+            }
+          },
+          {
+            "id": "27dc4daa81ce",
+            "label": "12 Rice Bowl8g",
+            "type": "text",
+            "queryId": "text_labels",
+            "box": {
+              "x": 297,
+              "y": 1937,
+              "width": 375,
+              "height": 36
+            }
+          },
+          {
+            "id": "c23aa2aa6c6a",
+            "label": "Chicken Rice Rice Bowl",
+            "type": "text",
+            "queryId": "cv_components+text_labels",
+            "box": {
+              "x": 300,
+              "y": 1874,
+              "width": 391,
+              "height": 38
+            }
+          },
+          {
+            "id": "14cab3a5b00e",
+            "label": "text-text_labels-85",
+            "type": "text",
+            "queryId": "text_labels",
+            "box": {
+              "x": 348,
+              "y": 101,
+              "width": 38,
+              "height": 34
+            }
+          },
+          {
+            "id": "dcef18e54a56",
+            "label": "1,420",
+            "type": "text",
+            "queryId": "text_labels",
+            "box": {
+              "x": 380,
+              "y": 617,
+              "width": 319,
+              "height": 106
+            }
+          },
+          {
+            "id": "8322bf71c87d",
+            "label": "Confirmed",
+            "type": "text",
+            "queryId": "cv_components+text_labels",
+            "box": {
+              "x": 464,
+              "y": 2009,
+              "width": 180,
+              "height": 34
+            }
+          },
+          {
+            "id": "5126eaca1c35",
+            "label": "of 2,000",
+            "type": "text",
+            "queryId": "cv_components+text_labels",
+            "box": {
+              "x": 470,
+              "y": 746,
+              "width": 140,
+              "height": 38
+            }
+          },
+          {
+            "id": "55a699c8b8be",
+            "label": "text-text_labels-94",
+            "type": "text",
+            "queryId": "cv_components+text_labels",
+            "box": {
+              "x": 626,
+              "y": 1308,
+              "width": 67,
+              "height": 31
+            }
+          },
+          {
+            "id": "d5b3c8864525",
+            "label": "text-text_labels-95",
+            "type": "text",
+            "queryId": "cv_components+text_labels",
+            "box": {
+              "x": 646,
+              "y": 1116,
+              "width": 49,
+              "height": 34
+            }
+          },
+          {
+            "id": "a7a3773543f3",
+            "label": "text-text_labels-96",
+            "type": "text",
+            "queryId": "cv_components+text_labels",
+            "box": {
+              "x": 667,
+              "y": 1500,
+              "width": 45,
+              "height": 31
+            }
+          },
+          {
+            "id": "f40da4f50375",
+            "label": "Goals",
+            "type": "text",
+            "queryId": "cv_components+icons+text_labels",
+            "box": {
+              "x": 707,
+              "y": 2242,
+              "width": 95,
+              "height": 31
+            }
+          },
+          {
+            "id": "dfa477e2f626",
+            "label": "620kcal",
+            "type": "text",
+            "queryId": "cv_components+text_labels",
+            "box": {
+              "x": 853,
+              "y": 1872,
+              "width": 148,
+              "height": 48
+            }
+          },
+          {
+            "id": "de68ab533bd3",
+            "label": "56%",
+            "type": "text",
+            "queryId": "cv_components+text_labels",
+            "box": {
+              "x": 872,
+              "y": 1118,
+              "width": 63,
+              "height": 26
+            }
+          },
+          {
+            "id": "9c1e5383fa76",
+            "label": "53%",
+            "type": "text",
+            "queryId": "cv_components+text_labels",
+            "box": {
+              "x": 874,
+              "y": 1310,
+              "width": 58,
+              "height": 26
+            }
+          },
+          {
+            "id": "4d1c79388c26",
+            "label": "54%",
+            "type": "text",
+            "queryId": "cv_components+text_labels",
+            "box": {
+              "x": 875,
+              "y": 1502,
+              "width": 56,
+              "height": 26
+            }
+          },
+          {
+            "id": "e688471daeef",
+            "label": "3 TODAY",
+            "type": "text",
+            "queryId": "icons+text_labels",
+            "box": {
+              "x": 877,
+              "y": 1747,
+              "width": 153,
+              "height": 31
+            }
+          },
+          {
+            "id": "14e3a61536e3",
+            "label": "tate",
+            "type": "button",
+            "queryId": "buttons",
+            "box": {
+              "x": 0,
+              "y": 101,
+              "width": 404,
+              "height": 58
+            }
+          },
+          {
+            "id": "1c8545046c1d",
+            "label": "Pro",
+            "type": "button",
+            "queryId": "buttons",
+            "box": {
+              "x": 0,
+              "y": 139,
+              "width": 328,
+              "height": 1022
+            }
+          },
+          {
+            "id": "ec44df1311a7",
+            "label": "Car",
+            "type": "button",
+            "queryId": "buttons",
+            "box": {
+              "x": 0,
+              "y": 1301,
+              "width": 330,
+              "height": 55
+            }
+          },
+          {
+            "id": "48ae458a74ab",
+            "label": "Fat",
+            "type": "button",
+            "queryId": "buttons",
+            "box": {
+              "x": 0,
+              "y": 1488,
+              "width": 330,
+              "height": 62
+            }
+          },
+          {
+            "id": "2575650976ce",
+            "label": "History",
+            "type": "button",
+            "queryId": "buttons",
+            "box": {
+              "x": 4,
+              "y": 2225,
+              "width": 382,
+              "height": 82
+            }
+          },
+          {
+            "id": "6b5a82907a92",
+            "label": "K",
+            "type": "button",
+            "queryId": "buttons",
+            "box": {
+              "x": 424,
+              "y": 540,
+              "width": 252,
+              "height": 50
+            }
+          },
+          {
+            "id": "512b9553d146",
+            "label": "S",
+            "type": "button",
+            "queryId": "buttons",
+            "box": {
+              "x": 485,
+              "y": 2287,
+              "width": 120,
+              "height": 48
+            }
+          },
+          {
+            "id": "f44b79f0e033",
+            "label": "G",
+            "type": "button",
+            "queryId": "buttons",
+            "box": {
+              "x": 615,
+              "y": 1298,
+              "width": 335,
+              "height": 55
+            }
+          },
+          {
+            "id": "76501393ee1a",
+            "label": "G",
+            "type": "button",
+            "queryId": "buttons",
+            "box": {
+              "x": 632,
+              "y": 1106,
+              "width": 323,
+              "height": 60
+            }
+          },
+          {
+            "id": "23c8b37df14b",
+            "label": "G",
+            "type": "button",
+            "queryId": "buttons",
+            "box": {
+              "x": 643,
+              "y": 1486,
+              "width": 309,
+              "height": 67
+            }
+          },
+          {
+            "id": "feed67ec96c6",
+            "label": "G",
+            "type": "button",
+            "queryId": "buttons",
+            "box": {
+              "x": 707,
+              "y": 1932,
+              "width": 292,
+              "height": 58
+            }
+          },
+          {
+            "id": "2dc9640921cd",
+            "label": "FRID",
+            "type": "icon",
+            "queryId": "icons",
+            "box": {
+              "x": 45,
+              "y": 101,
+              "width": 108,
+              "height": 36
+            }
+          },
+          {
+            "id": "c2c443391e6c",
+            "label": "T",
+            "type": "icon",
+            "queryId": "icons",
+            "box": {
+              "x": 796,
+              "y": 139,
+              "width": 59,
+              "height": 55
+            }
+          },
+          {
+            "id": "63d3d764caec",
+            "label": "icon-icons-130",
+            "type": "icon",
+            "queryId": "icons",
+            "box": {
+              "x": 872,
+              "y": 1750,
+              "width": 25,
+              "height": 31
+            }
+          },
+          {
+            "id": "f0d2ac8d8a82",
+            "label": "EK",
+            "type": "icon",
+            "queryId": "icons",
+            "box": {
+              "x": 942,
+              "y": 142,
+              "width": 63,
+              "height": 50
+            }
+          },
+          {
+            "id": "1bd661ed4178",
+            "label": "AI",
+            "type": "icon",
+            "queryId": "icons",
+            "box": {
+              "x": 953,
+              "y": 2239,
+              "width": 43,
+              "height": 36
+            }
+          },
+          {
+            "id": "7802aed7de0d",
+            "label": "progress",
+            "type": "chart",
+            "queryId": "charts_indicators",
+            "box": {
+              "x": 130,
+              "y": 1171,
+              "width": 818,
+              "height": 31
+            }
+          },
+          {
+            "id": "9f442fc6fb73",
+            "label": "charts_indicators",
+            "type": "chart",
+            "queryId": "charts_indicators",
+            "box": {
+              "x": 132,
+              "y": 1368,
+              "width": 818,
+              "height": 26
+            }
+          },
+          {
+            "id": "9611ac38faa9",
+            "label": "charts_indicators",
+            "type": "chart",
+            "queryId": "charts_indicators",
+            "box": {
+              "x": 132,
+              "y": 1558,
+              "width": 816,
+              "height": 29
+            }
+          },
+          {
+            "id": "fcaaecbaa26e",
+            "label": "tab bar and and navigation elements",
+            "type": "nav",
+            "queryId": "tab_bar_nav_elements",
+            "box": {
+              "x": 0,
+              "y": 34,
+              "width": 1080,
+              "height": 2292
+            }
+          },
+          {
+            "id": "e92b5a2d457f",
+            "label": "cv-component-0",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 397,
+              "y": 368,
+              "width": 477,
+              "height": 669
+            }
+          },
+          {
+            "id": "815860877287",
+            "label": "cv-component-1",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 45,
+              "y": 1827,
+              "width": 989,
+              "height": 256
+            }
+          },
+          {
+            "id": "56ee7e93d4d0",
+            "label": "cv-component-2",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 448,
+              "y": 2104,
+              "width": 184,
+              "height": 219
+            }
+          },
+          {
+            "id": "5c8d2a757535",
+            "label": "cv-component-3",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 765,
+              "y": 109,
+              "width": 269,
+              "height": 125
+            }
+          },
+          {
+            "id": "fbae4f73ab17",
+            "label": "cv-component-4",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 83,
+              "y": 1869,
+              "width": 181,
+              "height": 181
+            }
+          },
+          {
+            "id": "1dee53736711",
+            "label": "cv-component-11",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 824,
+              "y": 587,
+              "width": 51,
+              "height": 240
+            }
+          },
+          {
+            "id": "121a82d4fc2a",
+            "label": "cv-component-13",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 432,
+              "y": 992,
+              "width": 216,
+              "height": 45
+            }
+          },
+          {
+            "id": "6ec67118f720",
+            "label": "cv-component-14",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 763,
+              "y": 45,
+              "width": 280,
+              "height": 35
+            }
+          },
+          {
+            "id": "7b369358b535",
+            "label": "cv-component-18",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 787,
+              "y": 600,
+              "width": 45,
+              "height": 197
+            }
+          },
+          {
+            "id": "a1ca3fc8b079",
+            "label": "cv-component-19",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 40,
+              "y": 45,
+              "width": 240,
+              "height": 35
+            }
+          },
+          {
+            "id": "43e4d4361669",
+            "label": "cv-component-20",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 747,
+              "y": 613,
+              "width": 43,
+              "height": 171
+            }
+          },
+          {
+            "id": "72168b7c9526",
+            "label": "cv-component-21",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 416,
+              "y": 819,
+              "width": 248,
+              "height": 27
+            }
+          },
+          {
+            "id": "4340030e8cd3",
+            "label": "cv-component-23",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 483,
+              "y": 952,
+              "width": 152,
+              "height": 43
+            }
+          },
+          {
+            "id": "7b8550d00989",
+            "label": "cv-component-24",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 469,
+              "y": 912,
+              "width": 155,
+              "height": 40
+            }
+          },
+          {
+            "id": "d7f6ccf18aea",
+            "label": "cv-component-27",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 531,
+              "y": 368,
+              "width": 117,
+              "height": 45
+            }
+          },
+          {
+            "id": "87297c230c78",
+            "label": "cv-component-28",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 61,
+              "y": 2243,
+              "width": 93,
+              "height": 56
+            }
+          },
+          {
+            "id": "7bc36aef4dfb",
+            "label": "cv-component-30",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 531,
+              "y": 411,
+              "width": 112,
+              "height": 45
+            }
+          },
+          {
+            "id": "6364cd96d128",
+            "label": "cv-component-32",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 387,
+              "y": 627,
+              "width": 56,
+              "height": 80
+            }
+          },
+          {
+            "id": "69d6a5a8db4e",
+            "label": "cv-component-33",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 376,
+              "y": 2371,
+              "width": 328,
+              "height": 13
+            }
+          },
+          {
+            "id": "1fb2a459c4c5",
+            "label": "cv-component-35",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 531,
+              "y": 453,
+              "width": 99,
+              "height": 43
+            }
+          },
+          {
+            "id": "69b88142c53e",
+            "label": "cv-component-38",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 728,
+              "y": 2160,
+              "width": 56,
+              "height": 56
+            }
+          },
+          {
+            "id": "fdf7c22b3eda",
+            "label": "cv-component-40",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 755,
+              "y": 1117,
+              "width": 83,
+              "height": 37
+            }
+          },
+          {
+            "id": "22c32478b7bc",
+            "label": "cv-component-42",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 861,
+              "y": 1944,
+              "width": 85,
+              "height": 32
+            }
+          },
+          {
+            "id": "38fd6415a4a1",
+            "label": "cv-component-45",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 299,
+              "y": 2163,
+              "width": 51,
+              "height": 51
+            }
+          },
+          {
+            "id": "f9884ffb84d6",
+            "label": "cv-component-47",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 317,
+              "y": 2013,
+              "width": 93,
+              "height": 27
+            }
+          },
+          {
+            "id": "0105134878f8",
+            "label": "cv-component-48",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 507,
+              "y": 2123,
+              "width": 67,
+              "height": 35
+            }
+          },
+          {
+            "id": "f3c5a6163dd7",
+            "label": "cv-component-49",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 776,
+              "y": 1501,
+              "width": 61,
+              "height": 37
+            }
+          },
+          {
+            "id": "3a236540dc21",
+            "label": "cv-component-50",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 80,
+              "y": 2165,
+              "width": 56,
+              "height": 40
+            }
+          },
+          {
+            "id": "230b20414625",
+            "label": "cv-component-51",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 125,
+              "y": 1899,
+              "width": 56,
+              "height": 37
+            }
+          },
+          {
+            "id": "bed08e08f0d4",
+            "label": "cv-component-52",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 509,
+              "y": 2235,
+              "width": 61,
+              "height": 32
+            }
+          },
+          {
+            "id": "f35c7c2e833e",
+            "label": "cv-component-54",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 955,
+              "y": 2165,
+              "width": 40,
+              "height": 48
+            }
+          },
+          {
+            "id": "d1f4f365df00",
+            "label": "cv-component-65",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 133,
+              "y": 1501,
+              "width": 29,
+              "height": 29
+            }
+          },
+          {
+            "id": "77bc76a63cbd",
+            "label": "cv-component-66",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 133,
+              "y": 1117,
+              "width": 29,
+              "height": 29
+            }
+          },
+          {
+            "id": "80e4be8dfdce",
+            "label": "cv-component-67",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 560,
+              "y": 651,
+              "width": 29,
+              "height": 29
+            }
+          },
+          {
+            "id": "b05349fd6b5c",
+            "label": "cv-component-69",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 736,
+              "y": 1501,
+              "width": 16,
+              "height": 35
+            }
+          },
+          {
+            "id": "61f0532004b0",
+            "label": "cv-component-70",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 715,
+              "y": 1309,
+              "width": 16,
+              "height": 35
+            }
+          },
+          {
+            "id": "08c4683a6004",
+            "label": "cv-component-71",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 715,
+              "y": 1117,
+              "width": 16,
+              "height": 35
+            }
+          },
+          {
+            "id": "9b36445a497d",
+            "label": "cv-component-72",
+            "type": "text",
+            "queryId": "cv_components",
+            "box": {
+              "x": 469,
+              "y": 691,
+              "width": 16,
+              "height": 32
+            }
+          }
+        ]
+      }
+    },
+    {
+      "maxDimension": 1200,
+      "status": "error",
+      "error": "Sidecar request failed: fetch failed"
+    }
+  ]
 }

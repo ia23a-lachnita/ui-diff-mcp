@@ -22,6 +22,11 @@ function strongOverlap(a: Box, b: Box): boolean {
   return (overlap.width * overlap.height) / Math.min(boxArea(a), boxArea(b)) >= 0.7;
 }
 
+function hasSharedTarget(a: OwnedFinding, b: OwnedFinding): boolean {
+  const aTargets = new Set([...a.targetIds, ...(a.finding.targetIds ?? [])]);
+  return [...b.targetIds, ...(b.finding.targetIds ?? [])].some(targetId => aTargets.has(targetId));
+}
+
 function unionBoxes(boxes: Box[]): Box {
   const x = Math.min(...boxes.map(box => box.x));
   const y = Math.min(...boxes.map(box => box.y));
@@ -85,9 +90,17 @@ function resolveOwnership(
 function mergeGroup(group: OwnedFinding[]): DiffRecord {
   const severityRank = { low: 0, medium: 1, high: 2 } as const;
   const reviewRank = { rejected: 0, not_reviewed: 1, accepted: 2, needs_escalation: 3 } as const;
-  const primary = group.reduce((best, current) =>
-    severityRank[current.finding.severity] > severityRank[best.finding.severity] ? current : best
-  );
+  const primaryRank = (entry: OwnedFinding): number => {
+    if (entry.finding.scopeKind) return 3;
+    if (entry.finding.classificationSource === "vlm_reviewed") return 2;
+    if (entry.finding.findingGroupKind) return 1;
+    return 0;
+  };
+  const primary = group.reduce((best, current) => {
+    const severityDelta = severityRank[current.finding.severity] - severityRank[best.finding.severity];
+    if (severityDelta !== 0) return severityDelta > 0 ? current : best;
+    return primaryRank(current) > primaryRank(best) ? current : best;
+  });
   const parent = group[0]?.parent;
   const allFindings = group.map(entry => entry.finding);
   const artifacts = new Map<string, NonNullable<DiffRecord["artifactPaths"]>[number]>();
@@ -130,6 +143,54 @@ function mergeGroup(group: OwnedFinding[]): DiffRecord {
   };
 }
 
+function shouldMergeOwnedGroups(a: OwnedFinding[], b: OwnedFinding[]): boolean {
+  return a.some(aEntry => b.some(bEntry =>
+    aEntry.finding.criterion === bEntry.finding.criterion &&
+    hasSharedTarget(aEntry, bEntry) &&
+    strongOverlap(aEntry.finding.location, bEntry.finding.location)
+  ));
+}
+
+function mergeOverlappingOwnedGroups(groups: OwnedFinding[][]): OwnedFinding[][] {
+  const merged: OwnedFinding[][] = [];
+  for (const group of groups) {
+    const existing = merged.find(candidate => shouldMergeOwnedGroups(candidate, group));
+    if (existing) {
+      existing.push(...group);
+    } else {
+      merged.push([...group]);
+    }
+  }
+  return merged;
+}
+
+function shouldMergeFinalFindings(a: DiffRecord, b: DiffRecord): boolean {
+  const aTargets = new Set(a.targetIds ?? []);
+  const sharedTarget = (b.targetIds ?? []).some(targetId => aTargets.has(targetId));
+  return sharedTarget && a.criterion === b.criterion && strongOverlap(a.location, b.location);
+}
+
+function mergeFinalFindingGroup(group: DiffRecord[]): DiffRecord {
+  return mergeGroup(group.map(finding => ({
+    finding,
+    targetIds: finding.targetIds ?? [],
+    fallbackKey: `${finding.id}:${finding.criterion}`
+  })));
+}
+
+function mergeFinalDuplicateFindings(findings: DiffRecord[]): DiffRecord[] {
+  const groups: DiffRecord[][] = [];
+  for (const finding of findings) {
+    const existing = groups.find(group => group.some(candidate => shouldMergeFinalFindings(candidate, finding)));
+    if (existing) {
+      existing.push(finding);
+    } else {
+      groups.push([finding]);
+    }
+  }
+  return groups.map(group => group.length === 1 ? group[0]! : mergeFinalFindingGroup(group));
+}
+
 export function consolidateFindings(
   findings: DiffRecord[],
   elements: UiElement[],
@@ -158,5 +219,6 @@ export function consolidateFindings(
     groups.set(key, group);
   }
 
-  return [...groups.values()].map(mergeGroup);
+  const initiallyMerged = mergeOverlappingOwnedGroups([...groups.values()]).map(mergeGroup);
+  return mergeFinalDuplicateFindings(initiallyMerged);
 }

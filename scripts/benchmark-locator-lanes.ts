@@ -98,6 +98,10 @@ export function summarizeLabelStability(
   };
 }
 
+export function determineBenchmarkConclusion(trials: BenchmarkTrial[]): LocatorBenchmarkReport["conclusion"] {
+  return trials.some(trial => trial.status === "complete") ? "complete" : "needs_live_data";
+}
+
 function seconds(ms: number | undefined): string {
   return ms === undefined ? "-" : `${(ms / 1000).toFixed(1)}s`;
 }
@@ -277,7 +281,7 @@ export async function main(): Promise<void> {
     sidecarUrl,
     expectedImagePath,
     actualImagePath,
-    conclusion: "needs_live_data",
+    conclusion: determineBenchmarkConclusion(trials),
     trials: addStability(trials)
   };
 

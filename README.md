@@ -92,13 +92,19 @@ All generated images (pixel diff, directional overlay, crop pairs, recovery crop
 
 ## LocateAnything Live Gate Sizing
 
-`LOCATEANYTHING_MAX_DIMENSION` controls the largest image dimension sent to the LocateAnything sidecar. The default remains `1200` for detail, but large Calorix screenshots can exceed a 10-minute locator budget on local GPU/CPU-constrained sidecars. For release gates using the current `LOCATEANYTHING_TIMEOUT_MS=600000` setting, use:
+`LOCATEANYTHING_MAX_DIMENSION` controls the largest image dimension sent to the LocateAnything sidecar. The default remains `1200` for detail.
+
+`600` is a local timeout workaround, not a quality default. It shrinks a `1206x2622` Calorix mockup to roughly `276x600` for the locator, which can hide small icons, thin borders, and text. Prefer the highest dimension that fits the sidecar budget, and run the sequential locator benchmark before production sign-off:
 
 ```powershell
-$env:LOCATEANYTHING_MAX_DIMENSION = "600"
+$env:UI_DIFF_LIVE_EXPECTED_IMAGE = "C:\Users\xursc\projects\calorix\docs\mockups\image\dark\single\Today.png"
+$env:UI_DIFF_LIVE_ACTUAL_IMAGE = "C:\Users\xursc\projects\calorix\docs\screenshots\today-screen-2026-07-02-static-scan-fab.png"
+$env:LOCATEANYTHING_SIDECAR_URL = "http://127.0.0.1:39731"
+$env:UI_DIFF_LOCATOR_BENCHMARK_DIMENSIONS = "600,900,1200"
+npm run benchmark:locator
 ```
 
-This keeps the locator request inside the live-gate budget while preserving enough structure for the strict Calorix release gate.
+Every report records `locatorInputSizing`, including original image size, sent image size, scale, `maxDimension`, and whether actual elements were independently located or projected from expected elements.
 
 ## Installation
 
