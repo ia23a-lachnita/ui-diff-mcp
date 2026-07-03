@@ -202,7 +202,7 @@ Threshold env overrides are not part of this implementation. They can be added l
   - `screen`: no target pairs selected for VLM target audit.
   - `regions`: only pairs whose expected or actual center lies inside selected region boxes.
   - `target`: best label/text/query match; include ties only if scores are equal.
-- [ ] Add `scopeSummary` counts: total pairs, selected target pairs, skipped by scope, and target query match details.
+- [x] Add `scopeSummary` counts: total pairs, selected target pairs, skipped by scope, and target query match details.
 - [x] Wire target pair filtering before audit pair selection.
 - [x] If `target` scope resolves zero candidate pairs, append warning `Target query "<query>" could not be resolved by the locator.` and return zero target audit pairs without pretending the target was checked.
 - [x] If `screen` scope is active, bypass target recovery; coverage leftovers are represented in screen/region summaries and unresolved regions, not target-recovery VLM calls.
