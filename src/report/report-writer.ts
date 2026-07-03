@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { UiDiffReport, UiArtifact, AuditScope, RecoverySummary, RunDebugSummary } from "../schemas/core.js";
+import type { UiDiffReport, UiArtifact, AuditScope, RecoverySummary, RunDebugSummary, UsageSummary } from "../schemas/core.js";
 import { UiDiffReportSchema } from "../schemas/core.js";
 
 export interface CompactOutput {
@@ -19,6 +19,7 @@ export interface CompactOutput {
   auditScope?: AuditScope;
   recoverySummary?: RecoverySummary;
   debugSummary?: RunDebugSummary;
+  usageSummary?: UsageSummary;
 }
 
 export async function writeReportCheckpoint(report: UiDiffReport): Promise<string> {
@@ -85,6 +86,7 @@ export async function writeUiDiffReport(
     auditLimited: report.auditScope?.auditLimited ?? false,
     ...(report.auditScope !== undefined ? { auditScope: report.auditScope } : {}),
     ...(report.recoverySummary !== undefined ? { recoverySummary: report.recoverySummary } : {}),
-    ...(report.debugSummary !== undefined ? { debugSummary: report.debugSummary } : {})
+    ...(report.debugSummary !== undefined ? { debugSummary: report.debugSummary } : {}),
+    ...(report.usageSummary !== undefined ? { usageSummary: report.usageSummary } : {})
   };
 }

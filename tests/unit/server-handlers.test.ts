@@ -133,6 +133,39 @@ describe("server tool handlers", () => {
     });
   });
 
+  it("compare handler forwards diffScope separately from provider mode", async () => {
+    const d = deps();
+    await handleCompareUiImages({
+      expectedImagePath: "expected.png",
+      actualImagePath: "actual.png",
+      projectRoot: "C:/project",
+      mode: "free",
+      diffScope: { kind: "target", query: "scan button" }
+    }, d);
+    expect(d.runUiDiff).toHaveBeenCalledWith({
+      expectedImagePath: "expected.png",
+      actualImagePath: "actual.png",
+      projectRoot: "C:/project",
+      mode: "free",
+      diffScope: { kind: "target", query: "scan button" }
+    });
+  });
+
+  it("start_ui_diff_run forwards diffScope to the background run", async () => {
+    const d = deps();
+    await handleStartUiDiffRun({
+      expectedImagePath: "expected.png",
+      actualImagePath: "actual.png",
+      projectRoot: tmpDir,
+      mode: "deterministic_only",
+      diffScope: { kind: "regions", regions: ["top", "nav"] }
+    }, d);
+    await vi.waitFor(() => expect(d.runUiDiff).toHaveBeenCalled());
+    expect(vi.mocked(d.runUiDiff).mock.calls[0]?.[0]).toMatchObject({
+      diffScope: { kind: "regions", regions: ["top", "nav"] }
+    });
+  });
+
   it("model health handler returns structured health", async () => {
     const result = await handleModelHealth(deps());
     const structured = result.structuredContent as { results: Array<{ status: string }> };

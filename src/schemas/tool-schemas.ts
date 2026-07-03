@@ -1,12 +1,13 @@
 import { z } from "zod";
-import { RunStatusSchema, UiDiffReportSchema, UiArtifactSchema, AuditScopeSchema, LocatorCoverageStatusSchema, VisualClassificationStatusSchema, RecoverySummarySchema, RunDebugSummarySchema } from "./core.js";
+import { RunStatusSchema, UiDiffReportSchema, UiArtifactSchema, AuditScopeSchema, LocatorCoverageStatusSchema, VisualClassificationStatusSchema, RecoverySummarySchema, RunDebugSummarySchema, DiffScopeSchema, UsageSummarySchema } from "./core.js";
 
 export const CompareUiImagesInputSchema = {
   expectedImagePath: z.string().min(1),
   actualImagePath: z.string().min(1),
   projectRoot: z.string().min(1).optional(),
   runLabel: z.string().min(1).max(80).optional(),
-  mode: z.enum(["free", "free_gemini", "free_mistral", "free_opencode", "free_openrouter", "free_nvidia", "paid", "deterministic_only"]).default("free")
+  mode: z.enum(["free", "free_gemini", "free_mistral", "free_opencode", "free_openrouter", "free_nvidia", "paid", "deterministic_only"]).default("free"),
+  diffScope: DiffScopeSchema.optional()
 };
 
 export const CompareUiImagesOutputSchema = {
@@ -24,7 +25,8 @@ export const CompareUiImagesOutputSchema = {
   auditLimited: z.boolean().default(false),
   auditScope: AuditScopeSchema.optional(),
   recoverySummary: RecoverySummarySchema.optional(),
-  debugSummary: RunDebugSummarySchema.optional()
+  debugSummary: RunDebugSummarySchema.optional(),
+  usageSummary: UsageSummarySchema.optional()
 };
 
 export const ModelHealthOutputSchema = {
@@ -58,6 +60,7 @@ export const StartUiDiffRunInputSchema = {
   actualImagePath: z.string().min(1),
   projectRoot: z.string().min(1).optional(),
   mode: z.enum(["free", "free_gemini", "free_mistral", "free_opencode", "free_openrouter", "free_nvidia", "paid", "deterministic_only"]).default("free"),
+  diffScope: DiffScopeSchema.optional(),
   label: z.string().min(1).max(80).optional(),
   resumeRunId: z.string().regex(/^[a-zA-Z0-9_-]+$/).optional()
 };

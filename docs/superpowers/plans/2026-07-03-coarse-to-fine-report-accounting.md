@@ -136,15 +136,15 @@ Threshold env overrides are not part of this implementation. They can be added l
 - Test: `tests/unit/schemas.test.ts`
 - Test: `tests/unit/server-handlers.test.ts`
 
-- [ ] Add `DiffScopeSchema`, `ReportPartSchema`, `UsageBucketSchema`, and `UsageSummarySchema`.
-- [ ] Add `ScopeDiffSummarySchema` and `DiffSummarySchema`. `DiffSummarySchema` includes counts by severity, counts by criterion, counts by `classificationSource`, top-level final diff count, unresolved region count, and `scopeSummaries`.
-- [ ] Add optional `diffScope`, `usageSummary`, `reportParts`, and `diffSummary` to `UiDiffReportSchema`.
-- [ ] Add optional `scopeId`, `scopeKind`, and `scopeLabel` to `DiffRecordSchema`; allowed `scopeKind` values are `"screen"`, `"region"`, and `"target"`.
-- [ ] Add optional `diffScope` to `CompareUiImagesInputSchema` and `StartUiDiffRunInputSchema`.
-- [ ] Add optional `usageSummary` to `CompareUiImagesOutputSchema`.
-- [ ] Add tests proving default scope parses as `full`, target scope requires non-empty `query`, scope metadata survives on diff records, and usage summary preserves separate input/output token totals.
-- [ ] Verify red/green with `npx vitest run tests/unit/schemas.test.ts tests/unit/server-handlers.test.ts`.
-- [ ] Update `docs/implementation-status.md`, commit, and push.
+- [x] Add `DiffScopeSchema`, `ReportPartSchema`, `UsageBucketSchema`, and `UsageSummarySchema`.
+- [x] Add `ScopeDiffSummarySchema` and `DiffSummarySchema`. `DiffSummarySchema` includes counts by severity, counts by criterion, counts by `classificationSource`, top-level final diff count, unresolved region count, and `scopeSummaries`.
+- [x] Add optional `diffScope`, `usageSummary`, `reportParts`, and `diffSummary` to `UiDiffReportSchema`.
+- [x] Add optional `scopeId`, `scopeKind`, and `scopeLabel` to `DiffRecordSchema`; allowed `scopeKind` values are `"screen"`, `"region"`, and `"target"`.
+- [x] Add optional `diffScope` to `CompareUiImagesInputSchema` and `StartUiDiffRunInputSchema`.
+- [x] Add optional `usageSummary` to `CompareUiImagesOutputSchema`.
+- [x] Add tests proving default scope parses as `full`, target scope requires non-empty `query`, scope metadata survives on diff records, and usage summary preserves separate input/output token totals.
+- [x] Verify red/green with `npx vitest run tests/unit/schemas.test.ts tests/unit/server-handlers.test.ts`.
+- [x] Update `docs/implementation-status.md`, commit, and push.
 
 ### Task 2: Usage Summary Builder
 

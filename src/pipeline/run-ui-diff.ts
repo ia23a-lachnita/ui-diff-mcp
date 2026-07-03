@@ -35,7 +35,7 @@ import { ProviderTraceWriter, writeProviderTrace } from "../debug/provider-trace
 import { buildDeterministicDiffs } from "../diff/deterministic-diffs.js";
 import { runProjectedPreAudit } from "../diff/projected-preaudit.js";
 import { writeUiDiffReport, writeReportCheckpoint } from "../report/report-writer.js";
-import type { UiDiffReport, RunStatus, VisualClassificationStatus, LocatorCoverageStatus, DiffRecord, ElementPair, UiArtifact, AuditScope, ModelSelection, RecoverySummary, RecoveryCursor, StageStatus, LocatorLaneMetadata, RunDebugSummary, ProjectedPreAuditSummary } from "../schemas/core.js";
+import type { UiDiffReport, RunStatus, VisualClassificationStatus, LocatorCoverageStatus, DiffRecord, ElementPair, UiArtifact, AuditScope, ModelSelection, RecoverySummary, RecoveryCursor, StageStatus, LocatorLaneMetadata, RunDebugSummary, ProjectedPreAuditSummary, DiffScope, UsageSummary } from "../schemas/core.js";
 import { computeColorEvidence } from "../signals/color.js";
 import { createRunId } from "./run-store.js";
 import { UiDiffReportSchema } from "../schemas/core.js";
@@ -48,6 +48,7 @@ export interface RunInput {
   projectRoot?: string;
   runLabel?: string;
   mode?: string;
+  diffScope?: DiffScope;
   runId?: string;
   resumeRunId?: string;
   onCheckpoint?: (progress: { stage: string; checkpointPath: string; heartbeatAt: string }) => Promise<void>;
@@ -69,6 +70,7 @@ export interface RunOutput {
   auditScope?: AuditScope;
   recoverySummary?: RecoverySummary;
   debugSummary?: RunDebugSummary;
+  usageSummary?: UsageSummary;
 }
 
 type ProbeOverride = (entries: ModelEntry[], config: VisionProviderConfig) => Promise<ProbeResult[]>;

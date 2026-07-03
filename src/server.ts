@@ -19,7 +19,7 @@ import { captureMobileScreen, type CaptureResult } from "./capture/mobile-captur
 import { probeRequiredModels, type ProbeResult } from "./models/probes.js";
 import { resolveVisionProviderConfig, type VisionProviderConfig } from "./models/provider-config.js";
 import { getRequiredModels, type ModelEntry } from "./models/model-registry.js";
-import { UiDiffReportSchema } from "./schemas/core.js";
+import { UiDiffReportSchema, type DiffScope } from "./schemas/core.js";
 
 function toRecord(v: unknown): Record<string, unknown> {
   return v as Record<string, unknown>;
@@ -31,6 +31,7 @@ function buildRunInput(input: {
   projectRoot?: string | undefined;
   runLabel?: string | undefined;
   mode?: string | undefined;
+  diffScope?: DiffScope | undefined;
   runId?: string | undefined;
   resumeRunId?: string | undefined;
 }) {
@@ -38,6 +39,7 @@ function buildRunInput(input: {
     expectedImagePath: input.expectedImagePath,
     actualImagePath: input.actualImagePath,
     mode: input.mode ?? "free",
+    ...(input.diffScope !== undefined ? { diffScope: input.diffScope } : {}),
     ...(input.projectRoot !== undefined ? { projectRoot: input.projectRoot } : {}),
     ...(input.runLabel !== undefined ? { runLabel: input.runLabel } : {}),
     ...(input.runId !== undefined ? { runId: input.runId } : {}),
@@ -70,6 +72,7 @@ export async function handleCompareUiImages(
     projectRoot?: string | undefined;
     runLabel?: string | undefined;
     mode?: string | undefined;
+    diffScope?: DiffScope | undefined;
   },
   deps: ServerDeps,
   forcedMode?: "deterministic_only"
@@ -134,6 +137,7 @@ export async function handleStartUiDiffRun(
     actualImagePath: string;
     projectRoot?: string | undefined;
     mode?: string | undefined;
+    diffScope?: DiffScope | undefined;
     label?: string | undefined;
     resumeRunId?: string | undefined;
   },
@@ -152,6 +156,7 @@ export async function handleStartUiDiffRun(
     expectedImagePath: input.expectedImagePath,
     actualImagePath: input.actualImagePath,
     mode: input.mode,
+    diffScope: input.diffScope,
     projectRoot,
     runLabel: input.label,
     runId,

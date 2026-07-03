@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   CoverageDecisionTraceSchema,
+  DiffScopeSchema,
   DiffRecordSchema,
+  UsageSummarySchema,
   ModelSelectionSchema,
   RunDebugSummarySchema,
   StageStatusSchema,
@@ -126,6 +128,25 @@ describe("core schemas", () => {
     expect(parsed.criterion).toBe("geometry");
   });
 
+  it("accepts scope metadata on screen-level diff records", () => {
+    const parsed = DiffRecordSchema.parse({
+      id: "screen-diff-1",
+      criterion: "color_appearance",
+      severity: "medium",
+      title: "Overall palette differs",
+      location: { x: 0, y: 0, width: 360, height: 800 },
+      evidence: ["Full-screen overlay shows broad color differences."],
+      reviewerStatus: "accepted",
+      classificationSource: "vlm_reviewed",
+      scopeId: "screen",
+      scopeKind: "screen",
+      scopeLabel: "Whole screen"
+    });
+
+    expect(parsed.scopeKind).toBe("screen");
+    expect(parsed.scopeLabel).toBe("Whole screen");
+  });
+
   it("accepts deterministic findings only as not reviewed", () => {
     const parsed = DiffRecordSchema.parse({
       id: "deterministic-1",
@@ -204,5 +225,95 @@ describe("core schemas", () => {
     expect(parsed.auditScope?.auditLimited).toBe(true);
     expect(parsed.auditScope?.auditedPairs).toBe(3);
     expect(parsed.auditScope?.totalPairs).toBe(10);
+  });
+
+  it("defaults diff scope to full and validates target query", () => {
+    expect(DiffScopeSchema.parse(undefined)).toEqual({ kind: "full" });
+    expect(DiffScopeSchema.parse({ kind: "screen" })).toEqual({ kind: "screen" });
+    expect(DiffScopeSchema.parse({ kind: "regions", regions: ["top", "nav"] })).toEqual({ kind: "regions", regions: ["top", "nav"] });
+    expect(DiffScopeSchema.parse({ kind: "target", query: "scan button" })).toEqual({ kind: "target", query: "scan button" });
+    expect(() => DiffScopeSchema.parse({ kind: "target", query: "" })).toThrow();
+  });
+
+  it("usage summary preserves input and output tokens separately", () => {
+    const parsed = UsageSummarySchema.parse({
+      calls: 2,
+      inputTokens: 1000,
+      outputTokens: 120,
+      totalTokens: 1120,
+      reasoningTokens: 7,
+      missingUsageCalls: 1,
+      totalOnlyUsageCalls: 0,
+      errorCalls: 1,
+      fallbackCalls: 1,
+      routeExhaustedCount: 0,
+      durationMs: 42,
+      byPhase: {
+        audit: {
+          calls: 1,
+          inputTokens: 700,
+          outputTokens: 80,
+          totalTokens: 780,
+          reasoningTokens: 0,
+          missingUsageCalls: 0,
+          totalOnlyUsageCalls: 0,
+          errorCalls: 0,
+          fallbackCalls: 0,
+          routeExhaustedCount: 0,
+          durationMs: 20
+        }
+      },
+      byRole: {},
+      byRoute: {}
+    });
+
+    expect(parsed.inputTokens).toBe(1000);
+    expect(parsed.outputTokens).toBe(120);
+    expect(parsed.totalTokens).toBe(1120);
+  });
+
+  it("report accepts diff scope, report parts, diff summary, and usage summary", () => {
+    const usage = UsageSummarySchema.parse({
+      calls: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      totalTokens: 0,
+      reasoningTokens: 0,
+      missingUsageCalls: 0,
+      totalOnlyUsageCalls: 0,
+      errorCalls: 0,
+      fallbackCalls: 0,
+      routeExhaustedCount: 0,
+      durationMs: 0,
+      byPhase: {},
+      byRole: {},
+      byRoute: {}
+    });
+    const parsed = UiDiffReportSchema.parse(makeMinimalReport({
+      diffScope: { kind: "regions", regions: ["top", "nav"] },
+      usageSummary: usage,
+      reportParts: [{ role: "usage_summary", path: "parts/usage-summary.json" }],
+      diffSummary: {
+        finalDiffCount: 0,
+        unresolvedRegionCount: 0,
+        bySeverity: {},
+        byCriterion: {},
+        byClassificationSource: {},
+        scopeSummaries: [{
+          id: "nav",
+          kind: "region",
+          label: "Bottom navigation",
+          box: { x: 0, y: 700, width: 360, height: 100 },
+          changedPixelPercent: 12.5,
+          edgeChangedPercent: 8.2,
+          triggeredCriteria: ["geometry", "color_appearance"],
+          measurements: []
+        }]
+      }
+    }));
+
+    expect(parsed.diffScope?.kind).toBe("regions");
+    expect(parsed.reportParts?.[0]?.path).toBe("parts/usage-summary.json");
+    expect(parsed.diffSummary?.scopeSummaries[0]?.triggeredCriteria).toContain("geometry");
   });
 });

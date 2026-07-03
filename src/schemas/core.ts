@@ -158,6 +158,56 @@ export const ProviderTraceEventSchema = z.object({
 }).strict(); // strict() rejects unknown fields to prevent accidental leakage of sensitive data
 export type ProviderTraceEvent = z.infer<typeof ProviderTraceEventSchema>;
 
+export const DiffScopeSchema = z.preprocess(
+  value => value ?? { kind: "full" },
+  z.discriminatedUnion("kind", [
+    z.object({ kind: z.literal("full") }),
+    z.object({ kind: z.literal("screen") }),
+    z.object({
+      kind: z.literal("regions"),
+      regions: z.array(z.enum(["top", "middle", "bottom", "header", "content", "nav"])).min(1).optional()
+    }),
+    z.object({ kind: z.literal("target"), query: z.string().trim().min(1) })
+  ])
+);
+export type DiffScope = z.infer<typeof DiffScopeSchema>;
+
+export const UsageBucketSchema = z.object({
+  calls: z.number().int().nonnegative(),
+  inputTokens: z.number().int().nonnegative(),
+  outputTokens: z.number().int().nonnegative(),
+  totalTokens: z.number().int().nonnegative(),
+  reasoningTokens: z.number().int().nonnegative(),
+  missingUsageCalls: z.number().int().nonnegative(),
+  totalOnlyUsageCalls: z.number().int().nonnegative(),
+  errorCalls: z.number().int().nonnegative(),
+  fallbackCalls: z.number().int().nonnegative(),
+  routeExhaustedCount: z.number().int().nonnegative(),
+  durationMs: z.number().int().nonnegative()
+});
+export type UsageBucket = z.infer<typeof UsageBucketSchema>;
+
+export const UsageSummarySchema = UsageBucketSchema.extend({
+  byPhase: z.record(z.string(), UsageBucketSchema),
+  byRole: z.record(z.string(), UsageBucketSchema),
+  byRoute: z.record(z.string(), UsageBucketSchema)
+});
+export type UsageSummary = z.infer<typeof UsageSummarySchema>;
+
+export const ReportPartSchema = z.object({
+  role: z.enum([
+    "elements",
+    "pairs",
+    "diffs",
+    "unresolved_regions",
+    "debug_summary",
+    "usage_summary",
+    "scope_summary"
+  ]),
+  path: z.string().min(1)
+});
+export type ReportPart = z.infer<typeof ReportPartSchema>;
+
 export const UiArtifactSchema = z.object({
   role: z.enum([
     "expected_normalized",
@@ -253,6 +303,9 @@ export const DiffRecordSchema = z.object({
   findingGroupId: z.string().min(1).optional(),
   findingGroupKind: z.enum(["coherent_displacement", "structural_region_mismatch"]).optional(),
   groupLabel: z.string().min(1).optional(),
+  scopeId: z.string().min(1).optional(),
+  scopeKind: z.enum(["screen", "region", "target"]).optional(),
+  scopeLabel: z.string().min(1).optional(),
   reviewerStatus: z.enum(["accepted", "rejected", "needs_escalation", "not_reviewed"]),
   reviewerReason: z.string().min(1).optional(),
   model: z.string().optional(),
@@ -533,6 +586,28 @@ export const RunDebugSummarySchema = z.object({
 });
 export type RunDebugSummary = z.infer<typeof RunDebugSummarySchema>;
 
+export const ScopeDiffSummarySchema = z.object({
+  id: z.string().min(1),
+  kind: z.enum(["screen", "region"]),
+  label: z.string().min(1),
+  box: BoxSchema,
+  changedPixelPercent: z.number().finite().min(0),
+  edgeChangedPercent: z.number().finite().min(0),
+  triggeredCriteria: z.array(UiCriterionSchema.exclude(["unclassified_visual_change"])).default([]),
+  measurements: z.array(DeterministicMeasurementSchema).default([])
+});
+export type ScopeDiffSummary = z.infer<typeof ScopeDiffSummarySchema>;
+
+export const DiffSummarySchema = z.object({
+  finalDiffCount: z.number().int().nonnegative(),
+  unresolvedRegionCount: z.number().int().nonnegative(),
+  bySeverity: z.record(z.string(), z.number().int().nonnegative()),
+  byCriterion: z.record(z.string(), z.number().int().nonnegative()),
+  byClassificationSource: z.record(z.string(), z.number().int().nonnegative()),
+  scopeSummaries: z.array(ScopeDiffSummarySchema).default([])
+});
+export type DiffSummary = z.infer<typeof DiffSummarySchema>;
+
 export const UiDiffReportSchema = z.object({
   schemaVersion: z.literal("0.1"),
   runId: z.string().min(1),
@@ -549,6 +624,7 @@ export const UiDiffReportSchema = z.object({
   visualClassificationStatus: VisualClassificationStatusSchema,
   locatorCoverageStatus: LocatorCoverageStatusSchema.default("not_run"),
   locatorMetadata: LocatorMetadataSchema.optional(),
+  diffScope: DiffScopeSchema.optional(),
   auditScope: AuditScopeSchema.optional(),
   projectedPreAudit: ProjectedPreAuditSummarySchema.optional(),
   modelSelection: ModelSelectionSchema.optional(),
@@ -562,6 +638,9 @@ export const UiDiffReportSchema = z.object({
   pairs: z.array(ElementPairSchema),
   diffs: z.array(DiffRecordSchema),
   unresolvedRegions: z.array(UnresolvedRegionSchema).default([]),
+  reportParts: z.array(ReportPartSchema).default([]),
+  usageSummary: UsageSummarySchema.optional(),
+  diffSummary: DiffSummarySchema.optional(),
   modelHealth: z.array(z.object({
     role: z.string().min(1),
     provider: z.string().min(1),
