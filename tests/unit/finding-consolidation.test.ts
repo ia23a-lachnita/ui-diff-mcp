@@ -182,4 +182,21 @@ describe("consolidateFindings", () => {
     expect(result).toHaveLength(2);
     expect(result.map(item => item.findingGroupId).sort()).toEqual(["group-a", "group-b"]);
   });
+
+  it("folds target children into a larger scope finding for the same criterion", () => {
+    const card = element("card", "card", 20, 100, 200, 180);
+    const label = element("label", "text", 40, 130, 80, 20, card.id);
+    card.childIds = [label.id];
+    const scopeFinding = finding("region-layout", undefined, "geometry", 0, 80, 260, 260);
+    scopeFinding.scopeId = "content";
+    scopeFinding.scopeKind = "region";
+    scopeFinding.scopeLabel = "Content";
+    const childFinding = finding("label-layout", "pair-label", "geometry", 40, 130, 80, 20);
+
+    const result = consolidateFindings([scopeFinding, childFinding], [card, label], [pair("pair-label", label.id)]);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]?.id).toBe("region-layout");
+    expect(result[0]?.childFindingIds).toEqual(expect.arrayContaining(["region-layout", "label-layout"]));
+  });
 });

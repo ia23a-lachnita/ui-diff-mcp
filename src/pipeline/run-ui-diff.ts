@@ -28,6 +28,7 @@ import { makeGeminiVisionCaller } from "../models/gemini-client.js";
 import { makeMistralVisionCaller } from "../models/mistral-client.js";
 import { resolveVisionProviderConfig, type VisionProviderConfig } from "../models/provider-config.js";
 import { auditElementPair, makeElementSlug, type AuditContext } from "../audit/audit-target.js";
+import { auditScopeSummaries } from "../audit/audit-scope.js";
 import { filterAcceptedDiffs, reviewAndMergeFindings } from "../audit/review-findings.js";
 import { prepareRecoveryRegionArtifacts, runTargetRecovery } from "../recovery/target-recovery.js";
 import { writeRunDebugArtifacts, summarizeAuditPairOutcomes, type AuditPairOutcome, type RunDebugTrace } from "../debug/run-debug.js";
@@ -35,8 +36,10 @@ import { ProviderTraceWriter, writeProviderTrace } from "../debug/provider-trace
 import { buildUsageSummary } from "../debug/usage-summary.js";
 import { buildDeterministicDiffs } from "../diff/deterministic-diffs.js";
 import { runProjectedPreAudit } from "../diff/projected-preaudit.js";
+import { buildDiffSummary, buildScopeDiffSummaries } from "../diff/scope-summary.js";
 import { writeUiDiffReport, writeReportCheckpoint } from "../report/report-writer.js";
 import { hydrateReportParts } from "../report/report-parts.js";
+import { filterComponentsForScope, filterPairsForScope, normalizeDiffScope } from "./diff-scope.js";
 import type { UiDiffReport, RunStatus, VisualClassificationStatus, LocatorCoverageStatus, DiffRecord, ElementPair, UiArtifact, AuditScope, ModelSelection, RecoverySummary, RecoveryCursor, StageStatus, LocatorLaneMetadata, RunDebugSummary, ProjectedPreAuditSummary, DiffScope, UsageSummary } from "../schemas/core.js";
 import { computeColorEvidence } from "../signals/color.js";
 import { createRunId } from "./run-store.js";
@@ -140,6 +143,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
   const runId = input.runId ?? input.resumeRunId ?? createRunId();
   const warnings: string[] = [];
   const mode: VisionMode = resolveMode(input.mode);
+  const diffScope = normalizeDiffScope(input.diffScope);
 
   const projectRoot = input.projectRoot ?? process.cwd();
   const expectedAbs = resolveInputImagePath(input.expectedImagePath, projectRoot);
@@ -205,6 +209,14 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     directionalOverlayPath
   );
   const edgeMask = extractEdgeMask(expectedImg.rgba, expectedImg.width, expectedImg.height);
+  const scopeSummaries = buildScopeDiffSummaries({
+    imageWidth: expectedImg.width,
+    imageHeight: expectedImg.height,
+    pixelComponents: pixelDiff.components,
+    edgeComponents: edgeMask.components,
+    expectedRgba: { data: expectedImg.rgba, width: expectedImg.width, height: expectedImg.height },
+    actualRgba: { data: actualImg.rgba, width: actualImg.width, height: actualImg.height }
+  });
 
   let status: RunStatus = "complete";
   let visualClassificationStatus: VisualClassificationStatus = "not_run";
@@ -284,7 +296,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
       progress: { stage: stageName },
       visualClassificationStatus,
       locatorCoverageStatus,
-      ...(input.diffScope !== undefined ? { diffScope: input.diffScope } : {}),
+      diffScope,
       ...(auditScope !== undefined ? { auditScope } : {}),
       ...(modelSelection !== undefined ? { modelSelection } : {}),
       ...(recoverySummary !== undefined ? { recoverySummary } : {}),
@@ -481,13 +493,21 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
   }
 
   const pairs = pairElements(expectedElements, actualElements);
+  const scopeFilter = filterPairsForScope(diffScope, pairs, expectedElements, actualElements, {
+    width: expectedImg.width,
+    height: expectedImg.height
+  });
+  if (scopeFilter.warning !== undefined) {
+    warnings.push(scopeFilter.warning);
+  }
+  const scopedTargetPairs = scopeFilter.pairs;
 
   // Deterministic diffs: geometry and presence records derived directly from locator pairing.
   // These are accepted without VLM review. Union-box coverage prevents shifted elements from
   // appearing as unclassified pixel fragments, but unrelated changes that fall inside a union
   // box may be considered covered until shape-aware coverage is implemented (see checklist).
   const deterministicDiffs = buildDeterministicDiffs({
-    pairs,
+    pairs: scopedTargetPairs,
     expectedElements,
     actualElements,
     minMovePx: 4,
@@ -508,7 +528,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
   projectedPreAuditSummary = projectedPreAuditResult.summary;
 
   // VLM-eligible pairs are those not already resolved deterministically by pre-audit.
-  const vlmCandidatePairs = pairs.filter(p => !projectedPreAuditResult.skipVlmPairIds.has(p.id));
+  const vlmCandidatePairs = scopedTargetPairs.filter(p => !projectedPreAuditResult.skipVlmPairIds.has(p.id));
 
   const modelHealth: UiDiffReport["modelHealth"] = [];
   const locatorStageOutcome: StageOutcome = locatorFailed || locatorCoverageStatus === "failed"
@@ -690,6 +710,25 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
 
         visualClassificationStatus = "incomplete";
         const auditedDiffs: DiffRecord[] = [];
+        if (diffScope.kind !== "target") {
+          try {
+            const scopeAudit = await auditScopeSummaries({
+              summaries: scopeSummaries,
+              diffScope,
+              expectedImagePath: normalizedExpPath,
+              actualImagePath: actualComparisonPath,
+              directionalOverlayPath,
+              pixelDiffMaskPath,
+              auditorCaller,
+              reviewerCaller
+            });
+            auditedDiffs.push(...scopeAudit.accepted);
+          } catch (err) {
+            if (!(err instanceof RouteExhaustedError)) throw err;
+            visualClassificationStatus = "incomplete";
+            warnings.push(`Scope audit routes exhausted before target audit: ${err.message}`);
+          }
+        }
         const auditSelection = selectAuditPairsForRun(vlmCandidatePairs, process.env);
         if (auditSelection.warning) {
           warnings.push(auditSelection.warning);
@@ -784,7 +823,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
         }
 
         auditScope = summarizeAuditPairOutcomes(auditOutcomes, {
-          totalPairs: pairs.length,
+          totalPairs: scopedTargetPairs.length,
           selectedPairs: auditTotal,
           auditLimited: auditSelection.limited,
           preAuditDeterministicPairs: projectedPreAuditResult.diffs.length,
@@ -809,12 +848,38 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
         });
         applyResidualSuppression(regionLedger);
         debugTrace.coverage = regionLedger.coverageTrace;
-        const uncoveredComponents = regionLedger.regions
+        const allUncoveredComponents = regionLedger.regions
           .filter(region => region.state === "unresolved")
           .map(region => ({ id: region.id, box: region.box, pixelCount: region.pixelCount }));
+        const scopedUncovered = filterComponentsForScope(diffScope, allUncoveredComponents, {
+          width: expectedImg.width,
+          height: expectedImg.height
+        });
+        const uncoveredComponents = scopedUncovered.components;
+        if (scopedUncovered.skippedOutsideScope > 0) {
+          warnings.push(`Target recovery skipped ${scopedUncovered.skippedOutsideScope} uncovered component(s) outside diffScope.`);
+        }
         const preClusterUncoveredComponents = regionLedger.coverageTrace.filter(decision => decision.status === "uncovered").length;
-        const postClusterUncoveredComponents = uncoveredComponents.length;
-        if (uncoveredComponents.length > 0 && !recoveryCaller) {
+        const postClusterUncoveredComponents = allUncoveredComponents.length;
+        if (diffScope.kind === "screen") {
+          recoverySummary = {
+            totalUncoveredComponents: uncoveredComponents.length,
+            eligibleComponents: 0,
+            completedComponents: 0,
+            remainingComponents: uncoveredComponents.length,
+            batchCount: 0,
+            attemptedComponents: 0,
+            skippedComponents: allUncoveredComponents.length,
+            recoveredDiffs: 0,
+            unclassifiedCount: allUncoveredComponents.length,
+            stoppedReason: "none",
+            preClusterUncoveredComponents,
+            postClusterUncoveredComponents,
+            statusCounts: allUncoveredComponents.length > 0 ? { skipped_scope_screen: allUncoveredComponents.length } : {}
+          };
+          visualClassificationStatus = allUncoveredComponents.length > 0 ? "incomplete" : "complete";
+          await checkpoint("target_recovery", "skipped", "not_applicable", "screen_scope_bypasses_target_recovery", pairs, modelHealth);
+        } else if (uncoveredComponents.length > 0 && !recoveryCaller) {
           const prepared = await prepareRecoveryRegionArtifacts(uncoveredComponents, {
             expectedRgba: { data: expectedImg.rgba, width: expectedImg.width, height: expectedImg.height },
             actualRgba: { data: actualImg.rgba, width: actualImg.width, height: actualImg.height },
@@ -836,16 +901,18 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
             totalUncoveredComponents: uncoveredComponents.length,
             eligibleComponents: uncoveredComponents.length,
             completedComponents: 0,
-            remainingComponents: uncoveredComponents.length,
+            remainingComponents: uncoveredComponents.length + scopedUncovered.skippedOutsideScope,
             batchCount: 0,
             attemptedComponents: 0,
-            skippedComponents: uncoveredComponents.length,
+            skippedComponents: uncoveredComponents.length + scopedUncovered.skippedOutsideScope,
             recoveredDiffs: 0,
-            unclassifiedCount: uncoveredComponents.length,
+            unclassifiedCount: uncoveredComponents.length + scopedUncovered.skippedOutsideScope,
             stoppedReason: "caller_unavailable",
             preClusterUncoveredComponents,
             postClusterUncoveredComponents,
-            statusCounts: {}
+            statusCounts: {
+              ...(scopedUncovered.skippedOutsideScope > 0 ? { skipped_scope_outside_region: scopedUncovered.skippedOutsideScope } : {})
+            }
           };
           providerTrace.emit({
             phase: "recovery",
@@ -973,6 +1040,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
         : "not_classified" as const;
   const finalDiffs = consolidateFindings(activeDiffs, [...expectedElements, ...actualElements], pairs);
   const unresolvedRegions = unresolvedRegionsFromLedger(regionLedger, unresolvedReason);
+  const diffSummary = buildDiffSummary(finalDiffs, unresolvedRegions.length, scopeSummaries);
 
   const contextArtifacts = await writeRegionContextOverlays({
     actualComparisonPath,
@@ -1014,7 +1082,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     progress: { stage: "complete" },
     visualClassificationStatus,
     locatorCoverageStatus,
-    ...(input.diffScope !== undefined ? { diffScope: input.diffScope } : {}),
+    diffScope,
     ...(locatorMetadata !== undefined ? { locatorMetadata } : {}),
     ...(auditScope !== undefined ? { auditScope } : {}),
     ...(modelSelection !== undefined ? { modelSelection } : {}),
@@ -1038,6 +1106,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     pairs,
     diffs: finalDiffs,
     unresolvedRegions,
+    diffSummary,
     modelHealth,
     runArtifacts,
     usageSummary: buildUsageSummary(providerTrace.getEvents()),

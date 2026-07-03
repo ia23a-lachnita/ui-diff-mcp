@@ -18,6 +18,8 @@ Before starting a free-model run, the pipeline estimates the required request co
 
 ## Modes
 
+`mode` selects the provider/model route policy. It does not select how much of the UI to inspect.
+
 | Mode | Behavior |
 | --- | --- |
 | `free` | Default. Gemini direct, Mistral direct, OpenCode MiMo, NVIDIA free endpoints, then OpenRouter `:free`. Never paid OpenRouter. |
@@ -29,9 +31,64 @@ Before starting a free-model run, the pipeline estimates the required request co
 | `paid` | Explicit opt-in requiring `UI_DIFF_ENABLE_PAID_MODE=1`. Records paid model use in `report.json`. |
 | `deterministic_only` | No VLM calls. Returns deterministic signal evidence only. |
 
+## Diff Scopes
+
+Use `diffScope` to select the visual scope independently from provider `mode`.
+
+```json
+{ "kind": "screen" }
+```
+
+Audits the whole screen first: global placement, major color/appearance changes, broad shape/border/layer differences, and whole-screen diff masks. Target-level recovery is bypassed.
+
+```json
+{ "kind": "regions", "regions": ["top", "nav"] }
+```
+
+Audits only selected deterministic regions. Current region names are `top`, `middle`, `bottom`, `header`, `content`, and `nav`. Target recovery is restricted to uncovered components inside the selected regions.
+
+```json
+{ "kind": "target", "query": "scan button" }
+```
+
+Resolves a target by locator label, visible text, and element type, then audits only the best matching pair. If the target cannot be resolved, the report includes a warning and does not pretend the target was checked.
+
+```json
+{ "kind": "full" }
+```
+
+Default. Runs screen/region summaries, scope-level VLM audit where deterministic triggers fire, and the existing target-level audit/recovery path.
+
+Example MCP payload:
+
+```json
+{
+  "expectedImagePath": "C:/mockups/Today.png",
+  "actualImagePath": "C:/screenshots/today.png",
+  "mode": "free",
+  "diffScope": { "kind": "regions", "regions": ["nav"] }
+}
+```
+
 ## Artifacts As Machine Evidence
 
 All generated images (pixel diff, directional overlay, crop pairs, recovery crops) are machine evidence consumed by audit and recovery models. They are not a manual inspection workflow. Do not rely on visual artifact review as a substitute for structured `report.json` output.
+
+## Report Parts And Usage Accounting
+
+`report.json` is the manifest. Large report sections are also written as referenced JSON parts under `artifacts/parts/`:
+
+- `elements.json`
+- `pairs.json`
+- `diffs.json`
+- `unresolved-regions.json`
+- `debug-summary.json`
+- `usage-summary.json`
+- `scope-summary.json`
+
+`reportParts[].path` is relative to the `report.json` directory. `read_ui_diff_report` hydrates these parts before returning the report, so existing MCP consumers still receive a full schema-valid report.
+
+`usageSummary` is first-class run-level accounting. It records input tokens, output tokens, total tokens, reasoning tokens, successful calls, failed calls, fallbacks, route exhaustion, and duration totals by phase, role, and provider/model route. If a provider reports only total tokens, input/output are left as zero and `totalOnlyUsageCalls` increments; the MCP does not invent a fake split.
 
 ## Installation
 

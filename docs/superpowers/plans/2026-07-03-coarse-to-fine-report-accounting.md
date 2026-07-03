@@ -196,20 +196,20 @@ Threshold env overrides are not part of this implementation. They can be added l
 - Test: `tests/unit/diff-scope.test.ts`
 - Test: `tests/e2e/compare-ui-images.test.ts`
 
-- [ ] Implement `normalizeDiffScope(input): DiffScope` with default `full`.
-- [ ] Implement `filterPairsForScope(scope, pairs, expectedElements, actualElements)`:
+- [x] Implement `normalizeDiffScope(input): DiffScope` with default `full`.
+- [x] Implement `filterPairsForScope(scope, pairs, expectedElements, actualElements)`:
   - `full`: all pairs.
   - `screen`: no target pairs selected for VLM target audit.
   - `regions`: only pairs whose expected or actual center lies inside selected region boxes.
   - `target`: best label/text/query match; include ties only if scores are equal.
 - [ ] Add `scopeSummary` counts: total pairs, selected target pairs, skipped by scope, and target query match details.
-- [ ] Wire target pair filtering before audit pair selection.
-- [ ] If `target` scope resolves zero candidate pairs, append warning `Target query "<query>" could not be resolved by the locator.` and return zero target audit pairs without pretending the target was checked.
-- [ ] If `screen` scope is active, bypass target recovery; coverage leftovers are represented in screen/region summaries and unresolved regions, not target-recovery VLM calls.
-- [ ] If `regions` scope is active, target recovery is restricted to uncovered components whose center lies inside one selected region. Components outside selected regions are recorded as `skipped_scope_outside_region` in coverage/recovery trace, not sent to VLM recovery.
-- [ ] Verify target scope reduces audited pairs in e2e and screen scope writes no target-audit calls.
-- [ ] Verify with `npx vitest run tests/unit/diff-scope.test.ts tests/e2e/compare-ui-images.test.ts`.
-- [ ] Update status, commit, and push.
+- [x] Wire target pair filtering before audit pair selection.
+- [x] If `target` scope resolves zero candidate pairs, append warning `Target query "<query>" could not be resolved by the locator.` and return zero target audit pairs without pretending the target was checked.
+- [x] If `screen` scope is active, bypass target recovery; coverage leftovers are represented in screen/region summaries and unresolved regions, not target-recovery VLM calls.
+- [x] If `regions` scope is active, target recovery is restricted to uncovered components whose center lies inside one selected region. Components outside selected regions are recorded as `skipped_scope_outside_region` in coverage/recovery trace, not sent to VLM recovery.
+- [x] Verify target scope reduces audited pairs in e2e and screen scope writes no target-audit calls.
+- [x] Verify with `npx vitest run tests/unit/diff-scope.test.ts tests/e2e/compare-ui-images.test.ts`.
+- [x] Update status, commit, and push.
 
 ### Task 5: Whole-Screen And Region Deterministic Summaries
 
@@ -218,15 +218,15 @@ Threshold env overrides are not part of this implementation. They can be added l
 - Modify: `src/pipeline/run-ui-diff.ts`
 - Test: `tests/unit/scope-summary.test.ts`
 
-- [ ] Build screen and region boxes in comparison space: `screen`, `top`, `middle`, `bottom`, `header`, `content`, `nav`.
-- [ ] Use mobile-first deterministic ratios: `header` = top 18%, `nav` = bottom 16%, `content` = between header/nav, `top/middle/bottom` = equal thirds. If width >= height, mark region profile as `landscape_or_tablet` and use `nav` = bottom 12% plus a warning that desktop/sidebar navs are not yet specialized.
-- [ ] For each scope region, compute changed pixel percent, edge changed percent, dominant expected/actual palette samples, and bounding box of changed mass.
-- [ ] Compute `triggeredCriteria` from the deterministic trigger map in the Screen/Region VLM Cost Guard section.
-- [ ] Emit `ScopeDiffSummary` records and write them to `parts/scope-summary.json`.
-- [ ] Add `diffSummary.scopeSummaries` to the report manifest.
-- [ ] Do not call VLMs in this task; this is deterministic evidence feeding the next task.
-- [ ] Verify with `npx vitest run tests/unit/scope-summary.test.ts`.
-- [ ] Update status, commit, and push.
+- [x] Build screen and region boxes in comparison space: `screen`, `top`, `middle`, `bottom`, `header`, `content`, `nav`.
+- [x] Use mobile-first deterministic ratios: `header` = top 18%, `nav` = bottom 16%, `content` = between header/nav, `top/middle/bottom` = equal thirds. If width >= height, mark region profile as `landscape_or_tablet` and use `nav` = bottom 12% plus a warning that desktop/sidebar navs are not yet specialized.
+- [x] For each scope region, compute changed pixel percent, edge changed percent, dominant expected/actual palette samples, and bounding box of changed mass.
+- [x] Compute `triggeredCriteria` from the deterministic trigger map in the Screen/Region VLM Cost Guard section.
+- [x] Emit `ScopeDiffSummary` records and write them to `parts/scope-summary.json`.
+- [x] Add `diffSummary.scopeSummaries` to the report manifest.
+- [x] Do not call VLMs in this task; this is deterministic evidence feeding the next task.
+- [x] Verify with `npx vitest run tests/unit/scope-summary.test.ts`.
+- [x] Update status, commit, and push.
 
 ### Task 6: Screen/Region Criterion Audit And Review
 
@@ -237,15 +237,15 @@ Threshold env overrides are not part of this implementation. They can be added l
 - Test: `tests/unit/audit-scope.test.ts`
 - Test: `tests/e2e/compare-ui-images.test.ts`
 
-- [ ] Add `buildScopeAuditorPrompt` and `buildScopeReviewerPrompt` for full-screen/region evidence.
-- [ ] Use criterion-scoped prompts only for criteria listed in each region's `triggeredCriteria`.
-- [ ] Evidence images are expected region, actual region, directional overlay, pixel mask, and optional full-screen context overlay.
-- [ ] Auditor must not make exact pixel claims unless citing deterministic measurements.
-- [ ] Reviewer validates only supplied screen/region evidence.
-- [ ] Add `classificationSource: "vlm_reviewed"` and `scopeId`/`scopeKind` metadata to accepted records.
-- [ ] For `screen` scope, visual classification can complete without target audit if all selected screen criteria are reviewed and coverage has no unresolved regions.
-- [ ] Verify with mocked callers in `npx vitest run tests/unit/audit-scope.test.ts tests/e2e/compare-ui-images.test.ts`.
-- [ ] Update status, commit, and push.
+- [x] Add `buildScopeAuditorPrompt` and `buildScopeReviewerPrompt` for full-screen/region evidence.
+- [x] Use criterion-scoped prompts only for criteria listed in each region's `triggeredCriteria`.
+- [x] Evidence images are expected region, actual region, directional overlay, pixel mask, and optional full-screen context overlay.
+- [x] Auditor must not make exact pixel claims unless citing deterministic measurements.
+- [x] Reviewer validates only supplied screen/region evidence.
+- [x] Add `classificationSource: "vlm_reviewed"` and `scopeId`/`scopeKind` metadata to accepted records.
+- [x] For `screen` scope, visual classification can complete without target audit if all selected screen criteria are reviewed and coverage has no unresolved regions.
+- [x] Verify with mocked callers in `npx vitest run tests/unit/audit-scope.test.ts tests/e2e/compare-ui-images.test.ts`.
+- [x] Update status, commit, and push.
 
 ### Task 7: Full Coarse-To-Fine Ordering
 
@@ -255,12 +255,12 @@ Threshold env overrides are not part of this implementation. They can be added l
 - Test: `tests/e2e/compare-ui-images.test.ts`
 - Test: `tests/unit/coverage.test.ts`
 
-- [ ] In `full` scope, run screen summaries, region summaries, screen/region audits, then target audit.
-- [ ] If a target-level diff is inside a larger accepted region/screen diff and does not add a new criterion, mark it as a child finding or suppress it from top-level `diffs`.
-- [ ] Preserve children in `parts/diffs.json` with `childFindingIds` and `findingGroupId`.
-- [ ] Add tests proving large region diffs prevent duplicate tiny fragments from inflating top-level diff counts.
-- [ ] Verify with `npx vitest run tests/e2e/compare-ui-images.test.ts tests/unit/coverage.test.ts`.
-- [ ] Update status, commit, and push.
+- [x] In `full` scope, run screen summaries, region summaries, screen/region audits, then target audit.
+- [x] If a target-level diff is inside a larger accepted region/screen diff and does not add a new criterion, mark it as a child finding or suppress it from top-level `diffs`.
+- [x] Preserve children in `parts/diffs.json` with `childFindingIds` and `findingGroupId`.
+- [x] Add tests proving large region diffs prevent duplicate tiny fragments from inflating top-level diff counts.
+- [x] Verify with `npx vitest run tests/e2e/compare-ui-images.test.ts tests/unit/coverage.test.ts`.
+- [x] Update status, commit, and push.
 
 ### Task 8: Docs, Live Gates, And Review
 
@@ -270,8 +270,8 @@ Threshold env overrides are not part of this implementation. They can be added l
 - Modify: `docs/implementation-status.md`
 - Test: live gates as available
 
-- [ ] Document `diffScope` examples for `screen`, `regions`, `target`, and `full`.
-- [ ] Document report parts and where to inspect token accounting.
+- [x] Document `diffScope` examples for `screen`, `regions`, `target`, and `full`.
+- [x] Document report parts and where to inspect token accounting.
 - [ ] Run `npm run verify`.
 - [ ] Run relevant live gates if credentials/sidecar/quota permit: at minimum `verify:mcp-live` and `verify:calorix-release-live` for report-contract changes.
 - [ ] Get Antigravity MCP post-implementation review green.
