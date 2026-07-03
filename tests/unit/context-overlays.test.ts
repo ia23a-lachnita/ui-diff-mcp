@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { writeRegionContextOverlays } from "../../src/report/context-overlays.js";
+import { buildFindingGroups, overlayStyleForImage, writeRegionContextOverlays } from "../../src/report/context-overlays.js";
 import { writeSolidPng } from "../../src/testing/fixture-images.js";
 import type { DiffRecord, UiElement, UnresolvedRegion } from "../../src/schemas/core.js";
 
@@ -29,6 +29,14 @@ function diff(id: string): DiffRecord {
     artifactPaths: [],
     reviewerStatus: "accepted",
     classificationSource: "vlm_reviewed"
+  };
+}
+
+function overlappingDiff(id: string): DiffRecord {
+  return {
+    ...diff(id),
+    location: { x: 30, y: 45, width: 70, height: 45 },
+    criterion: "color_appearance"
   };
 }
 
@@ -59,6 +67,17 @@ function card(): UiElement {
 }
 
 describe("writeRegionContextOverlays", () => {
+  it("groups overlapping final diffs and scales labels for tall screenshots", () => {
+    const groups = buildFindingGroups([diff("diff-1"), overlappingDiff("diff-2")]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.diffIds.sort()).toEqual(["diff-1", "diff-2"]);
+
+    const style = overlayStyleForImage(1206, 2622);
+    expect(style.fontSize).toBeGreaterThanOrEqual(18);
+    expect(style.strokeWidth).toBeGreaterThanOrEqual(3);
+    expect(style.diffFillOpacity).toBeLessThanOrEqual(0.06);
+  });
+
   it("writes final, unresolved, and combined full-screen context overlays", async () => {
     const actualComparisonPath = await writeSolidPng(tmpDir, "actual-comparison.png", 200, 400, 30, 30, 30);
     const directionalOverlayPath = await writeSolidPng(tmpDir, "directional-overlay.png", 200, 400, 10, 10, 10);
@@ -66,21 +85,34 @@ describe("writeRegionContextOverlays", () => {
       actualComparisonPath,
       directionalOverlayPath,
       artifactDir: tmpDir,
-      diffs: [diff("diff-1")],
+      diffs: [diff("diff-1"), overlappingDiff("diff-2")],
       unresolvedRegions: [region("region-1")],
       elements: [card()]
     });
 
     expect(artifacts.map(artifact => artifact.role).sort()).toEqual([
+      "final_diff_groups_legend",
+      "final_diff_groups_overlay",
       "final_diff_regions_overlay",
+      "final_diff_zoom",
       "region_context_overlay",
       "unresolved_regions_overlay"
     ]);
     for (const artifact of artifacts) {
       await expect(fs.access(artifact.path)).resolves.toBeUndefined();
+      if (!artifact.path.endsWith(".png")) continue;
       const metadata = await sharp(artifact.path).metadata();
-      expect(metadata.width).toBe(200);
-      expect(metadata.height).toBe(400);
+      expect(metadata.width).toBeGreaterThan(0);
+      expect(metadata.height).toBeGreaterThan(0);
     }
+
+    const legendArtifact = artifacts.find(artifact => artifact.role === "final_diff_groups_legend");
+    expect(legendArtifact).toBeDefined();
+    const legend = JSON.parse(await fs.readFile(legendArtifact!.path, "utf8")) as {
+      groups: Array<{ diffIds: string[]; zoomArtifact?: string }>;
+    };
+    expect(legend.groups).toHaveLength(1);
+    expect(legend.groups[0]?.diffIds.sort()).toEqual(["diff-1", "diff-2"]);
+    expect(legend.groups[0]?.zoomArtifact).toContain("final-diff-zoom-001.png");
   });
 });

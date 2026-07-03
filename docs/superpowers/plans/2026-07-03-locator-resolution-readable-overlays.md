@@ -263,7 +263,7 @@ git push
   - `final-diff-groups-legend.json`
   - `final-diff-zoom-001.png`, etc.
 
-- [ ] **Step 1: Add grouping helper**
+- [x] **Step 1: Add grouping helper**
 
 Group diffs by overlapping locations and nearby parent-scale boxes:
 
@@ -280,7 +280,7 @@ interface FindingGroup {
 
 Use IoU/containment/nearby-center rules already available in `src/signals/geometry.ts`; do not create one group per criterion when the boxes substantially overlap.
 
-- [ ] **Step 2: Dynamic overlay styling**
+- [x] **Step 2: Dynamic overlay styling**
 
 Replace fixed `font-size="10"` and `stroke-width="3"` with image-relative values:
 
@@ -293,15 +293,15 @@ const labelHeight = Math.round(fontSize * 1.45);
 
 Use transparent fills no stronger than `0.06` for diff groups and avoid full-screen green flooding.
 
-- [ ] **Step 3: Draw grouped overview**
+- [x] **Step 3: Draw grouped overview**
 
 `final-diff-regions-overlay.png` remains compatible but must draw grouped low-alpha outlines instead of all individual filled diff rectangles. Add `final-diff-groups-overlay.png` with the same grouped rendering and a visible numbered legend marker.
 
-- [ ] **Step 4: Dynamic zoom panels**
+- [x] **Step 4: Dynamic zoom panels**
 
 Generate up to `UI_DIFF_MAX_CONTEXT_ZOOMS` zoom panels, default `8`, centered around largest/highest-severity finding groups. Each crop must add padding around the group and draw readable labels inside the crop coordinate space.
 
-- [ ] **Step 5: Legend JSON**
+- [x] **Step 5: Legend JSON**
 
 Write `final-diff-groups-legend.json`:
 
@@ -321,7 +321,7 @@ Write `final-diff-groups-legend.json`:
 }
 ```
 
-- [ ] **Step 6: Tests**
+- [x] **Step 6: Tests**
 
 Add tests that:
 
@@ -331,7 +331,7 @@ Add tests that:
 - zoom panels are written for finding groups,
 - legend JSON maps group IDs to diff IDs.
 
-- [ ] **Step 7: Verify and commit**
+- [x] **Step 7: Verify and commit**
 
 Run:
 
