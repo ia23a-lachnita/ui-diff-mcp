@@ -1,4 +1,4 @@
-import type { UiElement } from "../schemas/core.js";
+import type { LocatorInputSizing, UiElement } from "../schemas/core.js";
 import type { ImageLocatorCoverage } from "./coverage.js";
 
 export function buildTargetMapJson(input: {
@@ -6,10 +6,12 @@ export function buildTargetMapJson(input: {
   coverage: ImageLocatorCoverage;
   elements: UiElement[];
   elementsSource?: "independent" | "projected";
+  locatorInputSizing?: LocatorInputSizing["expected"] | LocatorInputSizing["actual"];
 }) {
   return {
     imageRole: input.imageRole,
     ...(input.elementsSource !== undefined ? { elementsSource: input.elementsSource } : {}),
+    ...(input.locatorInputSizing !== undefined ? { locatorInputSizing: input.locatorInputSizing } : {}),
     coverage: input.coverage,
     elements: input.elements.map(e => ({
       id: e.id,

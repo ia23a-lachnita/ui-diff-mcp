@@ -227,6 +227,29 @@ describe("core schemas", () => {
     expect(parsed.auditScope?.totalPairs).toBe(10);
   });
 
+  it("accepts locator input sizing metadata on reports", () => {
+    const parsed = UiDiffReportSchema.parse(makeMinimalReport({
+      locatorInputSizing: {
+        mode: "single_pass_projected_actual",
+        expected: {
+          imageRole: "expected",
+          maxDimension: 600,
+          originalWidth: 1206,
+          originalHeight: 2622,
+          sentWidth: 276,
+          sentHeight: 600,
+          scale: 0.2288,
+          resized: true
+        },
+        warning: "Low locator max dimension can hide small UI targets."
+      }
+    }));
+
+    expect(parsed.locatorInputSizing?.mode).toBe("single_pass_projected_actual");
+    expect(parsed.locatorInputSizing?.expected?.sentHeight).toBe(600);
+    expect(parsed.locatorInputSizing?.warning).toContain("hide small UI targets");
+  });
+
   it("defaults diff scope to full and validates target query", () => {
     expect(DiffScopeSchema.parse(undefined)).toEqual({ kind: "full" });
     expect(DiffScopeSchema.parse({ kind: "screen" })).toEqual({ kind: "screen" });

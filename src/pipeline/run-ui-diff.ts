@@ -40,12 +40,13 @@ import { buildDiffSummary, buildScopeDiffSummaries } from "../diff/scope-summary
 import { writeUiDiffReport, writeReportCheckpoint } from "../report/report-writer.js";
 import { hydrateReportParts } from "../report/report-parts.js";
 import { filterComponentsForScope, filterPairsForScope, normalizeDiffScope } from "./diff-scope.js";
-import type { UiDiffReport, RunStatus, VisualClassificationStatus, LocatorCoverageStatus, DiffRecord, ElementPair, UiArtifact, AuditScope, ModelSelection, RecoverySummary, RecoveryCursor, StageStatus, LocatorLaneMetadata, RunDebugSummary, ProjectedPreAuditSummary, DiffScope, UsageSummary } from "../schemas/core.js";
+import type { UiDiffReport, RunStatus, VisualClassificationStatus, LocatorCoverageStatus, DiffRecord, ElementPair, UiArtifact, AuditScope, ModelSelection, RecoverySummary, RecoveryCursor, StageStatus, LocatorLaneMetadata, RunDebugSummary, ProjectedPreAuditSummary, DiffScope, UsageSummary, LocatorInputSizing } from "../schemas/core.js";
 import { computeColorEvidence } from "../signals/color.js";
 import { createRunId } from "./run-store.js";
 import { UiDiffReportSchema } from "../schemas/core.js";
 import { auditTraceHasFailure, deriveAuditStageOutcome, deriveRecoveryStageOutcome } from "./stages.js";
 import type { StageOutcome } from "../schemas/core.js";
+import type { LocateAnythingRequestSizing } from "../locator/locateanything-client.js";
 
 export interface RunInput {
   expectedImagePath: string;
@@ -79,6 +80,14 @@ export interface RunOutput {
 }
 
 type ProbeOverride = (entries: ModelEntry[], config: VisionProviderConfig) => Promise<ProbeResult[]>;
+
+function locatorSizingForReport(
+  imageRole: "expected" | "actual",
+  sizing: LocateAnythingRequestSizing | undefined
+): LocatorInputSizing["expected"] | LocatorInputSizing["actual"] | undefined {
+  if (sizing === undefined) return undefined;
+  return { imageRole, ...sizing };
+}
 
 export function resolveDualLocatorMode(env: Record<string, string | undefined>): {
   enabled: boolean;
@@ -297,6 +306,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
       visualClassificationStatus,
       locatorCoverageStatus,
       diffScope,
+      ...(locatorInputSizing !== undefined ? { locatorInputSizing } : {}),
       ...(auditScope !== undefined ? { auditScope } : {}),
       ...(modelSelection !== undefined ? { modelSelection } : {}),
       ...(recoverySummary !== undefined ? { recoverySummary } : {}),
@@ -345,6 +355,9 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
   let locatorFailed = false;
   let expectedCoverage: ImageLocatorCoverage | undefined;
   let actualCoverage: ImageLocatorCoverage | undefined;
+  let locatorInputSizing: LocatorInputSizing | undefined;
+  let expectedLocatorSizing: LocatorInputSizing["expected"] | undefined;
+  let actualLocatorSizing: LocatorInputSizing["actual"] | undefined;
 
   if (mode === "paid" && !paidModeEnabled) {
     warnings.push("Paid mode requested but UI_DIFF_ENABLE_PAID_MODE=1 is not set; paid routes are disabled.");
@@ -404,6 +417,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
         timeoutMs: locatorTimeoutMs,
         maxDimension: locatorMaxDimension
       });
+      expectedLocatorSizing = locatorSizingForReport("expected", expResp.requestSizing);
       expectedElements.push(...buildElementMap(expResp.elements, { width: expectedImg.width, height: expectedImg.height }));
       locatorLanes = expResp.metadata?.lanes;
 
@@ -420,6 +434,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
           timeoutMs: locatorTimeoutMs,
           maxDimension: locatorMaxDimension
         });
+        actualLocatorSizing = locatorSizingForReport("actual", actResp.requestSizing);
         actualElements.push(...buildElementMap(actResp.elements, { width: actualImg.width, height: actualImg.height }));
         // Merge actual-image lane results into locatorLanes (take worse status per lane, sum counts).
         if (actResp.metadata?.lanes) {
@@ -464,16 +479,27 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
         locatorCoverageStatus = expectedCoverage.status;
       }
 
+      locatorInputSizing = {
+        mode: dualLocatorEnabled ? "dual_locator" : "single_pass_projected_actual",
+        ...(expectedLocatorSizing !== undefined ? { expected: expectedLocatorSizing } : {}),
+        ...(actualLocatorSizing !== undefined ? { actual: actualLocatorSizing } : {}),
+        ...(locatorMaxDimension < 900
+          ? { warning: "Low locator max dimension can hide small UI targets; use benchmark evidence before production sign-off." }
+          : {})
+      };
+
       await writeJsonArtifact(path.join(artifactRoot, "target-map-expected.json"), buildTargetMapJson({
         imageRole: "expected",
         coverage: expectedCoverage,
-        elements: expectedElements
+        elements: expectedElements,
+        locatorInputSizing: expectedLocatorSizing
       }));
       await writeJsonArtifact(path.join(artifactRoot, "target-map-actual.json"), buildTargetMapJson({
         imageRole: "actual",
         coverage: actualCoverage,
         elements: actualElements,
-        elementsSource: dualLocatorEnabled ? "independent" : "projected"
+        elementsSource: dualLocatorEnabled ? "independent" : "projected",
+        locatorInputSizing: actualLocatorSizing
       }));
       runArtifacts.push(
         { role: "target_map_expected", path: path.join(artifactRoot, "target-map-expected.json") },
@@ -1084,6 +1110,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     locatorCoverageStatus,
     diffScope,
     ...(locatorMetadata !== undefined ? { locatorMetadata } : {}),
+    ...(locatorInputSizing !== undefined ? { locatorInputSizing } : {}),
     ...(auditScope !== undefined ? { auditScope } : {}),
     ...(modelSelection !== undefined ? { modelSelection } : {}),
     ...(recoverySummary !== undefined ? { recoverySummary } : {}),

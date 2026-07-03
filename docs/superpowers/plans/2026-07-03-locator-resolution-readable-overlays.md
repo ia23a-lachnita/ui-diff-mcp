@@ -170,7 +170,7 @@ git push
 **Interfaces:**
 - Produces: `UiDiffReport.locatorInputSizing` and `target-map-*.json.locatorInputSizing`.
 
-- [ ] **Step 1: Add schema**
+- [x] **Step 1: Add schema**
 
 Add:
 
@@ -196,7 +196,7 @@ export const LocatorInputSizingSchema = z.object({
 
 Wire `locatorInputSizing: LocatorInputSizingSchema.optional()` into `UiDiffReportSchema`.
 
-- [ ] **Step 2: Return sizing from locator client**
+- [x] **Step 2: Return sizing from locator client**
 
 Extend `LocateAnythingResponse` with optional local-only `requestSizing`:
 
@@ -214,7 +214,7 @@ requestSizing?: {
 
 Compute it in `withImagePayload()` when `imagePath` is used. Tests must assert a `400x800` image with `maxDimension=200` sends `100x200`, scale `0.25`, and still rescales boxes back to original coordinates.
 
-- [ ] **Step 3: Write report metadata**
+- [x] **Step 3: Write report metadata**
 
 In `run-ui-diff.ts`, capture expected and actual request sizing and write:
 
@@ -229,7 +229,7 @@ locatorInputSizing: {
 }
 ```
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 Run:
 

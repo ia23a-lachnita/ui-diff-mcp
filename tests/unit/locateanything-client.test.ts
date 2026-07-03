@@ -279,6 +279,15 @@ describe("locateUiElements", () => {
 
     // Coordinates must be scaled back to the 400×800 original space (factor ×4)
     expect(result.image).toEqual({ width: 400, height: 800 });
+    expect(result.requestSizing).toEqual({
+      maxDimension: 200,
+      originalWidth: 400,
+      originalHeight: 800,
+      sentWidth: 100,
+      sentHeight: 200,
+      scale: 0.25,
+      resized: true
+    });
     expect(result.elements[0]?.box).toEqual({ x: 80, y: 160, width: 40, height: 20 });
   });
 
@@ -315,6 +324,15 @@ describe("locateUiElements", () => {
 
     // No rescaling — coordinates unchanged
     expect(result.image).toEqual({ width: 50, height: 50 });
+    expect(result.requestSizing).toEqual({
+      maxDimension: 200,
+      originalWidth: 50,
+      originalHeight: 50,
+      sentWidth: 50,
+      sentHeight: 50,
+      scale: 1,
+      resized: false
+    });
     expect(result.elements[0]?.box).toEqual({ x: 5, y: 5, width: 10, height: 10 });
   });
 

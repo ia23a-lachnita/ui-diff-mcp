@@ -377,6 +377,25 @@ export const LocatorMetadataSchema = z.object({
   lanes: z.record(z.string(), LocatorLaneMetadataSchema).optional()
 });
 
+export const LocatorImageSizingSchema = z.object({
+  imageRole: z.enum(["expected", "actual"]),
+  maxDimension: z.number().int().positive(),
+  originalWidth: z.number().int().positive(),
+  originalHeight: z.number().int().positive(),
+  sentWidth: z.number().int().positive(),
+  sentHeight: z.number().int().positive(),
+  scale: z.number().positive(),
+  resized: z.boolean()
+});
+
+export const LocatorInputSizingSchema = z.object({
+  mode: z.enum(["single_pass_projected_actual", "dual_locator"]),
+  expected: LocatorImageSizingSchema.optional(),
+  actual: LocatorImageSizingSchema.optional(),
+  warning: z.string().optional()
+});
+export type LocatorInputSizing = z.infer<typeof LocatorInputSizingSchema>;
+
 export const ProjectedPreAuditSummarySchema = z.object({
   projectedPairsChecked: z.number().int().nonnegative(),
   deterministicProjectedDiffs: z.number().int().nonnegative(),
@@ -624,6 +643,7 @@ export const UiDiffReportSchema = z.object({
   visualClassificationStatus: VisualClassificationStatusSchema,
   locatorCoverageStatus: LocatorCoverageStatusSchema.default("not_run"),
   locatorMetadata: LocatorMetadataSchema.optional(),
+  locatorInputSizing: LocatorInputSizingSchema.optional(),
   diffScope: DiffScopeSchema.optional(),
   auditScope: AuditScopeSchema.optional(),
   projectedPreAudit: ProjectedPreAuditSummarySchema.optional(),

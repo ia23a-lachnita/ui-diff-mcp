@@ -4,8 +4,7 @@ import { fileURLToPath } from "node:url";
 import { locateUiElements } from "../src/locator/locateanything-client.js";
 import { buildElementMap } from "../src/locator/element-map.js";
 import { computeImageLocatorCoverage } from "../src/locator/coverage.js";
-import type { LocateAnythingLaneMetadata } from "../src/locator/locateanything-client.js";
-import type { Box, UiElement } from "../src/schemas/core.js";
+import type { Box, LocatorLaneMetadata, UiElement } from "../src/schemas/core.js";
 
 const DEFAULT_DIMENSIONS = [600, 900, 1200];
 
@@ -35,7 +34,7 @@ export interface BenchmarkImageResult {
   usefulElementCount: number;
   queryCoverageRatio: number;
   queryCounts: Record<string, number>;
-  laneMetadata: Record<string, LocateAnythingLaneMetadata>;
+  laneMetadata: Record<string, LocatorLaneMetadata>;
   elements: BenchmarkElementSummary[];
 }
 
@@ -117,7 +116,10 @@ export function buildLocatorBenchmarkMarkdown(report: LocatorBenchmarkReport): s
 
   const stabilityRows = report.trials
     .filter((trial): trial is Extract<BenchmarkTrial, { status: "complete" }> => trial.status === "complete" && trial.stability !== undefined)
-    .map(trial => `| ${trial.maxDimension} | ${trial.stability.comparedTo ?? "-"} | ${(trial.stability.expectedMissingLabels ?? []).length} | ${(trial.stability.actualMissingLabels ?? []).length} | ${(trial.stability.expectedExtraLabels ?? []).length} | ${(trial.stability.actualExtraLabels ?? []).length} |`)
+    .map(trial => {
+      const stability = trial.stability;
+      return `| ${trial.maxDimension} | ${stability?.comparedTo ?? "-"} | ${(stability?.expectedMissingLabels ?? []).length} | ${(stability?.actualMissingLabels ?? []).length} | ${(stability?.expectedExtraLabels ?? []).length} | ${(stability?.actualExtraLabels ?? []).length} |`;
+    })
     .join("\n");
 
   const detailSections = report.trials.map(trial => {

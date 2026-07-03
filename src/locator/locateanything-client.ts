@@ -56,7 +56,18 @@ export const LocateAnythingResponseSchema = z.object({
     lanes: z.record(z.string(), LaneMetadataSchema).optional()
   }).optional()
 });
-export type LocateAnythingResponse = z.infer<typeof LocateAnythingResponseSchema>;
+export interface LocateAnythingRequestSizing {
+  maxDimension: number;
+  originalWidth: number;
+  originalHeight: number;
+  sentWidth: number;
+  sentHeight: number;
+  scale: number;
+  resized: boolean;
+}
+export type LocateAnythingResponse = z.infer<typeof LocateAnythingResponseSchema> & {
+  requestSizing?: LocateAnythingRequestSizing;
+};
 
 export class LocatorUnavailableError extends Error {
   readonly code = "locator_unavailable" as const;
@@ -85,30 +96,53 @@ function mimeTypeForImagePath(imagePath: string): LocateAnythingRequest["imageMi
   return undefined;
 }
 
-async function withImagePayload(request: LocateAnythingRequest, maxDimension?: number): Promise<LocateAnythingRequest> {
-  if (request.imageBase64) return request;
+async function withImagePayload(
+  request: LocateAnythingRequest,
+  maxDimension?: number
+): Promise<{ request: LocateAnythingRequest; sizing?: LocateAnythingRequestSizing }> {
+  if (request.imageBase64) return { request };
 
   const imageMimeType = mimeTypeForImagePath(request.imagePath);
-  if (!imageMimeType) return request;
+  if (!imageMimeType) return { request };
 
   try {
+    const metadata = await sharp(request.imagePath).metadata();
+    const originalWidth = metadata.width;
+    const originalHeight = metadata.height;
     let pipeline = sharp(request.imagePath);
     if (maxDimension) {
       pipeline = pipeline.resize(maxDimension, maxDimension, { fit: "inside", withoutEnlargement: true });
     }
-    const imageBytes = await pipeline.png().toBuffer();
+    const { data: imageBytes, info } = await pipeline.png().toBuffer({ resolveWithObject: true });
+    const scale = originalWidth && originalHeight
+      ? Math.min(info.width / originalWidth, info.height / originalHeight)
+      : 1;
+    const sizing = maxDimension && originalWidth && originalHeight
+      ? {
+        maxDimension,
+        originalWidth,
+        originalHeight,
+        sentWidth: info.width,
+        sentHeight: info.height,
+        scale,
+        resized: info.width !== originalWidth || info.height !== originalHeight
+      }
+      : undefined;
     return {
-      ...request,
-      imageBase64: imageBytes.toString("base64"),
-      imageMimeType: "image/png"
+      request: {
+        ...request,
+        imageBase64: imageBytes.toString("base64"),
+        imageMimeType: "image/png"
+      },
+      ...(sizing !== undefined ? { sizing } : {})
     };
   } catch {
     // Fall back to raw file read if sharp fails
     try {
       const imageBytes = await fs.readFile(request.imagePath);
-      return { ...request, imageBase64: imageBytes.toString("base64"), imageMimeType };
+      return { request: { ...request, imageBase64: imageBytes.toString("base64"), imageMimeType } };
     } catch {
-      return request;
+      return { request };
     }
   }
 }
@@ -149,7 +183,7 @@ export async function locateUiElements(options: LocateClientOptions): Promise<Lo
     } catch { /* ignore — coordinate rescaling won't apply */ }
   }
 
-  const requestBody = await withImagePayload(request, maxDimension);
+  const { request: requestBody, sizing: requestSizing } = await withImagePayload(request, maxDimension);
 
   let rawResponse: Response;
   try {
@@ -179,7 +213,8 @@ export async function locateUiElements(options: LocateClientOptions): Promise<Lo
     throw new LocatorUnavailableError("Sidecar response is not valid JSON");
   }
 
-  const parsed = LocateAnythingResponseSchema.parse(json);
+  const parsed: LocateAnythingResponse = LocateAnythingResponseSchema.parse(json);
+  if (requestSizing !== undefined) parsed.requestSizing = requestSizing;
 
   // Scale box coordinates from resized-image space back to original-image space.
   // The sidecar contract: boxes are in the coordinate space of the image it received.
