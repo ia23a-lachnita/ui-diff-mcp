@@ -153,14 +153,14 @@ Threshold env overrides are not part of this implementation. They can be added l
 - Test: `tests/unit/usage-summary.test.ts`
 - Modify: `src/report/report-writer.ts`
 
-- [ ] Write failing tests for aggregating provider trace events into totals by phase, role, and provider/model route.
-- [ ] Count `call_success` as calls; aggregate input/output/total/reasoning tokens and duration.
-- [ ] Count successful calls with no usage fields as `missingUsageCalls`.
-- [ ] Count successful calls with only total tokens as `totalOnlyUsageCalls`; do not estimate input/output split.
-- [ ] Count `call_error`, `fallback`, and `route_exhausted` separately without adding tokens.
-- [ ] Export `buildUsageSummary(events: readonly ProviderTraceEvent[]): UsageSummary`.
+- [x] Write failing tests for aggregating provider trace events into totals by phase, role, and provider/model route.
+- [x] Count `call_success` as calls; aggregate input/output/total/reasoning tokens and duration.
+- [x] Count successful calls with no usage fields as `missingUsageCalls`.
+- [x] Count successful calls with only total tokens as `totalOnlyUsageCalls`; do not estimate input/output split.
+- [x] Count `call_error`, `fallback`, and `route_exhausted` separately without adding tokens.
+- [x] Export `buildUsageSummary(events: readonly ProviderTraceEvent[]): UsageSummary`.
 - [ ] Write `usage-summary.json` as a report part and include `usageSummary` in compact output.
-- [ ] Verify with `npx vitest run tests/unit/usage-summary.test.ts tests/unit/report-writer.test.ts`.
+- [x] Verify with `npx vitest run tests/unit/usage-summary.test.ts tests/unit/report-writer.test.ts`.
 - [ ] Update status, commit, and push.
 
 ### Task 3: Report Parts Writer

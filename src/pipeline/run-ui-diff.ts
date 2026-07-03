@@ -32,6 +32,7 @@ import { filterAcceptedDiffs, reviewAndMergeFindings } from "../audit/review-fin
 import { prepareRecoveryRegionArtifacts, runTargetRecovery } from "../recovery/target-recovery.js";
 import { writeRunDebugArtifacts, summarizeAuditPairOutcomes, type AuditPairOutcome, type RunDebugTrace } from "../debug/run-debug.js";
 import { ProviderTraceWriter, writeProviderTrace } from "../debug/provider-trace.js";
+import { buildUsageSummary } from "../debug/usage-summary.js";
 import { buildDeterministicDiffs } from "../diff/deterministic-diffs.js";
 import { runProjectedPreAudit } from "../diff/projected-preaudit.js";
 import { writeUiDiffReport, writeReportCheckpoint } from "../report/report-writer.js";
@@ -280,6 +281,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
       progress: { stage: stageName },
       visualClassificationStatus,
       locatorCoverageStatus,
+      ...(input.diffScope !== undefined ? { diffScope: input.diffScope } : {}),
       ...(auditScope !== undefined ? { auditScope } : {}),
       ...(modelSelection !== undefined ? { modelSelection } : {}),
       ...(recoverySummary !== undefined ? { recoverySummary } : {}),
@@ -296,6 +298,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
       unresolvedRegions: [],
       modelHealth: currentModelHealth,
       runArtifacts,
+      usageSummary: buildUsageSummary(providerTrace.getEvents()),
       warnings,
       stages: [...stages]
     });
@@ -1008,6 +1011,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     progress: { stage: "complete" },
     visualClassificationStatus,
     locatorCoverageStatus,
+    ...(input.diffScope !== undefined ? { diffScope: input.diffScope } : {}),
     ...(locatorMetadata !== undefined ? { locatorMetadata } : {}),
     ...(auditScope !== undefined ? { auditScope } : {}),
     ...(modelSelection !== undefined ? { modelSelection } : {}),
@@ -1033,6 +1037,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     unresolvedRegions,
     modelHealth,
     runArtifacts,
+    usageSummary: buildUsageSummary(providerTrace.getEvents()),
     warnings,
     stages,
     debugSummary: debugArtifactsResult.summary
