@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { hydrateReportParts } from "../../src/report/report-parts.js";
 import { UiDiffReportSchema } from "../../src/schemas/core.js";
 import { writeTwoButtonFixture } from "../../src/testing/fixture-images.js";
 import { startUiDiffMcpClient, type StartedMcpClient } from "../helpers/mcp-client.js";
@@ -56,7 +57,8 @@ describe.skipIf(!liveEnabled)("live full MCP discover_ui_diffs (default free mod
       "directional_overlay"
     ]));
 
-    const report = UiDiffReportSchema.parse(JSON.parse(await fs.readFile(structured.reportPath, "utf8")));
+    const rawReport = UiDiffReportSchema.parse(JSON.parse(await fs.readFile(structured.reportPath, "utf8")));
+    const report = await hydrateReportParts(rawReport, structured.reportPath);
     expect(report.modelSelection?.auditor).toEqual(expect.objectContaining({
       provider: expect.stringMatching(/^(gemini|mistral|opencode|nvidia|openrouter)$/),
       model: expect.any(String),

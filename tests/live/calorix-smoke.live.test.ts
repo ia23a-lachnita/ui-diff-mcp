@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { hydrateReportParts } from "../../src/report/report-parts.js";
 import { UiDiffReportSchema } from "../../src/schemas/core.js";
 import type { UiDiffReport } from "../../src/schemas/core.js";
 import { startUiDiffMcpClient } from "../helpers/mcp-client.js";
@@ -10,6 +11,11 @@ const calorixLive = process.env["RUN_CALORIX_UI_DIFF_LIVE"] === "1";
 const calorixFullLive = process.env["RUN_CALORIX_FULL_LIVE"] === "1";
 const calorixReleaseLive = process.env["RUN_CALORIX_RELEASE_LIVE"] === "1";
 const calorixDeterministicLive = process.env["RUN_CALORIX_DETERMINISTIC_LIVE"] === "1";
+
+async function readHydratedReport(reportPath: string): Promise<UiDiffReport> {
+  const rawReport = UiDiffReportSchema.parse(JSON.parse(await fs.readFile(reportPath, "utf8")));
+  return hydrateReportParts(rawReport, reportPath);
+}
 
 function overlapRatio(a: { x: number; y: number; width: number; height: number }, b: { x: number; y: number; width: number; height: number }): number {
   const width = Math.max(0, Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x));
@@ -123,7 +129,7 @@ describe.skipIf(!calorixDeterministicLive)("Calorix deterministic pipeline quali
       }
       expect(statusOut?.status, `deterministic gate must terminate; child=${JSON.stringify(started.getDiagnostics())}`).not.toBe("running");
       expect(statusOut?.reportPath).toBeTruthy();
-      const report = UiDiffReportSchema.parse(JSON.parse(await fs.readFile(statusOut!.reportPath!, "utf8")));
+      const report = await readHydratedReport(statusOut!.reportPath!);
       assertFinalFindingIntegrity(report);
       assertNoSplitDisplacementConsensus(report);
       const groupCount = (report.projectedPreAudit?.displacementGroups ?? 0) + (report.projectedPreAudit?.structuralMismatchGroups ?? 0);
@@ -180,7 +186,7 @@ describe.skipIf(!calorixLive)("Calorix live UI diff smoke", () => {
       expect(statusOut?.status, `run must complete, got: ${statusOut?.status}; child=${JSON.stringify(started.getDiagnostics())}`).toBe("complete");
       expect(statusOut?.reportPath).toBeTruthy();
 
-      const report = UiDiffReportSchema.parse(JSON.parse(await fs.readFile(statusOut!.reportPath!, "utf8")));
+      const report = await readHydratedReport(statusOut!.reportPath!);
       started.recordRunStatus(report.status);
       expect(path.resolve(statusOut!.reportPath!).includes(`${path.sep}.ui-diff${path.sep}runs${path.sep}`)).toBe(true);
 
@@ -304,7 +310,7 @@ describe.skipIf(!calorixFullLive)("verify:calorix-full-live unbounded all-target
       expect(statusOut?.status, `run must complete, got: ${statusOut?.status}; child=${JSON.stringify(started.getDiagnostics())}`).toBe("complete");
       expect(statusOut?.reportPath).toBeTruthy();
 
-      const report = UiDiffReportSchema.parse(JSON.parse(await fs.readFile(statusOut!.reportPath!, "utf8")));
+      const report = await readHydratedReport(statusOut!.reportPath!);
       started.recordRunStatus(report.status);
       expect(report.auditScope?.auditLimited ?? false).toBe(false);
 
@@ -512,7 +518,7 @@ describe.skipIf(!calorixReleaseLive)("Calorix release sign-off gate", () => {
       expect(statusOut?.status, "run must terminate — not hang").not.toBe("running");
       expect(statusOut?.status, `release gate requires complete status, got: ${statusOut?.status}; child=${JSON.stringify(started.getDiagnostics())}`).toBe("complete");
 
-      const report = UiDiffReportSchema.parse(JSON.parse(await fs.readFile(statusOut!.reportPath!, "utf8")));
+      const report = await readHydratedReport(statusOut!.reportPath!);
       started.recordRunStatus(report.status);
 
       expect(report.status, "release gate requires report status=complete").toBe("complete");
