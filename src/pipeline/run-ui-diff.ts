@@ -36,6 +36,7 @@ import { buildUsageSummary } from "../debug/usage-summary.js";
 import { buildDeterministicDiffs } from "../diff/deterministic-diffs.js";
 import { runProjectedPreAudit } from "../diff/projected-preaudit.js";
 import { writeUiDiffReport, writeReportCheckpoint } from "../report/report-writer.js";
+import { hydrateReportParts } from "../report/report-parts.js";
 import type { UiDiffReport, RunStatus, VisualClassificationStatus, LocatorCoverageStatus, DiffRecord, ElementPair, UiArtifact, AuditScope, ModelSelection, RecoverySummary, RecoveryCursor, StageStatus, LocatorLaneMetadata, RunDebugSummary, ProjectedPreAuditSummary, DiffScope, UsageSummary } from "../schemas/core.js";
 import { computeColorEvidence } from "../signals/color.js";
 import { createRunId } from "./run-store.js";
@@ -147,8 +148,10 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
   const artifactRoot = path.join(runDir, "artifacts");
   let resumedReport: UiDiffReport | undefined;
   if (input.resumeRunId) {
+    const reportPath = path.join(artifactRoot, "report.json");
     try {
-      resumedReport = UiDiffReportSchema.parse(JSON.parse(await fs.readFile(path.join(artifactRoot, "report.json"), "utf8")));
+      const parsed = UiDiffReportSchema.parse(JSON.parse(await fs.readFile(reportPath, "utf8")));
+      resumedReport = UiDiffReportSchema.parse(await hydrateReportParts(parsed, reportPath));
     } catch {
       resumedReport = undefined;
     }

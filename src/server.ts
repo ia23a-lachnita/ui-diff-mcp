@@ -20,6 +20,7 @@ import { probeRequiredModels, type ProbeResult } from "./models/probes.js";
 import { resolveVisionProviderConfig, type VisionProviderConfig } from "./models/provider-config.js";
 import { getRequiredModels, type ModelEntry } from "./models/model-registry.js";
 import { UiDiffReportSchema, type DiffScope } from "./schemas/core.js";
+import { hydrateReportParts } from "./report/report-parts.js";
 
 function toRecord(v: unknown): Record<string, unknown> {
   return v as Record<string, unknown>;
@@ -265,9 +266,14 @@ export async function handleReadUiDiffReport(input: { reportPath: string }, deps
   }
   const raw = await deps.readFile(resolved, "utf8");
   const parsed = UiDiffReportSchema.parse(JSON.parse(raw));
+  const hydrated = UiDiffReportSchema.parse(await hydrateReportParts(
+    parsed,
+    resolved,
+    deps.readFile as (path: string) => Promise<string | Buffer>
+  ));
   return {
-    content: [{ type: "text" as const, text: `Report loaded: run ${parsed.runId}, ${parsed.diffs.length} diffs.` }],
-    structuredContent: toRecord({ report: parsed })
+    content: [{ type: "text" as const, text: `Report loaded: run ${hydrated.runId}, ${hydrated.diffs.length} diffs.` }],
+    structuredContent: toRecord({ report: hydrated })
   };
 }
 

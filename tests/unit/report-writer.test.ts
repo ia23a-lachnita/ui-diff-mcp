@@ -137,6 +137,71 @@ describe("writeUiDiffReport", () => {
     expect(written.unresolvedRegions).toHaveLength(2);
   });
 
+  it("writes large report sections as relative report parts", async () => {
+    const report = makeReport({
+      usageSummary: {
+        calls: 1,
+        inputTokens: 100,
+        outputTokens: 20,
+        totalTokens: 120,
+        reasoningTokens: 0,
+        missingUsageCalls: 0,
+        totalOnlyUsageCalls: 0,
+        errorCalls: 0,
+        fallbackCalls: 0,
+        routeExhaustedCount: 0,
+        durationMs: 10,
+        byPhase: {},
+        byRole: {},
+        byRoute: {}
+      },
+      debugSummary: {
+        auditPairs: 0,
+        auditCriterionCalls: 0,
+        auditAccepted: 0,
+        auditRejected: 0,
+        auditNoDiff: 0,
+        auditErrors: 0,
+        coverageComponents: 0,
+        coverageCovered: 0,
+        coverageUncovered: 0,
+        coverageBelowThreshold: 0,
+        coverageResidualCovered: 0,
+        coverageResidualNoise: 0,
+        recoveryAttempted: 0,
+        recoveryAccepted: 0,
+        recoveryRejected: 0,
+        recoveryClassifiedFalse: 0,
+        recoveryErrors: 0,
+        recoverySkipped: 0
+      },
+      diffSummary: {
+        finalDiffCount: 0,
+        unresolvedRegionCount: 0,
+        bySeverity: {},
+        byCriterion: {},
+        byClassificationSource: {},
+        scopeSummaries: []
+      }
+    });
+
+    const output = await writeUiDiffReport(report);
+    const written = UiDiffReportSchema.parse(JSON.parse(await fs.readFile(output.reportPath, "utf8")));
+
+    expect(written.reportParts.map(part => part.role)).toEqual(expect.arrayContaining([
+      "elements",
+      "pairs",
+      "diffs",
+      "unresolved_regions",
+      "debug_summary",
+      "usage_summary",
+      "scope_summary"
+    ]));
+    expect(written.reportParts.every(part => !path.isAbsolute(part.path))).toBe(true);
+    await expect(fs.access(path.join(tmpDir, "parts", "usage-summary.json"))).resolves.toBeUndefined();
+    await expect(fs.access(path.join(tmpDir, "parts", "elements.json"))).resolves.toBeUndefined();
+  });
+
   it("rejects reviewer fields on unresolved regions", () => {
     const parsed = UnresolvedRegionSchema.safeParse({
       id: "region-1",

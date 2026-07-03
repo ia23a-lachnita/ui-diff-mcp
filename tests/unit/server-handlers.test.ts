@@ -184,6 +184,39 @@ describe("server tool handlers", () => {
     expect(result.structuredContent).toMatchObject({ report: { runId: "run-test" } });
   });
 
+  it("read report handler hydrates referenced report parts before returning", async () => {
+    const reportPath = path.join("C:", "project", ".ui-diff", "runs", "run-test", "artifacts", "report.json");
+    const compact = {
+      ...report(),
+      diffs: [],
+      reportParts: [{ role: "diffs", path: "parts/diffs.json" }]
+    };
+    const d = deps({
+      readFile: vi.fn(async (filePath: fs.PathLike) => {
+        const p = String(filePath);
+        if (p.endsWith("report.json")) return JSON.stringify(compact);
+        if (p.endsWith(path.join("parts", "diffs.json"))) {
+          return JSON.stringify({
+            diffs: [{
+              id: "diff-from-part",
+              criterion: "geometry",
+              severity: "medium",
+              title: "Hydrated diff",
+              location: { x: 1, y: 2, width: 3, height: 4 },
+              evidence: ["Loaded from report part."],
+              reviewerStatus: "accepted"
+            }]
+          });
+        }
+        throw new Error(`unexpected path ${p}`);
+      }) as unknown as typeof fs.readFile
+    });
+
+    const result = await handleReadUiDiffReport({ reportPath }, d);
+    const out = result.structuredContent as { report: { diffs: Array<{ id: string }> } };
+    expect(out.report.diffs).toEqual([{ id: "diff-from-part", criterion: "geometry", severity: "medium", title: "Hydrated diff", location: { x: 1, y: 2, width: 3, height: 4 }, evidence: ["Loaded from report part."], measurements: [], artifactPaths: [], childFindingIds: [], targetIds: [], reviewerStatus: "accepted" }]);
+  });
+
   it("compare handler omits projectRoot and forwards runLabel when given", async () => {
     const d = deps();
     await handleCompareUiImages({

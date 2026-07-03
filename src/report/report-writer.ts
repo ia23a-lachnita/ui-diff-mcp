@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { UiDiffReport, UiArtifact, AuditScope, RecoverySummary, RunDebugSummary, UsageSummary } from "../schemas/core.js";
 import { UiDiffReportSchema } from "../schemas/core.js";
+import { writeReportParts } from "./report-parts.js";
 
 export interface CompactOutput {
   runId: string;
@@ -26,8 +27,10 @@ export async function writeReportCheckpoint(report: UiDiffReport): Promise<strin
   const reportPath = path.join(report.artifactRoot, "report.json");
   const tmpPath = `${reportPath}.tmp`;
   await fs.mkdir(report.artifactRoot, { recursive: true });
+  const reportParts = await writeReportParts(report);
   const checkpoint = UiDiffReportSchema.parse({
     ...report,
+    reportParts,
     status: report.status === "interrupted" ? "interrupted" : "running",
     isCheckpoint: true,
     heartbeatAt: new Date().toISOString(),
@@ -45,6 +48,7 @@ export async function writeUiDiffReport(
   await fs.mkdir(reportDir, { recursive: true });
 
   const reportPath = path.join(reportDir, "report.json");
+  const reportParts = await writeReportParts(report);
 
   const diffArtifactPaths = report.diffs.flatMap(d => d.artifactPaths);
   const unresolvedArtifactPaths = report.unresolvedRegions.flatMap(region => region.artifactPaths);
@@ -54,12 +58,13 @@ export async function writeUiDiffReport(
     runId: report.runId,
     createdAt: report.createdAt,
     reportPath,
+    reportParts,
     runArtifacts: report.runArtifacts ?? [],
     artifacts: [...diffArtifactPaths, ...unresolvedArtifactPaths]
   }, null, 2), "utf8");
   await fs.rename(indexTmpPath, indexPath);
 
-  const finalReport = UiDiffReportSchema.parse({ ...report, isCheckpoint: false, heartbeatAt: new Date().toISOString() });
+  const finalReport = UiDiffReportSchema.parse({ ...report, reportParts, isCheckpoint: false, heartbeatAt: new Date().toISOString() });
   const reportTmpPath = `${reportPath}.tmp`;
   await fs.writeFile(reportTmpPath, JSON.stringify(finalReport, null, 2), "utf8");
   await fs.rename(reportTmpPath, reportPath);

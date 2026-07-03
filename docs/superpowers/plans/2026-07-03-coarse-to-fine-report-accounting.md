@@ -159,9 +159,9 @@ Threshold env overrides are not part of this implementation. They can be added l
 - [x] Count successful calls with only total tokens as `totalOnlyUsageCalls`; do not estimate input/output split.
 - [x] Count `call_error`, `fallback`, and `route_exhausted` separately without adding tokens.
 - [x] Export `buildUsageSummary(events: readonly ProviderTraceEvent[]): UsageSummary`.
-- [ ] Write `usage-summary.json` as a report part and include `usageSummary` in compact output.
+- [x] Write `usage-summary.json` as a report part and include `usageSummary` in compact output.
 - [x] Verify with `npx vitest run tests/unit/usage-summary.test.ts tests/unit/report-writer.test.ts`.
-- [ ] Update status, commit, and push.
+- [x] Update status, commit, and push.
 
 ### Task 3: Report Parts Writer
 
@@ -174,19 +174,19 @@ Threshold env overrides are not part of this implementation. They can be added l
 - Test: `tests/unit/server-handlers.test.ts`
 - Test: `tests/integration/mcp-tools.integration.test.ts`
 
-- [ ] Write failing tests that `writeUiDiffReport` writes `parts/elements.json`, `parts/pairs.json`, `parts/diffs.json`, `parts/unresolved-regions.json`, `parts/debug-summary.json`, and `parts/usage-summary.json` when data exists.
-- [ ] Add schema-safe subpart schemas derived from the existing report sub-schemas: `ElementsPartSchema`, `PairsPartSchema`, `DiffsPartSchema`, `UnresolvedRegionsPartSchema`, `DebugSummaryPartSchema`, and `UsageSummaryPartSchema`.
-- [ ] Add `writeReportPart(artifactRoot, role, fileName, payload, schema)` using atomic temp-file write and schema validation before writing.
-- [ ] Add `reportParts` to `index.json` and `report.json`.
-- [ ] Store `reportParts[].path` relative to the `report.json` directory; resolve relative paths only inside `hydrateReportParts`.
-- [ ] Keep embedded arrays unchanged for backward compatibility.
-- [ ] Update `writeReportCheckpoint` to write the same report parts as final reports.
-- [ ] Add `hydrateReportParts(report, reportPath, readFile = fs.readFile)` that loads referenced part files and reconstructs a full report object when embedded arrays are absent or compacted. If embedded arrays/objects are already populated, skip reading that part.
-- [ ] Update `runUiDiff` resume loading to call `hydrateReportParts` before `UiDiffReportSchema.parse`.
-- [ ] Update `handleReadUiDiffReport` to call `hydrateReportParts` with `deps.readFile` before returning `report`, so MCP consumers receive a full report even after partitioning is enabled and unit tests stay fully mocked.
-- [ ] Verify `read_ui_diff_report` still returns a schema-valid report.
-- [ ] Verify with `npx vitest run tests/unit/report-writer.test.ts tests/integration/mcp-tools.integration.test.ts`.
-- [ ] Update status, commit, and push.
+- [x] Write failing tests that `writeUiDiffReport` writes `parts/elements.json`, `parts/pairs.json`, `parts/diffs.json`, `parts/unresolved-regions.json`, `parts/debug-summary.json`, and `parts/usage-summary.json` when data exists.
+- [x] Add schema-safe subpart schemas derived from the existing report sub-schemas: `ElementsPartSchema`, `PairsPartSchema`, `DiffsPartSchema`, `UnresolvedRegionsPartSchema`, `DebugSummaryPartSchema`, and `UsageSummaryPartSchema`.
+- [x] Add `writeReportPart(artifactRoot, role, fileName, payload, schema)` using atomic temp-file write and schema validation before writing.
+- [x] Add `reportParts` to `index.json` and `report.json`.
+- [x] Store `reportParts[].path` relative to the `report.json` directory; resolve relative paths only inside `hydrateReportParts`.
+- [x] Keep embedded arrays unchanged for backward compatibility.
+- [x] Update `writeReportCheckpoint` to write the same report parts as final reports.
+- [x] Add `hydrateReportParts(report, reportPath, readFile = fs.readFile)` that loads referenced part files and reconstructs a full report object when embedded arrays are absent or compacted. If embedded arrays/objects are already populated, skip reading that part.
+- [x] Update `runUiDiff` resume loading to call `hydrateReportParts` before `UiDiffReportSchema.parse`.
+- [x] Update `handleReadUiDiffReport` to call `hydrateReportParts` with `deps.readFile` before returning `report`, so MCP consumers receive a full report even after partitioning is enabled and unit tests stay fully mocked.
+- [x] Verify `read_ui_diff_report` still returns a schema-valid report.
+- [x] Verify with `npx vitest run tests/unit/report-writer.test.ts tests/integration/mcp-tools.integration.test.ts`.
+- [x] Update status, commit, and push.
 
 ### Task 4: Scope Resolution And Target Filtering
 
