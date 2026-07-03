@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runUiDiff } from "../../src/pipeline/run-ui-diff.js";
+import { hydrateReportParts } from "../../src/report/report-parts.js";
 import { writeTwoButtonFixture, writeSolidPng } from "../../src/testing/fixture-images.js";
 import { startMockSidecar } from "../fixtures/mock-sidecar.js";
 import { makeMockFetch } from "../fixtures/mock-models.js";
@@ -41,13 +42,16 @@ describe("runUiDiff end-to-end (deterministic_only mode)", () => {
     expect(result.summary).toBeTruthy();
 
     const reportRaw = await fs.readFile(result.reportPath, "utf8");
-    const report = JSON.parse(reportRaw) as {
+    const rawReport = JSON.parse(reportRaw) as {
       schemaVersion: string;
       runId: string;
       status: string;
       visualClassificationStatus: string;
+      runArtifacts: Array<{ role: string }>;
+      stages: Array<{ name: string; status: string; outcome: string }>;
       unresolvedRegions: Array<{ artifactPaths: unknown[] }>;
     };
+    const report = await hydrateReportParts(rawReport as Parameters<typeof hydrateReportParts>[0], result.reportPath) as typeof rawReport;
     expect(report.schemaVersion).toBe("0.1");
     expect(report.runId).toBe(result.runId);
     expect(report.visualClassificationStatus).toBe("not_run");
@@ -241,7 +245,7 @@ describe("runUiDiff with mock sidecar and models (full mode)", () => {
     expect(result.status).toBe("complete");
 
     const reportRaw = await fs.readFile(result.reportPath, "utf8");
-    const report = JSON.parse(reportRaw) as {
+    const rawReport = JSON.parse(reportRaw) as {
       diffs: { criterion: string }[];
       unresolvedRegions: unknown[];
       elements: { expected: unknown[]; actual: unknown[] };
@@ -249,6 +253,7 @@ describe("runUiDiff with mock sidecar and models (full mode)", () => {
       debugSummary?: unknown;
       runArtifacts: { role: string; path: string }[];
     };
+    const report = await hydrateReportParts(rawReport as Parameters<typeof hydrateReportParts>[0], result.reportPath) as typeof rawReport;
     expect(Array.isArray(report.diffs)).toBe(true);
     expect(report.diffs.every(diff => diff.criterion !== "unclassified_visual_change")).toBe(true);
     expect(Array.isArray(report.unresolvedRegions)).toBe(true);

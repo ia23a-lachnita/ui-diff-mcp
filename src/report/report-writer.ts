@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { UiDiffReport, UiArtifact, AuditScope, RecoverySummary, RunDebugSummary, UsageSummary } from "../schemas/core.js";
 import { UiDiffReportSchema } from "../schemas/core.js";
-import { writeReportParts } from "./report-parts.js";
+import { slimReportForParts, writeReportParts } from "./report-parts.js";
 
 export interface CompactOutput {
   runId: string;
@@ -28,14 +28,13 @@ export async function writeReportCheckpoint(report: UiDiffReport): Promise<strin
   const tmpPath = `${reportPath}.tmp`;
   await fs.mkdir(report.artifactRoot, { recursive: true });
   const reportParts = await writeReportParts(report);
-  const checkpoint = UiDiffReportSchema.parse({
+  const checkpoint = UiDiffReportSchema.parse(slimReportForParts({
     ...report,
-    reportParts,
     status: report.status === "interrupted" ? "interrupted" : "running",
     isCheckpoint: true,
     heartbeatAt: new Date().toISOString(),
     progress: { ...(report.progress ?? { stage: "checkpoint" }), checkpointPath: reportPath }
-  });
+  }, reportParts));
   await fs.writeFile(tmpPath, JSON.stringify(checkpoint, null, 2), "utf8");
   await fs.rename(tmpPath, reportPath);
   return reportPath;
@@ -64,7 +63,11 @@ export async function writeUiDiffReport(
   }, null, 2), "utf8");
   await fs.rename(indexTmpPath, indexPath);
 
-  const finalReport = UiDiffReportSchema.parse({ ...report, reportParts, isCheckpoint: false, heartbeatAt: new Date().toISOString() });
+  const finalReport = UiDiffReportSchema.parse(slimReportForParts({
+    ...report,
+    isCheckpoint: false,
+    heartbeatAt: new Date().toISOString()
+  }, reportParts));
   const reportTmpPath = `${reportPath}.tmp`;
   await fs.writeFile(reportTmpPath, JSON.stringify(finalReport, null, 2), "utf8");
   await fs.rename(reportTmpPath, reportPath);

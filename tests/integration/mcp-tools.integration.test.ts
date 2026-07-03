@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { hydrateReportParts } from "../../src/report/report-parts.js";
 import { UiDiffReportSchema } from "../../src/schemas/core.js";
 import { writeTwoButtonFixture } from "../../src/testing/fixture-images.js";
 import { startUiDiffMcpClient, type StartedMcpClient } from "../helpers/mcp-client.js";
@@ -79,7 +80,8 @@ describe("MCP stdio tool surface", () => {
     expect(structured.reportPath.endsWith("report.json")).toBe(true);
     expect(structured.runArtifacts.length).toBeGreaterThanOrEqual(9);
 
-    const report = UiDiffReportSchema.parse(JSON.parse(await fs.readFile(structured.reportPath, "utf8")));
+    const rawReport = UiDiffReportSchema.parse(JSON.parse(await fs.readFile(structured.reportPath, "utf8")));
+    const report = await hydrateReportParts(rawReport, structured.reportPath);
     expect(report.visualClassificationStatus).toBe("not_run");
     expect(report.diffs.every(diff => diff.criterion !== "unclassified_visual_change")).toBe(true);
     expect(report.unresolvedRegions.length).toBe(structured.unresolvedRegionCount);

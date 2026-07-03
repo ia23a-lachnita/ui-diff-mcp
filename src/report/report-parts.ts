@@ -72,6 +72,22 @@ export async function writeReportParts(report: UiDiffReport): Promise<ReportPart
   return parts;
 }
 
+export function slimReportForParts(report: UiDiffReport, reportParts: ReportPart[]): UiDiffReport {
+  return {
+    ...report,
+    reportParts,
+    elements: { expected: [], actual: [] },
+    pairs: [],
+    diffs: [],
+    unresolvedRegions: [],
+    debugSummary: undefined,
+    usageSummary: undefined,
+    diffSummary: report.diffSummary === undefined
+      ? undefined
+      : { ...report.diffSummary, scopeSummaries: [] }
+  };
+}
+
 function resolvePartPath(reportPath: string, partPath: string): string {
   const baseDir = path.dirname(path.resolve(reportPath));
   const resolved = path.resolve(baseDir, partPath);

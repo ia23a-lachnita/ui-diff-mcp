@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { writeReportCheckpoint, writeUiDiffReport } from "../../src/report/report-writer.js";
+import { hydrateReportParts } from "../../src/report/report-parts.js";
 import { UiDiffReportSchema, UnresolvedRegionSchema } from "../../src/schemas/core.js";
 import type { UiDiffReport } from "../../src/schemas/core.js";
 
@@ -133,8 +134,11 @@ describe("writeUiDiffReport", () => {
     expect(output.diffCount).toBe(1);
     expect(output.unresolvedRegionCount).toBe(2);
     const written = UiDiffReportSchema.parse(JSON.parse(await fs.readFile(output.reportPath, "utf8")));
-    expect(written.diffs).toHaveLength(1);
-    expect(written.unresolvedRegions).toHaveLength(2);
+    expect(written.diffs).toHaveLength(0);
+    expect(written.unresolvedRegions).toHaveLength(0);
+    const hydrated = await hydrateReportParts(written, output.reportPath);
+    expect(hydrated.diffs).toHaveLength(1);
+    expect(hydrated.unresolvedRegions).toHaveLength(2);
   });
 
   it("writes large report sections as relative report parts", async () => {
@@ -198,6 +202,12 @@ describe("writeUiDiffReport", () => {
       "scope_summary"
     ]));
     expect((written.reportParts ?? []).every(part => !path.isAbsolute(part.path))).toBe(true);
+    expect(written.elements.expected).toHaveLength(0);
+    expect(written.pairs).toHaveLength(0);
+    expect(written.diffs).toHaveLength(0);
+    expect(written.debugSummary).toBeUndefined();
+    expect(written.usageSummary).toBeUndefined();
+    expect(written.diffSummary?.scopeSummaries).toEqual([]);
     await expect(fs.access(path.join(tmpDir, "parts", "usage-summary.json"))).resolves.toBeUndefined();
     await expect(fs.access(path.join(tmpDir, "parts", "elements.json"))).resolves.toBeUndefined();
   });

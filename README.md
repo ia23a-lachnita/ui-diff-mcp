@@ -76,7 +76,7 @@ All generated images (pixel diff, directional overlay, crop pairs, recovery crop
 
 ## Report Parts And Usage Accounting
 
-`report.json` is the manifest. Large report sections are also written as referenced JSON parts under `artifacts/parts/`:
+`report.json` is the slim manifest. Large report sections are written as referenced JSON parts under `artifacts/parts/` instead of being duplicated inline:
 
 - `elements.json`
 - `pairs.json`
@@ -86,7 +86,7 @@ All generated images (pixel diff, directional overlay, crop pairs, recovery crop
 - `usage-summary.json`
 - `scope-summary.json`
 
-`reportParts[].path` is relative to the `report.json` directory. `read_ui_diff_report` hydrates these parts before returning the report, so existing MCP consumers still receive a full schema-valid report.
+`reportParts[].path` is relative to the `report.json` directory. `read_ui_diff_report` hydrates these parts before returning the report, so existing MCP consumers still receive a full schema-valid report even though the on-disk manifest keeps `elements`, `pairs`, `diffs`, and unresolved regions compact.
 
 `usageSummary` is first-class run-level accounting. It records input tokens, output tokens, total tokens, reasoning tokens, successful calls, failed calls, fallbacks, route exhaustion, and duration totals by phase, role, and provider/model route. If a provider reports only total tokens, input/output are left as zero and `totalOnlyUsageCalls` increments; the MCP does not invent a fake split.
 

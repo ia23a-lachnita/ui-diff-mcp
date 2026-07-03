@@ -70,7 +70,7 @@ Add `reportParts` entries:
 ]
 ```
 
-Keep backward compatibility by retaining embedded arrays for now, but add `UI_DIFF_PARTITION_REPORT=1` to write embedded large arrays as empty or compact stubs only after tests and readers are updated. This plan implements references first and leaves destructive slimming disabled by default.
+Keep backward compatibility through MCP hydration instead of duplicated inline payloads. The on-disk `report.json` is the slim manifest by default: large arrays and moved summaries are written to `parts/*.json`, while `read_ui_diff_report` and resume loading hydrate them back into a full schema-valid report object.
 
 `reportParts[].path` is always relative to the directory containing `report.json`. Existing `runArtifacts[].path` may remain absolute for artifact compatibility.
 
@@ -179,7 +179,7 @@ Threshold env overrides are not part of this implementation. They can be added l
 - [x] Add `writeReportPart(artifactRoot, role, fileName, payload, schema)` using atomic temp-file write and schema validation before writing.
 - [x] Add `reportParts` to `index.json` and `report.json`.
 - [x] Store `reportParts[].path` relative to the `report.json` directory; resolve relative paths only inside `hydrateReportParts`.
-- [x] Keep embedded arrays unchanged for backward compatibility.
+- [x] Slim embedded arrays and moved summaries in `report.json` by default; preserve compatibility through `hydrateReportParts`.
 - [x] Update `writeReportCheckpoint` to write the same report parts as final reports.
 - [x] Add `hydrateReportParts(report, reportPath, readFile = fs.readFile)` that loads referenced part files and reconstructs a full report object when embedded arrays are absent or compacted. If embedded arrays/objects are already populated, skip reading that part.
 - [x] Update `runUiDiff` resume loading to call `hydrateReportParts` before `UiDiffReportSchema.parse`.
