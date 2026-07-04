@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
+import sharp from "sharp";
 import { captureMobileScreen, type CaptureResult } from "../../src/capture/mobile-capture.js";
 
 const execFileAsync = promisify(execFile);
@@ -41,12 +42,24 @@ export interface CalorixCommandRunner {
   (file: string, args: string[], options: { cwd?: string; timeout: number; encoding?: BufferEncoding | "buffer"; shell?: boolean }): Promise<ProcessResult | unknown>;
 }
 
+export interface CalorixScreenshotReadiness {
+  ok: boolean;
+  pixelBuffer: Buffer;
+  variance: number;
+  entropy: number;
+  edgeRatio: number;
+  nonBackgroundRatio: number;
+  changedRatio: number;
+  reason: string;
+}
+
 export interface CalorixDeviceOptions {
   projectRoot?: string;
   runner?: CalorixCommandRunner;
   now?: () => number;
   capture?: (target: "adb", opts: { makeOutputPath: () => string }) => Promise<CaptureResult>;
   sleepMs?: (ms: number) => Promise<void>;
+  validateImage?: (filePath: string, firstPixelBuffer: Buffer | undefined) => Promise<CalorixScreenshotReadiness>;
 }
 
 export interface CalorixPreparedActual {
@@ -186,23 +199,191 @@ export async function ensureCalorixDebugAppFresh(opts: CalorixDeviceOptions = {}
   }
 }
 
+function numberFromEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+async function pruneOldCaptureAttempts(captureDir: string, keep: number): Promise<void> {
+  let entries: string[];
+  try {
+    entries = await fs.readdir(captureDir);
+  } catch {
+    return;
+  }
+  const attemptFiles = entries.filter(entry => /^today-.+-attempt-\d+\.png$/i.test(entry));
+  if (attemptFiles.length <= keep) return;
+  const stats = await Promise.all(attemptFiles.map(async entry => {
+    const fullPath = path.join(captureDir, entry);
+    return { fullPath, mtimeMs: (await fs.stat(fullPath)).mtimeMs };
+  }));
+  stats.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  await Promise.all(stats.slice(keep).map(entry => fs.unlink(entry.fullPath).catch(() => undefined)));
+}
+
+export async function validateCalorixTodayScreenshotForReadiness(
+  filePath: string,
+  firstPixelBuffer: Buffer | undefined
+): Promise<CalorixScreenshotReadiness> {
+  const { data, info } = await sharp(filePath).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const totalPixels = info.width * info.height;
+  let luminanceSum = 0;
+  let luminanceSquaredSum = 0;
+  let edgePixels = 0;
+  let nonBackgroundPixels = 0;
+  const bins = new Array<number>(16).fill(0);
+
+  function luminanceAt(x: number, y: number): number {
+    const offset = (y * info.width + x) * 4;
+    const r = data[offset] ?? 0;
+    const g = data[offset + 1] ?? 0;
+    const b = data[offset + 2] ?? 0;
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  }
+
+  for (let y = 0; y < info.height; y++) {
+    for (let x = 0; x < info.width; x++) {
+      const offset = (y * info.width + x) * 4;
+      const r = data[offset] ?? 0;
+      const g = data[offset + 1] ?? 0;
+      const b = data[offset + 2] ?? 0;
+      const luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      luminanceSum += luma;
+      luminanceSquaredSum += luma * luma;
+      const binIndex = Math.min(15, Math.floor(luma / 16));
+      bins[binIndex] = (bins[binIndex] ?? 0) + 1;
+      if (Math.max(r, g, b) - Math.min(r, g, b) > 18 || Math.max(r, g, b) > 50) {
+        nonBackgroundPixels++;
+      }
+      if (x > 0 && y > 0) {
+        const gradient = Math.abs(luma - luminanceAt(x - 1, y)) + Math.abs(luma - luminanceAt(x, y - 1));
+        if (gradient > 35) edgePixels++;
+      }
+    }
+  }
+  const mean = totalPixels > 0 ? luminanceSum / totalPixels : 0;
+  const variance = totalPixels > 0 ? luminanceSquaredSum / totalPixels - mean * mean : 0;
+  let entropy = 0;
+  for (const count of bins) {
+    if (count === 0 || totalPixels === 0) continue;
+    const p = count / totalPixels;
+    entropy -= p * Math.log2(p);
+  }
+  const edgeRatio = totalPixels > 0 ? edgePixels / totalPixels : 0;
+  const nonBackgroundRatio = totalPixels > 0 ? nonBackgroundPixels / totalPixels : 0;
+
+  let changedRatio = 0;
+  if (firstPixelBuffer) {
+    let changedPixels = 0;
+    const compareLength = Math.min(firstPixelBuffer.length, data.length);
+    const comparePixels = Math.floor(compareLength / 4);
+    for (let i = 0; i < comparePixels; i++) {
+      const r1 = firstPixelBuffer[i * 4] ?? 0;
+      const g1 = firstPixelBuffer[i * 4 + 1] ?? 0;
+      const b1 = firstPixelBuffer[i * 4 + 2] ?? 0;
+      const r2 = data[i * 4] ?? 0;
+      const g2 = data[i * 4 + 1] ?? 0;
+      const b2 = data[i * 4 + 2] ?? 0;
+      if (Math.abs(r1 - r2) > 10 || Math.abs(g1 - g2) > 10 || Math.abs(b1 - b2) > 10) {
+        changedPixels++;
+      }
+    }
+    changedRatio = totalPixels > 0 ? changedPixels / totalPixels : 0;
+  }
+
+  const detailOk = variance >= 300 && entropy >= 0.6 && edgeRatio >= 0.01 && nonBackgroundRatio >= 0.03;
+  const reason = detailOk
+    ? `ready: variance=${variance.toFixed(1)} entropy=${entropy.toFixed(3)} edgeRatio=${edgeRatio.toFixed(4)} nonBackgroundRatio=${nonBackgroundRatio.toFixed(4)} changedRatio=${changedRatio.toFixed(4)}`
+    : `not_ready: variance=${variance.toFixed(1)} entropy=${entropy.toFixed(3)} edgeRatio=${edgeRatio.toFixed(4)} nonBackgroundRatio=${nonBackgroundRatio.toFixed(4)} changedRatio=${changedRatio.toFixed(4)}`;
+
+  return {
+    ok: detailOk,
+    pixelBuffer: data,
+    variance,
+    entropy,
+    edgeRatio,
+    nonBackgroundRatio,
+    changedRatio,
+    reason
+  };
+}
+
 export async function reseedAndCaptureCalorixToday(opts: CalorixDeviceOptions = {}): Promise<CalorixPreparedActual> {
   const projectRoot = opts.projectRoot ?? getCalorixProjectRoot();
   const runner = opts.runner ?? defaultRunner;
   const now = opts.now ?? Date.now;
   const sleepMs = opts.sleepMs ?? ((ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms)));
+  const validateImg = opts.validateImage ?? validateCalorixTodayScreenshotForReadiness;
+
   await runner("adb", ["shell", "input", "keyevent", "KEYCODE_WAKEUP"], { timeout: 30000, encoding: "utf8" });
   await runner("adb", ["shell", "wm", "dismiss-keyguard"], { timeout: 30000, encoding: "utf8" });
   await runner("adb", ["shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", "calorix://debug/reseed"], { timeout: 30000, encoding: "utf8" });
-  await sleepMs(5000);
+
   const captureDir = path.join(projectRoot, ".ui-diff", "captures");
   await fs.mkdir(captureDir, { recursive: true });
-  const outputPath = path.join(captureDir, `today-${new Date(now()).toISOString().replace(/[:.]/g, "-")}.png`);
-  const capture = await (opts.capture ?? captureMobileScreen)("adb", { makeOutputPath: () => outputPath });
-  if (capture.validationStatus !== "ok") {
-    throw new Error(`Calorix capture validation failed (${capture.validationStatus}): ${capture.warnings.join("; ") || "no detail"}`);
+
+  const retryIntervalMs = numberFromEnv("UI_DIFF_CALORIX_CAPTURE_RETRY_MS", 1000);
+  const readyTimeoutMs = numberFromEnv("UI_DIFF_CALORIX_CAPTURE_READY_TIMEOUT_MS", 60000);
+  const maxAttempts = Math.max(1, Math.ceil(readyTimeoutMs / retryIntervalMs));
+  await pruneOldCaptureAttempts(captureDir, numberFromEnv("UI_DIFF_CALORIX_CAPTURE_REJECT_KEEP", 30));
+  let attempt = 0;
+  let lastCapture: CaptureResult | undefined;
+  let firstPixelBuffer: Buffer | undefined;
+  let lastReadinessReason = "no capture attempted";
+
+  while (attempt < maxAttempts) {
+    attempt++;
+    await sleepMs(retryIntervalMs);
+
+    const outputPath = path.join(captureDir, `today-${new Date(now()).toISOString().replace(/[:.]/g, "-")}-attempt-${attempt}.png`);
+    let capture: CaptureResult;
+    try {
+      capture = await (opts.capture ?? captureMobileScreen)("adb", { makeOutputPath: () => outputPath });
+    } catch (err) {
+      if (attempt === maxAttempts) throw err;
+      continue;
+    }
+
+    lastCapture = capture;
+
+    if (capture.validationStatus !== "ok") {
+      continue;
+    }
+
+    let validationResult: CalorixScreenshotReadiness;
+    try {
+      validationResult = await validateImg(capture.path, firstPixelBuffer);
+    } catch (err) {
+      lastReadinessReason = err instanceof Error ? err.message : String(err);
+      continue;
+    }
+    lastReadinessReason = validationResult.reason;
+
+    if (!firstPixelBuffer) {
+      firstPixelBuffer = validationResult.pixelBuffer;
+      if (validationResult.ok) {
+        const finalPath = path.join(captureDir, `today-${new Date(now()).toISOString().replace(/[:.]/g, "-")}.png`);
+        await fs.rename(capture.path, finalPath);
+        capture.path = finalPath;
+        return { actualImagePath: finalPath, capture, source: "auto_capture" };
+      }
+      continue;
+    }
+
+    if (validationResult.ok) {
+      const finalPath = path.join(captureDir, `today-${new Date(now()).toISOString().replace(/[:.]/g, "-")}.png`);
+      await fs.rename(capture.path, finalPath);
+      capture.path = finalPath;
+      return { actualImagePath: finalPath, capture, source: "auto_capture" };
+    }
   }
-  return { actualImagePath: capture.path, capture, source: "auto_capture" };
+
+  if (lastCapture) {
+    throw new Error(`Calorix capture retry timeout: Today screen failed to render after ${maxAttempts} attempts. Last validationStatus: ${lastCapture.validationStatus}. Last readiness: ${lastReadinessReason}`);
+  }
+  throw new Error(`Calorix capture retry timeout: Today screen failed to render after ${maxAttempts} attempts.`);
 }
 
 export async function resolveCalorixActualImage(opts: CalorixDeviceOptions = {}): Promise<CalorixPreparedActual> {
@@ -220,6 +401,5 @@ export async function resolveCalorixActualImage(opts: CalorixDeviceOptions = {})
   if (memoizedActual) return memoizedActual;
   await ensureCalorixDebugAppFresh(opts);
   memoizedActual = await reseedAndCaptureCalorixToday(opts);
-  process.env["UI_DIFF_LIVE_ACTUAL_IMAGE"] = memoizedActual.actualImagePath;
   return memoizedActual;
 }
