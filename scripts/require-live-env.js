@@ -40,13 +40,20 @@ if (process.env[varName] !== "1") {
   } else if (varName === "RUN_CALORIX_UI_DIFF_LIVE") {
     console.error(
       "Also set LOCATEANYTHING_SIDECAR_URL, " +
-      "UI_DIFF_LIVE_EXPECTED_IMAGE, and UI_DIFF_LIVE_ACTUAL_IMAGE before running verify:calorix-live."
+      "UI_DIFF_LIVE_EXPECTED_IMAGE, and LOCATEANYTHING_EAGLE_EMBODIED_DIR before running verify:calorix-live. " +
+      "UI_DIFF_LIVE_ACTUAL_IMAGE is optional and only for explicit historical-file overrides; default Calorix gates auto-capture from ADB."
     );
   } else if (varName === "RUN_CALORIX_FULL_LIVE") {
     console.error(
       "Also set LOCATEANYTHING_SIDECAR_URL, " +
-      "UI_DIFF_LIVE_EXPECTED_IMAGE, and UI_DIFF_LIVE_ACTUAL_IMAGE before running verify:calorix-full-live. " +
+      "UI_DIFF_LIVE_EXPECTED_IMAGE, and LOCATEANYTHING_EAGLE_EMBODIED_DIR before running verify:calorix-full-live. " +
+      "UI_DIFF_LIVE_ACTUAL_IMAGE is optional and only for explicit historical-file overrides. " +
       "Do NOT set UI_DIFF_MAX_AUDIT_PAIRS — this gate requires an unbounded audit."
+    );
+  } else if (varName === "RUN_CALORIX_RELEASE_LIVE") {
+    console.error(
+      "Also set LOCATEANYTHING_SIDECAR_URL, UI_DIFF_LIVE_EXPECTED_IMAGE, and LOCATEANYTHING_EAGLE_EMBODIED_DIR before running verify:calorix-release-live. " +
+      "Do NOT set UI_DIFF_LIVE_ACTUAL_IMAGE for fresh release evidence unless you intentionally want a historical-file override."
     );
   }
   process.exit(1);

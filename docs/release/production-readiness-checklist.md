@@ -98,10 +98,11 @@ Run this before provider-backed Calorix gates so displacement, consolidation, co
 ```powershell
 $env:RUN_CALORIX_DETERMINISTIC_LIVE="1"
 $env:UI_DIFF_LIVE_EXPECTED_IMAGE="C:\Users\xursc\projects\calorix\docs\mockups\image\dark\single\Today.png"
-$env:UI_DIFF_LIVE_ACTUAL_IMAGE="C:\Users\xursc\projects\calorix\docs\screenshots\today-screen-2026-06-17-adb-seeded-2.png"
 $env:LOCATEANYTHING_SIDECAR_URL="http://127.0.0.1:39731"
 npm run verify:calorix-deterministic-live
 ```
+
+By default this gate builds/installs Calorix only when the debug APK is stale, opens `calorix://debug/reseed`, and captures the actual screenshot from ADB into `C:\Users\xursc\projects\calorix\.ui-diff\captures`. Set `UI_DIFF_LIVE_ACTUAL_IMAGE` only for an explicit historical-file override.
 
 Required evidence:
 
@@ -124,7 +125,6 @@ $env:LOCATEANYTHING_MAX_NEW_TOKENS="512"
 $env:LOCATEANYTHING_TIMEOUT_MS="300000"
 $env:UI_DIFF_MAX_AUDIT_PAIRS="3"
 $env:UI_DIFF_LIVE_EXPECTED_IMAGE="C:\Users\xursc\projects\calorix\docs\mockups\image\dark\single\Today.png"
-$env:UI_DIFF_LIVE_ACTUAL_IMAGE="C:\Users\xursc\projects\calorix\docs\screenshots\today-screen-2026-06-17-adb-seeded-2.png"
 npm run verify:calorix-live
 ```
 
@@ -163,7 +163,6 @@ $env:LOCATEANYTHING_MAX_NEW_TOKENS="512"
 $env:LOCATEANYTHING_TIMEOUT_MS="300000"
 # Do NOT set UI_DIFF_MAX_AUDIT_PAIRS — unbounded audit required
 $env:UI_DIFF_LIVE_EXPECTED_IMAGE="C:\Users\xursc\projects\calorix\docs\mockups\image\dark\single\Today.png"
-$env:UI_DIFF_LIVE_ACTUAL_IMAGE="C:\Users\xursc\projects\calorix\docs\screenshots\today-screen-2026-06-17-adb-seeded-2.png"
 npm run verify:calorix-full-live
 ```
 
@@ -191,8 +190,8 @@ Required result:
 $env:RUN_CALORIX_RELEASE_LIVE="1"
 $env:LOCATEANYTHING_SIDECAR_URL="http://127.0.0.1:39731"
 $env:UI_DIFF_LIVE_EXPECTED_IMAGE="C:\Users\xursc\projects\calorix\docs\mockups\image\dark\single\Today.png"
-$env:UI_DIFF_LIVE_ACTUAL_IMAGE="C:\Users\xursc\projects\calorix\docs\screenshots\today-screen-2026-06-17-adb-seeded-2.png"
 Remove-Item Env:UI_DIFF_MAX_AUDIT_PAIRS -ErrorAction SilentlyContinue
+Remove-Item Env:UI_DIFF_LIVE_ACTUAL_IMAGE -ErrorAction SilentlyContinue
 npm run verify:calorix-release-live
 ```
 

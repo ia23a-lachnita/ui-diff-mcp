@@ -98,13 +98,12 @@ All generated images (pixel diff, directional overlay, crop pairs, recovery crop
 
 ```powershell
 $env:UI_DIFF_LIVE_EXPECTED_IMAGE = "C:\Users\xursc\projects\calorix\docs\mockups\image\dark\single\Today.png"
-$env:UI_DIFF_LIVE_ACTUAL_IMAGE = "C:\Users\xursc\projects\calorix\docs\screenshots\today-screen-2026-07-04-adb-seeded-current.png"
 $env:LOCATEANYTHING_SIDECAR_URL = "http://127.0.0.1:39731"
 $env:UI_DIFF_LOCATOR_BENCHMARK_DIMENSIONS = "600,900,1200"
 npm run benchmark:locator
 ```
 
-For release evidence, prefer a freshly captured debug-device screenshot over a historical file. The latest recorded clean flow built the Calorix debug APK, installed it on `R58R61161NA`, opened `calorix://debug/reseed`, captured `today-screen-2026-07-04-adb-seeded-current.png`, and then ran the release gate.
+For Calorix release evidence, do not set `UI_DIFF_LIVE_ACTUAL_IMAGE` by default. The live gates build the debug APK only when stale, install it when needed, open `calorix://debug/reseed`, and capture a fresh ADB screenshot into `C:\Users\xursc\projects\calorix\.ui-diff\captures`. Set `UI_DIFF_LIVE_ACTUAL_IMAGE` only when you intentionally want to compare against a historical file; that path is logged as an explicit override and is not fresh release evidence.
 
 Every report records `locatorInputSizing`, including original image size, sent image size, scale, `maxDimension`, and whether actual elements were independently located or projected from expected elements. Runs also save the exact image payloads sent to the sidecar as `locator-input-expected.png` and, in dual-locator mode, `locator-input-actual.png`; these appear in `runArtifacts` as `locator_input_expected` and `locator_input_actual`.
 
@@ -296,8 +295,8 @@ enabled = true
 | Free OpenRouter models | `npm run verify:free-live` | `RUN_FREE_LIVE=1`, `OPENROUTER_API_KEY` |
 | Native NVIDIA models | `npm run verify:nvidia-live` | `RUN_NVIDIA_LIVE=1`, `NVIDIA_API_KEY` |
 | Full pipeline | `npm run verify:mcp-live` | `RUN_UI_DIFF_LIVE=1`, `LOCATEANYTHING_SIDECAR_URL`; provider keys optional fallbacks |
-| Bounded Calorix smoke | `npm run verify:calorix-live` | `RUN_CALORIX_UI_DIFF_LIVE=1`, image paths, sidecar |
-| Full Calorix all-target | `npm run verify:calorix-full-live` | `RUN_CALORIX_FULL_LIVE=1`, image paths, sidecar; **do not set `UI_DIFF_MAX_AUDIT_PAIRS`** |
+| Bounded Calorix smoke | `npm run verify:calorix-live` | `RUN_CALORIX_UI_DIFF_LIVE=1`, expected image, sidecar, ADB device; actual screenshot is auto-captured unless `UI_DIFF_LIVE_ACTUAL_IMAGE` is explicitly set |
+| Full Calorix all-target | `npm run verify:calorix-full-live` | `RUN_CALORIX_FULL_LIVE=1`, expected image, sidecar, ADB device; **do not set `UI_DIFF_MAX_AUDIT_PAIRS`** |
 
 ### Bounded Smoke vs Full Classification
 

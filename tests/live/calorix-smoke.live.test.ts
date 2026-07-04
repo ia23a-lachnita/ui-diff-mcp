@@ -4,6 +4,11 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { hydrateReportParts } from "../../src/report/report-parts.js";
 import { UiDiffReportSchema } from "../../src/schemas/core.js";
 import type { UiDiffReport } from "../../src/schemas/core.js";
+import {
+  getCalorixExpectedImagePath,
+  getCalorixProjectRoot,
+  resolveCalorixActualImage
+} from "../helpers/calorix-device.js";
 import { startUiDiffMcpClient } from "../helpers/mcp-client.js";
 import { ensureSidecarRunning, type SidecarHandle } from "../helpers/sidecar-manager.js";
 
@@ -11,10 +16,28 @@ const calorixLive = process.env["RUN_CALORIX_UI_DIFF_LIVE"] === "1";
 const calorixFullLive = process.env["RUN_CALORIX_FULL_LIVE"] === "1";
 const calorixReleaseLive = process.env["RUN_CALORIX_RELEASE_LIVE"] === "1";
 const calorixDeterministicLive = process.env["RUN_CALORIX_DETERMINISTIC_LIVE"] === "1";
+const calorixLiveSuiteStartedAt = Date.now();
 
 async function readHydratedReport(reportPath: string): Promise<UiDiffReport> {
   const rawReport = UiDiffReportSchema.parse(JSON.parse(await fs.readFile(reportPath, "utf8")));
   return hydrateReportParts(rawReport, reportPath);
+}
+
+async function resolveCalorixGateImages(): Promise<{ expectedImagePath: string; actualImagePath: string; projectRoot: string; actualSource: "env_override" | "auto_capture" }> {
+  const projectRoot = getCalorixProjectRoot();
+  const expectedImagePath = getCalorixExpectedImagePath(projectRoot);
+  const actual = await resolveCalorixActualImage({ projectRoot });
+  await expect(fs.access(expectedImagePath), "expected screenshot must exist on disk").resolves.toBeUndefined();
+  await expect(fs.access(actual.actualImagePath), "actual screenshot must exist on disk").resolves.toBeUndefined();
+  if (actual.source === "auto_capture") {
+    expect(path.resolve(actual.actualImagePath).startsWith(path.resolve(projectRoot, ".ui-diff", "captures") + path.sep),
+      "default Calorix live gate must capture actual screenshots into .ui-diff/captures").toBe(true);
+    const stat = await fs.stat(actual.actualImagePath);
+    expect(stat.mtimeMs, "auto-captured actual screenshot must be from this live test process").toBeGreaterThanOrEqual(calorixLiveSuiteStartedAt);
+  } else {
+    console.warn(`[EXPLICIT ACTUAL OVERRIDE] Using UI_DIFF_LIVE_ACTUAL_IMAGE=${actual.actualImagePath}; freshness is not guaranteed.`);
+  }
+  return { expectedImagePath, actualImagePath: actual.actualImagePath, projectRoot, actualSource: actual.source };
 }
 
 function overlapRatio(a: { x: number; y: number; width: number; height: number }, b: { x: number; y: number; width: number; height: number }): number {
@@ -104,11 +127,7 @@ describe.skipIf(!calorixDeterministicLive)("Calorix deterministic pipeline quali
   afterAll(() => { sidecarHandle?.close(); });
 
   test("consolidates large projected displacement without model providers", async () => {
-    const expectedImagePath = process.env["UI_DIFF_LIVE_EXPECTED_IMAGE"];
-    const actualImagePath = process.env["UI_DIFF_LIVE_ACTUAL_IMAGE"];
-    expect(expectedImagePath, "UI_DIFF_LIVE_EXPECTED_IMAGE must be set").toBeTruthy();
-    expect(actualImagePath, "UI_DIFF_LIVE_ACTUAL_IMAGE must be set").toBeTruthy();
-    const projectRoot = process.env["UI_DIFF_LIVE_PROJECT_ROOT"] ?? "C:/Users/xursc/projects/calorix";
+    const { expectedImagePath, actualImagePath, projectRoot } = await resolveCalorixGateImages();
     const started = await startUiDiffMcpClient({
       LOCATEANYTHING_TIMEOUT_MS: "600000",
       UI_DIFF_DETERMINISTIC_LOCATOR: "1"
@@ -116,7 +135,7 @@ describe.skipIf(!calorixDeterministicLive)("Calorix deterministic pipeline quali
     try {
       const startResult = await started.client.callTool({
         name: "start_ui_diff_run",
-        arguments: { expectedImagePath: expectedImagePath!, actualImagePath: actualImagePath!, projectRoot, mode: "deterministic_only" }
+        arguments: { expectedImagePath, actualImagePath, projectRoot, mode: "deterministic_only" }
       }, undefined, { timeout: 600000 });
       expect(startResult.isError, `start_ui_diff_run failed: ${JSON.stringify(startResult)}`).not.toBe(true);
       const { runId } = startResult.structuredContent as { runId: string };
@@ -153,13 +172,9 @@ describe.skipIf(!calorixLive)("Calorix live UI diff smoke", () => {
   afterAll(() => { sidecarHandle?.close(); });
 
   test("runs configured Calorix image pair through start_ui_diff_run (async handle)", async () => {
-    const expectedImagePath = process.env["UI_DIFF_LIVE_EXPECTED_IMAGE"];
-    const actualImagePath = process.env["UI_DIFF_LIVE_ACTUAL_IMAGE"];
-    expect(expectedImagePath, "UI_DIFF_LIVE_EXPECTED_IMAGE must be set").toBeTruthy();
-    expect(actualImagePath, "UI_DIFF_LIVE_ACTUAL_IMAGE must be set").toBeTruthy();
+    const { expectedImagePath, actualImagePath, projectRoot } = await resolveCalorixGateImages();
     expect(process.env["LOCATEANYTHING_SIDECAR_URL"], "LOCATEANYTHING_SIDECAR_URL must be set").toBeTruthy();
 
-    const projectRoot = "C:/Users/xursc/projects/calorix";
     await expect(fs.access(projectRoot)).resolves.toBeUndefined();
 
     // 10-min locator timeout for large phone screenshots (1200+ px tall).
@@ -168,7 +183,7 @@ describe.skipIf(!calorixLive)("Calorix live UI diff smoke", () => {
     try {
       const startResult = await started.client.callTool({
         name: "start_ui_diff_run",
-        arguments: { expectedImagePath: expectedImagePath!, actualImagePath: actualImagePath!, projectRoot, mode: "free" }
+        arguments: { expectedImagePath, actualImagePath, projectRoot, mode: "free" }
       }, undefined, { timeout: 600000 });
       expect(startResult.isError).not.toBe(true);
       const { runId } = startResult.structuredContent as { runId: string };
@@ -275,15 +290,11 @@ describe.skipIf(!calorixFullLive)("verify:calorix-full-live unbounded all-target
   afterAll(() => { sidecarHandle?.close(); });
 
   test("runs unbounded Calorix image pair — all pairs audited, no UI_DIFF_MAX_AUDIT_PAIRS limit", async () => {
-    const expectedImagePath = process.env["UI_DIFF_LIVE_EXPECTED_IMAGE"];
-    const actualImagePath = process.env["UI_DIFF_LIVE_ACTUAL_IMAGE"];
-    expect(expectedImagePath, "UI_DIFF_LIVE_EXPECTED_IMAGE must be set").toBeTruthy();
-    expect(actualImagePath, "UI_DIFF_LIVE_ACTUAL_IMAGE must be set").toBeTruthy();
+    const { expectedImagePath, actualImagePath, projectRoot } = await resolveCalorixGateImages();
     expect(process.env["LOCATEANYTHING_SIDECAR_URL"], "LOCATEANYTHING_SIDECAR_URL must be set").toBeTruthy();
     // Confirm UI_DIFF_MAX_AUDIT_PAIRS is not set so this is a genuine unbounded run
     expect(process.env["UI_DIFF_MAX_AUDIT_PAIRS"], "UI_DIFF_MAX_AUDIT_PAIRS must NOT be set for full audit").toBeUndefined();
 
-    const projectRoot = "C:/Users/xursc/projects/calorix";
     await expect(fs.access(projectRoot)).resolves.toBeUndefined();
 
     // 10-min locator timeout for large phone screenshots.
@@ -292,7 +303,7 @@ describe.skipIf(!calorixFullLive)("verify:calorix-full-live unbounded all-target
     try {
       const startResult = await started.client.callTool({
         name: "start_ui_diff_run",
-        arguments: { expectedImagePath: expectedImagePath!, actualImagePath: actualImagePath!, projectRoot, mode: "free" }
+        arguments: { expectedImagePath, actualImagePath, projectRoot, mode: "free" }
       }, undefined, { timeout: 600000 });
       expect(startResult.isError).not.toBe(true);
       const { runId } = startResult.structuredContent as { runId: string };
@@ -487,23 +498,16 @@ describe.skipIf(!calorixReleaseLive)("Calorix release sign-off gate", () => {
   afterAll(() => { sidecarHandle?.close(); });
 
   test("production sign-off: complete classification, no viewport mismatch, audit not limited", async () => {
-    const expectedImagePath = process.env["UI_DIFF_LIVE_EXPECTED_IMAGE"];
-    const actualImagePath = process.env["UI_DIFF_LIVE_ACTUAL_IMAGE"];
-    expect(expectedImagePath, "UI_DIFF_LIVE_EXPECTED_IMAGE must be set").toBeTruthy();
-    expect(actualImagePath, "UI_DIFF_LIVE_ACTUAL_IMAGE must be set").toBeTruthy();
+    const { expectedImagePath, actualImagePath, projectRoot } = await resolveCalorixGateImages();
     expect(process.env["LOCATEANYTHING_SIDECAR_URL"], "LOCATEANYTHING_SIDECAR_URL must be set").toBeTruthy();
 
-    await expect(fs.access(expectedImagePath!), "expected screenshot must exist on disk").resolves.toBeUndefined();
-    await expect(fs.access(actualImagePath!), "actual screenshot must exist on disk").resolves.toBeUndefined();
-
-    const projectRoot = "C:/Users/xursc/projects/calorix";
     await expect(fs.access(projectRoot)).resolves.toBeUndefined();
 
     const started = await startUiDiffMcpClient({ LOCATEANYTHING_TIMEOUT_MS: "600000" });
     try {
       const startResult = await started.client.callTool({
         name: "start_ui_diff_run",
-        arguments: { expectedImagePath: expectedImagePath!, actualImagePath: actualImagePath!, projectRoot, mode: "free" }
+        arguments: { expectedImagePath, actualImagePath, projectRoot, mode: "free" }
       }, undefined, { timeout: 600000 });
       expect(startResult.isError).not.toBe(true);
       const { runId } = startResult.structuredContent as { runId: string };
