@@ -291,6 +291,31 @@ describe("locateUiElements", () => {
     expect(result.elements[0]?.box).toEqual({ x: 80, y: 160, width: 40, height: 20 });
   });
 
+  it("writes the exact resized image payload sent to the sidecar", async () => {
+    const pngPath = path.join(tmpDir, "large-debug.png");
+    await sharp({
+      create: { width: 400, height: 800, channels: 3, background: { r: 128, g: 64, b: 32 } }
+    }).png().toFile(pngPath);
+    const debugImagePath = path.join(tmpDir, "nested", "locator-input-expected.png");
+
+    const { port, getPostedBody } = await startCaptureServer();
+
+    await locateUiElements({
+      endpoint: `http://127.0.0.1:${port}`,
+      request: { ...BASE_REQUEST, imagePath: pngPath },
+      timeoutMs: 5000,
+      maxDimension: 200,
+      debugImagePath
+    });
+
+    const posted = getPostedBody() as { imageBase64: string };
+    const savedBytes = await fs.readFile(debugImagePath);
+    expect(savedBytes.equals(Buffer.from(posted.imageBase64, "base64"))).toBe(true);
+
+    const metadata = await sharp(debugImagePath).metadata();
+    expect({ width: metadata.width, height: metadata.height }).toEqual({ width: 100, height: 200 });
+  });
+
   it("does not rescale coordinates when the image fits within maxDimension", async () => {
     // 50×50 PNG — smaller than maxDimension=200, so sharp sends it as-is
     const pngPath = path.join(tmpDir, "small.png");

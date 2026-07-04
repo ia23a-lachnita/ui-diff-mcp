@@ -159,6 +159,9 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
   const actualAbs = resolveInputImagePath(input.actualImagePath, projectRoot);
   const runDir = await createRunDirectory(projectRoot, runId);
   const artifactRoot = path.join(runDir, "artifacts");
+  await fs.mkdir(artifactRoot, { recursive: true });
+  const locatorInputExpectedPath = path.join(artifactRoot, "locator-input-expected.png");
+  const locatorInputActualPath = path.join(artifactRoot, "locator-input-actual.png");
   let resumedReport: UiDiffReport | undefined;
   if (input.resumeRunId) {
     const reportPath = path.join(artifactRoot, "report.json");
@@ -415,8 +418,10 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
           maxBoxesPerQuery: 200
         },
         timeoutMs: locatorTimeoutMs,
-        maxDimension: locatorMaxDimension
+        maxDimension: locatorMaxDimension,
+        debugImagePath: locatorInputExpectedPath
       });
+      runArtifacts.push({ role: "locator_input_expected", path: locatorInputExpectedPath });
       expectedLocatorSizing = locatorSizingForReport("expected", expResp.requestSizing);
       expectedElements.push(...buildElementMap(expResp.elements, { width: expectedImg.width, height: expectedImg.height }));
       locatorLanes = expResp.metadata?.lanes;
@@ -432,8 +437,10 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
             maxBoxesPerQuery: 200
           },
           timeoutMs: locatorTimeoutMs,
-          maxDimension: locatorMaxDimension
+          maxDimension: locatorMaxDimension,
+          debugImagePath: locatorInputActualPath
         });
+        runArtifacts.push({ role: "locator_input_actual", path: locatorInputActualPath });
         actualLocatorSizing = locatorSizingForReport("actual", actResp.requestSizing);
         actualElements.push(...buildElementMap(actResp.elements, { width: actualImg.width, height: actualImg.height }));
         // Merge actual-image lane results into locatorLanes (take worse status per lane, sum counts).

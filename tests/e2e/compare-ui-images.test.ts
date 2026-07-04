@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runUiDiff } from "../../src/pipeline/run-ui-diff.js";
 import { hydrateReportParts } from "../../src/report/report-parts.js";
@@ -18,6 +19,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
   if (sidecar) await sidecar.stop();
   await fs.rm(tmpDir, { recursive: true, force: true });
 });
@@ -275,6 +277,83 @@ describe("runUiDiff with mock sidecar and models (full mode)", () => {
     expect(sidecarCalls).toHaveLength(1);
     const firstSidecarBody = JSON.parse(String(sidecarCalls[0]?.[1]?.body)) as { queries: unknown[] };
     expect(firstSidecarBody.queries).toHaveLength(8);
+  });
+
+  it("records the exact images sent to LocateAnything as report artifacts", async () => {
+    const expected = await writeSolidPng(tmpDir, "locator-payload-e.png", 400, 800, 200, 200, 200);
+    const actual = await writeSolidPng(tmpDir, "locator-payload-a.png", 400, 800, 200, 200, 200);
+    sidecar = await startMockSidecar({ imageWidth: 100, imageHeight: 200 });
+
+    const mockFetch = makeMockFetch([
+      { criterion: "geometry", hasDiff: false, reviewerDecision: "accepted" }
+    ], { sidecarImageWidth: 200, sidecarImageHeight: 400 });
+    vi.stubGlobal("fetch", mockFetch);
+    vi.stubEnv("LOCATEANYTHING_SIDECAR_URL", sidecar.url);
+    vi.stubEnv("LOCATEANYTHING_MAX_DIMENSION", "200");
+    vi.stubEnv("UI_DIFF_DUAL_LOCATOR", "1");
+    vi.stubEnv("UI_DIFF_ALLOW_DUAL_LOCATOR", "1");
+    vi.stubEnv("UI_DIFF_DUAL_LOCATOR_REASON", "test exact locator payload artifacts");
+    vi.stubEnv("OPENROUTER_API_KEY", "sk-test-locator-payload");
+
+    const probeOverride = async () => [
+      { role: "auditor", provider: "openrouter", model: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free", status: "pass" as const, checkedAt: new Date().toISOString(), schemaValid: true, contentAccurate: true, maxImagesSupported: 5 },
+      { role: "reviewer", provider: "openrouter", model: "nex-agi/nex-n2-pro:free", status: "pass" as const, checkedAt: new Date().toISOString(), schemaValid: true, contentAccurate: true, maxImagesSupported: 5 }
+    ];
+
+    const result = await runUiDiff({
+      expectedImagePath: expected,
+      actualImagePath: actual,
+      projectRoot: tmpDir,
+      mode: "full"
+    }, { probeOverride });
+
+    const rawReport = JSON.parse(await fs.readFile(result.reportPath, "utf8")) as {
+      locatorInputSizing?: {
+        expected?: { sentWidth: number; sentHeight: number };
+        actual?: { sentWidth: number; sentHeight: number };
+      };
+      runArtifacts: Array<{ role: string; path: string }>;
+    };
+    const report = await hydrateReportParts(rawReport as Parameters<typeof hydrateReportParts>[0], result.reportPath) as typeof rawReport;
+
+    const sidecarCalls = mockFetch.mock.calls.filter(([url]) =>
+      typeof url === "string" && url.includes("/v1/locate-ui-elements")
+    );
+    expect(sidecarCalls).toHaveLength(2);
+
+    async function expectLocatorPayloadArtifact(
+      role: "locator_input_expected" | "locator_input_actual",
+      fileName: string,
+      sizing: { sentWidth: number; sentHeight: number } | undefined,
+      callIndex: number
+    ): Promise<void> {
+      const locatorInput = report.runArtifacts.find(artifact => artifact.role === role);
+      expect(locatorInput?.path).toBe(path.join(result.artifactRoot, fileName));
+      await expect(fs.access(locatorInput!.path)).resolves.toBeUndefined();
+
+      const metadata = await sharp(locatorInput!.path).metadata();
+      expect({ width: metadata.width, height: metadata.height }).toEqual({
+        width: sizing?.sentWidth,
+        height: sizing?.sentHeight
+      });
+
+      const sidecarBody = JSON.parse(String(sidecarCalls[callIndex]?.[1]?.body)) as { imageBase64: string };
+      const savedBytes = await fs.readFile(locatorInput!.path);
+      expect(savedBytes.equals(Buffer.from(sidecarBody.imageBase64, "base64"))).toBe(true);
+    }
+
+    await expectLocatorPayloadArtifact(
+      "locator_input_expected",
+      "locator-input-expected.png",
+      report.locatorInputSizing?.expected,
+      0
+    );
+    await expectLocatorPayloadArtifact(
+      "locator_input_actual",
+      "locator-input-actual.png",
+      report.locatorInputSizing?.actual,
+      1
+    );
   });
 
   it("returns model_unavailable when required models are not_checked", async () => {

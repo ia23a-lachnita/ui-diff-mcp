@@ -38,6 +38,17 @@ describe("core schemas", () => {
     })).toMatchObject({ role: "actual_comparison_space" });
   });
 
+  it("accepts exact LocateAnything input payload images as run artifacts", () => {
+    expect(UiArtifactSchema.parse({
+      role: "locator_input_expected",
+      path: "C:/run/artifacts/locator-input-expected.png"
+    })).toMatchObject({ role: "locator_input_expected" });
+    expect(UiArtifactSchema.parse({
+      role: "locator_input_actual",
+      path: "C:/run/artifacts/locator-input-actual.png"
+    })).toMatchObject({ role: "locator_input_actual" });
+  });
+
   it("accepts full-screen context overlay artifacts", () => {
     expect(UiArtifactSchema.parse({
       role: "region_context_overlay",

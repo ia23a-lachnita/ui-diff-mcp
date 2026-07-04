@@ -216,6 +216,8 @@ export const UiArtifactSchema = z.object({
     "pixel_diff",
     "pixel_diff_mask",
     "directional_overlay",
+    "locator_input_expected",
+    "locator_input_actual",
     "target_map_expected",
     "target_map_actual",
     "expected_crop",

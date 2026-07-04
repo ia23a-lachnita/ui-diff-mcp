@@ -104,7 +104,7 @@ $env:UI_DIFF_LOCATOR_BENCHMARK_DIMENSIONS = "600,900,1200"
 npm run benchmark:locator
 ```
 
-Every report records `locatorInputSizing`, including original image size, sent image size, scale, `maxDimension`, and whether actual elements were independently located or projected from expected elements.
+Every report records `locatorInputSizing`, including original image size, sent image size, scale, `maxDimension`, and whether actual elements were independently located or projected from expected elements. Runs also save the exact image payloads sent to the sidecar as `locator-input-expected.png` and, in dual-locator mode, `locator-input-actual.png`; these appear in `runArtifacts` as `locator_input_expected` and `locator_input_actual`.
 
 ## Installation
 

@@ -86,6 +86,8 @@ export interface LocateClientOptions {
   timeoutMs: number;
   /** Resize image so its longest dimension does not exceed this value before sending. Default: no resize. */
   maxDimension?: number;
+  /** Optional debug artifact path for the exact image bytes sent to the sidecar. */
+  debugImagePath?: string;
 }
 
 function mimeTypeForImagePath(imagePath: string): LocateAnythingRequest["imageMimeType"] | undefined {
@@ -98,7 +100,8 @@ function mimeTypeForImagePath(imagePath: string): LocateAnythingRequest["imageMi
 
 async function withImagePayload(
   request: LocateAnythingRequest,
-  maxDimension?: number
+  maxDimension?: number,
+  debugImagePath?: string
 ): Promise<{ request: LocateAnythingRequest; sizing?: LocateAnythingRequestSizing }> {
   if (request.imageBase64) return { request };
 
@@ -114,6 +117,10 @@ async function withImagePayload(
       pipeline = pipeline.resize(maxDimension, maxDimension, { fit: "inside", withoutEnlargement: true });
     }
     const { data: imageBytes, info } = await pipeline.png().toBuffer({ resolveWithObject: true });
+    if (debugImagePath) {
+      await fs.mkdir(path.dirname(debugImagePath), { recursive: true });
+      await fs.writeFile(debugImagePath, imageBytes);
+    }
     const scale = originalWidth && originalHeight
       ? Math.min(info.width / originalWidth, info.height / originalHeight)
       : 1;
@@ -140,6 +147,10 @@ async function withImagePayload(
     // Fall back to raw file read if sharp fails
     try {
       const imageBytes = await fs.readFile(request.imagePath);
+      if (debugImagePath) {
+        await fs.mkdir(path.dirname(debugImagePath), { recursive: true });
+        await fs.writeFile(debugImagePath, imageBytes);
+      }
       return { request: { ...request, imageBase64: imageBytes.toString("base64"), imageMimeType } };
     } catch {
       return { request };
@@ -160,7 +171,7 @@ export async function checkSidecarHealth(endpoint: string, timeoutMs = 5000): Pr
 }
 
 export async function locateUiElements(options: LocateClientOptions): Promise<LocateAnythingResponse> {
-  const { endpoint, request, timeoutMs, maxDimension } = options;
+  const { endpoint, request, timeoutMs, maxDimension, debugImagePath } = options;
 
   // Fast pre-flight: fail in 5s rather than waiting the full locator timeout
   const health = await checkSidecarHealth(endpoint);
@@ -183,7 +194,7 @@ export async function locateUiElements(options: LocateClientOptions): Promise<Lo
     } catch { /* ignore — coordinate rescaling won't apply */ }
   }
 
-  const { request: requestBody, sizing: requestSizing } = await withImagePayload(request, maxDimension);
+  const { request: requestBody, sizing: requestSizing } = await withImagePayload(request, maxDimension, debugImagePath);
 
   let rawResponse: Response;
   try {
