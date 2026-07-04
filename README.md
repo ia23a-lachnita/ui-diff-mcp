@@ -108,6 +108,14 @@ For release evidence, prefer a freshly captured debug-device screenshot over a h
 
 Every report records `locatorInputSizing`, including original image size, sent image size, scale, `maxDimension`, and whether actual elements were independently located or projected from expected elements. Runs also save the exact image payloads sent to the sidecar as `locator-input-expected.png` and, in dual-locator mode, `locator-input-actual.png`; these appear in `runArtifacts` as `locator_input_expected` and `locator_input_actual`.
 
+Locator debugging uses a three-step artifact chain:
+
+- `locator-input-expected.png`: the exact expected-image bytes sent to LocateAnything.
+- `locator-expected-overlay.png`: the located target boxes drawn on the normalized expected image.
+- `locator-actual-projected-overlay.png`: in default single-pass projection mode, the expected target boxes projected onto the normalized actual screenshot. This does **not** mean the actual screenshot was sent to LocateAnything; it shows where the expected targets land on the actual image before the diff/audit stages inspect those projected regions.
+
+The overlay files are indexed in `runArtifacts` as `locator_expected_overlay`, `locator_actual_overlay`, and `locator_overlay_legend`. The legend maps compact overlay labels such as `E001` and `P001` back to exact element IDs, types, query IDs, source, and boxes.
+
 ## Installation
 
 ```bash

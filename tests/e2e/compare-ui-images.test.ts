@@ -270,6 +270,10 @@ describe("runUiDiff with mock sidecar and models (full mode)", () => {
     expect(report.runArtifacts.some((a: { role: string }) => a.role === "coverage_trace")).toBe(true);
     expect(report.runArtifacts.some((a: { role: string }) => a.role === "recovery_trace")).toBe(true);
     expect(report.runArtifacts.some((a: { role: string }) => a.role === "debug_summary")).toBe(true);
+    expect(report.runArtifacts.some((a: { role: string }) => a.role === "locator_expected_overlay")).toBe(true);
+    expect(report.runArtifacts.some((a: { role: string }) => a.role === "locator_actual_overlay")).toBe(true);
+    expect(report.runArtifacts.some((a: { role: string }) => a.role === "locator_overlay_legend")).toBe(true);
+    expect(report.runArtifacts.some((a: { role: string }) => a.role === "locator_input_actual")).toBe(false);
 
     const sidecarCalls = mockFetch.mock.calls.filter(([url]) =>
       typeof url === "string" && url.includes("/v1/locate-ui-elements")

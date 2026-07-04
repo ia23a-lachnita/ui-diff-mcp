@@ -49,6 +49,21 @@ describe("core schemas", () => {
     })).toMatchObject({ role: "locator_input_actual" });
   });
 
+  it("accepts locator detection overlay artifacts", () => {
+    expect(UiArtifactSchema.parse({
+      role: "locator_expected_overlay",
+      path: "C:/run/artifacts/locator-expected-overlay.png"
+    })).toMatchObject({ role: "locator_expected_overlay" });
+    expect(UiArtifactSchema.parse({
+      role: "locator_actual_overlay",
+      path: "C:/run/artifacts/locator-actual-projected-overlay.png"
+    })).toMatchObject({ role: "locator_actual_overlay" });
+    expect(UiArtifactSchema.parse({
+      role: "locator_overlay_legend",
+      path: "C:/run/artifacts/locator-overlay-legend.json"
+    })).toMatchObject({ role: "locator_overlay_legend" });
+  });
+
   it("accepts full-screen context overlay artifacts", () => {
     expect(UiArtifactSchema.parse({
       role: "region_context_overlay",

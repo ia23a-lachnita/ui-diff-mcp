@@ -9,6 +9,7 @@ import { buildRegionLedger, applyFindingCoverage, applyRecoveryOutcomes, unresol
 import { consolidateFindings } from "../report/finding-consolidation.js";
 import { applyResidualFragmentDecisions, classifyResidualFragments } from "../report/residual-fragments.js";
 import { writeRegionContextOverlays } from "../report/context-overlays.js";
+import { writeLocatorOverlays } from "../report/locator-overlays.js";
 import { writeOverlay, writeJsonArtifact } from "../images/artifacts.js";
 import { computePixelDiff } from "../signals/pixel-diff.js";
 import { extractEdgeMask } from "../signals/edge.js";
@@ -512,6 +513,14 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
         { role: "target_map_expected", path: path.join(artifactRoot, "target-map-expected.json") },
         { role: "target_map_actual", path: path.join(artifactRoot, "target-map-actual.json") }
       );
+      runArtifacts.push(...await writeLocatorOverlays({
+        expectedImagePath: normalizedExpPath,
+        actualImagePath: normalizedActPath,
+        artifactDir: artifactRoot,
+        expectedElements,
+        actualElements,
+        actualMode: dualLocatorEnabled ? "independent" : "projected"
+      }));
     } catch (err) {
       locatorFailed = true;
       locatorCoverageStatus = "failed";
