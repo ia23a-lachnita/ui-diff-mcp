@@ -185,7 +185,7 @@ describe("calorix-device helpers", () => {
     expect(result.source).toBe("auto_capture");
     expect(captureCount).toBe(3);
     expect(validateCount).toBe(3);
-    expect(calls.some(call => call.args.join(" ") === "shell input tap 540 1848")).toBe(true);
+    expect(calls.some(call => call.args.join(" ") === "shell input tap 540 2064")).toBe(true);
 
     const finalContent = await fs.readFile(result.actualImagePath, "utf8");
     expect(finalContent).toBe("attempt-3");
