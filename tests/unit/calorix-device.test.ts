@@ -30,7 +30,7 @@ async function makeProject(): Promise<string> {
 
 function runnerWithPackages(packages: string[], calls: Array<{ file: string; args: string[]; shell?: boolean }> = []): CalorixCommandRunner {
   return async (file, args, options) => {
-    calls.push({ file, args, shell: options.shell });
+    calls.push({ file, args, ...(options.shell !== undefined ? { shell: options.shell } : {}) });
     if (args.join(" ") === "shell pm list packages com.calorix.calorix") {
       return { stdout: packages.map(item => `package:${item}`).join("\n") };
     }

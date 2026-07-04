@@ -262,9 +262,9 @@ function mergeChildIntoParent(parent: DiffRecord, children: DiffRecord[]): DiffR
   const targetIds = [...new Set(allFindings.flatMap(finding => finding.targetIds ?? []))];
   const childFindingIds = [...new Set(allFindings.flatMap(finding => [finding.id, ...(finding.childFindingIds ?? [])]))];
   const reviewRank = { rejected: 0, not_reviewed: 1, accepted: 2, needs_escalation: 3 } as const;
-  const reviewerStatus = parent.reviewerStatus === "rejected"
+  const reviewerStatus: DiffRecord["reviewerStatus"] = parent.reviewerStatus === "rejected"
     ? "rejected"
-    : allFindings.reduce((best, finding) =>
+    : allFindings.reduce<DiffRecord["reviewerStatus"]>((best, finding) =>
       reviewRank[finding.reviewerStatus] > reviewRank[best] ? finding.reviewerStatus : best,
     parent.reviewerStatus);
 
