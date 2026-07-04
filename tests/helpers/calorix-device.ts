@@ -394,6 +394,9 @@ export async function reseedAndCaptureCalorixToday(opts: CalorixDeviceOptions = 
         capture.path = finalPath;
         return { actualImagePath: finalPath, capture, source: "auto_capture" };
       }
+      if (validationResult.reason.includes("immersive_overlay")) {
+        await runner("adb", ["shell", "input", "tap", String(Math.round(capture.width / 2)), String(Math.round(capture.height * 0.77))], { timeout: 30000, encoding: "utf8" }).catch(() => undefined);
+      }
       continue;
     }
 
@@ -402,6 +405,9 @@ export async function reseedAndCaptureCalorixToday(opts: CalorixDeviceOptions = 
       await fs.rename(capture.path, finalPath);
       capture.path = finalPath;
       return { actualImagePath: finalPath, capture, source: "auto_capture" };
+    }
+    if (validationResult.reason.includes("immersive_overlay")) {
+      await runner("adb", ["shell", "input", "tap", String(Math.round(capture.width / 2)), String(Math.round(capture.height * 0.77))], { timeout: 30000, encoding: "utf8" }).catch(() => undefined);
     }
   }
 

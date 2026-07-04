@@ -165,7 +165,7 @@ describe("calorix-device helpers", () => {
     const validateImage = vi.fn(async (filePath: string, firstPixelBuffer: Buffer | undefined) => {
       validateCount++;
       if (validateCount === 1) {
-        return readiness(false, { reason: "spinner" });
+        return readiness(false, { reason: "not_ready immersive_overlay" });
       } else if (validateCount === 2) {
         return readiness(false, { reason: "spinner" });
       } else {
@@ -185,6 +185,7 @@ describe("calorix-device helpers", () => {
     expect(result.source).toBe("auto_capture");
     expect(captureCount).toBe(3);
     expect(validateCount).toBe(3);
+    expect(calls.some(call => call.args.join(" ") === "shell input tap 540 1848")).toBe(true);
 
     const finalContent = await fs.readFile(result.actualImagePath, "utf8");
     expect(finalContent).toBe("attempt-3");
