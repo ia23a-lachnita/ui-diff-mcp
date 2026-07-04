@@ -2,7 +2,7 @@ import http from "node:http";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import sharp from "sharp";
 import {
   LocatorUnavailableError,
@@ -74,6 +74,8 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   if (server) {
     await stopServer(server);
     server = null;
@@ -212,6 +214,44 @@ describe("locateUiElements", () => {
 
     expect(result.elements).toHaveLength(1);
     expect(result.elements[0]?.label).toBe("Sign in button");
+  });
+
+  it("uses Node HTTP for the long sidecar POST so fetch header timeouts do not abort inference", async () => {
+    const body = JSON.stringify({
+      model: "nvidia/LocateAnything-3B",
+      image: { width: 200, height: 400 },
+      elements: [],
+      warnings: []
+    });
+    let locatePostReceived = false;
+
+    const { server: s, port } = await startServer((_req, res) => {
+      locatePostReceived = true;
+      setTimeout(() => {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(body);
+      }, 50);
+    });
+    server = s;
+
+    vi.stubGlobal("fetch", vi.fn(async (url: unknown) => {
+      if (String(url).endsWith("/health")) {
+        return new Response(JSON.stringify({ ready: true, error: null }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+      throw new Error("global fetch must not be used for LocateAnything POST");
+    }));
+
+    const result = await locateUiElements({
+      endpoint: `http://127.0.0.1:${port}`,
+      request: BASE_REQUEST,
+      timeoutMs: 5000
+    });
+
+    expect(locatePostReceived).toBe(true);
+    expect(result.model).toBe("nvidia/LocateAnything-3B");
   });
 
   it("throws for a box that exceeds image bounds", async () => {

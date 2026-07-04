@@ -1,5 +1,7 @@
 import { z } from "zod";
 import fs from "node:fs/promises";
+import http from "node:http";
+import https from "node:https";
 import path from "node:path";
 import sharp from "sharp";
 
@@ -90,6 +92,13 @@ export interface LocateClientOptions {
   debugImagePath?: string;
 }
 
+interface JsonPostResponse {
+  ok: boolean;
+  status: number;
+  bodyText: string;
+  json(): unknown;
+}
+
 function mimeTypeForImagePath(imagePath: string): LocateAnythingRequest["imageMimeType"] | undefined {
   const ext = path.extname(imagePath).toLowerCase();
   if (ext === ".png") return "image/png";
@@ -170,6 +179,47 @@ export async function checkSidecarHealth(endpoint: string, timeoutMs = 5000): Pr
   }
 }
 
+function postJsonWithTimeout(endpoint: string, pathname: string, body: unknown, timeoutMs: number): Promise<JsonPostResponse> {
+  const url = new URL(pathname, endpoint);
+  const bodyText = JSON.stringify(body);
+  const transport = url.protocol === "https:" ? https : http;
+
+  return new Promise((resolve, reject) => {
+    const req = transport.request({
+      protocol: url.protocol,
+      hostname: url.hostname,
+      port: url.port,
+      path: `${url.pathname}${url.search}`,
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(bodyText)
+      }
+    }, res => {
+      const chunks: Buffer[] = [];
+      res.on("data", chunk => chunks.push(Buffer.from(chunk)));
+      res.on("end", () => {
+        const responseText = Buffer.concat(chunks).toString("utf8");
+        const status = res.statusCode ?? 0;
+        resolve({
+          ok: status >= 200 && status < 300,
+          status,
+          bodyText: responseText,
+          json() {
+            return JSON.parse(responseText);
+          }
+        });
+      });
+    });
+
+    req.setTimeout(timeoutMs, () => {
+      req.destroy(new Error(`timeout after ${timeoutMs}ms`));
+    });
+    req.on("error", reject);
+    req.end(bodyText);
+  });
+}
+
 export async function locateUiElements(options: LocateClientOptions): Promise<LocateAnythingResponse> {
   const { endpoint, request, timeoutMs, maxDimension, debugImagePath } = options;
 
@@ -196,14 +246,9 @@ export async function locateUiElements(options: LocateClientOptions): Promise<Lo
 
   const { request: requestBody, sizing: requestSizing } = await withImagePayload(request, maxDimension, debugImagePath);
 
-  let rawResponse: Response;
+  let rawResponse: JsonPostResponse;
   try {
-    rawResponse = await fetch(`${endpoint}/v1/locate-ui-elements`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(requestBody),
-      signal: AbortSignal.timeout(timeoutMs)
-    });
+    rawResponse = await postJsonWithTimeout(endpoint, "/v1/locate-ui-elements", requestBody, timeoutMs);
   } catch (err) {
     throw new LocatorUnavailableError(
       `Sidecar request failed: ${err instanceof Error ? err.message : String(err)}`

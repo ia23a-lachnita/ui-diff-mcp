@@ -275,12 +275,8 @@ describe("runUiDiff with mock sidecar and models (full mode)", () => {
     expect(report.runArtifacts.some((a: { role: string }) => a.role === "locator_overlay_legend")).toBe(true);
     expect(report.runArtifacts.some((a: { role: string }) => a.role === "locator_input_actual")).toBe(false);
 
-    const sidecarCalls = mockFetch.mock.calls.filter(([url]) =>
-      typeof url === "string" && url.includes("/v1/locate-ui-elements")
-    );
-    expect(sidecarCalls).toHaveLength(1);
-    const firstSidecarBody = JSON.parse(String(sidecarCalls[0]?.[1]?.body)) as { queries: unknown[] };
-    expect(firstSidecarBody.queries).toHaveLength(8);
+    expect(sidecar.requests).toHaveLength(1);
+    expect(sidecar.requests[0]?.queries).toHaveLength(8);
   });
 
   it("records the exact images sent to LocateAnything as report artifacts", async () => {
@@ -320,10 +316,7 @@ describe("runUiDiff with mock sidecar and models (full mode)", () => {
     };
     const report = await hydrateReportParts(rawReport as Parameters<typeof hydrateReportParts>[0], result.reportPath) as typeof rawReport;
 
-    const sidecarCalls = mockFetch.mock.calls.filter(([url]) =>
-      typeof url === "string" && url.includes("/v1/locate-ui-elements")
-    );
-    expect(sidecarCalls).toHaveLength(2);
+    expect(sidecar.requests).toHaveLength(2);
 
     async function expectLocatorPayloadArtifact(
       role: "locator_input_expected" | "locator_input_actual",
@@ -341,7 +334,7 @@ describe("runUiDiff with mock sidecar and models (full mode)", () => {
         height: sizing?.sentHeight
       });
 
-      const sidecarBody = JSON.parse(String(sidecarCalls[callIndex]?.[1]?.body)) as { imageBase64: string };
+      const sidecarBody = sidecar.requests[callIndex] as { imageBase64: string };
       const savedBytes = await fs.readFile(locatorInput!.path);
       expect(savedBytes.equals(Buffer.from(sidecarBody.imageBase64, "base64"))).toBe(true);
     }
@@ -370,9 +363,10 @@ describe("runUiDiff with mock sidecar and models (full mode)", () => {
       { role: "reviewer", provider: "openrouter", model: "google/gemini-2.5-flash-lite", status: "not_checked" as const, checkedAt: new Date().toISOString(), detail: "No API key provided" }
     ];
 
+    sidecar = await startMockSidecar({ imageWidth: 200, imageHeight: 400 });
     const mockFetch = makeMockFetch([]);
     vi.stubGlobal("fetch", mockFetch);
-    vi.stubEnv("LOCATEANYTHING_SIDECAR_URL", "http://127.0.0.1:9999");
+    vi.stubEnv("LOCATEANYTHING_SIDECAR_URL", sidecar.url);
 
     const result = await runUiDiff({
       expectedImagePath: expected,

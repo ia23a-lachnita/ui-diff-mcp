@@ -6,6 +6,14 @@ export interface MockSidecarOptions {
 }
 
 function makeSidecarResponse(width: number, height: number): string {
+  const sx = width / 200;
+  const sy = height / 400;
+  const box = (x: number, y: number, w: number, h: number) => ({
+    x: Math.round(x * sx),
+    y: Math.round(y * sy),
+    width: Math.max(1, Math.round(w * sx)),
+    height: Math.max(1, Math.round(h * sy))
+  });
   return JSON.stringify({
     model: "nvidia/LocateAnything-3B",
     image: { width, height },
@@ -13,7 +21,7 @@ function makeSidecarResponse(width: number, height: number): string {
       {
         queryId: "text",
         label: "Welcome heading",
-        box: { x: 10, y: 20, width: 180, height: 30 },
+        box: box(10, 20, 180, 30),
         rawBox1000: [50, 50, 900, 75],
         confidence: 0.94,
         rawText: "Welcome"
@@ -21,21 +29,21 @@ function makeSidecarResponse(width: number, height: number): string {
       {
         queryId: "button",
         label: "Sign in button",
-        box: { x: 20, y: 80, width: 160, height: 44 },
+        box: box(20, 80, 160, 44),
         rawBox1000: [100, 200, 800, 110],
         confidence: 0.91
       },
       {
         queryId: "icon",
         label: "Logo icon",
-        box: { x: 80, y: 140, width: 40, height: 40 },
+        box: box(80, 140, 40, 40),
         rawBox1000: [400, 350, 200, 100],
         confidence: 0.88
       },
       {
         queryId: "card",
         label: "Main card",
-        box: { x: 5, y: 200, width: 190, height: 120 },
+        box: box(5, 200, 190, 120),
         rawBox1000: [25, 500, 950, 300],
         confidence: 0.85
       }
@@ -48,15 +56,18 @@ export interface MockSidecar {
   server: http.Server;
   port: number;
   url: string;
-  requests: Array<{ queries: unknown[] }>;
+  requests: Array<{ queries: unknown[]; imageBase64?: string; imageMimeType?: string }>;
   stop(): Promise<void>;
 }
 
 export function startMockSidecar(opts: MockSidecarOptions): Promise<MockSidecar> {
   return new Promise((resolve, reject) => {
-    const requests: Array<{ queries: unknown[] }> = [];
+    const requests: Array<{ queries: unknown[]; imageBase64?: string; imageMimeType?: string }> = [];
     const server = http.createServer((req, res) => {
-      if (req.method === "POST" && req.url === "/v1/locate-ui-elements") {
+      if (req.method === "GET" && req.url === "/health") {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ready: true, error: null }));
+      } else if (req.method === "POST" && req.url === "/v1/locate-ui-elements") {
         let body = "";
         req.on("data", chunk => {
           body += chunk;
