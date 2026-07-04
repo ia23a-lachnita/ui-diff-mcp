@@ -191,6 +191,130 @@ function mergeFinalDuplicateFindings(findings: DiffRecord[]): DiffRecord[] {
   return groups.map(group => group.length === 1 ? group[0]! : mergeFinalFindingGroup(group));
 }
 
+const LAYOUT_CRITERIA = new Set<DiffRecord["criterion"]>([
+  "geometry",
+  "spacing_alignment",
+  "chart_special_geometry"
+]);
+
+function isLayoutFinding(finding: DiffRecord): boolean {
+  return LAYOUT_CRITERIA.has(finding.criterion);
+}
+
+function containedRatio(inner: Box, outer: Box): number {
+  const overlap = intersect(inner, outer);
+  return overlap ? boxArea(overlap) / boxArea(inner) : 0;
+}
+
+function isDescendantOf(childId: string, parentId: string, elements: Map<string, UiElement>): boolean {
+  let current = elements.get(childId);
+  const visited = new Set<string>();
+  while (current && !visited.has(current.id)) {
+    if (current.id === parentId) return true;
+    visited.add(current.id);
+    current = current.parentId ? elements.get(current.parentId) : undefined;
+  }
+  return false;
+}
+
+function targetIdsForFinding(finding: DiffRecord, pairMap: Map<string, ElementPair>): string[] {
+  const pair = finding.pairId ? pairMap.get(finding.pairId) : undefined;
+  return [...new Set([
+    ...(finding.targetIds ?? []),
+    ...(pair?.expectedId ? [pair.expectedId] : []),
+    ...(pair?.actualId ? [pair.actualId] : [])
+  ])];
+}
+
+function parentExplainsChildLayout(
+  parent: DiffRecord,
+  child: DiffRecord,
+  elements: Map<string, UiElement>,
+  pairMap: Map<string, ElementPair>
+): boolean {
+  if (parent.id === child.id) return false;
+  if (!isLayoutFinding(parent) || !isLayoutFinding(child)) return false;
+  if (boxArea(parent.location) <= boxArea(child.location)) return false;
+  const parentTargets = targetIdsForFinding(parent, pairMap);
+  const childTargets = targetIdsForFinding(child, pairMap);
+  if (parentTargets.length === 0 || childTargets.length === 0) return false;
+  const descendant = parentTargets.some(parentId =>
+    childTargets.some(childId => childId === parentId || isDescendantOf(childId, parentId, elements))
+  );
+  const containment = containedRatio(child.location, parent.location);
+  return containment >= 0.8 || (descendant && containment >= 0.5);
+}
+
+function mergeChildIntoParent(parent: DiffRecord, children: DiffRecord[]): DiffRecord {
+  const allFindings = [parent, ...children];
+  const artifacts = new Map<string, NonNullable<DiffRecord["artifactPaths"]>[number]>();
+  for (const artifact of allFindings.flatMap(finding => finding.artifactPaths)) {
+    artifacts.set(`${artifact.role}:${artifact.path}`, artifact);
+  }
+  const measurements = new Map<string, NonNullable<DiffRecord["measurements"]>[number]>();
+  for (const measurement of allFindings.flatMap(finding => finding.measurements)) {
+    measurements.set(JSON.stringify(measurement), measurement);
+  }
+  const coverageLocations = new Map<string, Box>();
+  for (const location of allFindings.flatMap(finding => finding.coverageLocations ?? [finding.location])) {
+    coverageLocations.set(JSON.stringify(location), location);
+  }
+  const targetIds = [...new Set(allFindings.flatMap(finding => finding.targetIds ?? []))];
+  const childFindingIds = [...new Set(allFindings.flatMap(finding => [finding.id, ...(finding.childFindingIds ?? [])]))];
+  const reviewRank = { rejected: 0, not_reviewed: 1, accepted: 2, needs_escalation: 3 } as const;
+  const reviewerStatus = parent.reviewerStatus === "rejected"
+    ? "rejected"
+    : allFindings.reduce((best, finding) =>
+      reviewRank[finding.reviewerStatus] > reviewRank[best] ? finding.reviewerStatus : best,
+    parent.reviewerStatus);
+
+  return {
+    ...parent,
+    evidence: [...new Set(allFindings.flatMap(finding => finding.evidence))],
+    measurements: [...measurements.values()],
+    artifactPaths: [...artifacts.values()],
+    coverageLocations: [...coverageLocations.values()],
+    childFindingIds,
+    targetIds,
+    reviewerStatus
+  };
+}
+
+function suppressLayoutChildrenCoveredByParent(
+  findings: DiffRecord[],
+  elements: UiElement[],
+  pairs: ElementPair[]
+): DiffRecord[] {
+  const elementMap = new Map(elements.map(element => [element.id, element]));
+  const pairMap = new Map(pairs.map(pair => [pair.id, pair]));
+  const consumed = new Set<string>();
+  const parentToChildren = new Map<string, DiffRecord[]>();
+  const parents = findings
+    .filter(isLayoutFinding)
+    .sort((a, b) => boxArea(b.location) - boxArea(a.location));
+
+  for (const child of findings) {
+    if (!isLayoutFinding(child)) continue;
+    const parent = parents.find(candidate =>
+      !consumed.has(candidate.id) &&
+      candidate.id !== child.id &&
+      parentExplainsChildLayout(candidate, child, elementMap, pairMap)
+    );
+    if (!parent) continue;
+    const children = parentToChildren.get(parent.id) ?? [];
+    children.push(child);
+    parentToChildren.set(parent.id, children);
+    consumed.add(child.id);
+  }
+
+  return findings
+    .filter(finding => !consumed.has(finding.id))
+    .map(finding => {
+      const children = parentToChildren.get(finding.id);
+      return children ? mergeChildIntoParent(finding, children) : finding;
+    });
+}
+
 export function consolidateFindings(
   findings: DiffRecord[],
   elements: UiElement[],
@@ -220,5 +344,6 @@ export function consolidateFindings(
   }
 
   const initiallyMerged = mergeOverlappingOwnedGroups([...groups.values()]).map(mergeGroup);
-  return mergeFinalDuplicateFindings(initiallyMerged);
+  const finalMerged = mergeFinalDuplicateFindings(initiallyMerged);
+  return suppressLayoutChildrenCoveredByParent(finalMerged, elements, pairs);
 }

@@ -306,4 +306,48 @@ describe("consolidateFindings", () => {
     expect(result[0]?.targetIds).toContain(button.id);
     expect(result[0]?.childFindingIds).toEqual(expect.arrayContaining(["today-text-geometry", "today-button-geometry"]));
   });
+
+  it("folds child layout diffs under a containing parent layout displacement across layout criteria", () => {
+    const card = element("macro-card", "card", 20, 100, 300, 220);
+    const label = element("protein-label", "text", 44, 130, 120, 28, card.id);
+    const bar = element("protein-bar", "chart", 44, 180, 240, 20, card.id);
+    card.childIds = [label.id, bar.id];
+    const parent = finding("card-geometry", "pair-card", "geometry", 20, 100, 300, 220);
+    parent.targetIds = [card.id];
+    const labelSpacing = finding("label-spacing", "pair-label", "spacing_alignment", 44, 130, 120, 28);
+    labelSpacing.targetIds = [label.id, card.id];
+    const barGeometry = finding("bar-geometry", "pair-bar", "geometry", 44, 180, 240, 20);
+    barGeometry.targetIds = [bar.id, card.id];
+
+    const result = consolidateFindings(
+      [parent, labelSpacing, barGeometry],
+      [card, label, bar],
+      [pair("pair-card", card.id), pair("pair-label", label.id), pair("pair-bar", bar.id)]
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0]?.id).toBe("card-geometry");
+    expect(result[0]?.childFindingIds).toEqual(expect.arrayContaining(["card-geometry", "label-spacing", "bar-geometry"]));
+  });
+
+  it("keeps child color and typography findings separate from parent layout displacement", () => {
+    const card = element("recent-card", "card", 20, 100, 300, 220);
+    const label = element("recent-title", "text", 44, 130, 120, 28, card.id);
+    card.childIds = [label.id];
+    const parent = finding("card-geometry", "pair-card", "geometry", 20, 100, 300, 220);
+    parent.targetIds = [card.id];
+    const color = finding("title-color", "pair-label", "color_appearance", 44, 130, 120, 28);
+    color.targetIds = [label.id, card.id];
+    const text = finding("title-text", "pair-label", "typography_content", 44, 130, 120, 28);
+    text.targetIds = [label.id, card.id];
+
+    const result = consolidateFindings(
+      [parent, color, text],
+      [card, label],
+      [pair("pair-card", card.id), pair("pair-label", label.id)]
+    );
+
+    expect(result).toHaveLength(3);
+    expect(result.map(item => item.id).sort()).toEqual(["card-geometry", "title-color", "title-text"]);
+  });
 });
