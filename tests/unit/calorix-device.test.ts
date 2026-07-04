@@ -17,6 +17,22 @@ import {
 } from "../helpers/calorix-device.js";
 import type { CaptureResult } from "../../src/capture/mobile-capture.js";
 
+function readiness(ok: boolean, overrides: Partial<Awaited<ReturnType<typeof validateCalorixTodayScreenshotForReadiness>>> = {}) {
+  return {
+    ok,
+    pixelBuffer: Buffer.from(ok ? "today" : "not-ready"),
+    variance: ok ? 1000 : 50,
+    entropy: ok ? 1.5 : 0.2,
+    edgeRatio: ok ? 0.02 : 0.001,
+    nonBackgroundRatio: ok ? 0.1 : 0.01,
+    changedRatio: 0,
+    topBrightRatio: ok ? 0.05 : 0,
+    lowerWhiteRatio: 0,
+    reason: ok ? "test ready" : "not ready",
+    ...overrides
+  };
+}
+
 async function makeProject(): Promise<string> {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "ui-diff-calorix-"));
   await fs.mkdir(path.join(root, "lib"), { recursive: true });
@@ -117,7 +133,7 @@ describe("calorix-device helpers", () => {
       sleepMs: async () => {},
       now: () => Date.UTC(2026, 6, 4, 12, 0, 0),
       validateImage: async () => {
-        return { ok: true, pixelBuffer: Buffer.from(""), variance: 1000, entropy: 1.5, edgeRatio: 0.02, nonBackgroundRatio: 0.1, changedRatio: 0, reason: "test ready" };
+        return readiness(true);
       }
     });
 
@@ -126,6 +142,7 @@ describe("calorix-device helpers", () => {
     expect(calls.map(call => call.args.join(" "))).toEqual([
       "shell input keyevent KEYCODE_WAKEUP",
       "shell wm dismiss-keyguard",
+      "shell settings put secure immersive_mode_confirmations confirmed",
       "shell am start -a android.intent.action.VIEW -d calorix://debug/reseed"
     ]);
   });
@@ -147,11 +164,11 @@ describe("calorix-device helpers", () => {
     const validateImage = vi.fn(async (filePath: string, firstPixelBuffer: Buffer | undefined) => {
       validateCount++;
       if (validateCount === 1) {
-        return { ok: false, pixelBuffer: Buffer.from("spinner"), variance: 50, entropy: 0.2, edgeRatio: 0.001, nonBackgroundRatio: 0.01, changedRatio: 0, reason: "spinner" };
+        return readiness(false, { reason: "spinner" });
       } else if (validateCount === 2) {
-        return { ok: false, pixelBuffer: Buffer.from("spinner"), variance: 50, entropy: 0.2, edgeRatio: 0.001, nonBackgroundRatio: 0.01, changedRatio: 0, reason: "spinner" };
+        return readiness(false, { reason: "spinner" });
       } else {
-        return { ok: true, pixelBuffer: Buffer.from("today"), variance: 1000, entropy: 1.5, edgeRatio: 0.02, nonBackgroundRatio: 0.1, changedRatio: 0.2, reason: "today" };
+        return readiness(true, { changedRatio: 0.2, reason: "today" });
       }
     });
 
@@ -188,7 +205,7 @@ describe("calorix-device helpers", () => {
     });
 
     const validateImage = vi.fn(async () => {
-      return { ok: false, pixelBuffer: Buffer.from("spinner"), variance: 50, entropy: 0.2, edgeRatio: 0.001, nonBackgroundRatio: 0.01, changedRatio: 0, reason: "spinner" };
+      return readiness(false, { reason: "spinner" });
     });
 
     vi.stubEnv("UI_DIFF_CALORIX_CAPTURE_READY_TIMEOUT_MS", "3000");
@@ -212,6 +229,7 @@ describe("calorix-device helpers", () => {
     const spinnerPath = path.join(root, "spinner.png");
     const darkPath = path.join(root, "dark-today-like.png");
     const lightPath = path.join(root, "light-today-like.png");
+    const immersiveOverlayPath = path.join(root, "immersive-overlay.png");
 
     await sharp({
       create: {
@@ -245,31 +263,47 @@ describe("calorix-device helpers", () => {
     </svg>`;
     await sharp(Buffer.from(uiSvg)).png().toFile(darkPath);
     await sharp(Buffer.from(uiSvg.replaceAll("#0E1117", "#F6F8FA").replaceAll("#161B22", "#FFFFFF").replaceAll("#F4F6F8", "#101820"))).png().toFile(lightPath);
+    await sharp(Buffer.from(`<svg width="360" height="800">
+      <rect width="360" height="800" fill="#050608"/>
+      <text x="32" y="520" fill="#FFFFFF" font-size="24">This app is using the full screen.</text>
+      <text x="32" y="552" fill="#FFFFFF" font-size="24">Swipe gestures for navigation</text>
+      <text x="32" y="584" fill="#FFFFFF" font-size="24">will show the status bar.</text>
+      <rect x="120" y="640" width="120" height="56" rx="10" fill="none" stroke="#FFFFFF" stroke-width="2"/>
+      <text x="160" y="676" fill="#FFFFFF" font-size="22">OK</text>
+    </svg>`)).png().toFile(immersiveOverlayPath);
 
     const spinner = await validateCalorixTodayScreenshotForReadiness(spinnerPath, undefined);
     const dark = await validateCalorixTodayScreenshotForReadiness(darkPath, undefined);
     const light = await validateCalorixTodayScreenshotForReadiness(lightPath, undefined);
+    const immersiveOverlay = await validateCalorixTodayScreenshotForReadiness(immersiveOverlayPath, undefined);
 
     expect(spinner.ok).toBe(false);
     expect(dark.ok).toBe(true);
     expect(light.ok).toBe(true);
+    expect(immersiveOverlay.ok).toBe(false);
+    expect(immersiveOverlay.reason).toContain("immersive_overlay");
   });
 
   it("matches the known local spinner and Today screenshots when those artifacts exist", async () => {
     const spinnerPath = "C:/Users/xursc/projects/calorix/.ui-diff/captures/today-2026-07-04T19-09-08-413Z.png";
     const todayPath = "C:/Users/xursc/projects/calorix/.ui-diff/captures/manual-current-check.png";
+    const immersiveOverlayPath = "C:/Users/xursc/projects/calorix/.ui-diff/captures/today-2026-07-04T19-39-03-893Z.png";
     try {
       await fs.access(spinnerPath);
       await fs.access(todayPath);
+      await fs.access(immersiveOverlayPath);
     } catch {
       return;
     }
 
     const spinner = await validateCalorixTodayScreenshotForReadiness(spinnerPath, undefined);
     const today = await validateCalorixTodayScreenshotForReadiness(todayPath, undefined);
+    const immersiveOverlay = await validateCalorixTodayScreenshotForReadiness(immersiveOverlayPath, undefined);
 
     expect(spinner.ok).toBe(false);
     expect(today.ok).toBe(true);
+    expect(immersiveOverlay.ok).toBe(false);
+    expect(immersiveOverlay.reason).toContain("immersive_overlay");
   });
 
   it("uses explicit actual image override without auto capture", async () => {
@@ -303,7 +337,7 @@ describe("calorix-device helpers", () => {
       sleepMs: async () => {},
       now: () => Date.UTC(2026, 6, 4, 12, 0, 0),
       validateImage: async () => {
-        return { ok: true, pixelBuffer: Buffer.from(""), variance: 1000, entropy: 1.5, edgeRatio: 0.02, nonBackgroundRatio: 0.1, changedRatio: 0, reason: "test ready" };
+        return readiness(true);
       }
     });
     const second = await resolveCalorixActualImage({
@@ -313,7 +347,7 @@ describe("calorix-device helpers", () => {
       sleepMs: async () => {},
       now: () => Date.UTC(2026, 6, 4, 12, 1, 0),
       validateImage: async () => {
-        return { ok: true, pixelBuffer: Buffer.from(""), variance: 1000, entropy: 1.5, edgeRatio: 0.02, nonBackgroundRatio: 0.1, changedRatio: 0, reason: "test ready" };
+        return readiness(true);
       }
     });
 

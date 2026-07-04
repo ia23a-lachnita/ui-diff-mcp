@@ -50,6 +50,8 @@ export interface CalorixScreenshotReadiness {
   edgeRatio: number;
   nonBackgroundRatio: number;
   changedRatio: number;
+  topBrightRatio: number;
+  lowerWhiteRatio: number;
   reason: string;
 }
 
@@ -233,6 +235,10 @@ export async function validateCalorixTodayScreenshotForReadiness(
   let luminanceSquaredSum = 0;
   let edgePixels = 0;
   let nonBackgroundPixels = 0;
+  let topBrightPixels = 0;
+  let lowerWhitePixels = 0;
+  let topPixels = 0;
+  let lowerPixels = 0;
   const bins = new Array<number>(16).fill(0);
 
   function luminanceAt(x: number, y: number): number {
@@ -257,6 +263,14 @@ export async function validateCalorixTodayScreenshotForReadiness(
       if (Math.max(r, g, b) - Math.min(r, g, b) > 18 || Math.max(r, g, b) > 50) {
         nonBackgroundPixels++;
       }
+      if (y < info.height * 0.25) {
+        topPixels++;
+        if (Math.max(r, g, b) > 180) topBrightPixels++;
+      }
+      if (y >= info.height * 0.55 && y < info.height * 0.85) {
+        lowerPixels++;
+        if (r > 200 && g > 200 && b > 200) lowerWhitePixels++;
+      }
       if (x > 0 && y > 0) {
         const gradient = Math.abs(luma - luminanceAt(x - 1, y)) + Math.abs(luma - luminanceAt(x, y - 1));
         if (gradient > 35) edgePixels++;
@@ -273,6 +287,8 @@ export async function validateCalorixTodayScreenshotForReadiness(
   }
   const edgeRatio = totalPixels > 0 ? edgePixels / totalPixels : 0;
   const nonBackgroundRatio = totalPixels > 0 ? nonBackgroundPixels / totalPixels : 0;
+  const topBrightRatio = topPixels > 0 ? topBrightPixels / topPixels : 0;
+  const lowerWhiteRatio = lowerPixels > 0 ? lowerWhitePixels / lowerPixels : 0;
 
   let changedRatio = 0;
   if (firstPixelBuffer) {
@@ -293,10 +309,15 @@ export async function validateCalorixTodayScreenshotForReadiness(
     changedRatio = totalPixels > 0 ? changedPixels / totalPixels : 0;
   }
 
-  const detailOk = variance >= 300 && entropy >= 0.6 && edgeRatio >= 0.01 && nonBackgroundRatio >= 0.03;
+  const immersiveEducationOverlayLikely = topBrightRatio < 0.01 && lowerWhiteRatio > 0.02;
+  const detailOk = variance >= 300
+    && entropy >= 0.6
+    && edgeRatio >= 0.01
+    && nonBackgroundRatio >= 0.03
+    && !immersiveEducationOverlayLikely;
   const reason = detailOk
-    ? `ready: variance=${variance.toFixed(1)} entropy=${entropy.toFixed(3)} edgeRatio=${edgeRatio.toFixed(4)} nonBackgroundRatio=${nonBackgroundRatio.toFixed(4)} changedRatio=${changedRatio.toFixed(4)}`
-    : `not_ready: variance=${variance.toFixed(1)} entropy=${entropy.toFixed(3)} edgeRatio=${edgeRatio.toFixed(4)} nonBackgroundRatio=${nonBackgroundRatio.toFixed(4)} changedRatio=${changedRatio.toFixed(4)}`;
+    ? `ready: variance=${variance.toFixed(1)} entropy=${entropy.toFixed(3)} edgeRatio=${edgeRatio.toFixed(4)} nonBackgroundRatio=${nonBackgroundRatio.toFixed(4)} topBrightRatio=${topBrightRatio.toFixed(4)} lowerWhiteRatio=${lowerWhiteRatio.toFixed(4)} changedRatio=${changedRatio.toFixed(4)}`
+    : `not_ready: variance=${variance.toFixed(1)} entropy=${entropy.toFixed(3)} edgeRatio=${edgeRatio.toFixed(4)} nonBackgroundRatio=${nonBackgroundRatio.toFixed(4)} topBrightRatio=${topBrightRatio.toFixed(4)} lowerWhiteRatio=${lowerWhiteRatio.toFixed(4)} changedRatio=${changedRatio.toFixed(4)}${immersiveEducationOverlayLikely ? " immersive_overlay" : ""}`;
 
   return {
     ok: detailOk,
@@ -306,6 +327,8 @@ export async function validateCalorixTodayScreenshotForReadiness(
     edgeRatio,
     nonBackgroundRatio,
     changedRatio,
+    topBrightRatio,
+    lowerWhiteRatio,
     reason
   };
 }
@@ -319,6 +342,7 @@ export async function reseedAndCaptureCalorixToday(opts: CalorixDeviceOptions = 
 
   await runner("adb", ["shell", "input", "keyevent", "KEYCODE_WAKEUP"], { timeout: 30000, encoding: "utf8" });
   await runner("adb", ["shell", "wm", "dismiss-keyguard"], { timeout: 30000, encoding: "utf8" });
+  await runner("adb", ["shell", "settings", "put", "secure", "immersive_mode_confirmations", "confirmed"], { timeout: 30000, encoding: "utf8" }).catch(() => undefined);
   await runner("adb", ["shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", "calorix://debug/reseed"], { timeout: 30000, encoding: "utf8" });
 
   const captureDir = path.join(projectRoot, ".ui-diff", "captures");
