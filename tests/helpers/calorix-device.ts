@@ -343,6 +343,7 @@ export async function reseedAndCaptureCalorixToday(opts: CalorixDeviceOptions = 
   await runner("adb", ["shell", "input", "keyevent", "KEYCODE_WAKEUP"], { timeout: 30000, encoding: "utf8" });
   await runner("adb", ["shell", "wm", "dismiss-keyguard"], { timeout: 30000, encoding: "utf8" });
   await runner("adb", ["shell", "settings", "put", "secure", "immersive_mode_confirmations", "confirmed"], { timeout: 30000, encoding: "utf8" }).catch(() => undefined);
+  await runner("adb", ["shell", "input", "keyevent", "BACK"], { timeout: 30000, encoding: "utf8" }).catch(() => undefined);
   await runner("adb", ["shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", "calorix://debug/reseed"], { timeout: 30000, encoding: "utf8" });
 
   const captureDir = path.join(projectRoot, ".ui-diff", "captures");

@@ -143,6 +143,7 @@ describe("calorix-device helpers", () => {
       "shell input keyevent KEYCODE_WAKEUP",
       "shell wm dismiss-keyguard",
       "shell settings put secure immersive_mode_confirmations confirmed",
+      "shell input keyevent BACK",
       "shell am start -a android.intent.action.VIEW -d calorix://debug/reseed"
     ]);
   });
