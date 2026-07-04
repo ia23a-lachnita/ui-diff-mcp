@@ -98,11 +98,13 @@ All generated images (pixel diff, directional overlay, crop pairs, recovery crop
 
 ```powershell
 $env:UI_DIFF_LIVE_EXPECTED_IMAGE = "C:\Users\xursc\projects\calorix\docs\mockups\image\dark\single\Today.png"
-$env:UI_DIFF_LIVE_ACTUAL_IMAGE = "C:\Users\xursc\projects\calorix\docs\screenshots\today-screen-2026-07-02-static-scan-fab.png"
+$env:UI_DIFF_LIVE_ACTUAL_IMAGE = "C:\Users\xursc\projects\calorix\docs\screenshots\today-screen-2026-07-04-adb-seeded-current.png"
 $env:LOCATEANYTHING_SIDECAR_URL = "http://127.0.0.1:39731"
 $env:UI_DIFF_LOCATOR_BENCHMARK_DIMENSIONS = "600,900,1200"
 npm run benchmark:locator
 ```
+
+For release evidence, prefer a freshly captured debug-device screenshot over a historical file. The latest recorded clean flow built the Calorix debug APK, installed it on `R58R61161NA`, opened `calorix://debug/reseed`, captured `today-screen-2026-07-04-adb-seeded-current.png`, and then ran the release gate.
 
 Every report records `locatorInputSizing`, including original image size, sent image size, scale, `maxDimension`, and whether actual elements were independently located or projected from expected elements. Runs also save the exact image payloads sent to the sidecar as `locator-input-expected.png` and, in dual-locator mode, `locator-input-actual.png`; these appear in `runArtifacts` as `locator_input_expected` and `locator_input_actual`.
 
