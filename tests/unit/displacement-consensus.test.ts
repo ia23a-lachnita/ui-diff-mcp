@@ -108,6 +108,29 @@ describe("resolveDisplacementConsensus", () => {
     expect(result.individuals.get("p-unique")).toMatchObject({ dx: 12, dy: 140 });
   });
 
+  it("uses cleaned element labels instead of raw locator text for group labels", () => {
+    const parent = element("macro-card", 0, 100, undefined, "Hero macro card");
+    const children = [
+      element("protein", 100, 200, parent.id, "Protein row"),
+      element("carbs", 100, 260, parent.id, "Carbs row")
+    ];
+    children[0]!.text = "<ref>tab bar bar and navigation elements</ref><box><0><0><1000><1000></box>";
+    children[1]!.text = "<ref>raw malformed grounding</ref><box><0><0><1000><1000></box>";
+    parent.childIds = children.map(child => child.id);
+
+    const result = resolveDisplacementConsensus({
+      evidence: [
+        evidence("protein-pair", children[0]!.id, children[0]!.box.y, [{ dx: 0, dy: 80 }]),
+        evidence("carbs-pair", children[1]!.id, children[1]!.box.y, [{ dx: 1, dy: 82 }])
+      ],
+      expectedElements: [parent, ...children],
+      viewportWidth: 1000
+    });
+
+    expect(result.groups[0]?.label).toMatch(/^(Protein|Carbs) row$/);
+    expect(result.groups[0]?.label).not.toContain("<ref>");
+  });
+
   it("does not assign two targets to the same translated feature", () => {
     const children = [element("one", 100, 100), element("two", 102, 102)];
     const result = resolveDisplacementConsensus({

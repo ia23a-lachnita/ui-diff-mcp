@@ -233,7 +233,7 @@ describe("consolidateFindings", () => {
     expect(result[0]?.reviewerStatus).toBe("accepted");
   });
 
-  it("folds projected groups into a broad final finding created by child consolidation", () => {
+  it("does not fold projected groups into a screen-sized final finding created by child consolidation", () => {
     const nav = element("nav", "nav", 0, 0, 500, 500);
     const top = element("top-control", "button", 0, 0, 80, 80, nav.id);
     const bottom = element("bottom-control", "button", 0, 420, 80, 80, nav.id);
@@ -268,8 +268,28 @@ describe("consolidateFindings", () => {
       [pair("pair-top", top.id), pair("pair-bottom", bottom.id), pair("pair-middle", middle.id)]
     );
 
-    expect(result).toHaveLength(1);
-    expect(result[0]?.childFindingIds).toEqual(expect.arrayContaining(["top-layout", "bottom-layout", "projected-middle"]));
+    expect(result).toHaveLength(3);
+    expect(result.map(item => item.id).sort()).toEqual(["bottom-layout", "projected-middle", "top-layout"]);
+  });
+
+  it("does not let a screen-sized nav parent swallow localized repair findings", () => {
+    const nav = element("screen-nav", "nav", 0, 0, 500, 500);
+    const top = element("top-control", "text", 40, 40, 80, 80, nav.id);
+    const bottom = element("bottom-control", "text", 40, 380, 80, 80, nav.id);
+    nav.childIds = [top.id, bottom.id];
+    const topFinding = finding("top-layout", undefined, "geometry", 40, 40, 80, 80);
+    topFinding.targetIds = [nav.id, top.id];
+    const bottomFinding = finding("bottom-layout", undefined, "geometry", 40, 380, 80, 80);
+    bottomFinding.targetIds = [nav.id, bottom.id];
+
+    const result = consolidateFindings(
+      [topFinding, bottomFinding],
+      [nav, top, bottom],
+      []
+    );
+
+    expect(result).toHaveLength(2);
+    expect(result.map(item => item.id).sort()).toEqual(["bottom-layout", "top-layout"]);
   });
 
   it("does not crash when a scope finding has no overlap with semantic parents", () => {

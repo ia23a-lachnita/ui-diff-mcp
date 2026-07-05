@@ -169,7 +169,7 @@ function meaningfulLabel(entries: CandidateEntry[], boundary: UiElement | undefi
     boundary
   ].filter((element): element is UiElement => element !== undefined);
   for (const element of candidates) {
-    const value = element.text?.trim() || element.label.trim();
+    const value = element.label.trim();
     if (!value || /^cv-component-/i.test(value) || /^proj-/i.test(value)) continue;
     return value;
   }

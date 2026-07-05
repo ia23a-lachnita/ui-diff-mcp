@@ -70,7 +70,7 @@ function colorForType(type: UiElement["type"]): { stroke: string; fill: string }
 }
 
 function shortLabel(entry: OverlayEntry): string {
-  const label = entry.element.text || entry.element.label;
+  const label = entry.element.label;
   return `${entry.overlayId} ${entry.element.type} ${label}`.slice(0, 46);
 }
 

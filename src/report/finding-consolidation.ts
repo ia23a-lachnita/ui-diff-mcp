@@ -4,6 +4,7 @@ import { intersect } from "../signals/geometry.js";
 const SEMANTIC_PARENT_TYPES = new Set<UiElement["type"]>([
   "card", "chart", "nav", "list_item", "button", "image"
 ]);
+const MAX_REPAIR_PARENT_AREA_RATIO = 0.3;
 
 interface OwnedFinding {
   finding: DiffRecord;
@@ -39,6 +40,29 @@ function eligibleParent(element: UiElement): boolean {
   return SEMANTIC_PARENT_TYPES.has(element.type) && element.source !== "merged";
 }
 
+function estimateViewportArea(elements: UiElement[]): number {
+  const inferredAreas = elements
+    .flatMap(element => {
+      const width = element.normalizedBox.width > 0 ? element.box.width / element.normalizedBox.width : undefined;
+      const height = element.normalizedBox.height > 0 ? element.box.height / element.normalizedBox.height : undefined;
+      return width !== undefined && height !== undefined && Number.isFinite(width) && Number.isFinite(height)
+        ? [width * height]
+        : [];
+    })
+    .filter(area => area > 0)
+    .sort((a, b) => a - b);
+  if (inferredAreas.length > 0) {
+    return inferredAreas[Math.floor(inferredAreas.length / 2)]!;
+  }
+  const right = Math.max(1, ...elements.map(element => element.box.x + element.box.width));
+  const bottom = Math.max(1, ...elements.map(element => element.box.y + element.box.height));
+  return right * bottom;
+}
+
+function isOversizedRepairParent(element: UiElement, viewportArea: number): boolean {
+  return boxArea(element.box) / Math.max(1, viewportArea) >= MAX_REPAIR_PARENT_AREA_RATIO;
+}
+
 function ascendToSemanticParent(element: UiElement, elements: Map<string, UiElement>): UiElement | undefined {
   let current: UiElement | undefined = element;
   const visited = new Set<string>();
@@ -50,9 +74,10 @@ function ascendToSemanticParent(element: UiElement, elements: Map<string, UiElem
   return undefined;
 }
 
-function overlappingSemanticParent(finding: DiffRecord, elements: UiElement[]): UiElement | undefined {
+function overlappingSemanticParent(finding: DiffRecord, elements: UiElement[], viewportArea: number): UiElement | undefined {
   return elements
     .filter(eligibleParent)
+    .filter(element => !isOversizedRepairParent(element, viewportArea))
     .map(element => ({ element, overlap: intersect(finding.location, element.box) }))
     .filter((entry): entry is { element: UiElement; overlap: Box } => entry.overlap !== undefined && entry.overlap !== null)
     .filter(entry => boxArea(entry.overlap) / boxArea(finding.location) >= 0.5)
@@ -62,6 +87,7 @@ function overlappingSemanticParent(finding: DiffRecord, elements: UiElement[]): 
 function resolveOwnership(
   finding: DiffRecord,
   elements: UiElement[],
+  viewportArea: number,
   elementMap: Map<string, UiElement>,
   pairMap: Map<string, ElementPair>
 ): OwnedFinding {
@@ -73,11 +99,12 @@ function resolveOwnership(
     .filter((element): element is UiElement => element !== undefined)
     .map(element => ascendToSemanticParent(element, elementMap))
     .filter((element): element is UiElement => element !== undefined)
+    .filter(element => !isOversizedRepairParent(element, viewportArea))
     .sort((a, b) => {
       const sourceRank = (element: UiElement) => element.source === "projected" ? 1 : 0;
       return sourceRank(a) - sourceRank(b) || boxArea(a.box) - boxArea(b.box);
     });
-  const parent = semanticParents[0] ?? overlappingSemanticParent(finding, elements);
+  const parent = semanticParents[0] ?? overlappingSemanticParent(finding, elements, viewportArea);
   if (parent && !targetIds.includes(parent.id)) targetIds.push(parent.id);
   return {
     finding,
@@ -230,10 +257,12 @@ function parentExplainsChildLayout(
   parent: DiffRecord,
   child: DiffRecord,
   elements: Map<string, UiElement>,
-  pairMap: Map<string, ElementPair>
+  pairMap: Map<string, ElementPair>,
+  viewportArea: number
 ): boolean {
   if (parent.id === child.id) return false;
   if (!isLayoutFinding(parent) || !isLayoutFinding(child)) return false;
+  if (boxArea(parent.location) / Math.max(1, viewportArea) >= MAX_REPAIR_PARENT_AREA_RATIO) return false;
   if (boxArea(parent.location) <= boxArea(child.location)) return false;
   const parentTargets = targetIdsForFinding(parent, pairMap);
   const childTargets = targetIdsForFinding(child, pairMap);
@@ -283,7 +312,8 @@ function mergeChildIntoParent(parent: DiffRecord, children: DiffRecord[]): DiffR
 function suppressLayoutChildrenCoveredByParent(
   findings: DiffRecord[],
   elements: UiElement[],
-  pairs: ElementPair[]
+  pairs: ElementPair[],
+  viewportArea: number
 ): DiffRecord[] {
   const elementMap = new Map(elements.map(element => [element.id, element]));
   const pairMap = new Map(pairs.map(pair => [pair.id, pair]));
@@ -298,7 +328,7 @@ function suppressLayoutChildrenCoveredByParent(
     const parent = parents.find(candidate =>
       !consumed.has(candidate.id) &&
       candidate.id !== child.id &&
-      parentExplainsChildLayout(candidate, child, elementMap, pairMap)
+      parentExplainsChildLayout(candidate, child, elementMap, pairMap, viewportArea)
     );
     if (!parent) continue;
     const children = parentToChildren.get(parent.id) ?? [];
@@ -320,12 +350,13 @@ export function consolidateFindings(
   elements: UiElement[],
   pairs: ElementPair[]
 ): DiffRecord[] {
+  const viewportArea = estimateViewportArea(elements);
   const elementMap = new Map(elements.map(element => [element.id, element]));
   const pairMap = new Map(pairs.map(pair => [pair.id, pair]));
   const groups = new Map<string, OwnedFinding[]>();
 
   for (const finding of findings) {
-    const owned = resolveOwnership(finding, elements, elementMap, pairMap);
+    const owned = resolveOwnership(finding, elements, viewportArea, elementMap, pairMap);
     const explicitGroup = finding.findingGroupId && finding.findingGroupKind
       ? `explicit:${finding.findingGroupKind}:${finding.findingGroupId}:${finding.criterion}`
       : undefined;
@@ -345,5 +376,5 @@ export function consolidateFindings(
 
   const initiallyMerged = mergeOverlappingOwnedGroups([...groups.values()]).map(mergeGroup);
   const finalMerged = mergeFinalDuplicateFindings(initiallyMerged);
-  return suppressLayoutChildrenCoveredByParent(finalMerged, elements, pairs);
+  return suppressLayoutChildrenCoveredByParent(finalMerged, elements, pairs, viewportArea);
 }
