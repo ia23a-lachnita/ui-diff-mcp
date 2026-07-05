@@ -28,6 +28,8 @@ function readiness(ok: boolean, overrides: Partial<Awaited<ReturnType<typeof val
     changedRatio: 0,
     topBrightRatio: ok ? 0.05 : 0,
     lowerWhiteRatio: 0,
+    lowerCyanRatio: 0,
+    lowerDetailRatio: ok ? 0.1 : 0,
     reason: ok ? "test ready" : "not ready",
     ...overrides
   };
@@ -226,9 +228,10 @@ describe("calorix-device helpers", () => {
     expect(capture).toHaveBeenCalledTimes(3);
   });
 
-  it("classifies detailed dark and light screens as ready while rejecting sparse spinner screens", async () => {
+  it("classifies detailed dark and light screens as ready while rejecting sparse and partial spinner screens", async () => {
     const root = await makeProject();
     const spinnerPath = path.join(root, "spinner.png");
+    const partialSpinnerPath = path.join(root, "partial-spinner.png");
     const darkPath = path.join(root, "dark-today-like.png");
     const lightPath = path.join(root, "light-today-like.png");
     const immersiveOverlayPath = path.join(root, "immersive-overlay.png");
@@ -246,6 +249,19 @@ describe("calorix-device helpers", () => {
       ])
       .png()
       .toFile(spinnerPath);
+
+    await sharp(Buffer.from(`<svg width="360" height="800">
+      <rect width="360" height="800" fill="#0E1117"/>
+      <text x="24" y="72" fill="#F4F6F8" font-size="28">Today</text>
+      <rect x="20" y="112" width="320" height="210" rx="24" fill="#161B22" stroke="#2B3340"/>
+      <circle cx="180" cy="210" r="64" fill="none" stroke="#19D3D9" stroke-width="18"/>
+      <text x="132" y="218" fill="#F4F6F8" font-size="26">1420</text>
+      <text x="20" y="370" fill="#F4F6F8" font-size="20">Recent scans</text>
+      <circle cx="180" cy="490" r="18" fill="none" stroke="#19D3D9" stroke-width="4" stroke-dasharray="28 20"/>
+      <rect x="0" y="704" width="360" height="96" fill="#11161D" stroke="#28303A"/>
+    </svg>`))
+      .png()
+      .toFile(partialSpinnerPath);
 
     const uiSvg = `<svg width="360" height="800">
       <rect width="360" height="800" fill="#0E1117"/>
@@ -275,11 +291,14 @@ describe("calorix-device helpers", () => {
     </svg>`)).png().toFile(immersiveOverlayPath);
 
     const spinner = await validateCalorixTodayScreenshotForReadiness(spinnerPath, undefined);
+    const partialSpinner = await validateCalorixTodayScreenshotForReadiness(partialSpinnerPath, undefined);
     const dark = await validateCalorixTodayScreenshotForReadiness(darkPath, undefined);
     const light = await validateCalorixTodayScreenshotForReadiness(lightPath, undefined);
     const immersiveOverlay = await validateCalorixTodayScreenshotForReadiness(immersiveOverlayPath, undefined);
 
     expect(spinner.ok).toBe(false);
+    expect(partialSpinner.ok).toBe(false);
+    expect(partialSpinner.reason).toContain("partial_loading");
     expect(dark.ok).toBe(true);
     expect(light.ok).toBe(true);
     expect(immersiveOverlay.ok).toBe(false);
@@ -290,10 +309,12 @@ describe("calorix-device helpers", () => {
     const spinnerPath = "C:/Users/xursc/projects/calorix/.ui-diff/captures/today-2026-07-04T19-09-08-413Z.png";
     const todayPath = "C:/Users/xursc/projects/calorix/.ui-diff/captures/manual-current-check.png";
     const immersiveOverlayPath = "C:/Users/xursc/projects/calorix/.ui-diff/captures/today-2026-07-04T19-39-03-893Z.png";
+    const partialSpinnerPath = "C:/Users/xursc/projects/calorix/.ui-diff/captures/today-2026-07-05T10-12-13-143Z.png";
     try {
       await fs.access(spinnerPath);
       await fs.access(todayPath);
       await fs.access(immersiveOverlayPath);
+      await fs.access(partialSpinnerPath);
     } catch {
       return;
     }
@@ -301,11 +322,14 @@ describe("calorix-device helpers", () => {
     const spinner = await validateCalorixTodayScreenshotForReadiness(spinnerPath, undefined);
     const today = await validateCalorixTodayScreenshotForReadiness(todayPath, undefined);
     const immersiveOverlay = await validateCalorixTodayScreenshotForReadiness(immersiveOverlayPath, undefined);
+    const partialSpinner = await validateCalorixTodayScreenshotForReadiness(partialSpinnerPath, undefined);
 
     expect(spinner.ok).toBe(false);
     expect(today.ok).toBe(true);
     expect(immersiveOverlay.ok).toBe(false);
     expect(immersiveOverlay.reason).toContain("immersive_overlay");
+    expect(partialSpinner.ok).toBe(false);
+    expect(partialSpinner.reason).toContain("partial_loading");
   });
 
   it("uses explicit actual image override without auto capture", async () => {

@@ -52,6 +52,8 @@ export interface CalorixScreenshotReadiness {
   changedRatio: number;
   topBrightRatio: number;
   lowerWhiteRatio: number;
+  lowerCyanRatio: number;
+  lowerDetailRatio: number;
   reason: string;
 }
 
@@ -239,7 +241,14 @@ export async function validateCalorixTodayScreenshotForReadiness(
   let lowerWhitePixels = 0;
   let topPixels = 0;
   let lowerPixels = 0;
+  let lowerContentPixels = 0;
+  let lowerCyanPixels = 0;
+  let lowerDetailPixels = 0;
   const bins = new Array<number>(16).fill(0);
+
+  function isLoadingCyan(r: number, g: number, b: number): boolean {
+    return g > 150 && b > 150 && r < 120 && Math.max(g, b) - r > 80 && Math.abs(g - b) < 90;
+  }
 
   function luminanceAt(x: number, y: number): number {
     const offset = (y * info.width + x) * 4;
@@ -271,6 +280,14 @@ export async function validateCalorixTodayScreenshotForReadiness(
         lowerPixels++;
         if (r > 200 && g > 200 && b > 200) lowerWhitePixels++;
       }
+      if (y >= info.height * 0.45 && y < info.height * 0.8 && x >= info.width * 0.12 && x < info.width * 0.88) {
+        lowerContentPixels++;
+        const cyan = isLoadingCyan(r, g, b);
+        if (cyan) lowerCyanPixels++;
+        if (!cyan && (Math.max(r, g, b) - Math.min(r, g, b) > 18 || Math.max(r, g, b) > 70)) {
+          lowerDetailPixels++;
+        }
+      }
       if (x > 0 && y > 0) {
         const gradient = Math.abs(luma - luminanceAt(x - 1, y)) + Math.abs(luma - luminanceAt(x, y - 1));
         if (gradient > 35) edgePixels++;
@@ -289,6 +306,8 @@ export async function validateCalorixTodayScreenshotForReadiness(
   const nonBackgroundRatio = totalPixels > 0 ? nonBackgroundPixels / totalPixels : 0;
   const topBrightRatio = topPixels > 0 ? topBrightPixels / topPixels : 0;
   const lowerWhiteRatio = lowerPixels > 0 ? lowerWhitePixels / lowerPixels : 0;
+  const lowerCyanRatio = lowerContentPixels > 0 ? lowerCyanPixels / lowerContentPixels : 0;
+  const lowerDetailRatio = lowerContentPixels > 0 ? lowerDetailPixels / lowerContentPixels : 0;
 
   let changedRatio = 0;
   if (firstPixelBuffer) {
@@ -310,14 +329,16 @@ export async function validateCalorixTodayScreenshotForReadiness(
   }
 
   const immersiveEducationOverlayLikely = topBrightRatio < 0.01 && lowerWhiteRatio > 0.02;
+  const partialLoadingLikely = lowerCyanRatio >= 0.003 && lowerDetailRatio < 0.07;
   const detailOk = variance >= 300
     && entropy >= 0.6
     && edgeRatio >= 0.01
     && nonBackgroundRatio >= 0.03
-    && !immersiveEducationOverlayLikely;
+    && !immersiveEducationOverlayLikely
+    && !partialLoadingLikely;
   const reason = detailOk
-    ? `ready: variance=${variance.toFixed(1)} entropy=${entropy.toFixed(3)} edgeRatio=${edgeRatio.toFixed(4)} nonBackgroundRatio=${nonBackgroundRatio.toFixed(4)} topBrightRatio=${topBrightRatio.toFixed(4)} lowerWhiteRatio=${lowerWhiteRatio.toFixed(4)} changedRatio=${changedRatio.toFixed(4)}`
-    : `not_ready: variance=${variance.toFixed(1)} entropy=${entropy.toFixed(3)} edgeRatio=${edgeRatio.toFixed(4)} nonBackgroundRatio=${nonBackgroundRatio.toFixed(4)} topBrightRatio=${topBrightRatio.toFixed(4)} lowerWhiteRatio=${lowerWhiteRatio.toFixed(4)} changedRatio=${changedRatio.toFixed(4)}${immersiveEducationOverlayLikely ? " immersive_overlay" : ""}`;
+    ? `ready: variance=${variance.toFixed(1)} entropy=${entropy.toFixed(3)} edgeRatio=${edgeRatio.toFixed(4)} nonBackgroundRatio=${nonBackgroundRatio.toFixed(4)} topBrightRatio=${topBrightRatio.toFixed(4)} lowerWhiteRatio=${lowerWhiteRatio.toFixed(4)} lowerCyanRatio=${lowerCyanRatio.toFixed(4)} lowerDetailRatio=${lowerDetailRatio.toFixed(4)} changedRatio=${changedRatio.toFixed(4)}`
+    : `not_ready: variance=${variance.toFixed(1)} entropy=${entropy.toFixed(3)} edgeRatio=${edgeRatio.toFixed(4)} nonBackgroundRatio=${nonBackgroundRatio.toFixed(4)} topBrightRatio=${topBrightRatio.toFixed(4)} lowerWhiteRatio=${lowerWhiteRatio.toFixed(4)} lowerCyanRatio=${lowerCyanRatio.toFixed(4)} lowerDetailRatio=${lowerDetailRatio.toFixed(4)} changedRatio=${changedRatio.toFixed(4)}${immersiveEducationOverlayLikely ? " immersive_overlay" : ""}${partialLoadingLikely ? " partial_loading" : ""}`;
 
   return {
     ok: detailOk,
@@ -329,6 +350,8 @@ export async function validateCalorixTodayScreenshotForReadiness(
     changedRatio,
     topBrightRatio,
     lowerWhiteRatio,
+    lowerCyanRatio,
+    lowerDetailRatio,
     reason
   };
 }
