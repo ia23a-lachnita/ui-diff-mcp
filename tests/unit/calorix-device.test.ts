@@ -30,6 +30,9 @@ function readiness(ok: boolean, overrides: Partial<Awaited<ReturnType<typeof val
     lowerWhiteRatio: 0,
     lowerCyanRatio: 0,
     lowerDetailRatio: ok ? 0.1 : 0,
+    recentAccentRatio: 0,
+    recentAccentWidthRatio: 0,
+    recentAccentHeightRatio: 0,
     reason: ok ? "test ready" : "not ready",
     ...overrides
   };
@@ -257,7 +260,7 @@ describe("calorix-device helpers", () => {
       <circle cx="180" cy="210" r="64" fill="none" stroke="#19D3D9" stroke-width="18"/>
       <text x="132" y="218" fill="#F4F6F8" font-size="26">1420</text>
       <text x="20" y="370" fill="#F4F6F8" font-size="20">Recent scans</text>
-      <circle cx="180" cy="490" r="18" fill="none" stroke="#19D3D9" stroke-width="4" stroke-dasharray="28 20"/>
+      <circle cx="180" cy="600" r="18" fill="none" stroke="#3B5BFF" stroke-width="4" stroke-dasharray="28 20"/>
       <rect x="0" y="704" width="360" height="96" fill="#11161D" stroke="#28303A"/>
     </svg>`))
       .png()
@@ -310,11 +313,13 @@ describe("calorix-device helpers", () => {
     const todayPath = "C:/Users/xursc/projects/calorix/.ui-diff/captures/manual-current-check.png";
     const immersiveOverlayPath = "C:/Users/xursc/projects/calorix/.ui-diff/captures/today-2026-07-04T19-39-03-893Z.png";
     const partialSpinnerPath = "C:/Users/xursc/projects/calorix/.ui-diff/captures/today-2026-07-05T10-12-13-143Z.png";
+    const loadedRecentPath = "C:/Users/xursc/projects/calorix/.ui-diff/captures/today-2026-07-05T10-50-10-416Z-attempt-60.png";
     try {
       await fs.access(spinnerPath);
       await fs.access(todayPath);
       await fs.access(immersiveOverlayPath);
       await fs.access(partialSpinnerPath);
+      await fs.access(loadedRecentPath);
     } catch {
       return;
     }
@@ -323,9 +328,11 @@ describe("calorix-device helpers", () => {
     const today = await validateCalorixTodayScreenshotForReadiness(todayPath, undefined);
     const immersiveOverlay = await validateCalorixTodayScreenshotForReadiness(immersiveOverlayPath, undefined);
     const partialSpinner = await validateCalorixTodayScreenshotForReadiness(partialSpinnerPath, undefined);
+    const loadedRecent = await validateCalorixTodayScreenshotForReadiness(loadedRecentPath, undefined);
 
     expect(spinner.ok).toBe(false);
     expect(today.ok).toBe(true);
+    expect(loadedRecent.ok).toBe(true);
     expect(immersiveOverlay.ok).toBe(false);
     expect(immersiveOverlay.reason).toContain("immersive_overlay");
     expect(partialSpinner.ok).toBe(false);

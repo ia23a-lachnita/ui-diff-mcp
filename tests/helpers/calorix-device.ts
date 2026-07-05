@@ -54,6 +54,9 @@ export interface CalorixScreenshotReadiness {
   lowerWhiteRatio: number;
   lowerCyanRatio: number;
   lowerDetailRatio: number;
+  recentAccentRatio: number;
+  recentAccentWidthRatio: number;
+  recentAccentHeightRatio: number;
   reason: string;
 }
 
@@ -244,10 +247,20 @@ export async function validateCalorixTodayScreenshotForReadiness(
   let lowerContentPixels = 0;
   let lowerCyanPixels = 0;
   let lowerDetailPixels = 0;
+  let recentContentPixels = 0;
+  let recentAccentPixels = 0;
+  let recentAccentMinX = Number.POSITIVE_INFINITY;
+  let recentAccentMinY = Number.POSITIVE_INFINITY;
+  let recentAccentMaxX = -1;
+  let recentAccentMaxY = -1;
   const bins = new Array<number>(16).fill(0);
 
   function isLoadingCyan(r: number, g: number, b: number): boolean {
     return g > 150 && b > 150 && r < 120 && Math.max(g, b) - r > 80 && Math.abs(g - b) < 90;
+  }
+
+  function isLoadingAccent(r: number, g: number, b: number): boolean {
+    return isLoadingCyan(r, g, b) || (b > 170 && r < 130 && b - r > 80 && b - g > 20);
   }
 
   function luminanceAt(x: number, y: number): number {
@@ -288,6 +301,16 @@ export async function validateCalorixTodayScreenshotForReadiness(
           lowerDetailPixels++;
         }
       }
+      if (y >= info.height * 0.66 && y < info.height * 0.82 && x >= info.width * 0.25 && x < info.width * 0.75) {
+        recentContentPixels++;
+        if (isLoadingAccent(r, g, b)) {
+          recentAccentPixels++;
+          recentAccentMinX = Math.min(recentAccentMinX, x);
+          recentAccentMinY = Math.min(recentAccentMinY, y);
+          recentAccentMaxX = Math.max(recentAccentMaxX, x);
+          recentAccentMaxY = Math.max(recentAccentMaxY, y);
+        }
+      }
       if (x > 0 && y > 0) {
         const gradient = Math.abs(luma - luminanceAt(x - 1, y)) + Math.abs(luma - luminanceAt(x, y - 1));
         if (gradient > 35) edgePixels++;
@@ -308,6 +331,10 @@ export async function validateCalorixTodayScreenshotForReadiness(
   const lowerWhiteRatio = lowerPixels > 0 ? lowerWhitePixels / lowerPixels : 0;
   const lowerCyanRatio = lowerContentPixels > 0 ? lowerCyanPixels / lowerContentPixels : 0;
   const lowerDetailRatio = lowerContentPixels > 0 ? lowerDetailPixels / lowerContentPixels : 0;
+  const recentAccentRatio = recentContentPixels > 0 ? recentAccentPixels / recentContentPixels : 0;
+  const recentAccentWidthRatio = recentAccentPixels > 0 ? (recentAccentMaxX - recentAccentMinX + 1) / info.width : 0;
+  const recentAccentHeightRatio = recentAccentPixels > 0 ? (recentAccentMaxY - recentAccentMinY + 1) / info.height : 0;
+  const recentAccentCenterXRatio = recentAccentPixels > 0 ? ((recentAccentMinX + recentAccentMaxX) / 2) / info.width : 0;
 
   let changedRatio = 0;
   if (firstPixelBuffer) {
@@ -329,7 +356,11 @@ export async function validateCalorixTodayScreenshotForReadiness(
   }
 
   const immersiveEducationOverlayLikely = topBrightRatio < 0.01 && lowerWhiteRatio > 0.02;
-  const partialLoadingLikely = lowerCyanRatio >= 0.003 && lowerDetailRatio < 0.07;
+  const partialLoadingLikely = recentAccentRatio >= 0.0015
+    && recentAccentWidthRatio >= 0.04
+    && recentAccentHeightRatio >= 0.02
+    && recentAccentCenterXRatio >= 0.35
+    && recentAccentCenterXRatio <= 0.65;
   const detailOk = variance >= 300
     && entropy >= 0.6
     && edgeRatio >= 0.01
@@ -337,8 +368,8 @@ export async function validateCalorixTodayScreenshotForReadiness(
     && !immersiveEducationOverlayLikely
     && !partialLoadingLikely;
   const reason = detailOk
-    ? `ready: variance=${variance.toFixed(1)} entropy=${entropy.toFixed(3)} edgeRatio=${edgeRatio.toFixed(4)} nonBackgroundRatio=${nonBackgroundRatio.toFixed(4)} topBrightRatio=${topBrightRatio.toFixed(4)} lowerWhiteRatio=${lowerWhiteRatio.toFixed(4)} lowerCyanRatio=${lowerCyanRatio.toFixed(4)} lowerDetailRatio=${lowerDetailRatio.toFixed(4)} changedRatio=${changedRatio.toFixed(4)}`
-    : `not_ready: variance=${variance.toFixed(1)} entropy=${entropy.toFixed(3)} edgeRatio=${edgeRatio.toFixed(4)} nonBackgroundRatio=${nonBackgroundRatio.toFixed(4)} topBrightRatio=${topBrightRatio.toFixed(4)} lowerWhiteRatio=${lowerWhiteRatio.toFixed(4)} lowerCyanRatio=${lowerCyanRatio.toFixed(4)} lowerDetailRatio=${lowerDetailRatio.toFixed(4)} changedRatio=${changedRatio.toFixed(4)}${immersiveEducationOverlayLikely ? " immersive_overlay" : ""}${partialLoadingLikely ? " partial_loading" : ""}`;
+    ? `ready: variance=${variance.toFixed(1)} entropy=${entropy.toFixed(3)} edgeRatio=${edgeRatio.toFixed(4)} nonBackgroundRatio=${nonBackgroundRatio.toFixed(4)} topBrightRatio=${topBrightRatio.toFixed(4)} lowerWhiteRatio=${lowerWhiteRatio.toFixed(4)} lowerCyanRatio=${lowerCyanRatio.toFixed(4)} lowerDetailRatio=${lowerDetailRatio.toFixed(4)} recentAccentRatio=${recentAccentRatio.toFixed(4)} recentAccentBox=${recentAccentWidthRatio.toFixed(4)}x${recentAccentHeightRatio.toFixed(4)} changedRatio=${changedRatio.toFixed(4)}`
+    : `not_ready: variance=${variance.toFixed(1)} entropy=${entropy.toFixed(3)} edgeRatio=${edgeRatio.toFixed(4)} nonBackgroundRatio=${nonBackgroundRatio.toFixed(4)} topBrightRatio=${topBrightRatio.toFixed(4)} lowerWhiteRatio=${lowerWhiteRatio.toFixed(4)} lowerCyanRatio=${lowerCyanRatio.toFixed(4)} lowerDetailRatio=${lowerDetailRatio.toFixed(4)} recentAccentRatio=${recentAccentRatio.toFixed(4)} recentAccentBox=${recentAccentWidthRatio.toFixed(4)}x${recentAccentHeightRatio.toFixed(4)} changedRatio=${changedRatio.toFixed(4)}${immersiveEducationOverlayLikely ? " immersive_overlay" : ""}${partialLoadingLikely ? " partial_loading" : ""}`;
 
   return {
     ok: detailOk,
@@ -352,6 +383,9 @@ export async function validateCalorixTodayScreenshotForReadiness(
     lowerWhiteRatio,
     lowerCyanRatio,
     lowerDetailRatio,
+    recentAccentRatio,
+    recentAccentWidthRatio,
+    recentAccentHeightRatio,
     reason
   };
 }
