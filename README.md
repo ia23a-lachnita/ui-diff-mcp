@@ -74,6 +74,8 @@ Example MCP payload:
 
 All generated images (pixel diff, directional overlay, crop pairs, recovery crops) are machine evidence consumed by audit and recovery models. They are not a manual inspection workflow. Do not rely on visual artifact review as a substitute for structured `report.json` output.
 
+`final-diff-groups-overlay.png` shows visual clusters of final diffs. It is not a semantic parent/child hierarchy: a whole-screen cluster and localized clusters can be siblings when they explain different criteria. Use `semantic-hierarchy-overlay.png` and `semantic-hierarchy-legend.json` to inspect the detected UI structure such as screen, nav, macro card, macro circle, and repeated cards.
+
 ## Report Parts And Usage Accounting
 
 `report.json` is the slim manifest. Large report sections are written as referenced JSON parts under `artifacts/parts/` instead of being duplicated inline:
@@ -97,7 +99,7 @@ All generated images (pixel diff, directional overlay, crop pairs, recovery crop
 `600` is a local timeout workaround, not a quality default. It shrinks a `1206x2622` Calorix mockup to roughly `276x600` for the locator, which can hide small icons, thin borders, and text. Prefer the highest dimension that fits the sidecar budget, and run the sequential locator benchmark before production sign-off:
 
 ```powershell
-$env:UI_DIFF_LIVE_EXPECTED_IMAGE = "C:\Users\xursc\projects\calorix\docs\mockups\image\dark\single\Today.png"
+$env:UI_DIFF_LIVE_EXPECTED_IMAGE = "C:\Users\xursc\projects\calorix\docs\design-handoff\placeholder-app\reference-images\today--dark.png"
 $env:LOCATEANYTHING_SIDECAR_URL = "http://127.0.0.1:39731"
 $env:UI_DIFF_LOCATOR_BENCHMARK_DIMENSIONS = "600,900,1200"
 npm run benchmark:locator
@@ -157,6 +159,8 @@ Copy `.env.example` and fill in the relevant keys.
 | `UI_DIFF_ENABLE_PAID_MODE` | For paid mode only | — | Must be exactly `1` before `mode: "paid"` can use paid routes. |
 | `LOCATEANYTHING_SIDECAR_URL` | No | `http://127.0.0.1:39731` | URL of the LocateAnything sidecar. |
 | `LOCATEANYTHING_EAGLE_EMBODIED_DIR` | For local sidecar only | — | Path to Eagle Embodied install. |
+| `LOCATEANYTHING_PYTHON` | No | Known local venv, then `python` | Python interpreter for local sidecar startup. Set this when your shell's `python` points at the wrong environment. |
+| `LOCATEANYTHING_SKIP_MODEL` | No | — | Diagnostic mode only. `1` skips the LocateAnything 3B worker and uses CV/OCR/optional parser lanes; do not use as full locator-model sign-off. |
 | `LOCATEANYTHING_IN_TOKEN_LIMIT` | No | `4096` | Image token budget for local sidecar. |
 | `LOCATEANYTHING_GENERATION_MODE` | No | `hybrid` | Sidecar worker mode: `fast`, `slow`, or `hybrid`. |
 | `LOCATEANYTHING_MAX_NEW_TOKENS` | No | `512` | Sidecar generation cap. |
@@ -245,15 +249,24 @@ C:\Users\xursc\projects\.venvs\ui-diff-mcp-locateanything\Scripts\python.exe -m 
 cd C:\Users\xursc\projects\ui-diff-mcp
 C:\Users\xursc\projects\.venvs\ui-diff-mcp-locateanything\Scripts\python.exe -m pip install -r sidecars\locateanything\requirements.txt
 $env:LOCATEANYTHING_EAGLE_EMBODIED_DIR="C:\Users\xursc\projects\Eagle\Embodied"
+$env:LOCATEANYTHING_PYTHON="C:\Users\xursc\projects\.venvs\ui-diff-mcp-locateanything\Scripts\python.exe"
 .\scripts\start-locateanything-sidecar.ps1
 ```
+
+The startup script and Calorix live-test helper prefer `LOCATEANYTHING_PYTHON`, then the known local venv at
+`C:\Users\xursc\projects\.venvs\ui-diff-mcp-locateanything\Scripts\python.exe`, then plain `python`. The script prints
+the interpreter it selected; if `/health` returns an `error`, live tests fail fast with that load error instead of
+waiting for the full readiness timeout.
+
+`LOCATEANYTHING_SKIP_MODEL=1` is only a diagnostic shortcut. It makes `/health.ready` true without loading the 3B model
+and still runs CV/OCR/optional lanes, but a run made with that flag is not full LocateAnything-model release evidence.
 
 The TypeScript client sends image bytes with each locator request, so `LOCATEANYTHING_SIDECAR_URL` can point to a remote GPU service that exposes the same contract.
 
 Parser-only sidecar tests:
 
 ```powershell
-python -m unittest sidecars.locateanything.test_parser
+C:\Users\xursc\projects\.venvs\ui-diff-mcp-locateanything\Scripts\python.exe -m unittest sidecars.locateanything.test_parser
 ```
 
 ## MCP Integration

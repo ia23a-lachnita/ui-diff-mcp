@@ -4,7 +4,8 @@ param(
   [int]$InTokenLimit = 4096,
   [int]$MaxNewTokens = 512,
   [ValidateSet("fast", "slow", "hybrid")]
-  [string]$GenerationMode = "hybrid"
+  [string]$GenerationMode = "hybrid",
+  [string]$PythonExe = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -33,4 +34,17 @@ if (-not $env:LOCATEANYTHING_MAX_NEW_TOKENS) {
   $env:LOCATEANYTHING_MAX_NEW_TOKENS = "$MaxNewTokens"
 }
 
-python -m uvicorn sidecars.locateanything.server:app --host $HostName --port $Port
+$knownPython = "C:\Users\xursc\projects\.venvs\ui-diff-mcp-locateanything\Scripts\python.exe"
+$resolvedPython = "python"
+if ($PythonExe) {
+  $resolvedPython = $PythonExe
+} elseif ($env:LOCATEANYTHING_PYTHON) {
+  $resolvedPython = $env:LOCATEANYTHING_PYTHON
+} elseif (Test-Path $knownPython) {
+  $resolvedPython = $knownPython
+}
+
+$env:LOCATEANYTHING_PYTHON = $resolvedPython
+Write-Host "Using Python interpreter: $resolvedPython"
+
+& $resolvedPython -m uvicorn sidecars.locateanything.server:app --host $HostName --port $Port

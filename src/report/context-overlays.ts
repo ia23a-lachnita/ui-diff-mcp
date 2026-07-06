@@ -4,7 +4,7 @@ import sharp from "sharp";
 import type { Box, DiffRecord, UiArtifact, UiElement, UnresolvedRegion } from "../schemas/core.js";
 import { projectActualBoxToExpectedSource, type ImagePairTransform } from "../images/coordinates.js";
 
-type AnnotationKind = "diff" | "unresolved" | "element";
+type AnnotationKind = "diff" | "unresolved" | "element" | "hierarchy";
 
 interface Annotation {
   box: Box;
@@ -19,6 +19,16 @@ export interface FindingGroup {
   criteria: string[];
   severity: "low" | "medium" | "high";
   label: string;
+}
+
+export interface SemanticHierarchyNode {
+  id: string;
+  elementId?: string;
+  label: string;
+  type: UiElement["type"] | "screen";
+  box: Box;
+  parentNodeId?: string;
+  childNodeIds: string[];
 }
 
 export interface OverlayStyle {
@@ -165,6 +175,8 @@ function style(kind: AnnotationKind, overlayStyle: OverlayStyle): { stroke: stri
       return { stroke: "#ff3bda", fill: "rgba(255,59,218,0.08)" };
     case "element":
       return { stroke: "#ffd23f", fill: "rgba(255,210,63,0.03)" };
+    case "hierarchy":
+      return { stroke: "#38bdf8", fill: "rgba(56,189,248,0.025)" };
   }
 }
 
@@ -178,6 +190,52 @@ function labelForRegion(region: UnresolvedRegion): string {
 
 function labelForElement(element: UiElement): string {
   return `${element.type} ${element.label}`.slice(0, 52);
+}
+
+function semanticParentId(element: UiElement, elementMap: Map<string, UiElement>): string | undefined {
+  let current = element.parentId ? elementMap.get(element.parentId) : undefined;
+  const visited = new Set<string>();
+  while (current && !visited.has(current.id)) {
+    visited.add(current.id);
+    if (SEMANTIC_ELEMENT_TYPES.has(current.type)) return current.id;
+    current = current.parentId ? elementMap.get(current.parentId) : undefined;
+  }
+  return undefined;
+}
+
+export function buildSemanticHierarchy(elements: UiElement[] = [], imageWidth: number, imageHeight: number): SemanticHierarchyNode[] {
+  const semanticElements = elements.filter(element => SEMANTIC_ELEMENT_TYPES.has(element.type));
+  const elementMap = new Map(elements.map(element => [element.id, element]));
+  const nodes = new Map<string, SemanticHierarchyNode>();
+  nodes.set("screen", {
+    id: "screen",
+    label: "Screen",
+    type: "screen",
+    box: { x: 0, y: 0, width: imageWidth, height: imageHeight },
+    childNodeIds: []
+  });
+
+  for (const element of semanticElements) {
+    nodes.set(element.id, {
+      id: element.id,
+      elementId: element.id,
+      label: element.label,
+      type: element.type,
+      box: element.box,
+      childNodeIds: []
+    });
+  }
+
+  for (const element of semanticElements) {
+    const parentId = semanticParentId(element, elementMap) ?? "screen";
+    const node = nodes.get(element.id);
+    const parent = nodes.get(parentId);
+    if (!node || !parent || parent.id === node.id) continue;
+    node.parentNodeId = parent.id;
+    if (!parent.childNodeIds.includes(node.id)) parent.childNodeIds.push(node.id);
+  }
+
+  return [...nodes.values()];
 }
 
 function elementAnnotations(
@@ -196,6 +254,14 @@ function elementAnnotations(
       kind: "element" as const
     }));
   return [...expected, ...actual];
+}
+
+function hierarchyAnnotations(nodes: SemanticHierarchyNode[]): Annotation[] {
+  return nodes.map((node, index) => ({
+    box: node.box,
+    label: `H${String(index + 1).padStart(3, "0")} ${node.type} ${node.label}`.slice(0, 52),
+    kind: "hierarchy" as const
+  }));
 }
 
 function svgForAnnotations(width: number, height: number, annotations: Annotation[]): Buffer {
@@ -275,7 +341,11 @@ async function writeJson(outPath: string, value: unknown): Promise<void> {
 }
 
 export async function writeRegionContextOverlays(input: RegionContextOverlayInput): Promise<UiArtifact[]> {
+  const metadata = await sharp(input.actualComparisonPath).metadata();
+  const width = metadata.width ?? 1;
+  const height = metadata.height ?? 1;
   const elementBoxes = elementAnnotations(input.elements, input.actualElements, input.imagePairTransform);
+  const hierarchyNodes = buildSemanticHierarchy(input.elements, width, height);
   const findingGroups = buildFindingGroups(input.diffs);
   const diffBoxes: Annotation[] = findingGroups.map(group => ({
     box: group.box,
@@ -293,11 +363,14 @@ export async function writeRegionContextOverlays(input: RegionContextOverlayInpu
   const contextPath = path.join(input.artifactDir, "region-context-overlay.png");
   const groupPath = path.join(input.artifactDir, "final-diff-groups-overlay.png");
   const legendPath = path.join(input.artifactDir, "final-diff-groups-legend.json");
+  const hierarchyPath = path.join(input.artifactDir, "semantic-hierarchy-overlay.png");
+  const hierarchyLegendPath = path.join(input.artifactDir, "semantic-hierarchy-legend.json");
 
   await writeAnnotatedImage(input.actualComparisonPath, finalDiffPath, [...elementBoxes, ...diffBoxes]);
   await writeAnnotatedImage(input.actualComparisonPath, groupPath, diffBoxes);
   await writeAnnotatedImage(input.actualComparisonPath, unresolvedPath, [...elementBoxes, ...unresolvedBoxes]);
   await writeAnnotatedImage(input.directionalOverlayPath, contextPath, [...elementBoxes, ...diffBoxes, ...unresolvedBoxes]);
+  await writeAnnotatedImage(input.actualComparisonPath, hierarchyPath, hierarchyAnnotations(hierarchyNodes));
 
   const maxZooms = Number.parseInt(process.env["UI_DIFF_MAX_CONTEXT_ZOOMS"] ?? "8", 10);
   const zoomGroups = findingGroups
@@ -320,12 +393,15 @@ export async function writeRegionContextOverlays(input: RegionContextOverlayInpu
     });
   }
   await writeJson(legendPath, { groups: legendGroups });
+  await writeJson(hierarchyLegendPath, { nodes: hierarchyNodes });
 
   return [
     { role: "final_diff_regions_overlay", path: finalDiffPath },
     { role: "final_diff_groups_overlay", path: groupPath },
     { role: "final_diff_groups_legend", path: legendPath },
     ...zoomArtifacts,
+    { role: "semantic_hierarchy_overlay", path: hierarchyPath },
+    { role: "semantic_hierarchy_legend", path: hierarchyLegendPath },
     { role: "unresolved_regions_overlay", path: unresolvedPath },
     { role: "region_context_overlay", path: contextPath }
   ];

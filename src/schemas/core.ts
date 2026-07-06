@@ -250,7 +250,9 @@ export const UiArtifactSchema = z.object({
     "region_context_overlay",
     "final_diff_groups_overlay",
     "final_diff_groups_legend",
-    "final_diff_zoom"
+    "final_diff_zoom",
+    "semantic_hierarchy_overlay",
+    "semantic_hierarchy_legend"
   ]),
   path: z.string().min(1),
   pairId: z.string().optional(),

@@ -1,9 +1,12 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import sharp from "sharp";
 
 const PROJECT_ROOT = path.resolve(fileURLToPath(import.meta.url), "../../../");
+export const DEFAULT_LOCATEANYTHING_PYTHON =
+  "C:\\Users\\xursc\\projects\\.venvs\\ui-diff-mcp-locateanything\\Scripts\\python.exe";
 
 export interface SidecarHandle {
   /** True if the sidecar was already running when ensureSidecarRunning was called. */
@@ -12,16 +15,35 @@ export interface SidecarHandle {
   close(): void;
 }
 
-async function pollHealth(url: string, deadlineMs: number): Promise<boolean> {
+export function resolveSidecarPythonPath(env: NodeJS.ProcessEnv = process.env): string {
+  const configured = env["LOCATEANYTHING_PYTHON"];
+  if (configured && configured.trim().length > 0) return configured;
+  if (fs.existsSync(DEFAULT_LOCATEANYTHING_PYTHON)) return DEFAULT_LOCATEANYTHING_PYTHON;
+  return "python";
+}
+
+export async function pollHealth(
+  url: string,
+  deadlineMs: number,
+  options: { intervalMs?: number; requestTimeoutMs?: number } = {}
+): Promise<boolean> {
+  const intervalMs = options.intervalMs ?? 3000;
+  const requestTimeoutMs = options.requestTimeoutMs ?? 4000;
   while (Date.now() < deadlineMs) {
-    await new Promise(r => setTimeout(r, 3000));
+    await new Promise(r => setTimeout(r, intervalMs));
     try {
-      const resp = await fetch(`${url}/health`, { signal: AbortSignal.timeout(4000) });
+      const resp = await fetch(`${url}/health`, { signal: AbortSignal.timeout(requestTimeoutMs) });
       if (resp.ok) {
-        const body = await resp.json() as { ready?: boolean };
+        const body = await resp.json() as { ready?: boolean; error?: string | null };
         if (body.ready === true) return true;
+        if (body.error) {
+          throw new Error(`LocateAnything sidecar failed to load: ${body.error}`);
+        }
       }
-    } catch {
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith("LocateAnything sidecar failed to load:")) {
+        throw error;
+      }
       // sidecar not up yet — keep polling
     }
   }
@@ -83,10 +105,12 @@ export async function ensureSidecarRunning(
   const host = parsed.hostname;
   const port = parsed.port || "39731";
 
+  const pythonPath = resolveSidecarPythonPath();
+  const childEnv = { ...process.env, LOCATEANYTHING_PYTHON: pythonPath };
   const proc: ChildProcess = spawn(
-    "python",
+    pythonPath,
     ["-m", "uvicorn", "sidecars.locateanything.server:app", "--host", host, "--port", port],
-    { cwd: PROJECT_ROOT, env: process.env, stdio: "inherit", detached: false }
+    { cwd: PROJECT_ROOT, env: childEnv, stdio: "inherit", detached: false }
   );
 
   const ready = await pollHealth(url, Date.now() + startupTimeoutMs);
