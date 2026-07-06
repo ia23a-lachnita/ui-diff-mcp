@@ -1,27 +1,12 @@
-# Project Instructions
+# ui-diff-mcp — Claude Code Instructions
 
-- After making any repository changes, always commit them and push the branch to `origin`.
-- Do not commit secrets, API keys, generated dependency folders, build output, or local run artifacts.
-- If push fails because credentials, branch tracking, or remote access are unavailable, report the exact failure and leave the local commit intact.
+@AGENTS.md
 
-## Required Context At Session Start
+`AGENTS.md` is the single agent contract for this repository. Follow it exactly; this file only adds Claude-Code-specific notes and must stay thin to prevent drift.
 
-Before implementation work, every agent must read these files in order:
+## Claude Code specifics
 
-1. `AGENTS.md`
-2. `docs/implementation-status.md`
-3. `docs/superpowers/specs/2026-06-12-ui-diff-mcp-research-design.md`
-4. `docs/superpowers/plans/2026-06-12-ui-diff-mcp-mvp-implementation.md`
-
-The implementation status file is the persistent source of truth for where the project stands. If conversation context is missing, compacted, or contradictory, trust the tracked status file and then verify with `git status`, `git log -1 --oneline`, and the implementation plan checkboxes.
-
-## Implementation Tracking Rules
-
-- Keep `docs/implementation-status.md` accurate during implementation.
-- At the start of each implementation turn, update the status file only if the current repo state differs from it.
-- Before starting a plan task, set `Current Task` to that task and record the branch, commit, and intended verification command.
-- After completing a task, update the plan checkbox, append a progress-log entry, record verification results, commit hash, push status, and the next task.
-- If work stops mid-task, record the exact last completed step, the next command to run, open files, and any blocker.
-- Never leave the status file saying a task is complete unless its verification command passed or the failure is explicitly recorded.
-- Every implementation commit should include the code/docs changed for that task plus the tracking updates for the same task.
-- The status file must not contain secrets, API keys, raw model credentials, or large generated artifact paths outside committed docs/examples.
+- The Antigravity review tool is named `mcp__antigravity-mcp__ask-ai` in Claude Code (hyphens). It is the same tool the contract calls `ask-ai`.
+- Prefer built-in tools (`Read`, `Edit`, `Grep`, `Glob`, `Bash`/`PowerShell`) over shelling out; use `mcp__claude-context__search_code` for semantic codebase search before grep storms.
+- Run long verifications (`npm run verify`, live gates) as background tasks and collect results before reporting.
+- Track multi-step work with the task tools, but the durable record remains `docs/implementation-status.md` per the contract.
