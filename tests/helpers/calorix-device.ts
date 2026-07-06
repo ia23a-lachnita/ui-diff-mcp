@@ -9,7 +9,7 @@ import { captureMobileScreen, type CaptureResult } from "../../src/capture/mobil
 const execFileAsync = promisify(execFile);
 
 export const DEFAULT_CALORIX_PROJECT_ROOT = "C:/Users/xursc/projects/calorix";
-export const DEFAULT_CALORIX_EXPECTED_IMAGE = "docs/mockups/image/dark/single/Today.png";
+export const DEFAULT_CALORIX_EXPECTED_IMAGE = "docs/design-handoff/placeholder-app/reference-images/today--dark.png";
 export const CALORIX_DEBUG_APK_RELATIVE = "build/app/outputs/flutter-apk/app-debug.apk";
 
 const SOURCE_ROOTS = ["lib", "assets", "android/app/src", "android/app/build.gradle.kts"] as const;

@@ -67,10 +67,10 @@ describe("calorix-device helpers", () => {
     resetCalorixActualImageMemoForTests();
   });
 
-  it("defaults the expected image to the Calorix mockup path", async () => {
+  it("defaults the expected image to the active design handoff reference", async () => {
     const root = await makeProject();
 
-    expect(getCalorixExpectedImagePath(root)).toBe(path.join(root, "docs/mockups/image/dark/single/Today.png"));
+    expect(getCalorixExpectedImagePath(root)).toBe(path.join(root, "docs/design-handoff/placeholder-app/reference-images/today--dark.png"));
   });
 
   it("checks the real Flutter debug APK path against source mtimes", async () => {
