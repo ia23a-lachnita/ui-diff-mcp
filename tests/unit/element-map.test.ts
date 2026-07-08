@@ -24,6 +24,24 @@ describe("buildElementMap", () => {
     expect(els[0]?.type).toBe("button");
   });
 
+  it("replaces labels that leaked model grounding tokens with stable fallback names", () => {
+    const els = buildElementMap(
+      [makeEl("buttons", "tate</ref> buttons and tappable controls", 10, 10, 80, 40)],
+      { width: 200, height: 400 }
+    );
+    expect(els).toHaveLength(1);
+    expect(els[0]?.label).toBe("button-buttons-0");
+  });
+
+  it("falls back when a label is empty after stripping model tokens", () => {
+    const els = buildElementMap(
+      [makeEl("icons", "<ref></ref> <5>", 10, 10, 30, 30)],
+      { width: 200, height: 400 }
+    );
+    expect(els).toHaveLength(1);
+    expect(els[0]?.label).toBe("icon-icons-0");
+  });
+
   it("merges two locator boxes with IoU >= 0.82 into one element", () => {
     const a = makeEl("q1", "OK button", 10, 10, 80, 40);
     const b = makeEl("q2", "OK button", 11, 11, 80, 40);

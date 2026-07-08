@@ -46,6 +46,50 @@ class LocateAnythingParserTests(unittest.TestCase):
             "height": 120.0,
         })
 
+    def test_label_never_spans_ref_tokens_on_malformed_grounding(self) -> None:
+        answer = (
+            "<ref>s tate</ref> buttons and tappable controls</ref>"
+            "<box><0><65><1000><1000></box>"
+        )
+        elements, warnings = parse_elements(
+            query_id="buttons",
+            answer=answer,
+            image_width=402,
+            image_height=874,
+            max_boxes=5,
+        )
+
+        self.assertEqual(warnings, [])
+        self.assertEqual(len(elements), 1)
+        self.assertNotIn("</ref>", elements[0]["label"])
+        self.assertNotIn("<ref>", elements[0]["label"])
+
+    def test_label_sanitizer_strips_coordinate_and_box_tokens(self) -> None:
+        answer = "<ref>kcal <100> ring</ref><box><10><10><200><200></box>"
+        elements, _warnings = parse_elements(
+            query_id="charts_indicators",
+            answer=answer,
+            image_width=402,
+            image_height=874,
+            max_boxes=5,
+        )
+
+        self.assertEqual(len(elements), 1)
+        self.assertEqual(elements[0]["label"], "kcal ring")
+
+    def test_label_falls_back_to_query_id_when_sanitized_empty(self) -> None:
+        answer = "<ref><5></ref><box><10><10><200><200></box>"
+        elements, _warnings = parse_elements(
+            query_id="icons",
+            answer=answer,
+            image_width=402,
+            image_height=874,
+            max_boxes=5,
+        )
+
+        self.assertEqual(len(elements), 1)
+        self.assertEqual(elements[0]["label"], "icons")
+
     def test_skips_invalid_coordinate_order_with_warning(self) -> None:
         elements, warnings = parse_elements(
             query_id="cards",

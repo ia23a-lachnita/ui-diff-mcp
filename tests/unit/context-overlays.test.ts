@@ -117,6 +117,44 @@ describe("writeRegionContextOverlays", () => {
     expect(nodes.find(node => node.id === "circle")).toMatchObject({ parentNodeId: "macro", type: "chart" });
   });
 
+  it("skips near-full-screen nodes and re-parents their children to the screen", () => {
+    const fullScreen = element("full", "buttons and tappable controls", "button", { x: 0, y: 20, width: 200, height: 370 });
+    const inner = element("inner", "Summary card", "card", { x: 10, y: 40, width: 80, height: 60 }, fullScreen.id);
+    fullScreen.childIds = [inner.id];
+
+    const nodes = buildSemanticHierarchy([fullScreen, inner], 200, 400);
+
+    expect(nodes.find(node => node.id === "full")).toBeUndefined();
+    expect(nodes.find(node => node.id === "inner")).toMatchObject({ parentNodeId: "screen" });
+    expect(nodes[0]?.childNodeIds).toEqual(["inner"]);
+  });
+
+  it("includes non-semantic containers with two or more children as hierarchy nodes", () => {
+    const section = element("sec", "component-3", "unknown", { x: 0, y: 40, width: 200, height: 150 });
+    const label1 = element("t1", "Protein", "text", { x: 10, y: 50, width: 60, height: 20 }, section.id);
+    const label2 = element("t2", "96 g", "text", { x: 120, y: 50, width: 40, height: 20 }, section.id);
+    section.childIds = [label1.id, label2.id];
+
+    const nodes = buildSemanticHierarchy([section, label1, label2], 200, 400);
+
+    expect(nodes.find(node => node.id === "sec")).toMatchObject({ parentNodeId: "screen", type: "unknown" });
+    expect(nodes.find(node => node.id === "t1")).toBeUndefined();
+    expect(nodes.find(node => node.id === "t2")).toBeUndefined();
+  });
+
+  it("walks parenting through non-node ancestors to the nearest hierarchy node", () => {
+    const outerCard = element("outer", "Hero card", "card", { x: 0, y: 40, width: 200, height: 200 });
+    const textWrap = element("wrap", "text wrapper", "text", { x: 10, y: 60, width: 180, height: 100 }, outerCard.id);
+    const chart = element("ring", "Macro ring", "chart", { x: 20, y: 70, width: 80, height: 80 }, textWrap.id);
+    outerCard.childIds = [textWrap.id];
+    textWrap.childIds = [chart.id];
+
+    const nodes = buildSemanticHierarchy([outerCard, textWrap, chart], 200, 400);
+
+    expect(nodes.find(node => node.id === "ring")).toMatchObject({ parentNodeId: "outer" });
+    expect(nodes.find(node => node.id === "outer")?.childNodeIds).toContain("ring");
+  });
+
   it("writes final, unresolved, and combined full-screen context overlays", async () => {
     const actualComparisonPath = await writeSolidPng(tmpDir, "actual-comparison.png", 200, 400, 30, 30, 30);
     const directionalOverlayPath = await writeSolidPng(tmpDir, "directional-overlay.png", 200, 400, 10, 10, 10);

@@ -36,9 +36,19 @@ const QUERY_ID_TYPE_MAP: Readonly<Record<string, UiElementType>> = {
   image_thumbnails_avatars: "image"
 };
 
+// Second net behind the sidecar's own sanitizer: any grounding token that
+// still reaches this layer marks the whole label as junk, because partial
+// fragments ("tate</ref> buttons…") are truncation artifacts, not names.
+const MODEL_TOKEN_TEST = /<\/?ref>|<box>|<-?\d+>/;
+
 function normalizeElementLabel(rawLabel: string, queryId: string, type: UiElementType, index: number): string {
   const trimmed = rawLabel.trim();
-  if (/^\d+$/.test(trimmed) || trimmed.toLowerCase().startsWith("locate ")) {
+  if (
+    MODEL_TOKEN_TEST.test(trimmed) ||
+    trimmed.length === 0 ||
+    /^\d+$/.test(trimmed) ||
+    trimmed.toLowerCase().startsWith("locate ")
+  ) {
     return `${type}-${queryId}-${index}`;
   }
   return trimmed;

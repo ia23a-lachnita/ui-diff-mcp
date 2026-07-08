@@ -192,20 +192,37 @@ function labelForElement(element: UiElement): string {
   return `${element.type} ${element.label}`.slice(0, 52);
 }
 
-function semanticParentId(element: UiElement, elementMap: Map<string, UiElement>): string | undefined {
+// A node covering nearly the whole image duplicates the Screen root and adds
+// no structure — its children re-parent upward instead.
+const FULL_SCREEN_AREA_RATIO = 0.85;
+
+function nearestNodeAncestorId(
+  element: UiElement,
+  elementMap: Map<string, UiElement>,
+  nodeIds: Set<string>
+): string | undefined {
   let current = element.parentId ? elementMap.get(element.parentId) : undefined;
   const visited = new Set<string>();
   while (current && !visited.has(current.id)) {
     visited.add(current.id);
-    if (SEMANTIC_ELEMENT_TYPES.has(current.type)) return current.id;
+    if (nodeIds.has(current.id)) return current.id;
     current = current.parentId ? elementMap.get(current.parentId) : undefined;
   }
   return undefined;
 }
 
 export function buildSemanticHierarchy(elements: UiElement[] = [], imageWidth: number, imageHeight: number): SemanticHierarchyNode[] {
-  const semanticElements = elements.filter(element => SEMANTIC_ELEMENT_TYPES.has(element.type));
   const elementMap = new Map(elements.map(element => [element.id, element]));
+  const imageArea = Math.max(1, imageWidth * imageHeight);
+  // Hierarchy skeleton = semantic-typed elements plus containers of any type
+  // that hold at least two elements (cv-component sections/cards), so a run
+  // whose semantic lanes are empty still yields real parent/child structure.
+  const isNodeElement = (element: UiElement): boolean =>
+    boxArea(element.box) / imageArea < FULL_SCREEN_AREA_RATIO &&
+    (SEMANTIC_ELEMENT_TYPES.has(element.type) || element.childIds.length >= 2);
+  const nodeElements = elements.filter(isNodeElement);
+  const nodeIds = new Set(nodeElements.map(element => element.id));
+
   const nodes = new Map<string, SemanticHierarchyNode>();
   nodes.set("screen", {
     id: "screen",
@@ -215,7 +232,7 @@ export function buildSemanticHierarchy(elements: UiElement[] = [], imageWidth: n
     childNodeIds: []
   });
 
-  for (const element of semanticElements) {
+  for (const element of nodeElements) {
     nodes.set(element.id, {
       id: element.id,
       elementId: element.id,
@@ -226,8 +243,8 @@ export function buildSemanticHierarchy(elements: UiElement[] = [], imageWidth: n
     });
   }
 
-  for (const element of semanticElements) {
-    const parentId = semanticParentId(element, elementMap) ?? "screen";
+  for (const element of nodeElements) {
+    const parentId = nearestNodeAncestorId(element, elementMap, nodeIds) ?? "screen";
     const node = nodes.get(element.id);
     const parent = nodes.get(parentId);
     if (!node || !parent || parent.id === node.id) continue;

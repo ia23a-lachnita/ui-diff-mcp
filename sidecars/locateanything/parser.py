@@ -2,10 +2,24 @@ import re
 from typing import Any
 
 
+# The label group must never span a ref token: with a plain lazy group, a
+# malformed answer whose first </ref> is not followed by <box> makes the lazy
+# group expand PAST the inner </ref>, leaking raw model text into labels.
 BOX_PATTERN = re.compile(
-    r"(?:<ref>(?P<label>.*?)</ref>)?\s*<box><(?P<x1>-?\d+)><(?P<y1>-?\d+)><(?P<x2>-?\d+)><(?P<y2>-?\d+)></box>",
+    r"(?:<ref>(?P<label>(?:(?!</?ref>).)*?)</ref>)?\s*<box><(?P<x1>-?\d+)><(?P<y1>-?\d+)><(?P<x2>-?\d+)><(?P<y2>-?\d+)></box>",
     re.DOTALL,
 )
+
+_REF_TOKEN = re.compile(r"</?ref>")
+_BOX_TOKEN = re.compile(r"<box>.*?</box>", re.DOTALL)
+_COORD_TOKEN = re.compile(r"<-?\d+>")
+
+
+def _sanitize_label(raw_label: str) -> str:
+    label = _REF_TOKEN.sub("", raw_label)
+    label = _BOX_TOKEN.sub("", label)
+    label = _COORD_TOKEN.sub("", label)
+    return re.sub(r"\s+", " ", label).strip()
 
 
 def _pixel_box(raw_box: list[int], image_width: int, image_height: int) -> dict[str, float]:
@@ -67,7 +81,7 @@ def parse_elements(
             warnings.append(f"query {query_id} skipped out of image bounds box {raw_box}")
             continue
 
-        label = (match.group("label") or query_id).strip() or query_id
+        label = _sanitize_label(match.group("label") or "") or query_id
         elements.append({
             "queryId": query_id,
             "label": label,
