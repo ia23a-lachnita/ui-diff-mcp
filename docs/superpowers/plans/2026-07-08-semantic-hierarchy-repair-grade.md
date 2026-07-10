@@ -1,8 +1,8 @@
 # Semantic hierarchy repair-grade fix
 
 Date: 2026-07-08
-Status: plan for review, then execution
-Task (from `docs/implementation-status.md`): clean raw model text out of semantic hierarchy node labels and fix the hierarchy collapsing to Screen → one full-screen node.
+Status: implemented; live evidence exposed follow-up defects
+Task (from `docs/implementation-status.md`): clean raw model text out of semantic hierarchy node labels and fix the hierarchy collapsing to Screen → one full-screen node. Implementation is complete; the post-run audit found that the live hierarchy is still not repair-grade because parent assignment and leaf coverage remain insufficient.
 
 ## Evidence (run-1783357783765-ddee78)
 
