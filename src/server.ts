@@ -19,7 +19,7 @@ import { captureMobileScreen, type CaptureResult } from "./capture/mobile-captur
 import { probeRequiredModels, type ProbeResult } from "./models/probes.js";
 import { resolveVisionProviderConfig, type VisionProviderConfig } from "./models/provider-config.js";
 import { getRequiredModels, type ModelEntry } from "./models/model-registry.js";
-import { UiDiffReportSchema, type DiffScope } from "./schemas/core.js";
+import { UiDiffReportSchema, type DiffScope, type InputProvenanceRequest } from "./schemas/core.js";
 import { hydrateReportParts } from "./report/report-parts.js";
 
 function toRecord(v: unknown): Record<string, unknown> {
@@ -33,6 +33,7 @@ function buildRunInput(input: {
   runLabel?: string | undefined;
   mode?: string | undefined;
   diffScope?: DiffScope | undefined;
+  inputProvenance?: InputProvenanceRequest | undefined;
   runId?: string | undefined;
   resumeRunId?: string | undefined;
 }) {
@@ -43,6 +44,7 @@ function buildRunInput(input: {
     ...(input.diffScope !== undefined ? { diffScope: input.diffScope } : {}),
     ...(input.projectRoot !== undefined ? { projectRoot: input.projectRoot } : {}),
     ...(input.runLabel !== undefined ? { runLabel: input.runLabel } : {}),
+    ...(input.inputProvenance !== undefined ? { inputProvenance: input.inputProvenance } : {}),
     ...(input.runId !== undefined ? { runId: input.runId } : {}),
     ...(input.resumeRunId !== undefined ? { resumeRunId: input.resumeRunId } : {})
   };
@@ -74,6 +76,7 @@ export async function handleCompareUiImages(
     runLabel?: string | undefined;
     mode?: string | undefined;
     diffScope?: DiffScope | undefined;
+    inputProvenance?: InputProvenanceRequest | undefined;
   },
   deps: ServerDeps,
   forcedMode?: "deterministic_only"
@@ -139,6 +142,7 @@ export async function handleStartUiDiffRun(
     projectRoot?: string | undefined;
     mode?: string | undefined;
     diffScope?: DiffScope | undefined;
+    inputProvenance?: InputProvenanceRequest | undefined;
     label?: string | undefined;
     resumeRunId?: string | undefined;
   },
@@ -158,6 +162,7 @@ export async function handleStartUiDiffRun(
     actualImagePath: input.actualImagePath,
     mode: input.mode,
     diffScope: input.diffScope,
+    ...(input.inputProvenance !== undefined ? { inputProvenance: input.inputProvenance } : {}),
     projectRoot,
     runLabel: input.label,
     runId,

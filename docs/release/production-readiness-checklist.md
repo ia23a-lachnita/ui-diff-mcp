@@ -2,6 +2,14 @@
 
 Run this checklist before calling `ui-diff-mcp` production-ready.
 
+## Canonical Calorix Expected Reference
+
+The Calorix owner restored the active reference at Calorix commit `8cc20bb` (`restore canonical design references`). Every Calorix visual gate uses `docs/design-handoff/placeholder-app/reference-images/today--dark.png`, as configured by `ui-diff.config.json`, and validates it against `docs/design-handoff/placeholder-app/reference-images-manifest.json` before capture or pipeline work. The approved SHA-256 is `73BA85F25489C8D45BEAB57DD1B317138870CE8360FE0F4399AB0737A5E505F1`; the restored manifest records its source content commit `307dfc04ee23bee022f85059cc09dc363b2e80f6`.
+
+`reference-images-buggy` and `good-screenshots` are not fallback expected evidence. `UI_DIFF_LIVE_EXPECTED_IMAGE` is an explicit readable override; setting it to the canonical path still performs manifest and hash validation. For fresh release evidence, leave `UI_DIFF_LIVE_ACTUAL_IMAGE` unset so the actual source is recorded as `auto_capture`; a supplied actual path is recorded as `env_override` with a freshness warning.
+
+The persisted `report.json` must contain report-safe `inputProvenance` for Calorix: the pipeline computes expected and actual SHA-256 identities from the image bytes, and a manifest entry appears only after it matches the computed expected identity. `auto_capture` and `env_override` remain `caller_attested` acquisition sources, never independently verified claims. Public MCP input accepts no computed hashes; it can supply only this attestation and an expected-manifest path for pipeline verification. On resume, omission inherits the prior effective provenance; a replacement requires matching recomputed expected and actual identities. Do not place environment values, provider keys, or other credentials in this object.
+
 ## Deterministic Gates
 
 ```powershell
@@ -97,7 +105,7 @@ Run this before provider-backed Calorix gates so displacement, consolidation, co
 
 ```powershell
 $env:RUN_CALORIX_DETERMINISTIC_LIVE="1"
-$env:UI_DIFF_LIVE_EXPECTED_IMAGE="C:\Users\xursc\projects\calorix\docs\mockups\image\dark\single\Today.png"
+$env:UI_DIFF_LIVE_EXPECTED_IMAGE="C:\Users\xursc\projects\calorix\docs\design-handoff\placeholder-app\reference-images\today--dark.png"
 $env:LOCATEANYTHING_SIDECAR_URL="http://127.0.0.1:39731"
 npm run verify:calorix-deterministic-live
 ```
@@ -124,7 +132,7 @@ $env:LOCATEANYTHING_GENERATION_MODE="hybrid"
 $env:LOCATEANYTHING_MAX_NEW_TOKENS="512"
 $env:LOCATEANYTHING_TIMEOUT_MS="300000"
 $env:UI_DIFF_MAX_AUDIT_PAIRS="3"
-$env:UI_DIFF_LIVE_EXPECTED_IMAGE="C:\Users\xursc\projects\calorix\docs\mockups\image\dark\single\Today.png"
+$env:UI_DIFF_LIVE_EXPECTED_IMAGE="C:\Users\xursc\projects\calorix\docs\design-handoff\placeholder-app\reference-images\today--dark.png"
 npm run verify:calorix-live
 ```
 
@@ -162,7 +170,7 @@ $env:LOCATEANYTHING_GENERATION_MODE="hybrid"
 $env:LOCATEANYTHING_MAX_NEW_TOKENS="512"
 $env:LOCATEANYTHING_TIMEOUT_MS="300000"
 # Do NOT set UI_DIFF_MAX_AUDIT_PAIRS — unbounded audit required
-$env:UI_DIFF_LIVE_EXPECTED_IMAGE="C:\Users\xursc\projects\calorix\docs\mockups\image\dark\single\Today.png"
+$env:UI_DIFF_LIVE_EXPECTED_IMAGE="C:\Users\xursc\projects\calorix\docs\design-handoff\placeholder-app\reference-images\today--dark.png"
 npm run verify:calorix-full-live
 ```
 
@@ -189,7 +197,7 @@ Required result:
 ```powershell
 $env:RUN_CALORIX_RELEASE_LIVE="1"
 $env:LOCATEANYTHING_SIDECAR_URL="http://127.0.0.1:39731"
-$env:UI_DIFF_LIVE_EXPECTED_IMAGE="C:\Users\xursc\projects\calorix\docs\mockups\image\dark\single\Today.png"
+$env:UI_DIFF_LIVE_EXPECTED_IMAGE="C:\Users\xursc\projects\calorix\docs\design-handoff\placeholder-app\reference-images\today--dark.png"
 Remove-Item Env:UI_DIFF_MAX_AUDIT_PAIRS -ErrorAction SilentlyContinue
 Remove-Item Env:UI_DIFF_LIVE_ACTUAL_IMAGE -ErrorAction SilentlyContinue
 npm run verify:calorix-release-live

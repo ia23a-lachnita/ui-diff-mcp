@@ -111,15 +111,15 @@ export async function getValidatedCalorixExpectedImagePath(projectRoot?: string)
 
 **Ordering:** This is an early cross-repository prerequisite for every Calorix live visual gate, including `verify:calorix-live`, `verify:calorix-full-live`, and `verify:calorix-release-live`. It does not block deterministic Tasks 3-8: geometry, crop, parser, hierarchy, grouping, and attribution work proceed independently after the Task 1 review gate is green.
 
-- [ ] **Step 1: Resolve and restore the authoritative Calorix reference with its owner**
+- [x] **Step 1: Resolve and restore the authoritative Calorix reference with its owner**
 
 Inspect the Calorix handoff, `ui-diff.config.json`, file map, and source-control history with the Calorix owner. Restore the active `reference-images/today--dark.png` asset or deliberately migrate the canonical reference and its manifest/config together. Record the Calorix source commit, selected path, SHA-256, and owner confirmation. Do not use `reference-images-buggy` as a fallback or a current live screenshot as expected evidence.
 
-- [ ] **Step 2: Write failing helper/live-contract tests**
+- [x] **Step 2: Write failing helper/live-contract tests**
 
 Assert: canonical default exists and resolves; a missing default throws an error that includes the attempted absolute path and remediation; `UI_DIFF_LIVE_EXPECTED_IMAGE` override still wins but is validated; no `UI_DIFF_LIVE_ACTUAL_IMAGE` uses auto-capture; an explicit actual override returns `source:"env_override"` and a freshness warning.
 
-- [ ] **Step 3: Run red tests**
+- [x] **Step 3: Run red tests**
 
 ```powershell
 npx vitest run tests/unit/calorix-device.test.ts
@@ -127,11 +127,11 @@ npx vitest run tests/unit/calorix-device.test.ts
 
 Expected: FAIL because expected-image resolution currently returns a dangling path without validation.
 
-- [ ] **Step 4: Implement validated expected resolution and manifest documentation**
+- [x] **Step 4: Implement validated expected resolution and manifest documentation**
 
 Validate the path/readability and manifest identity before invoking a live pipeline. Keep `resolveCalorixActualImage()` behavior unchanged apart from asserting the report records `auto_capture` versus `env_override`. Update all live command examples to use the canonical expected reference and explicitly unset `UI_DIFF_LIVE_ACTUAL_IMAGE` for release evidence.
 
-- [ ] **Step 5: Run green tests and commit**
+- [x] **Step 5: Run green tests; commit/push deferred by explicit user direction**
 
 ```powershell
 npx vitest run tests/unit/calorix-device.test.ts
@@ -139,6 +139,10 @@ git add tests/helpers/calorix-device.ts tests/unit/calorix-device.test.ts tests/
 git commit -m "fix: validate Calorix reference image"
 git push origin HEAD
 ```
+
+**Review follow-up (2026-07-11):** [x] Persist report-safe expected/actual input provenance through MCP, pipeline checkpoints, and final `report.json`; [x] validate the expected reference before every Calorix live-suite sidecar startup. Commit/push remains deferred by explicit user direction.
+
+**Review follow-up P1 (2026-07-11):** [x] Replace caller-provided hashes with pipeline-computed expected/actual identities and manifest-entry verification; [x] label acquisition source only as `caller_attested`; [x] preserve effective provenance across resume unless a same-identity request explicitly replaces the attestation or manifest hint. Commit/push remains deferred by explicit user direction.
 
 ## Task 3: Canonical Comparison Geometry Contract
 

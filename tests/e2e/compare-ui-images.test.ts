@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import crypto from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import sharp from "sharp";
@@ -25,6 +26,123 @@ afterEach(async () => {
 });
 
 describe("runUiDiff end-to-end (deterministic_only mode)", () => {
+  it.each([
+    ["auto-captured actual", "auto_capture"],
+    ["explicit actual override", "env_override"]
+  ] as const)("persists computed identities and %s caller attestation in report.json", async (_label, actualSource) => {
+    const { expected, actual } = await writeTwoButtonFixture(tmpDir, `provenance-${actualSource}-e.png`, `provenance-${actualSource}-a.png`);
+    const expectedHash = crypto.createHash("sha256").update(await fs.readFile(expected)).digest("hex");
+    const actualHash = crypto.createHash("sha256").update(await fs.readFile(actual)).digest("hex");
+
+    const result = await runUiDiff({
+      expectedImagePath: expected,
+      actualImagePath: actual,
+      projectRoot: tmpDir,
+      mode: "deterministic_only",
+      inputProvenance: {
+        acquisition: {
+          expected: { source: "canonical_default", verification: "caller_attested" },
+          actual: { source: actualSource, verification: "caller_attested" }
+        }
+      }
+    });
+
+    const report = JSON.parse(await fs.readFile(result.reportPath, "utf8")) as { inputProvenance?: unknown };
+    expect(report.inputProvenance).toEqual({
+      identity: {
+        expected: { sha256: expectedHash },
+        actual: { sha256: actualHash }
+      },
+      acquisition: {
+        expected: { source: "canonical_default", verification: "caller_attested" },
+        actual: { source: actualSource, verification: "caller_attested" }
+      }
+    });
+  });
+
+  it("verifies a canonical manifest entry against the computed expected bytes", async () => {
+    const expected = path.join(tmpDir, "today--dark.png");
+    await fs.copyFile("C:/Users/xursc/projects/calorix/docs/design-handoff/placeholder-app/reference-images/today--dark.png", expected);
+    const actual = await writeSolidPng(tmpDir, "manifest-actual.png", 402, 874, 30, 40, 50);
+    const manifestPath = path.join(tmpDir, "reference-images-manifest.json");
+    await fs.writeFile(manifestPath, JSON.stringify({
+      reference_images: [{
+        filename: "today--dark.png",
+        sha256: "73ba85f25489c8d45beab57dd1b317138870ce8360fe0f4399ab0737a5e505f1"
+      }]
+    }));
+
+    const result = await runUiDiff({
+      expectedImagePath: expected,
+      actualImagePath: actual,
+      projectRoot: tmpDir,
+      mode: "deterministic_only",
+      inputProvenance: {
+        acquisition: {
+          expected: { source: "canonical_default", verification: "caller_attested" },
+          actual: { source: "auto_capture", verification: "caller_attested" }
+        },
+        expectedManifestPath: manifestPath
+      }
+    });
+    const report = JSON.parse(await fs.readFile(result.reportPath, "utf8")) as { inputProvenance: { identity: { expected: { manifest?: unknown } } } };
+    expect(report.inputProvenance.identity.expected.manifest).toEqual({
+      path: manifestPath,
+      entryFilename: "today--dark.png",
+      entrySha256: "73ba85f25489c8d45beab57dd1b317138870ce8360fe0f4399ab0737a5e505f1",
+      verification: "verified_against_expected_bytes"
+    });
+  });
+
+  it("rejects a manifest entry whose declared hash disagrees with expected bytes", async () => {
+    const { expected, actual } = await writeTwoButtonFixture(tmpDir, "manifest-mismatch-e.png", "manifest-mismatch-a.png");
+    const manifestPath = path.join(tmpDir, "reference-images-manifest.json");
+    await fs.writeFile(manifestPath, JSON.stringify({
+      reference_images: [{ filename: path.basename(expected), sha256: "0".repeat(64) }]
+    }));
+
+    await expect(runUiDiff({
+      expectedImagePath: expected,
+      actualImagePath: actual,
+      projectRoot: tmpDir,
+      mode: "deterministic_only",
+      inputProvenance: { expectedManifestPath: manifestPath }
+    })).rejects.toThrow(/manifest.*hash/i);
+  });
+
+  it("writes computed input provenance to every checkpoint", async () => {
+    const { expected, actual } = await writeTwoButtonFixture(tmpDir, "checkpoint-provenance-e.png", "checkpoint-provenance-a.png");
+    const expectedHash = crypto.createHash("sha256").update(await fs.readFile(expected)).digest("hex");
+    const actualHash = crypto.createHash("sha256").update(await fs.readFile(actual)).digest("hex");
+    const checkpointProvenance: unknown[] = [];
+
+    await runUiDiff({
+      expectedImagePath: expected,
+      actualImagePath: actual,
+      projectRoot: tmpDir,
+      mode: "deterministic_only",
+      inputProvenance: {
+        acquisition: {
+          expected: { source: "canonical_default", verification: "caller_attested" },
+          actual: { source: "auto_capture", verification: "caller_attested" }
+        }
+      },
+      onCheckpoint: async ({ checkpointPath }) => {
+        const checkpoint = JSON.parse(await fs.readFile(checkpointPath, "utf8")) as { inputProvenance?: unknown };
+        checkpointProvenance.push(checkpoint.inputProvenance);
+      }
+    });
+
+    expect(checkpointProvenance.length).toBeGreaterThan(0);
+    expect(checkpointProvenance).toContainEqual({
+      identity: { expected: { sha256: expectedHash }, actual: { sha256: actualHash } },
+      acquisition: {
+        expected: { source: "canonical_default", verification: "caller_attested" },
+        actual: { source: "auto_capture", verification: "caller_attested" }
+      }
+    });
+  });
+
   it("returns complete status, writes report.json, and reports diffs", async () => {
     const { expected, actual } = await writeTwoButtonFixture(
       tmpDir, "expected.png", "actual.png"
@@ -111,6 +229,12 @@ describe("runUiDiff end-to-end (deterministic_only mode)", () => {
       actualImagePath: actual,
       projectRoot: tmpDir,
       mode: "deterministic_only",
+      inputProvenance: {
+        acquisition: {
+          expected: { source: "canonical_default", verification: "caller_attested" },
+          actual: { source: "auto_capture", verification: "caller_attested" }
+        }
+      },
       runId: "run-resume-e2e"
     });
     const checkpoint = JSON.parse(await fs.readFile(first.reportPath, "utf8")) as Record<string, unknown>;
@@ -129,6 +253,62 @@ describe("runUiDiff end-to-end (deterministic_only mode)", () => {
     expect(resumed.runId).toBe("run-resume-e2e");
     expect(resumed.artifactRoot).toBe(first.artifactRoot);
     expect(new Set(report.stages.map(stage => stage.name)).size).toBe(report.stages.length);
+    expect((report as typeof report & { inputProvenance?: unknown }).inputProvenance).toEqual(checkpoint["inputProvenance"]);
+  });
+
+  it("allows an explicit resumed attestation replacement only for identical image identities", async () => {
+    const { expected, actual } = await writeTwoButtonFixture(tmpDir, "resume-provenance-e.png", "resume-provenance-a.png");
+    const first = await runUiDiff({
+      expectedImagePath: expected,
+      actualImagePath: actual,
+      projectRoot: tmpDir,
+      mode: "deterministic_only",
+      inputProvenance: {
+        acquisition: {
+          expected: { source: "canonical_default", verification: "caller_attested" },
+          actual: { source: "auto_capture", verification: "caller_attested" }
+        }
+      },
+      runId: "run-resume-provenance"
+    });
+    const checkpoint = JSON.parse(await fs.readFile(first.reportPath, "utf8")) as Record<string, unknown>;
+    checkpoint["status"] = "interrupted";
+    checkpoint["isCheckpoint"] = true;
+    await fs.writeFile(first.reportPath, JSON.stringify(checkpoint), "utf8");
+
+    const resumed = await runUiDiff({
+      expectedImagePath: expected,
+      actualImagePath: actual,
+      projectRoot: tmpDir,
+      mode: "deterministic_only",
+      resumeRunId: "run-resume-provenance",
+      inputProvenance: {
+        acquisition: {
+          expected: { source: "env_override", verification: "caller_attested" },
+          actual: { source: "env_override", verification: "caller_attested" }
+        }
+      }
+    });
+    const report = JSON.parse(await fs.readFile(resumed.reportPath, "utf8")) as { inputProvenance: { acquisition: unknown } };
+    expect(report.inputProvenance.acquisition).toEqual({
+      expected: { source: "env_override", verification: "caller_attested" },
+      actual: { source: "env_override", verification: "caller_attested" }
+    });
+
+    const changedActual = await writeSolidPng(tmpDir, "resume-provenance-changed-a.png", 360, 800, 1, 2, 3);
+    await expect(runUiDiff({
+      expectedImagePath: expected,
+      actualImagePath: changedActual,
+      projectRoot: tmpDir,
+      mode: "deterministic_only",
+      resumeRunId: "run-resume-provenance",
+      inputProvenance: {
+        acquisition: {
+          expected: { source: "env_override", verification: "caller_attested" },
+          actual: { source: "env_override", verification: "caller_attested" }
+        }
+      }
+    })).rejects.toThrow(/resumed input image identities/i);
   });
 });
 

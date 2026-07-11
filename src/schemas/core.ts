@@ -637,6 +637,45 @@ export const DiffSummarySchema = z.object({
 });
 export type DiffSummary = z.infer<typeof DiffSummarySchema>;
 
+const Sha256Schema = z.string().regex(/^[a-fA-F0-9]{64}$/);
+
+const InputAcquisitionAttestationSchema = z.object({
+  expected: z.object({
+    source: z.enum(["canonical_default", "env_override"]),
+    verification: z.literal("caller_attested")
+  }).strict(),
+  actual: z.object({
+    source: z.enum(["auto_capture", "env_override"]),
+    verification: z.literal("caller_attested")
+  }).strict()
+}).strict();
+
+export const InputProvenanceRequestSchema = z.object({
+  acquisition: InputAcquisitionAttestationSchema.optional(),
+  expectedManifestPath: z.string().min(1).optional()
+}).strict().refine(
+  value => value.acquisition !== undefined || value.expectedManifestPath !== undefined,
+  { message: "inputProvenance must include an acquisition attestation or expectedManifestPath" }
+);
+export type InputProvenanceRequest = z.infer<typeof InputProvenanceRequestSchema>;
+
+export const InputProvenanceSchema = z.object({
+  identity: z.object({
+    expected: z.object({
+      sha256: Sha256Schema,
+      manifest: z.object({
+        path: z.string().min(1),
+        entryFilename: z.string().min(1),
+        entrySha256: Sha256Schema,
+        verification: z.literal("verified_against_expected_bytes")
+      }).strict().optional()
+    }).strict(),
+    actual: z.object({ sha256: Sha256Schema }).strict()
+  }).strict(),
+  acquisition: InputAcquisitionAttestationSchema.optional()
+}).strict();
+export type InputProvenance = z.infer<typeof InputProvenanceSchema>;
+
 export const UiDiffReportSchema = z.object({
   schemaVersion: z.literal("0.1"),
   runId: z.string().min(1),
@@ -658,6 +697,7 @@ export const UiDiffReportSchema = z.object({
   auditScope: AuditScopeSchema.optional(),
   projectedPreAudit: ProjectedPreAuditSummarySchema.optional(),
   modelSelection: ModelSelectionSchema.optional(),
+  inputProvenance: InputProvenanceSchema.optional(),
   expectedImagePath: z.string().min(1),
   actualImagePath: z.string().min(1),
   artifactRoot: z.string().min(1),

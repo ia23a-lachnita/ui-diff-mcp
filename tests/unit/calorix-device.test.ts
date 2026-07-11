@@ -5,8 +5,12 @@ import sharp from "sharp";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CALORIX_DEBUG_APK_RELATIVE,
+  CANONICAL_CALORIX_TODAY_DARK_SHA256,
+  DEFAULT_CALORIX_EXPECTED_IMAGE,
+  DEFAULT_CALORIX_PROJECT_ROOT,
   discoverCalorixAndroidPackage,
   ensureCalorixDebugAppFresh,
+  getValidatedCalorixExpectedImagePath,
   getCalorixExpectedImagePath,
   isDebugApkUpToDate,
   reseedAndCaptureCalorixToday,
@@ -51,6 +55,21 @@ async function makeProject(): Promise<string> {
   return root;
 }
 
+async function writeCanonicalExpectedReference(root: string, options: { imageContents?: string; manifestContents?: string } = {}): Promise<string> {
+  const imagePath = path.join(root, "docs", "design-handoff", "placeholder-app", "reference-images", "today--dark.png");
+  const imageContents = options.imageContents ?? "canonical today image";
+  await fs.mkdir(path.dirname(imagePath), { recursive: true });
+  await fs.writeFile(imagePath, imageContents);
+  const manifestPath = path.join(root, "docs", "design-handoff", "placeholder-app", "reference-images-manifest.json");
+  await fs.writeFile(manifestPath, options.manifestContents ?? JSON.stringify({
+    reference_images: [{
+      filename: "today--dark.png",
+      sha256: CANONICAL_CALORIX_TODAY_DARK_SHA256
+    }]
+  }));
+  return imagePath;
+}
+
 function runnerWithPackages(packages: string[], calls: Array<{ file: string; args: string[]; shell?: boolean }> = []): CalorixCommandRunner {
   return async (file, args, options) => {
     calls.push({ file, args, ...(options.shell !== undefined ? { shell: options.shell } : {}) });
@@ -71,6 +90,86 @@ describe("calorix-device helpers", () => {
     const root = await makeProject();
 
     expect(getCalorixExpectedImagePath(root)).toBe(path.join(root, "docs/design-handoff/placeholder-app/reference-images/today--dark.png"));
+  });
+
+  it("validates the restored Calorix canonical expected reference against its manifest", async () => {
+    const imagePath = path.join(DEFAULT_CALORIX_PROJECT_ROOT, DEFAULT_CALORIX_EXPECTED_IMAGE);
+
+    await expect(getValidatedCalorixExpectedImagePath(DEFAULT_CALORIX_PROJECT_ROOT)).resolves.toBe(imagePath);
+    vi.stubEnv("UI_DIFF_LIVE_EXPECTED_IMAGE", imagePath);
+    await expect(getValidatedCalorixExpectedImagePath(DEFAULT_CALORIX_PROJECT_ROOT)).resolves.toBe(imagePath);
+  });
+
+  it("rejects a missing canonical expected reference with its absolute path and remediation", async () => {
+    const root = await makeProject();
+    const expectedPath = path.join(root, "docs", "design-handoff", "placeholder-app", "reference-images", "today--dark.png");
+    const forbiddenFallbacks = [
+      path.join(root, "docs", "design-handoff", "placeholder-app", "reference-images-buggy", "today--dark.png"),
+      path.join(root, "docs", "design-handoff", "placeholder-app", "good-screenshots", "today--dark.png")
+    ];
+    for (const fallbackPath of forbiddenFallbacks) {
+      await fs.mkdir(path.dirname(fallbackPath), { recursive: true });
+      await fs.writeFile(fallbackPath, "must not be used");
+    }
+
+    await expect(getValidatedCalorixExpectedImagePath(root)).rejects.toThrow(expectedPath);
+    await expect(getValidatedCalorixExpectedImagePath(root)).rejects.toThrow(/remediation/i);
+  });
+
+  it("rejects an unreadable canonical expected reference", async () => {
+    const root = await makeProject();
+    const expectedPath = path.join(root, "docs", "design-handoff", "placeholder-app", "reference-images", "today--dark.png");
+    await fs.mkdir(expectedPath, { recursive: true });
+    await fs.writeFile(path.join(root, "docs", "design-handoff", "placeholder-app", "reference-images-manifest.json"), "{}");
+
+    await expect(getValidatedCalorixExpectedImagePath(root)).rejects.toThrow(expectedPath);
+  });
+
+  it("rejects a missing, unreadable, or malformed canonical manifest", async () => {
+    const root = await makeProject();
+    const imagePath = await writeCanonicalExpectedReference(root);
+    const manifestPath = path.join(root, "docs", "design-handoff", "placeholder-app", "reference-images-manifest.json");
+    await fs.rm(manifestPath);
+
+    await expect(getValidatedCalorixExpectedImagePath(root)).rejects.toThrow(manifestPath);
+    await fs.mkdir(manifestPath);
+    await expect(getValidatedCalorixExpectedImagePath(root)).rejects.toThrow(manifestPath);
+    await fs.rm(manifestPath, { recursive: true });
+    await fs.writeFile(manifestPath, "not-json");
+    await expect(getValidatedCalorixExpectedImagePath(root)).rejects.toThrow(manifestPath);
+    await expect(fs.access(imagePath)).resolves.toBeUndefined();
+  });
+
+  it("rejects a canonical manifest whose expected hash does not match the approved identity", async () => {
+    const root = await makeProject();
+    const imagePath = await writeCanonicalExpectedReference(root, {
+      manifestContents: JSON.stringify({
+        reference_images: [{ filename: "today--dark.png", sha256: "0".repeat(64) }]
+      })
+    });
+
+    await expect(getValidatedCalorixExpectedImagePath(root)).rejects.toThrow(/manifest/i);
+    await expect(fs.access(imagePath)).resolves.toBeUndefined();
+  });
+
+  it("rejects a canonical expected reference whose bytes do not match its manifest hash", async () => {
+    const root = await makeProject();
+    const imagePath = await writeCanonicalExpectedReference(root);
+    await fs.writeFile(imagePath, "mutated today image");
+
+    await expect(getValidatedCalorixExpectedImagePath(root)).rejects.toThrow(/hash mismatch/i);
+    await expect(fs.access(imagePath)).resolves.toBeUndefined();
+  });
+
+  it("uses and validates an explicit expected-image override without reading the canonical manifest", async () => {
+    const root = await makeProject();
+    const overridePath = path.join(root, "historical-expected.png");
+    await fs.writeFile(overridePath, "historical expected image");
+    vi.stubEnv("UI_DIFF_LIVE_EXPECTED_IMAGE", overridePath);
+
+    await expect(getValidatedCalorixExpectedImagePath(root)).resolves.toBe(overridePath);
+    vi.stubEnv("UI_DIFF_LIVE_EXPECTED_IMAGE", path.join(root, "missing-expected.png"));
+    await expect(getValidatedCalorixExpectedImagePath(root)).rejects.toThrow(path.join(root, "missing-expected.png"));
   });
 
   it("checks the real Flutter debug APK path against source mtimes", async () => {
@@ -347,6 +446,7 @@ describe("calorix-device helpers", () => {
 
     expect(result.source).toBe("env_override");
     expect(result.actualImagePath).toBe("C:/screens/actual.png");
+    expect(result.capture.warnings).toContain("Explicit UI_DIFF_LIVE_ACTUAL_IMAGE override; freshness not guaranteed.");
     expect(capture).not.toHaveBeenCalled();
   });
 

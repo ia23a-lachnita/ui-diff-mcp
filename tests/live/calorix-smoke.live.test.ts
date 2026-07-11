@@ -3,14 +3,13 @@ import path from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { hydrateReportParts } from "../../src/report/report-parts.js";
 import { UiDiffReportSchema } from "../../src/schemas/core.js";
-import type { UiDiffReport } from "../../src/schemas/core.js";
+import type { InputProvenanceRequest, UiDiffReport } from "../../src/schemas/core.js";
 import {
-  getCalorixExpectedImagePath,
-  getCalorixProjectRoot,
+  createCalorixInputProvenance,
   resolveCalorixActualImage
 } from "../helpers/calorix-device.js";
+import { prepareCalorixLiveGate, type PreparedCalorixLiveGate } from "../helpers/calorix-live-gate.js";
 import { startUiDiffMcpClient } from "../helpers/mcp-client.js";
-import { ensureSidecarRunning, type SidecarHandle } from "../helpers/sidecar-manager.js";
 
 const calorixLive = process.env["RUN_CALORIX_UI_DIFF_LIVE"] === "1";
 const calorixFullLive = process.env["RUN_CALORIX_FULL_LIVE"] === "1";
@@ -23,21 +22,20 @@ async function readHydratedReport(reportPath: string): Promise<UiDiffReport> {
   return hydrateReportParts(rawReport, reportPath);
 }
 
-async function resolveCalorixGateImages(): Promise<{ expectedImagePath: string; actualImagePath: string; projectRoot: string; actualSource: "env_override" | "auto_capture" }> {
-  const projectRoot = getCalorixProjectRoot();
-  const expectedImagePath = getCalorixExpectedImagePath(projectRoot);
-  const actual = await resolveCalorixActualImage({ projectRoot });
-  await expect(fs.access(expectedImagePath), "expected screenshot must exist on disk").resolves.toBeUndefined();
+async function resolveCalorixGateImages(gate: PreparedCalorixLiveGate): Promise<{ expectedImagePath: string; actualImagePath: string; projectRoot: string; inputProvenance: InputProvenanceRequest }> {
+  const actual = await resolveCalorixActualImage({ projectRoot: gate.projectRoot });
   await expect(fs.access(actual.actualImagePath), "actual screenshot must exist on disk").resolves.toBeUndefined();
   if (actual.source === "auto_capture") {
-    expect(path.resolve(actual.actualImagePath).startsWith(path.resolve(projectRoot, ".ui-diff", "captures") + path.sep),
+    expect(path.resolve(actual.actualImagePath).startsWith(path.resolve(gate.projectRoot, ".ui-diff", "captures") + path.sep),
       "default Calorix live gate must capture actual screenshots into .ui-diff/captures").toBe(true);
     const stat = await fs.stat(actual.actualImagePath);
     expect(stat.mtimeMs, "auto-captured actual screenshot must be from this live test process").toBeGreaterThanOrEqual(calorixLiveSuiteStartedAt);
   } else {
     console.warn(`[EXPLICIT ACTUAL OVERRIDE] Using UI_DIFF_LIVE_ACTUAL_IMAGE=${actual.actualImagePath}; freshness is not guaranteed.`);
   }
-  return { expectedImagePath, actualImagePath: actual.actualImagePath, projectRoot, actualSource: actual.source };
+  const inputProvenance = createCalorixInputProvenance(gate.expected, actual);
+  console.info(`[calorix-input-provenance] expected=${gate.expected.expectedImagePath} actualSource=${inputProvenance.acquisition?.actual.source}`);
+  return { expectedImagePath: gate.expected.expectedImagePath, actualImagePath: actual.actualImagePath, projectRoot: gate.projectRoot, inputProvenance };
 }
 
 function overlapRatio(a: { x: number; y: number; width: number; height: number }, b: { x: number; y: number; width: number; height: number }): number {
@@ -117,17 +115,16 @@ function assertNoSplitDisplacementConsensus(report: UiDiffReport): void {
 }
 
 describe.skipIf(!calorixDeterministicLive)("Calorix deterministic pipeline quality gate", () => {
-  let sidecarHandle: SidecarHandle | undefined;
+  let gate: PreparedCalorixLiveGate | undefined;
 
   beforeAll(async () => {
-    const url = process.env["LOCATEANYTHING_SIDECAR_URL"] ?? "http://127.0.0.1:39731";
-    sidecarHandle = await ensureSidecarRunning(url);
+    gate = await prepareCalorixLiveGate();
   }, 130000);
 
-  afterAll(() => { sidecarHandle?.close(); });
+  afterAll(() => { gate?.sidecarHandle.close(); });
 
   test("consolidates large projected displacement without model providers", async () => {
-    const { expectedImagePath, actualImagePath, projectRoot } = await resolveCalorixGateImages();
+    const { expectedImagePath, actualImagePath, projectRoot, inputProvenance } = await resolveCalorixGateImages(gate!);
     const started = await startUiDiffMcpClient({
       LOCATEANYTHING_TIMEOUT_MS: "600000",
       UI_DIFF_DETERMINISTIC_LOCATOR: "1"
@@ -135,7 +132,7 @@ describe.skipIf(!calorixDeterministicLive)("Calorix deterministic pipeline quali
     try {
       const startResult = await started.client.callTool({
         name: "start_ui_diff_run",
-        arguments: { expectedImagePath, actualImagePath, projectRoot, mode: "deterministic_only" }
+        arguments: { expectedImagePath, actualImagePath, projectRoot, mode: "deterministic_only", inputProvenance }
       }, undefined, { timeout: 600000 });
       expect(startResult.isError, `start_ui_diff_run failed: ${JSON.stringify(startResult)}`).not.toBe(true);
       const { runId } = startResult.structuredContent as { runId: string };
@@ -149,6 +146,7 @@ describe.skipIf(!calorixDeterministicLive)("Calorix deterministic pipeline quali
       expect(statusOut?.status, `deterministic gate must terminate; child=${JSON.stringify(started.getDiagnostics())}`).not.toBe("running");
       expect(statusOut?.reportPath).toBeTruthy();
       const report = await readHydratedReport(statusOut!.reportPath!);
+      expect(report.inputProvenance?.acquisition).toEqual(inputProvenance.acquisition);
       assertFinalFindingIntegrity(report);
       assertNoSplitDisplacementConsensus(report);
       const groupCount = (report.projectedPreAudit?.displacementGroups ?? 0) + (report.projectedPreAudit?.structuralMismatchGroups ?? 0);
@@ -162,17 +160,16 @@ describe.skipIf(!calorixDeterministicLive)("Calorix deterministic pipeline quali
 });
 
 describe.skipIf(!calorixLive)("Calorix live UI diff smoke", () => {
-  let sidecarHandle: SidecarHandle | undefined;
+  let gate: PreparedCalorixLiveGate | undefined;
 
   beforeAll(async () => {
-    const url = process.env["LOCATEANYTHING_SIDECAR_URL"] ?? "http://127.0.0.1:39731";
-    sidecarHandle = await ensureSidecarRunning(url);
+    gate = await prepareCalorixLiveGate();
   }, 130000);
 
-  afterAll(() => { sidecarHandle?.close(); });
+  afterAll(() => { gate?.sidecarHandle.close(); });
 
   test("runs configured Calorix image pair through start_ui_diff_run (async handle)", async () => {
-    const { expectedImagePath, actualImagePath, projectRoot } = await resolveCalorixGateImages();
+    const { expectedImagePath, actualImagePath, projectRoot, inputProvenance } = await resolveCalorixGateImages(gate!);
     expect(process.env["LOCATEANYTHING_SIDECAR_URL"], "LOCATEANYTHING_SIDECAR_URL must be set").toBeTruthy();
 
     await expect(fs.access(projectRoot)).resolves.toBeUndefined();
@@ -183,7 +180,7 @@ describe.skipIf(!calorixLive)("Calorix live UI diff smoke", () => {
     try {
       const startResult = await started.client.callTool({
         name: "start_ui_diff_run",
-        arguments: { expectedImagePath, actualImagePath, projectRoot, mode: "free" }
+        arguments: { expectedImagePath, actualImagePath, projectRoot, mode: "free", inputProvenance }
       }, undefined, { timeout: 600000 });
       expect(startResult.isError).not.toBe(true);
       const { runId } = startResult.structuredContent as { runId: string };
@@ -202,6 +199,7 @@ describe.skipIf(!calorixLive)("Calorix live UI diff smoke", () => {
       expect(statusOut?.reportPath).toBeTruthy();
 
       const report = await readHydratedReport(statusOut!.reportPath!);
+      expect(report.inputProvenance?.acquisition).toEqual(inputProvenance.acquisition);
       started.recordRunStatus(report.status);
       expect(path.resolve(statusOut!.reportPath!).includes(`${path.sep}.ui-diff${path.sep}runs${path.sep}`)).toBe(true);
 
@@ -280,17 +278,16 @@ describe.skipIf(!calorixLive)("Calorix live UI diff smoke", () => {
 });
 
 describe.skipIf(!calorixFullLive)("verify:calorix-full-live unbounded all-target audit", () => {
-  let sidecarHandle: SidecarHandle | undefined;
+  let gate: PreparedCalorixLiveGate | undefined;
 
   beforeAll(async () => {
-    const url = process.env["LOCATEANYTHING_SIDECAR_URL"] ?? "http://127.0.0.1:39731";
-    sidecarHandle = await ensureSidecarRunning(url);
+    gate = await prepareCalorixLiveGate();
   }, 130000);
 
-  afterAll(() => { sidecarHandle?.close(); });
+  afterAll(() => { gate?.sidecarHandle.close(); });
 
   test("runs unbounded Calorix image pair — all pairs audited, no UI_DIFF_MAX_AUDIT_PAIRS limit", async () => {
-    const { expectedImagePath, actualImagePath, projectRoot } = await resolveCalorixGateImages();
+    const { expectedImagePath, actualImagePath, projectRoot, inputProvenance } = await resolveCalorixGateImages(gate!);
     expect(process.env["LOCATEANYTHING_SIDECAR_URL"], "LOCATEANYTHING_SIDECAR_URL must be set").toBeTruthy();
     // Confirm UI_DIFF_MAX_AUDIT_PAIRS is not set so this is a genuine unbounded run
     expect(process.env["UI_DIFF_MAX_AUDIT_PAIRS"], "UI_DIFF_MAX_AUDIT_PAIRS must NOT be set for full audit").toBeUndefined();
@@ -303,7 +300,7 @@ describe.skipIf(!calorixFullLive)("verify:calorix-full-live unbounded all-target
     try {
       const startResult = await started.client.callTool({
         name: "start_ui_diff_run",
-        arguments: { expectedImagePath, actualImagePath, projectRoot, mode: "free" }
+        arguments: { expectedImagePath, actualImagePath, projectRoot, mode: "free", inputProvenance }
       }, undefined, { timeout: 600000 });
       expect(startResult.isError).not.toBe(true);
       const { runId } = startResult.structuredContent as { runId: string };
@@ -322,6 +319,7 @@ describe.skipIf(!calorixFullLive)("verify:calorix-full-live unbounded all-target
       expect(statusOut?.reportPath).toBeTruthy();
 
       const report = await readHydratedReport(statusOut!.reportPath!);
+      expect(report.inputProvenance?.acquisition).toEqual(inputProvenance.acquisition);
       started.recordRunStatus(report.status);
       expect(report.auditScope?.auditLimited ?? false).toBe(false);
 
@@ -488,17 +486,16 @@ describe.skipIf(!calorixFullLive)("verify:calorix-full-live unbounded all-target
 });
 
 describe.skipIf(!calorixReleaseLive)("Calorix release sign-off gate", () => {
-  let sidecarHandle: SidecarHandle | undefined;
+  let gate: PreparedCalorixLiveGate | undefined;
 
   beforeAll(async () => {
-    const url = process.env["LOCATEANYTHING_SIDECAR_URL"] ?? "http://127.0.0.1:39731";
-    sidecarHandle = await ensureSidecarRunning(url);
+    gate = await prepareCalorixLiveGate();
   }, 130000);
 
-  afterAll(() => { sidecarHandle?.close(); });
+  afterAll(() => { gate?.sidecarHandle.close(); });
 
   test("production sign-off: complete classification, no viewport mismatch, audit not limited", async () => {
-    const { expectedImagePath, actualImagePath, projectRoot } = await resolveCalorixGateImages();
+    const { expectedImagePath, actualImagePath, projectRoot, inputProvenance } = await resolveCalorixGateImages(gate!);
     expect(process.env["LOCATEANYTHING_SIDECAR_URL"], "LOCATEANYTHING_SIDECAR_URL must be set").toBeTruthy();
 
     await expect(fs.access(projectRoot)).resolves.toBeUndefined();
@@ -507,7 +504,7 @@ describe.skipIf(!calorixReleaseLive)("Calorix release sign-off gate", () => {
     try {
       const startResult = await started.client.callTool({
         name: "start_ui_diff_run",
-        arguments: { expectedImagePath, actualImagePath, projectRoot, mode: "free" }
+        arguments: { expectedImagePath, actualImagePath, projectRoot, mode: "free", inputProvenance }
       }, undefined, { timeout: 600000 });
       expect(startResult.isError).not.toBe(true);
       const { runId } = startResult.structuredContent as { runId: string };
@@ -523,6 +520,7 @@ describe.skipIf(!calorixReleaseLive)("Calorix release sign-off gate", () => {
       expect(statusOut?.status, `release gate requires complete status, got: ${statusOut?.status}; child=${JSON.stringify(started.getDiagnostics())}`).toBe("complete");
 
       const report = await readHydratedReport(statusOut!.reportPath!);
+      expect(report.inputProvenance?.acquisition).toEqual(inputProvenance.acquisition);
       started.recordRunStatus(report.status);
 
       expect(report.status, "release gate requires report status=complete").toBe("complete");

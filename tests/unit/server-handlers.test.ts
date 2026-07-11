@@ -297,6 +297,27 @@ describe("server tool handlers", () => {
     expect(vi.mocked(d.runUiDiff).mock.calls[0]?.[0].runId).toBe(structured.runId);
   });
 
+  it("start_ui_diff_run forwards caller-attested input provenance without hashes", async () => {
+    const d = deps();
+    const inputProvenance = {
+      acquisition: {
+        expected: { source: "env_override" as const, verification: "caller_attested" as const },
+        actual: { source: "env_override" as const, verification: "caller_attested" as const }
+      }
+    };
+
+    await handleStartUiDiffRun({
+      expectedImagePath: "expected.png",
+      actualImagePath: "actual.png",
+      projectRoot: tmpDir,
+      mode: "deterministic_only",
+      inputProvenance
+    }, d);
+
+    await vi.waitFor(() => expect(d.runUiDiff).toHaveBeenCalled());
+    expect(vi.mocked(d.runUiDiff).mock.calls[0]?.[0].inputProvenance).toEqual(inputProvenance);
+  });
+
   it("resumes an interrupted run with the same run ID", async () => {
     vi.mocked(getRun).mockResolvedValueOnce({
       runId: "run-resume",

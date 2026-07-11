@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import crypto from "node:crypto";
 import path from "node:path";
 import sharp from "sharp";
 import { resolveInputImagePath, createRunDirectory } from "../security/paths.js";
@@ -41,7 +42,7 @@ import { buildDiffSummary, buildScopeDiffSummaries } from "../diff/scope-summary
 import { writeUiDiffReport, writeReportCheckpoint } from "../report/report-writer.js";
 import { hydrateReportParts } from "../report/report-parts.js";
 import { filterComponentsForScope, filterPairsForScope, normalizeDiffScope } from "./diff-scope.js";
-import type { UiDiffReport, RunStatus, VisualClassificationStatus, LocatorCoverageStatus, DiffRecord, ElementPair, UiArtifact, AuditScope, ModelSelection, RecoverySummary, RecoveryCursor, StageStatus, LocatorLaneMetadata, RunDebugSummary, ProjectedPreAuditSummary, DiffScope, UsageSummary, LocatorInputSizing } from "../schemas/core.js";
+import type { UiDiffReport, RunStatus, VisualClassificationStatus, LocatorCoverageStatus, DiffRecord, ElementPair, UiArtifact, AuditScope, ModelSelection, RecoverySummary, RecoveryCursor, StageStatus, LocatorLaneMetadata, RunDebugSummary, ProjectedPreAuditSummary, DiffScope, UsageSummary, LocatorInputSizing, InputProvenance, InputProvenanceRequest } from "../schemas/core.js";
 import { computeColorEvidence } from "../signals/color.js";
 import { createRunId } from "./run-store.js";
 import { UiDiffReportSchema } from "../schemas/core.js";
@@ -56,6 +57,7 @@ export interface RunInput {
   runLabel?: string;
   mode?: string;
   diffScope?: DiffScope;
+  inputProvenance?: InputProvenanceRequest;
   runId?: string;
   resumeRunId?: string;
   onCheckpoint?: (progress: { stage: string; checkpointPath: string; heartbeatAt: string }) => Promise<void>;
@@ -81,6 +83,90 @@ export interface RunOutput {
 }
 
 type ProbeOverride = (entries: ModelEntry[], config: VisionProviderConfig) => Promise<ProbeResult[]>;
+
+async function computeFileSha256(filePath: string): Promise<string> {
+  return crypto.createHash("sha256").update(await fs.readFile(filePath)).digest("hex");
+}
+
+async function verifyExpectedManifest(input: {
+  expectedPath: string;
+  expectedSha256: string;
+  manifestPath: string;
+  projectRoot: string;
+}): Promise<NonNullable<InputProvenance["identity"]["expected"]["manifest"]>> {
+  const manifestPath = path.resolve(input.projectRoot, input.manifestPath);
+  let manifest: { reference_images?: Array<{ filename?: string; sha256?: string }> };
+  try {
+    manifest = JSON.parse(await fs.readFile(manifestPath, "utf8")) as { reference_images?: Array<{ filename?: string; sha256?: string }> };
+  } catch {
+    throw new Error(`Expected manifest is missing, unreadable, or invalid at "${manifestPath}".`);
+  }
+  const entryFilename = path.basename(input.expectedPath);
+  const entry = manifest.reference_images?.find(item => item.filename === entryFilename);
+  const entrySha256 = entry?.sha256?.toLowerCase();
+  if (!entrySha256 || !/^[a-f0-9]{64}$/.test(entrySha256)) {
+    throw new Error(`Expected manifest at "${manifestPath}" has no SHA-256 entry for "${entryFilename}".`);
+  }
+  if (entrySha256 !== input.expectedSha256) {
+    throw new Error(`Expected manifest hash for "${entryFilename}" does not match the expected image bytes.`);
+  }
+  return { path: manifestPath, entryFilename, entrySha256, verification: "verified_against_expected_bytes" };
+}
+
+async function resolveEffectiveInputProvenance(input: {
+  request: InputProvenanceRequest | undefined;
+  resumed: UiDiffReport | undefined;
+  expectedPath: string;
+  actualPath: string;
+  projectRoot: string;
+}): Promise<InputProvenance> {
+  const expectedSha256 = await computeFileSha256(input.expectedPath);
+  const actualSha256 = await computeFileSha256(input.actualPath);
+  const resumedProvenance = input.resumed?.inputProvenance;
+  const requestedManifest = input.request?.expectedManifestPath === undefined
+    ? undefined
+    : await verifyExpectedManifest({
+      expectedPath: input.expectedPath,
+      expectedSha256,
+      manifestPath: input.request.expectedManifestPath,
+      projectRoot: input.projectRoot
+    });
+
+  if (resumedProvenance) {
+    if (
+      resumedProvenance.identity.expected.sha256 !== expectedSha256 ||
+      resumedProvenance.identity.actual.sha256 !== actualSha256
+    ) {
+      throw new Error("Resumed input image identities do not match the persisted report.");
+    }
+    return {
+      identity: {
+        expected: {
+          sha256: expectedSha256,
+          ...(requestedManifest !== undefined
+            ? { manifest: requestedManifest }
+            : resumedProvenance.identity.expected.manifest !== undefined
+              ? { manifest: resumedProvenance.identity.expected.manifest }
+              : {})
+        },
+        actual: { sha256: actualSha256 }
+      },
+      ...(input.request?.acquisition !== undefined
+        ? { acquisition: input.request.acquisition }
+        : resumedProvenance.acquisition !== undefined
+          ? { acquisition: resumedProvenance.acquisition }
+          : {})
+    };
+  }
+
+  return {
+    identity: {
+      expected: { sha256: expectedSha256, ...(requestedManifest !== undefined ? { manifest: requestedManifest } : {}) },
+      actual: { sha256: actualSha256 }
+    },
+    ...(input.request?.acquisition !== undefined ? { acquisition: input.request.acquisition } : {})
+  };
+}
 
 function locatorSizingForReport(
   imageRole: "expected" | "actual",
@@ -173,6 +259,14 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
       resumedReport = undefined;
     }
   }
+
+  const effectiveInputProvenance = await resolveEffectiveInputProvenance({
+    request: input.inputProvenance,
+    resumed: resumedReport,
+    expectedPath: expectedAbs,
+    actualPath: actualAbs,
+    projectRoot
+  });
 
   const normalizedExpPath = path.join(runDir, "expected-normalized.png");
   const normalizedActPath = path.join(runDir, "actual-normalized.png");
@@ -313,6 +407,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
       ...(locatorInputSizing !== undefined ? { locatorInputSizing } : {}),
       ...(auditScope !== undefined ? { auditScope } : {}),
       ...(modelSelection !== undefined ? { modelSelection } : {}),
+      inputProvenance: effectiveInputProvenance,
       ...(recoverySummary !== undefined ? { recoverySummary } : {}),
       ...(recoveryCursor !== undefined ? { recoveryCursor } : {}),
       imageNormalization: { expected: expectedImg.metadata, actual: actualImg.metadata },
@@ -1129,6 +1224,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     ...(locatorInputSizing !== undefined ? { locatorInputSizing } : {}),
     ...(auditScope !== undefined ? { auditScope } : {}),
     ...(modelSelection !== undefined ? { modelSelection } : {}),
+    inputProvenance: effectiveInputProvenance,
     ...(recoverySummary !== undefined ? { recoverySummary } : {}),
     ...(recoveryCursor !== undefined ? { recoveryCursor } : {}),
     ...(projectedPreAuditSummary !== undefined ? { projectedPreAudit: projectedPreAuditSummary } : {}),

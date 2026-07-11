@@ -3,6 +3,8 @@ import {
   CoverageDecisionTraceSchema,
   DiffScopeSchema,
   DiffRecordSchema,
+  InputProvenanceSchema,
+  InputProvenanceRequestSchema,
   UsageSummarySchema,
   ModelSelectionSchema,
   RunDebugSummarySchema,
@@ -31,6 +33,43 @@ function makeMinimalReport(overrides: Record<string, unknown> = {}) {
 }
 
 describe("core schemas", () => {
+  it("accepts persisted computed input provenance", () => {
+    expect(InputProvenanceSchema.parse({
+      identity: {
+        expected: {
+          sha256: "73ba85f25489c8d45beab57dd1b317138870ce8360fe0f4399ab0737a5e505f1",
+          manifest: {
+            path: "C:/calorix/docs/design-handoff/placeholder-app/reference-images-manifest.json",
+            entryFilename: "today--dark.png",
+            entrySha256: "73ba85f25489c8d45beab57dd1b317138870ce8360fe0f4399ab0737a5e505f1",
+            verification: "verified_against_expected_bytes"
+          }
+        },
+        actual: { sha256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }
+      },
+      acquisition: {
+        expected: { source: "canonical_default", verification: "caller_attested" },
+        actual: { source: "auto_capture", verification: "caller_attested" }
+      }
+    })).toMatchObject({ identity: { actual: { sha256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" } } });
+  });
+
+  it("rejects caller-declared hashes and unknown provenance request fields", () => {
+    expect(() => InputProvenanceRequestSchema.parse({
+      acquisition: {
+        expected: { source: "env_override", verification: "caller_attested" },
+        actual: { source: "env_override", verification: "caller_attested" }
+      },
+      sha256: "73ba85f25489c8d45beab57dd1b317138870ce8360fe0f4399ab0737a5e505f1"
+    })).toThrow();
+    expect(() => InputProvenanceRequestSchema.parse({
+      acquisition: {
+        expected: { source: "env_override", verification: "caller_attested", apiKey: "secret" },
+        actual: { source: "env_override", verification: "caller_attested" }
+      }
+    })).toThrow();
+  });
+
   it("accepts the actual comparison-space image as a primary run artifact", () => {
     expect(UiArtifactSchema.parse({
       role: "actual_comparison_space",

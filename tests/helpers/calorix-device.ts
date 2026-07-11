@@ -1,15 +1,19 @@
 import { execFile } from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import sharp from "sharp";
 import { captureMobileScreen, type CaptureResult } from "../../src/capture/mobile-capture.js";
+import type { InputProvenanceRequest } from "../../src/schemas/core.js";
 
 const execFileAsync = promisify(execFile);
 
 export const DEFAULT_CALORIX_PROJECT_ROOT = "C:/Users/xursc/projects/calorix";
 export const DEFAULT_CALORIX_EXPECTED_IMAGE = "docs/design-handoff/placeholder-app/reference-images/today--dark.png";
+export const CALORIX_REFERENCE_IMAGES_MANIFEST = "docs/design-handoff/placeholder-app/reference-images-manifest.json";
+export const CANONICAL_CALORIX_TODAY_DARK_SHA256 = "73ba85f25489c8d45beab57dd1b317138870ce8360fe0f4399ab0737a5e505f1";
 export const CALORIX_DEBUG_APK_RELATIVE = "build/app/outputs/flutter-apk/app-debug.apk";
 
 const SOURCE_ROOTS = ["lib", "assets", "android/app/src", "android/app/build.gradle.kts"] as const;
@@ -75,6 +79,12 @@ export interface CalorixPreparedActual {
   source: "env_override" | "auto_capture";
 }
 
+export interface ValidatedCalorixExpectedImage {
+  expectedImagePath: string;
+  source: "canonical_default" | "env_override";
+  expectedManifestPath?: string;
+}
+
 const defaultRunner: CalorixCommandRunner = (file, args, options) => execFileAsync(file, args, options);
 let memoizedActual: CalorixPreparedActual | undefined;
 
@@ -88,6 +98,64 @@ export function getCalorixProjectRoot(): string {
 
 export function getCalorixExpectedImagePath(projectRoot = getCalorixProjectRoot()): string {
   return process.env["UI_DIFF_LIVE_EXPECTED_IMAGE"] ?? path.join(projectRoot, DEFAULT_CALORIX_EXPECTED_IMAGE);
+}
+
+export async function getValidatedCalorixExpectedImage(projectRoot = getCalorixProjectRoot()): Promise<ValidatedCalorixExpectedImage> {
+  const expectedPath = path.resolve(getCalorixExpectedImagePath(projectRoot));
+  const canonicalPath = path.resolve(projectRoot, DEFAULT_CALORIX_EXPECTED_IMAGE);
+  const expectedSource = process.env["UI_DIFF_LIVE_EXPECTED_IMAGE"] ? "env_override" as const : "canonical_default" as const;
+  let imageBytes: Buffer;
+
+  try {
+    imageBytes = await fs.readFile(expectedPath);
+  } catch {
+    throw new Error(`Calorix expected image is missing or unreadable at "${expectedPath}". Remediation: restore the canonical reference or set UI_DIFF_LIVE_EXPECTED_IMAGE to a readable expected screenshot.`);
+  }
+
+  if (expectedPath !== canonicalPath) {
+    return { expectedImagePath: expectedPath, source: expectedSource };
+  }
+
+  const manifestPath = path.resolve(projectRoot, CALORIX_REFERENCE_IMAGES_MANIFEST);
+  let manifest: { reference_images?: Array<{ filename?: string; sha256?: string }> };
+  try {
+    manifest = JSON.parse(await fs.readFile(manifestPath, "utf8")) as { reference_images?: Array<{ filename?: string; sha256?: string }> };
+  } catch {
+    throw new Error(`Calorix reference manifest is missing, unreadable, or invalid at "${manifestPath}". Remediation: restore reference-images-manifest.json with the canonical today--dark.png entry.`);
+  }
+
+  const manifestEntry = manifest.reference_images?.find(entry => entry.filename === "today--dark.png");
+  if (manifestEntry?.sha256?.toLowerCase() !== CANONICAL_CALORIX_TODAY_DARK_SHA256) {
+    throw new Error(`Calorix reference manifest at "${manifestPath}" does not identify today--dark.png with canonical SHA-256 ${CANONICAL_CALORIX_TODAY_DARK_SHA256}. Remediation: restore the canonical Calorix reference manifest.`);
+  }
+
+  const actualHash = crypto.createHash("sha256").update(imageBytes).digest("hex");
+  if (actualHash !== CANONICAL_CALORIX_TODAY_DARK_SHA256) {
+    throw new Error(`Calorix expected image hash mismatch at "${expectedPath}": expected ${CANONICAL_CALORIX_TODAY_DARK_SHA256}, got ${actualHash}. Remediation: restore the canonical today--dark.png reference.`);
+  }
+
+  return {
+    expectedImagePath: expectedPath,
+    source: expectedSource,
+    expectedManifestPath: manifestPath
+  };
+}
+
+export async function getValidatedCalorixExpectedImagePath(projectRoot = getCalorixProjectRoot()): Promise<string> {
+  return (await getValidatedCalorixExpectedImage(projectRoot)).expectedImagePath;
+}
+
+export function createCalorixInputProvenance(
+  expected: ValidatedCalorixExpectedImage,
+  actual: CalorixPreparedActual
+): InputProvenanceRequest {
+  return {
+    acquisition: {
+      expected: { source: expected.source, verification: "caller_attested" },
+      actual: { source: actual.source, verification: "caller_attested" }
+    },
+    ...(expected.expectedManifestPath !== undefined ? { expectedManifestPath: expected.expectedManifestPath } : {})
+  };
 }
 
 function toText(value: unknown): string {
