@@ -8,6 +8,51 @@ export const BoxSchema = z.object({
 });
 export type Box = z.infer<typeof BoxSchema>;
 
+export const ComparisonCoordinateSpaceSchema = z.literal("comparison_expected_normalized");
+export type ComparisonCoordinateSpace = z.infer<typeof ComparisonCoordinateSpaceSchema>;
+
+export const ComparisonBoxSourceSpaceSchema = z.enum([
+  "expected_normalized",
+  "actual_normalized",
+  "comparison_expected_normalized"
+]);
+export type ComparisonBoxSourceSpace = z.infer<typeof ComparisonBoxSourceSpaceSchema>;
+
+export const ComparisonBoxRejectionReasonSchema = z.enum([
+  "non_finite",
+  "non_positive",
+  "disjoint",
+  "below_minimum_artifact_size"
+]);
+export type ComparisonBoxRejectionReason = z.infer<typeof ComparisonBoxRejectionReasonSchema>;
+
+export const ComparisonBoxResolutionSchema = z.discriminatedUnion("status", [
+  z.object({
+    status: z.literal("valid"),
+    box: BoxSchema,
+    clipped: z.boolean(),
+    coordinateSpace: ComparisonCoordinateSpaceSchema,
+    sourceSpace: ComparisonBoxSourceSpaceSchema
+  }).strict(),
+  z.object({
+    status: z.literal("rejected"),
+    reason: ComparisonBoxRejectionReasonSchema,
+    sourceSpace: ComparisonBoxSourceSpaceSchema
+  }).strict()
+]);
+export type ComparisonBoxResolution = z.infer<typeof ComparisonBoxResolutionSchema>;
+
+const GeometryRejectionCountsSchema = z.record(
+  ComparisonBoxRejectionReasonSchema,
+  z.number().int().nonnegative()
+);
+
+export const GeometryDiagnosticsSchema = z.object({
+  countsByReason: GeometryRejectionCountsSchema,
+  countsByProducer: z.record(z.string().min(1), GeometryRejectionCountsSchema)
+}).strict();
+export type GeometryDiagnostics = z.infer<typeof GeometryDiagnosticsSchema>;
+
 export const NormalizedBoxSchema = z.object({
   x: z.number().finite().min(0).max(1),
   y: z.number().finite().min(0).max(1),
@@ -64,6 +109,30 @@ export const UiCriterionSchema = z.enum([
   "unclassified_visual_change"
 ]);
 export type UiCriterion = z.infer<typeof UiCriterionSchema>;
+
+const FindingGroupLegendBaseShape = {
+  id: z.string().min(1),
+  label: z.string().min(1),
+  box: BoxSchema,
+  diffIds: z.array(z.string().min(1)),
+  criteria: z.array(UiCriterionSchema),
+  severity: z.enum(["low", "medium", "high"]),
+  coordinateSpace: ComparisonCoordinateSpaceSchema
+};
+
+export const FindingGroupLegendEntrySchema = z.discriminatedUnion("zoomStatus", [
+  z.object({
+    ...FindingGroupLegendBaseShape,
+    zoomStatus: z.literal("valid"),
+    zoomArtifact: z.string().min(1)
+  }).strict(),
+  z.object({
+    ...FindingGroupLegendBaseShape,
+    zoomStatus: z.literal("rejected"),
+    zoomRejectionReason: ComparisonBoxRejectionReasonSchema
+  }).strict()
+]);
+export type FindingGroupLegendEntry = z.infer<typeof FindingGroupLegendEntrySchema>;
 
 export const ProjectionMetadataSchema = z.object({
   mode: z.literal("expected_coordinate_projection"),
@@ -696,6 +765,7 @@ export const UiDiffReportSchema = z.object({
   diffScope: DiffScopeSchema.optional(),
   auditScope: AuditScopeSchema.optional(),
   projectedPreAudit: ProjectedPreAuditSummarySchema.optional(),
+  geometryDiagnostics: GeometryDiagnosticsSchema.optional(),
   modelSelection: ModelSelectionSchema.optional(),
   inputProvenance: InputProvenanceSchema.optional(),
   expectedImagePath: z.string().min(1),

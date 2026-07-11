@@ -66,6 +66,8 @@ type RejectedComparisonBox = {
 
 The validator first projects actual input into comparison space, rejects non-finite coordinates and non-positive dimensions, intersects with the canvas, and accepts a clipped intersection only when it is at least `2x2` pixels. A box entirely outside the canvas, or an intersection smaller than `2x2`, is rejected. It never expands a box to a minimum dimension and never converts a rejected crop into an edge-pixel artifact.
 
+Comparison geometry uses continuous coordinates: finite fractional boxes and clipped intersections are preserved without rounding, and the mandatory artifact floor is always at least `2x2`. A caller-supplied minimum below that floor or with non-finite/non-positive dimensions is rejected as `below_minimum_artifact_size`; it cannot lower the floor. Task 4 alone converts a valid continuous comparison box into integer image-extraction bounds.
+
 The same policy is used for final diff locations, group boxes, overlay annotations, crop extraction, zoom panels, local recovery evidence, and every `Sharp.extract()` call. Pair-local provider crops must report rejection to their audit/recovery trace and skip provider input that would be malformed; run-level output must retain the corresponding unresolved/escalated state when evidence cannot be produced.
 
 ### Observable rejection

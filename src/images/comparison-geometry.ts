@@ -1,0 +1,114 @@
+import type {
+  Box,
+  ComparisonBoxResolution,
+  ComparisonBoxSourceSpace
+} from "../schemas/core.js";
+import type { ImagePairTransform } from "./coordinates.js";
+import { projectActualBoxToExpectedSource } from "./coordinates.js";
+
+export interface ResolveComparisonBoxInput {
+  box: Box;
+  sourceSpace: ComparisonBoxSourceSpace;
+  canvas: { width: number; height: number };
+  transform?: ImagePairTransform;
+  minimumSize?: { width: number; height: number };
+}
+
+const MINIMUM_ARTIFACT_SIZE = 2;
+
+// Preserve finite fractional comparison coordinates. Task 4 owns integer extraction rounding.
+export function resolveComparisonBox(input: ResolveComparisonBoxInput): ComparisonBoxResolution {
+  if (!hasFiniteDimensions(input.canvas)) {
+    return reject("non_finite", input.sourceSpace);
+  }
+  if (input.canvas.width <= 0 || input.canvas.height <= 0) {
+    return reject("non_positive", input.sourceSpace);
+  }
+
+  const minimumSize = resolveMinimumSize(input.minimumSize);
+  if (!minimumSize) {
+    return reject("below_minimum_artifact_size", input.sourceSpace);
+  }
+
+  const box = input.sourceSpace === "actual_normalized"
+    ? projectActualBoxToExpectedSource(input.box, requireTransform(input))
+    : input.box;
+
+  if (!hasFiniteCoordinates(box)) {
+    return reject("non_finite", input.sourceSpace);
+  }
+  if (box.width <= 0 || box.height <= 0) {
+    return reject("non_positive", input.sourceSpace);
+  }
+
+  const x = Math.max(box.x, 0);
+  const y = Math.max(box.y, 0);
+  const boxRight = box.x + box.width;
+  const boxBottom = box.y + box.height;
+  if (!hasFiniteValues(x, y, boxRight, boxBottom)) {
+    return reject("non_finite", input.sourceSpace);
+  }
+
+  const right = Math.min(boxRight, input.canvas.width);
+  const bottom = Math.min(boxBottom, input.canvas.height);
+  const width = right - x;
+  const height = bottom - y;
+  if (!hasFiniteValues(right, bottom, width, height)) {
+    return reject("non_finite", input.sourceSpace);
+  }
+
+  if (width <= 0 || height <= 0) {
+    return reject("disjoint", input.sourceSpace);
+  }
+  if (width < minimumSize.width || height < minimumSize.height) {
+    return reject("below_minimum_artifact_size", input.sourceSpace);
+  }
+
+  return {
+    status: "valid",
+    box: { x, y, width, height },
+    clipped: x !== box.x || y !== box.y || width !== box.width || height !== box.height,
+    coordinateSpace: "comparison_expected_normalized",
+    sourceSpace: input.sourceSpace
+  };
+}
+
+function resolveMinimumSize(
+  minimumSize: ResolveComparisonBoxInput["minimumSize"]
+): { width: number; height: number } | undefined {
+  if (minimumSize === undefined) {
+    return { width: MINIMUM_ARTIFACT_SIZE, height: MINIMUM_ARTIFACT_SIZE };
+  }
+  if (!hasFiniteDimensions(minimumSize)
+    || minimumSize.width < MINIMUM_ARTIFACT_SIZE
+    || minimumSize.height < MINIMUM_ARTIFACT_SIZE) {
+    return undefined;
+  }
+  return minimumSize;
+}
+
+function requireTransform(input: ResolveComparisonBoxInput): ImagePairTransform {
+  if (!input.transform) {
+    throw new Error("ImagePairTransform is required for actual_normalized comparison boxes.");
+  }
+  return input.transform;
+}
+
+function hasFiniteCoordinates(box: Box): boolean {
+  return hasFiniteValues(box.x, box.y, box.width, box.height);
+}
+
+function hasFiniteDimensions(dimensions: { width: number; height: number }): boolean {
+  return hasFiniteValues(dimensions.width, dimensions.height);
+}
+
+function hasFiniteValues(...values: number[]): boolean {
+  return values.every(Number.isFinite);
+}
+
+function reject(
+  reason: Extract<ComparisonBoxResolution, { status: "rejected" }>["reason"],
+  sourceSpace: ComparisonBoxSourceSpace
+): ComparisonBoxResolution {
+  return { status: "rejected", reason, sourceSpace };
+}

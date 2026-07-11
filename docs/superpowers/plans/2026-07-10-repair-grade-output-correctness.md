@@ -170,7 +170,7 @@ export function resolveComparisonBox(input: {
 }): ComparisonBoxResolution;
 ```
 
-- [ ] **Step 1: Write failing geometry tests**
+- [x] **Step 1: Write failing geometry tests**
 
 Cover exact expected-space pass-through, actual-to-expected projection, partially intersecting clipping, and these rejections:
 
@@ -181,7 +181,7 @@ expect(resolveComparisonBox({ box: { x: Number.NaN, y: 0, width: 20, height: 20 
 expect(resolveComparisonBox({ box: { x: 398, y: 870, width: 10, height: 10 }, ...input })).toMatchObject({ status: "valid", box: { x: 398, y: 870, width: 4, height: 4 }, clipped: true });
 ```
 
-- [ ] **Step 2: Run the red test**
+- [x] **Step 2: Run the red test**
 
 ```powershell
 npx vitest run tests/unit/comparison-geometry.test.ts tests/unit/schemas.test.ts
@@ -189,11 +189,11 @@ npx vitest run tests/unit/comparison-geometry.test.ts tests/unit/schemas.test.ts
 
 Expected: FAIL because the shared resolver and schema fields do not exist.
 
-- [ ] **Step 3: Implement the resolver and diagnostic schemas**
+- [x] **Step 3: Implement the resolver and diagnostic schemas**
 
 Add the resolver with a `2x2` default minimum for artifacts. Add report-safe geometry diagnostic schemas: per-producer counts keyed by rejection reason, artifact/zoom rejection metadata, and `coordinateSpace` fields for report-facing legend records. Keep `BoxSchema` reusable; do not weaken its existing consumers.
 
-- [ ] **Step 4: Run green tests**
+- [x] **Step 4: Run green tests**
 
 ```powershell
 npx vitest run tests/unit/comparison-geometry.test.ts tests/unit/schemas.test.ts
@@ -201,13 +201,15 @@ npx vitest run tests/unit/comparison-geometry.test.ts tests/unit/schemas.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit and push**
+- [ ] **Step 5: Commit and push (deferred by explicit user direction)**
 
 ```powershell
 git add src/images/comparison-geometry.ts src/schemas/core.ts tests/unit/comparison-geometry.test.ts tests/unit/schemas.test.ts docs/implementation-status.md
 git commit -m "feat: validate comparison-space boxes"
 git push origin HEAD
 ```
+
+**Review follow-up (2026-07-12):** [x] The mandatory `2x2` floor cannot be lowered by overrides; finite positive canvas/intersection validation rejects malformed geometry; legend zoom outcomes are a discriminated union; continuous comparison coordinates remain unrounded until Task 4 extraction.
 
 ## Task 4: Eliminate Invalid Crop And Zoom Artifacts
 

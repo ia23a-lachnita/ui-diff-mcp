@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   CoverageDecisionTraceSchema,
+  ComparisonBoxResolutionSchema,
   DiffScopeSchema,
   DiffRecordSchema,
+  FindingGroupLegendEntrySchema,
+  GeometryDiagnosticsSchema,
   InputProvenanceSchema,
   InputProvenanceRequestSchema,
   UsageSummarySchema,
@@ -33,6 +36,95 @@ function makeMinimalReport(overrides: Record<string, unknown> = {}) {
 }
 
 describe("core schemas", () => {
+  it("accepts canonical comparison-box resolutions", () => {
+    expect(ComparisonBoxResolutionSchema.parse({
+      status: "valid",
+      box: { x: 10, y: 20, width: 30, height: 40 },
+      clipped: false,
+      coordinateSpace: "comparison_expected_normalized",
+      sourceSpace: "actual_normalized"
+    })).toMatchObject({ status: "valid", sourceSpace: "actual_normalized" });
+    expect(ComparisonBoxResolutionSchema.parse({
+      status: "rejected",
+      reason: "below_minimum_artifact_size",
+      sourceSpace: "comparison_expected_normalized"
+    })).toMatchObject({ status: "rejected", reason: "below_minimum_artifact_size" });
+  });
+
+  it("accepts geometry diagnostics and discriminated zoom metadata", () => {
+    const diagnostics = GeometryDiagnosticsSchema.parse({
+      countsByReason: {
+        non_finite: 1,
+        non_positive: 2,
+        disjoint: 3,
+        below_minimum_artifact_size: 4
+      },
+      countsByProducer: {
+        final_diff_zoom: {
+          non_finite: 0,
+          non_positive: 0,
+          disjoint: 0,
+          below_minimum_artifact_size: 1
+        }
+      }
+    });
+    expect(diagnostics.countsByProducer.final_diff_zoom?.below_minimum_artifact_size).toBe(1);
+    expect(FindingGroupLegendEntrySchema.parse({
+      id: "group-1",
+      label: "Footer control",
+      box: { x: 10, y: 20, width: 30, height: 40 },
+      diffIds: ["diff-1"],
+      criteria: ["geometry"],
+      severity: "medium",
+      zoomStatus: "rejected",
+      zoomRejectionReason: "below_minimum_artifact_size",
+      coordinateSpace: "comparison_expected_normalized"
+    })).toMatchObject({ zoomStatus: "rejected", coordinateSpace: "comparison_expected_normalized" });
+    expect(FindingGroupLegendEntrySchema.parse({
+      id: "group-2",
+      label: "Header control",
+      box: { x: 10, y: 20, width: 30, height: 40 },
+      diffIds: ["diff-2"],
+      criteria: ["geometry"],
+      severity: "medium",
+      zoomStatus: "valid",
+      zoomArtifact: "final-diff-zoom-002.png",
+      coordinateSpace: "comparison_expected_normalized"
+    })).toMatchObject({ zoomStatus: "valid", zoomArtifact: "final-diff-zoom-002.png" });
+  });
+
+  it("rejects zoom metadata that mixes valid and rejected result shapes", () => {
+    const base = {
+      id: "group-1",
+      label: "Footer control",
+      box: { x: 10, y: 20, width: 30, height: 40 },
+      diffIds: ["diff-1"],
+      criteria: ["geometry"],
+      severity: "medium" as const,
+      coordinateSpace: "comparison_expected_normalized" as const
+    };
+
+    expect(() => FindingGroupLegendEntrySchema.parse({
+      ...base,
+      zoomStatus: "valid",
+      zoomRejectionReason: "below_minimum_artifact_size"
+    })).toThrow();
+    expect(() => FindingGroupLegendEntrySchema.parse({
+      ...base,
+      zoomStatus: "rejected",
+      zoomArtifact: "final-diff-zoom-001.png",
+      zoomRejectionReason: "below_minimum_artifact_size"
+    })).toThrow();
+    expect(() => FindingGroupLegendEntrySchema.parse({
+      ...base,
+      zoomStatus: "valid"
+    })).toThrow();
+    expect(() => FindingGroupLegendEntrySchema.parse({
+      ...base,
+      zoomStatus: "rejected"
+    })).toThrow();
+  });
+
   it("accepts persisted computed input provenance", () => {
     expect(InputProvenanceSchema.parse({
       identity: {
