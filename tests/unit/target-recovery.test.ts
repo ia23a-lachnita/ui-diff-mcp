@@ -68,6 +68,19 @@ const component: PixelComponent = {
 };
 
 describe("runTargetRecovery", () => {
+  it("retains an unresolved reason and skips model input for invalid recovery crops", async () => {
+    const recoveryCaller: VisionJsonCaller = vi.fn();
+    const invalidComponent: PixelComponent = { box: { x: 199, y: 199, width: 1, height: 1 }, pixelCount: 500 };
+
+    const result = await runTargetRecovery([invalidComponent], makeCtx({ recoveryCaller }), unlimitedBudget);
+
+    expect(recoveryCaller).not.toHaveBeenCalled();
+    expect(result.statusCounts["evidence_crop_rejected"]).toBe(1);
+    expect(result.regionOutcomes).toEqual(expect.arrayContaining([
+      expect.objectContaining({ state: "unresolved", reason: "evidence_crop_rejected: below_minimum_artifact_size" })
+    ]));
+    await expect(fs.readdir(tmpDir)).resolves.not.toContain("recovery-component-0001-expected.png");
+  });
   const unlimitedBudget: RecoveryBudget = {
     maxComponents: 1000,
     maxModelCalls: 2000,

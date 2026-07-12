@@ -10,7 +10,9 @@ import { buildAuditorPrompt, buildReviewerPrompt } from "./prompts.js";
 import type { VisionJsonCaller } from "../models/vision-json.js";
 import { computePixelDiff } from "../signals/pixel-diff.js";
 import { createDirectionalDiffOverlay, type Rgba } from "../images/directional-diff.js";
-import { extractImageCrop } from "../images/crop.js";
+import { extractImageCropFromBounds } from "../images/crop.js";
+import { resolveComparisonExtraction, type ComparisonExtractionBounds } from "../images/comparison-geometry.js";
+import type { ImagePairTransform } from "../images/coordinates.js";
 import { hasUnsupportedQuantitativeClaim } from "./review-findings.js";
 import { RouteExhaustedError } from "../models/fallback-caller.js";
 
@@ -29,6 +31,7 @@ export interface AuditContext {
   reviewerCaller: VisionJsonCaller;
   expectedRgba: { data: Uint8Array; width: number; height: number };
   actualRgba: { data: Uint8Array; width: number; height: number };
+  imagePairTransform?: ImagePairTransform;
   measurements: DeterministicMeasurement[];
   triggerCtx: TriggerContext;
   auditIndex: number;
@@ -51,47 +54,36 @@ async function writeCropArtifact(
   outPath: string,
   channels: 1 | 4 = 4
 ): Promise<string> {
-  if (width <= 0 || height <= 0) {
-    await sharp({
-      create: { width: 1, height: 1, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } }
-    }).png().toFile(outPath);
-  } else {
-    await fs.mkdir(path.dirname(outPath), { recursive: true });
-    await sharp(Buffer.from(imageData.buffer, imageData.byteOffset, imageData.byteLength), { raw: { width, height, channels } })
-      .png()
-      .toFile(outPath);
-  }
+  if (width < 2 || height < 2) throw new Error("below_minimum_artifact_size");
+  await fs.mkdir(path.dirname(outPath), { recursive: true });
+  await sharp(Buffer.from(imageData.buffer, imageData.byteOffset, imageData.byteLength), { raw: { width, height, channels } })
+    .png()
+    .toFile(outPath);
   return outPath;
 }
 
-function expandBox(box: Box, paddingFactor: number, imageWidth: number, imageHeight: number): Box {
+function expandBox(box: Box, paddingFactor: number): Box {
   const padW = box.width * paddingFactor;
   const padH = box.height * paddingFactor;
-  const x = Math.max(0, box.x - padW);
-  const y = Math.max(0, box.y - padH);
-  const x2 = Math.min(imageWidth, box.x + box.width + padW);
-  const y2 = Math.min(imageHeight, box.y + box.height + padH);
-  return { x, y, width: x2 - x, height: y2 - y };
+  return { x: box.x - padW, y: box.y - padH, width: box.width + padW * 2, height: box.height + padH * 2 };
 }
 
 async function extractCropAndEncode(
   imageData: Uint8Array,
   imageWidth: number,
   imageHeight: number,
-  box: Box,
+  bounds: ComparisonExtractionBounds,
   artifactRole: UiArtifact["role"],
   outPath: string,
   pairId?: string
 ): Promise<{ base64: string; artifact: UiArtifact }> {
-  const croppedData = extractImageCrop(imageData, imageWidth, imageHeight, box);
-  const cropWidth = Math.min(Math.round(box.width), imageWidth - Math.max(0, Math.round(box.x)));
-  const cropHeight = Math.min(Math.round(box.height), imageHeight - Math.max(0, Math.round(box.y)));
+  const croppedData = extractImageCropFromBounds(imageData, imageWidth, bounds);
 
-  const buf = await sharp(Buffer.from(croppedData.buffer, croppedData.byteOffset, croppedData.byteLength), { raw: { width: cropWidth > 0 ? cropWidth : 1, height: cropHeight > 0 ? cropHeight : 1, channels: 4 } })
+  const buf = await sharp(Buffer.from(croppedData.buffer, croppedData.byteOffset, croppedData.byteLength), { raw: { width: bounds.width, height: bounds.height, channels: 4 } })
     .png()
     .toBuffer();
 
-  const savedPath = await writeCropArtifact(croppedData, cropWidth, cropHeight, outPath);
+  const savedPath = await writeCropArtifact(croppedData, bounds.width, bounds.height, outPath);
 
   return {
     base64: buf.toString("base64"),
@@ -125,6 +117,53 @@ export async function auditElementPair(
     path.join(ctx.artifactDir, `audit-${idxStr}-of-${totalStr}-pair-${shortId}-${ctx.elementSlug}-${role}.png`);
 
   const criteria = selectTriggeredCriteria(ctx.triggerCtx);
+  const expectedCrop = expectedEl ? resolveComparisonExtraction({
+    box: expectedEl.box,
+    sourceSpace: "expected_normalized",
+    canvas: { width: ctx.expectedRgba.width, height: ctx.expectedRgba.height }
+  }) : undefined;
+  const actualComparisonCrop = actualEl ? resolveComparisonExtraction({
+    box: actualEl.box,
+    sourceSpace: ctx.imagePairTransform ? "actual_normalized" : "comparison_expected_normalized",
+    canvas: { width: ctx.expectedRgba.width, height: ctx.expectedRgba.height },
+    ...(ctx.imagePairTransform ? { transform: ctx.imagePairTransform } : {})
+  }) : undefined;
+  const actualSourceCrop = actualEl ? resolveComparisonExtraction({
+    box: actualEl.box,
+    sourceSpace: "comparison_expected_normalized",
+    canvas: { width: ctx.actualRgba.width, height: ctx.actualRgba.height }
+  }) : undefined;
+  const refComparisonBox = expectedCrop?.status === "valid" ? expectedCrop.box
+    : actualComparisonCrop?.status === "valid" ? actualComparisonCrop.box : undefined;
+  const contextCrop = refComparisonBox ? resolveComparisonExtraction({
+    box: expandBox(refComparisonBox, 0.5),
+    sourceSpace: "comparison_expected_normalized",
+    canvas: { width: ctx.expectedRgba.width, height: ctx.expectedRgba.height }
+  }) : undefined;
+  const rejection = [expectedCrop, actualComparisonCrop, actualSourceCrop, contextCrop]
+    .find((resolution): resolution is Extract<typeof resolution, { status: "rejected" }> => resolution?.status === "rejected");
+  if (rejection || !refComparisonBox) {
+    const reason = rejection?.reason ?? "below_minimum_artifact_size";
+    for (const criterion of (criteria.length > 0 ? criteria : ["geometry"]) as Exclude<UiCriterion, "unclassified_visual_change">[]) {
+      trace.push({
+        pairId: pair.id,
+        ...(pair.expectedId !== undefined ? { expectedId: pair.expectedId } : {}),
+        ...(pair.actualId !== undefined ? { actualId: pair.actualId } : {}),
+        targetLabel: refEl.label,
+        targetType: refEl.type,
+        criterion,
+        status: "reviewer_rejected",
+        evidenceCount: 0,
+        rejectionReason: `evidence_crop_rejected: ${reason}`,
+        imageRoles: [],
+        artifactPaths: []
+      });
+    }
+    return { accepted, rejected, trace };
+  }
+  const expectedBounds = expectedCrop?.status === "valid" ? expectedCrop.bounds : undefined;
+  const actualSourceBounds = actualSourceCrop?.status === "valid" ? actualSourceCrop.bounds : undefined;
+  const contextBounds = contextCrop?.status === "valid" ? contextCrop.bounds : undefined;
 
   const auditArtifacts: UiArtifact[] = [];
   const images: string[] = []; // Base64 encoded images for VLM call
@@ -135,7 +174,7 @@ export async function auditElementPair(
   // Extract Expected Crop
   if (expectedEl) {
     const { base64, artifact } = await extractCropAndEncode(
-      ctx.expectedRgba.data, ctx.expectedRgba.width, ctx.expectedRgba.height, expectedEl.box,
+       ctx.expectedRgba.data, ctx.expectedRgba.width, ctx.expectedRgba.height, expectedBounds!,
       "expected_crop", baseFileName("expected-crop"), pairId
     );
     expectedCropB64 = base64;
@@ -144,7 +183,7 @@ export async function auditElementPair(
   // Extract Actual Crop
   if (actualEl) {
     const { base64, artifact } = await extractCropAndEncode(
-      ctx.actualRgba.data, ctx.actualRgba.width, ctx.actualRgba.height, actualEl.box,
+       ctx.actualRgba.data, ctx.actualRgba.width, ctx.actualRgba.height, actualSourceBounds!,
       "actual_crop", baseFileName("actual-crop"), pairId
     );
     actualCropB64 = base64;
@@ -161,8 +200,9 @@ export async function auditElementPair(
     // both describe the same comparison. computePixelDiff's internal zero-padding and
     // Sharp's Lanczos resize differ; using one file for both operations eliminates the mismatch.
     const expCropMeta = await sharp(Buffer.from(expectedCropB64, "base64")).metadata();
-    const cmpW = expCropMeta.width ?? Math.max(1, Math.round(expectedEl.box.width));
-    const cmpH = expCropMeta.height ?? Math.max(1, Math.round(expectedEl.box.height));
+    if (!expCropMeta.width || !expCropMeta.height) throw new Error("Expected crop metadata is missing dimensions");
+    const cmpW = expCropMeta.width;
+    const cmpH = expCropMeta.height;
     const actualComparisonCropPath = baseFileName("actual-crop-comparison");
     await sharp(Buffer.from(actualCropB64, "base64"))
       .resize(cmpW, cmpH, { fit: "fill" })
@@ -194,9 +234,8 @@ export async function auditElementPair(
   // Extract context crop: 50% padding around the reference element box
   let contextCropB64: string | null = null;
   if (refEl) {
-    const contextBox = expandBox(refEl.box, 0.5, ctx.expectedRgba.width, ctx.expectedRgba.height);
     const { base64, artifact } = await extractCropAndEncode(
-      ctx.expectedRgba.data, ctx.expectedRgba.width, ctx.expectedRgba.height, contextBox,
+      ctx.expectedRgba.data, ctx.expectedRgba.width, ctx.expectedRgba.height, contextBounds!,
       "context_crop", baseFileName("context-crop"), pairId
     );
     contextCropB64 = base64;
@@ -375,7 +414,7 @@ export async function auditElementPair(
       criterion,
       severity: auditResult.severity ?? "medium",
       title: auditResult.title ?? `${criterion} difference in ${refEl.label}`,
-      location: refEl.box,
+      location: refComparisonBox,
       evidence,
       measurements: ctx.measurements,
       artifactPaths: auditArtifacts,

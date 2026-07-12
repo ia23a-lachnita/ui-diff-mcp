@@ -201,4 +201,25 @@ describe("writeRegionContextOverlays", () => {
     };
     expect(hierarchy.nodes.some(node => node.id === "screen")).toBe(true);
   });
+
+  it("records a rejected zoom without a PNG or zoom artifact", async () => {
+    const actualComparisonPath = await writeSolidPng(tmpDir, "actual-comparison.png", 200, 400, 30, 30, 30);
+    const directionalOverlayPath = await writeSolidPng(tmpDir, "directional-overlay.png", 200, 400, 10, 10, 10);
+    const rejectedDiff = { ...diff("edge-diff"), location: { x: 400, y: 500, width: 10, height: 10 } };
+
+    const artifacts = await writeRegionContextOverlays({
+      actualComparisonPath,
+      directionalOverlayPath,
+      artifactDir: tmpDir,
+      diffs: [rejectedDiff],
+      unresolvedRegions: [],
+      elements: []
+    });
+
+    expect(artifacts.some(artifact => artifact.role === "final_diff_zoom")).toBe(false);
+    await expect(fs.readdir(tmpDir)).resolves.not.toContain("final-diff-zoom-001.png");
+    const legendPath = artifacts.find(artifact => artifact.role === "final_diff_groups_legend")!.path;
+    await expect(fs.readFile(legendPath, "utf8")).resolves.toContain('"zoomStatus": "rejected"');
+    await expect(fs.readFile(legendPath, "utf8")).resolves.toContain('"zoomRejectionReason": "disjoint"');
+  });
 });

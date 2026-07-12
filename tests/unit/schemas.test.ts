@@ -66,9 +66,15 @@ describe("core schemas", () => {
           disjoint: 0,
           below_minimum_artifact_size: 1
         }
-      }
+      },
+      references: [{
+        producer: "final_diff_zoom",
+        reason: "below_minimum_artifact_size",
+        reference: "finding-group:group-1"
+      }]
     });
     expect(diagnostics.countsByProducer.final_diff_zoom?.below_minimum_artifact_size).toBe(1);
+    expect(diagnostics.references).toEqual([{ producer: "final_diff_zoom", reason: "below_minimum_artifact_size", reference: "finding-group:group-1" }]);
     expect(FindingGroupLegendEntrySchema.parse({
       id: "group-1",
       label: "Footer control",

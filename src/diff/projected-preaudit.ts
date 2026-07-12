@@ -2,9 +2,10 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
-import type { Box, DiffRecord, ElementPair, ProjectedPreAuditSummary, UiArtifact, UiElement } from "../schemas/core.js";
+import type { Box, DiffRecord, ElementPair, GeometryDiagnosticReference, ProjectedPreAuditSummary, UiArtifact, UiElement } from "../schemas/core.js";
 import { detectProjectedCropMismatch, type ProjectedMismatchResult } from "../audit/projected-mismatch.js";
-import { extractImageCrop, resizeRgbaForComparison } from "../images/crop.js";
+import { extractImageCropFromBounds, resizeRgbaForComparison } from "../images/crop.js";
+import { resolveComparisonExtraction, type ComparisonExtractionBounds } from "../images/comparison-geometry.js";
 import { createDirectionalDiffOverlay } from "../images/directional-diff.js";
 import { buildDisplacementSearchIndex, searchDisplacementCandidates, type DisplacementCandidate } from "./displacement-search.js";
 import {
@@ -24,12 +25,15 @@ export interface ProjectedPreAuditResult {
   diffs: DiffRecord[];
   skipVlmPairIds: Set<string>;
   summary: ProjectedPreAuditSummary;
+  geometryRejections: GeometryDiagnosticReference[];
 }
 
 interface MismatchEntry {
   pair: ElementPair;
   expected: UiElement;
   actual: UiElement;
+  expectedBounds: ComparisonExtractionBounds;
+  actualBounds: ComparisonExtractionBounds;
   expectedCrop: Uint8Array;
   actualCrop: Uint8Array;
   result: ProjectedMismatchResult;
@@ -103,12 +107,12 @@ async function writeArtifactSet(input: {
 }
 
 async function writeChildArtifacts(entry: MismatchEntry, artifactDir: string): Promise<UiArtifact[]> {
-  const width = Math.max(1, Math.round(entry.expected.box.width));
-  const height = Math.max(1, Math.round(entry.expected.box.height));
-  const actual = entry.actual.box.width === entry.expected.box.width && entry.actual.box.height === entry.expected.box.height
+  const width = entry.expectedBounds.width;
+  const height = entry.expectedBounds.height;
+  const actual = entry.actualBounds.width === width && entry.actualBounds.height === height
     ? entry.actualCrop
     : await resizeRgbaForComparison(
-        { data: entry.actualCrop, width: Math.max(1, Math.round(entry.actual.box.width)), height: Math.max(1, Math.round(entry.actual.box.height)) },
+        { data: entry.actualCrop, width: entry.actualBounds.width, height: entry.actualBounds.height },
         width,
         height
       );
@@ -129,18 +133,47 @@ async function writeGroupArtifacts(group: ActiveMismatchGroup, members: Mismatch
   expectedRgba: RgbaImage;
   actualRgba: RgbaImage;
   artifactDir: string;
+  geometryRejections: GeometryDiagnosticReference[];
 }): Promise<UiArtifact[]> {
   const expectedBox = unionBoxes(members.map(member => member.expected.box));
   const projectedActualBox = unionBoxes(members.map(member => member.actual.box));
   const actualBox = group.kind === "coherent_displacement"
     ? translateBox(projectedActualBox, group.dx, group.dy)
     : projectedActualBox;
-  const width = Math.max(1, Math.round(expectedBox.width));
-  const height = Math.max(1, Math.round(expectedBox.height));
-  const expected = extractImageCrop(input.expectedRgba.data, input.expectedRgba.width, input.expectedRgba.height, expectedBox);
-  const actualRaw = extractImageCrop(input.actualRgba.data, input.actualRgba.width, input.actualRgba.height, actualBox);
+  const expectedResolution = resolveComparisonExtraction({
+    box: expectedBox,
+    sourceSpace: "expected_normalized",
+    canvas: { width: input.expectedRgba.width, height: input.expectedRgba.height }
+  });
+  const actualResolution = resolveComparisonExtraction({
+    box: actualBox,
+    sourceSpace: "comparison_expected_normalized",
+    canvas: { width: input.actualRgba.width, height: input.actualRgba.height }
+  });
+  if (expectedResolution.status === "rejected") {
+    input.geometryRejections.push({
+      producer: "projected_pre_audit",
+      reason: expectedResolution.reason,
+      reference: `finding-group:${group.id}`
+    });
+    return [];
+  }
+  if (actualResolution.status === "rejected") {
+    input.geometryRejections.push({
+      producer: "projected_pre_audit",
+      reason: actualResolution.reason,
+      reference: `finding-group:${group.id}`
+    });
+    return [];
+  }
+  const { bounds: expectedBounds } = expectedResolution;
+  const { bounds: actualBounds } = actualResolution;
+  const width = expectedBounds.width;
+  const height = expectedBounds.height;
+  const expected = extractImageCropFromBounds(input.expectedRgba.data, input.expectedRgba.width, expectedBounds);
+  const actualRaw = extractImageCropFromBounds(input.actualRgba.data, input.actualRgba.width, actualBounds);
   const actual = await resizeRgbaForComparison(
-    { data: actualRaw, width: Math.max(1, Math.round(actualBox.width)), height: Math.max(1, Math.round(actualBox.height)) },
+    { data: actualRaw, width: actualBounds.width, height: actualBounds.height },
     width,
     height
   );
@@ -173,6 +206,7 @@ export async function runProjectedPreAudit(input: {
   const actualById = new Map(input.actualElements.map(element => [element.id, element]));
   const mismatches: MismatchEntry[] = [];
   const skipVlmPairIds = new Set<string>();
+  const geometryRejections: GeometryDiagnosticReference[] = [];
   let projectedPairsChecked = 0;
   let sentToVlmPairs = 0;
 
@@ -182,15 +216,46 @@ export async function runProjectedPreAudit(input: {
     const actual = actualById.get(pair.actualId);
     if (!expected || !actual || actual.source !== "projected") continue;
     projectedPairsChecked++;
-    const expectedCrop = extractImageCrop(input.expectedRgba.data, input.expectedRgba.width, input.expectedRgba.height, expected.box);
-    const actualCrop = extractImageCrop(input.actualRgba.data, input.actualRgba.width, input.actualRgba.height, actual.box);
+    const expectedResolution = resolveComparisonExtraction({
+      box: expected.box,
+      sourceSpace: "expected_normalized",
+      canvas: { width: input.expectedRgba.width, height: input.expectedRgba.height }
+    });
+    // Projected actual elements are already in actual-source coordinates. Do not project them again.
+    const actualResolution = resolveComparisonExtraction({
+      box: actual.box,
+      sourceSpace: "comparison_expected_normalized",
+      canvas: { width: input.actualRgba.width, height: input.actualRgba.height }
+    });
+    if (expectedResolution.status === "rejected") {
+      geometryRejections.push({ producer: "projected_pre_audit", reason: expectedResolution.reason, reference: `pair:${pair.id}` });
+      sentToVlmPairs++;
+      continue;
+    }
+    if (actualResolution.status === "rejected") {
+      geometryRejections.push({ producer: "projected_pre_audit", reason: actualResolution.reason, reference: `pair:${pair.id}` });
+      sentToVlmPairs++;
+      continue;
+    }
+    const expectedCrop = extractImageCropFromBounds(input.expectedRgba.data, input.expectedRgba.width, expectedResolution.bounds);
+    const actualCrop = extractImageCropFromBounds(input.actualRgba.data, input.actualRgba.width, actualResolution.bounds);
     const result = await detectProjectedCropMismatch(
-      { data: expectedCrop, width: Math.max(1, Math.round(expected.box.width)), height: Math.max(1, Math.round(expected.box.height)) },
-      { data: actualCrop, width: Math.max(1, Math.round(actual.box.width)), height: Math.max(1, Math.round(actual.box.height)) },
+      { data: expectedCrop, width: expectedResolution.bounds.width, height: expectedResolution.bounds.height },
+      { data: actualCrop, width: actualResolution.bounds.width, height: actualResolution.bounds.height },
       expected.text
     );
     if (result?.mismatched) {
-      mismatches.push({ pair, expected, actual, expectedCrop, actualCrop, result, candidates: [] });
+      mismatches.push({
+        pair,
+        expected,
+        actual,
+        expectedBounds: expectedResolution.bounds,
+        actualBounds: actualResolution.bounds,
+        expectedCrop,
+        actualCrop,
+        result,
+        candidates: []
+      });
       skipVlmPairIds.add(pair.id);
     } else {
       sentToVlmPairs++;
@@ -203,11 +268,12 @@ export async function runProjectedPreAudit(input: {
       mismatch.candidates = await searchDisplacementCandidates({
         expected: {
           data: mismatch.expectedCrop,
-          width: Math.max(1, Math.round(mismatch.expected.box.width)),
-          height: Math.max(1, Math.round(mismatch.expected.box.height))
+          width: mismatch.expectedBounds.width,
+          height: mismatch.expectedBounds.height
         },
         index: searchIndex,
-        projectedBox: mismatch.actual.box
+        projectedBox: mismatch.actual.box,
+        actualBounds: mismatch.actualBounds
       });
     }
   }
@@ -253,7 +319,7 @@ export async function runProjectedPreAudit(input: {
   const groupArtifacts = new Map<string, UiArtifact[]>();
   for (const group of activeGroups) {
     const members = mismatches.filter(mismatch => group.pairIds.includes(mismatch.pair.id));
-    groupArtifacts.set(group.id, await writeGroupArtifacts(group, members, input));
+    groupArtifacts.set(group.id, await writeGroupArtifacts(group, members, { ...input, geometryRejections }));
   }
 
   const diffs: DiffRecord[] = [];
@@ -309,6 +375,7 @@ export async function runProjectedPreAudit(input: {
   return {
     diffs,
     skipVlmPairIds,
+    geometryRejections,
     summary: {
       projectedPairsChecked,
       deterministicProjectedDiffs: diffs.length,

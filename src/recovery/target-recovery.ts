@@ -9,6 +9,8 @@ import type { PixelComponent } from "../signals/pixel-diff.js";
 import type { VisionJsonCaller } from "../models/vision-json.js";
 import { buildRecoveryPrompt, buildReviewerPrompt } from "../audit/prompts.js";
 import { type ImagePairTransform, projectExpectedBoxToActualSource } from "../images/coordinates.js";
+import { extractImageCropFromBounds } from "../images/crop.js";
+import { resolveComparisonExtraction, type ComparisonExtractionBounds } from "../images/comparison-geometry.js";
 
 const CLASSIFIABLE_CRITERIA = UiCriterionSchema.exclude(["unclassified_visual_change"]);
 
@@ -86,48 +88,25 @@ export interface RecoveryContext {
 function extractRgbaCrop(
   imageData: Uint8Array,
   imageWidth: number,
-  imageHeight: number,
-  box: Box
+  bounds: ComparisonExtractionBounds
 ): { data: Uint8Array; width: number; height: number } {
-  const x = Math.max(0, Math.round(box.x));
-  const y = Math.max(0, Math.round(box.y));
-  const w = Math.min(Math.round(box.width), imageWidth - x);
-  const h = Math.min(Math.round(box.height), imageHeight - y);
-  if (w <= 0 || h <= 0) return { data: new Uint8Array(4), width: 1, height: 1 };
-  const out = new Uint8Array(w * h * 4);
-  for (let row = 0; row < h; row++) {
-    for (let col = 0; col < w; col++) {
-      const src = ((y + row) * imageWidth + (x + col)) * 4;
-      const dst = (row * w + col) * 4;
-      out[dst] = imageData[src] ?? 0;
-      out[dst + 1] = imageData[src + 1] ?? 0;
-      out[dst + 2] = imageData[src + 2] ?? 0;
-      out[dst + 3] = imageData[src + 3] ?? 0;
-    }
-  }
-  return { data: out, width: w, height: h };
+  return { data: extractImageCropFromBounds(imageData, imageWidth, bounds), width: bounds.width, height: bounds.height };
 }
 
 function extractMaskCrop(
   mask: Uint8Array,
   maskWidth: number,
-  maskHeight: number,
-  box: Box
+  bounds: ComparisonExtractionBounds
 ): { data: Uint8Array; width: number; height: number } {
-  const x = Math.max(0, Math.round(box.x));
-  const y = Math.max(0, Math.round(box.y));
-  const w = Math.min(Math.round(box.width), maskWidth - x);
-  const h = Math.min(Math.round(box.height), maskHeight - y);
-  if (w <= 0 || h <= 0) return { data: new Uint8Array(1), width: 1, height: 1 };
-  const out = new Uint8Array(w * h);
-  for (let row = 0; row < h; row++) {
-    for (let col = 0; col < w; col++) {
-      const src = (y + row) * maskWidth + (x + col);
-      const dst = row * w + col;
+  const out = new Uint8Array(bounds.width * bounds.height);
+  for (let row = 0; row < bounds.height; row++) {
+    for (let col = 0; col < bounds.width; col++) {
+      const src = (bounds.top + row) * maskWidth + (bounds.left + col);
+      const dst = row * bounds.width + col;
       out[dst] = (mask[src] ?? 0) > 0 ? 255 : 0;
     }
   }
-  return { data: out, width: w, height: h };
+  return { data: out, width: bounds.width, height: bounds.height };
 }
 
 async function writePngArtifact(
@@ -138,11 +117,7 @@ async function writePngArtifact(
   channels: 1 | 4 = 4
 ): Promise<void> {
   await fs.mkdir(path.dirname(outPath), { recursive: true });
-  if (width <= 0 || height <= 0) {
-    await sharp({ create: { width: 1, height: 1, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
-      .png().toFile(outPath);
-    return;
-  }
+  if (width < 2 || height < 2) throw new Error("below_minimum_artifact_size");
   await sharp(
     Buffer.from(data.buffer, data.byteOffset, data.byteLength),
     { raw: { width, height, channels } }
@@ -157,7 +132,7 @@ async function toBase64Png(
 ): Promise<string> {
   const buf = await sharp(
     Buffer.from(data.buffer, data.byteOffset, data.byteLength),
-    { raw: { width: width > 0 ? width : 1, height: height > 0 ? height : 1, channels } }
+    { raw: { width, height, channels } }
   ).png().toBuffer();
   return buf.toString("base64");
 }
@@ -197,6 +172,7 @@ export interface RecoveryRegionOutcome {
 export type RecoveryRegionInput = PixelComponent & { id?: string };
 
 interface PreparedRecoveryEvidence {
+  status: "valid";
   regionId: string;
   component: RecoveryRegionInput;
   artifacts: UiArtifact[];
@@ -206,23 +182,56 @@ interface PreparedRecoveryEvidence {
   maskCrop: { data: Uint8Array; width: number; height: number };
 }
 
+interface RejectedRecoveryEvidence {
+  status: "rejected";
+  regionId: string;
+  component: RecoveryRegionInput;
+  reason: string;
+  artifacts: UiArtifact[];
+}
+
+type RecoveryEvidencePreparation = PreparedRecoveryEvidence | RejectedRecoveryEvidence;
+
 export async function prepareRecoveryRegionArtifacts(
   regions: RecoveryRegionInput[],
   ctx: Pick<RecoveryContext, "expectedRgba" | "actualRgba" | "imagePairTransform" | "pixelDiffMask" | "directionalOverlayPath" | "artifactDir">
-): Promise<PreparedRecoveryEvidence[]> {
+): Promise<RecoveryEvidencePreparation[]> {
   const overlayRawResult = await sharp(ctx.directionalOverlayPath).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   const overlayData = new Uint8Array(overlayRawResult.data.buffer, overlayRawResult.data.byteOffset, overlayRawResult.data.byteLength);
-  const prepared: PreparedRecoveryEvidence[] = [];
+  const prepared: RecoveryEvidencePreparation[] = [];
   for (let index = 0; index < regions.length; index++) {
     const component = regions[index]!;
     const regionId = component.id ?? `component-${String(index + 1).padStart(4, "0")}`;
     const safeId = regionId.replace(/[^a-zA-Z0-9_-]/g, "-");
-    const box = component.box;
-    const actBox = ctx.imagePairTransform ? projectExpectedBoxToActualSource(box, ctx.imagePairTransform) : box;
-    const expCrop = extractRgbaCrop(ctx.expectedRgba.data, ctx.expectedRgba.width, ctx.expectedRgba.height, box);
-    const actCrop = extractRgbaCrop(ctx.actualRgba.data, ctx.actualRgba.width, ctx.actualRgba.height, actBox);
-    const overlayCrop = extractRgbaCrop(overlayData, overlayRawResult.info.width, overlayRawResult.info.height, box);
-    const maskCrop = extractMaskCrop(ctx.pixelDiffMask, ctx.expectedRgba.width, ctx.expectedRgba.height, box);
+    const comparison = resolveComparisonExtraction({
+      box: component.box,
+      sourceSpace: "comparison_expected_normalized",
+      canvas: { width: ctx.expectedRgba.width, height: ctx.expectedRgba.height }
+    });
+    const actualBox = ctx.imagePairTransform ? projectExpectedBoxToActualSource(component.box, ctx.imagePairTransform) : component.box;
+    const actual = resolveComparisonExtraction({
+      box: actualBox,
+      sourceSpace: "comparison_expected_normalized",
+      canvas: { width: ctx.actualRgba.width, height: ctx.actualRgba.height }
+    });
+    if (comparison.status === "rejected" || actual.status === "rejected") {
+      prepared.push({
+        status: "rejected",
+        regionId,
+        component,
+        reason: comparison.status === "rejected"
+          ? comparison.reason
+          : actual.status === "rejected"
+            ? actual.reason
+            : "below_minimum_artifact_size",
+        artifacts: []
+      });
+      continue;
+    }
+    const expCrop = extractRgbaCrop(ctx.expectedRgba.data, ctx.expectedRgba.width, comparison.bounds);
+    const actCrop = extractRgbaCrop(ctx.actualRgba.data, ctx.actualRgba.width, actual.bounds);
+    const overlayCrop = extractRgbaCrop(overlayData, overlayRawResult.info.width, comparison.bounds);
+    const maskCrop = extractMaskCrop(ctx.pixelDiffMask, ctx.expectedRgba.width, comparison.bounds);
     const expCropPath = path.join(ctx.artifactDir, `recovery-${safeId}-expected.png`);
     const actCropPath = path.join(ctx.artifactDir, `recovery-${safeId}-actual.png`);
     const overlayPath = path.join(ctx.artifactDir, `recovery-${safeId}-overlay.png`);
@@ -232,6 +241,7 @@ export async function prepareRecoveryRegionArtifacts(
     await writePngArtifact(overlayCrop.data, overlayCrop.width, overlayCrop.height, overlayPath, 4);
     await writePngArtifact(maskCrop.data, maskCrop.width, maskCrop.height, maskPath, 1);
     prepared.push({
+      status: "valid",
       regionId,
       component,
       expCrop,
@@ -286,10 +296,31 @@ export async function runTargetRecovery(
     ctx
   );
   const preparedById = new Map(prepared.map(entry => [entry.regionId, entry]));
+  const rejectedEvidence = prepared.filter((entry): entry is RejectedRecoveryEvidence => entry.status === "rejected");
+  for (const entry of rejectedEvidence) {
+    countStatus("evidence_crop_rejected");
+    unclassifiedCount++;
+    trace.push({
+      componentId: entry.regionId,
+      rank: 0,
+      componentBox: entry.component.box,
+      pixelCount: entry.component.pixelCount,
+      status: "evidence_crop_rejected",
+      rejectionReason: entry.reason,
+      artifactPaths: []
+    });
+    regionOutcomes.push({
+      regionId: entry.regionId,
+      state: "unresolved",
+      reason: `evidence_crop_rejected: ${entry.reason}`,
+      rejectionReason: entry.reason,
+      artifactPaths: []
+    });
+  }
 
   // Push below-threshold traces
-  for (const entry of ranked.filter(e => e.component.pixelCount < budget.minComponentPixels)) {
-    const artifacts = preparedById.get(entry.componentId)?.artifacts ?? [];
+  for (const entry of ranked.filter(e => e.component.pixelCount < budget.minComponentPixels && preparedById.get(e.componentId)?.status === "valid")) {
+    const artifacts = preparedById.get(entry.componentId)!.artifacts;
     countStatus("below_threshold");
     trace.push({
       componentId: entry.componentId,
@@ -302,7 +333,7 @@ export async function runTargetRecovery(
     regionOutcomes.push({ regionId: entry.componentId, state: "noise", reason: "below_threshold", artifactPaths: artifacts });
   }
 
-  const eligible = ranked.filter(e => e.component.pixelCount >= budget.minComponentPixels);
+  const eligible = ranked.filter(e => e.component.pixelCount >= budget.minComponentPixels && preparedById.get(e.componentId)?.status === "valid");
   const toProcess = eligible;
   const batchSize = Math.max(1, budget.maxComponents);
 
@@ -329,7 +360,7 @@ export async function runTargetRecovery(
     attemptedComponents++;
     const evidenceId = componentId;
     const box = component.box;
-    const preparedEvidence = preparedById.get(componentId)!;
+    const preparedEvidence = preparedById.get(componentId)! as PreparedRecoveryEvidence;
     const { expCrop, actCrop, overlayCrop, maskCrop, artifacts } = preparedEvidence;
 
     const evidence: UnassignedVisualEvidence = {

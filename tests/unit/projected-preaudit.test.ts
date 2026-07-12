@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import sharp from "sharp";
 import { describe, expect, it, vi } from "vitest";
 import { runProjectedPreAudit } from "../../src/diff/projected-preaudit.js";
 import type { ElementPair, UiElement } from "../../src/schemas/core.js";
@@ -81,6 +82,44 @@ describe("runProjectedPreAudit", () => {
     expect(result.diffs[0]?.projectionMismatchKind).toBe("absent_at_location");
     expect(result.diffs[0]?.artifactPaths).toHaveLength(4);
     await Promise.all(result.diffs[0]!.artifactPaths.map(artifact => fs.access(artifact.path)));
+  });
+
+  it("uses resolved fractional bounds for artifacts and projects actual-source evidence only once", async () => {
+    (detectProjectedCropMismatch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      mismatched: true,
+      reason: "projected_crop_low_overlap",
+      changedPercent: 90
+    });
+    (searchDisplacementCandidates as ReturnType<typeof vi.fn>).mockResolvedValueOnce([]);
+    const artifactDir = await fs.mkdtemp(path.join(os.tmpdir(), "projected-fractional-"));
+    const expectedEl = makeExpected("fractional-expected");
+    expectedEl.box = { x: 50.2, y: 20.2, width: 5.1, height: 5.1 };
+    const actualEl = makeActualProjected("fractional-actual");
+    // This is already projected from a 200px expected source into a 100px actual source.
+    actualEl.box = { x: 25.1, y: 10.1, width: 2.55, height: 2.55 };
+
+    const result = await runProjectedPreAudit({
+      pairs: [makePair("fractional-pair", expectedEl.id, actualEl.id)],
+      expectedElements: [expectedEl],
+      actualElements: [actualEl],
+      expectedRgba: makeRgba(200, 400),
+      actualRgba: makeRgba(100, 200, 10),
+      artifactDir
+    });
+
+    expect(detectProjectedCropMismatch).toHaveBeenCalledWith(
+      expect.objectContaining({ width: 6, height: 6 }),
+      expect.objectContaining({ width: 3, height: 3 }),
+      undefined
+    );
+    expect(searchDisplacementCandidates).toHaveBeenCalledWith(expect.objectContaining({
+      projectedBox: actualEl.box,
+      actualBounds: { left: 25, top: 10, width: 3, height: 3 }
+    }));
+    const expectedArtifact = result.diffs[0]!.artifactPaths.find(artifact => artifact.role === "projected_expected_crop")!;
+    const actualArtifact = result.diffs[0]!.artifactPaths.find(artifact => artifact.role === "projected_actual_crop")!;
+    await expect(sharp(expectedArtifact.path).metadata()).resolves.toMatchObject({ width: 6, height: 6 });
+    await expect(sharp(actualArtifact.path).metadata()).resolves.toMatchObject({ width: 6, height: 6 });
   });
 
   it("accounting: deterministicProjectedDiffs + sentToVlmPairs equals projectedPairsChecked", async () => {
@@ -236,6 +275,58 @@ describe("runProjectedPreAudit", () => {
         "projected_group_directional_overlay",
         "projected_group_pixel_diff_mask"
       ]));
+    }
+  });
+
+  it("records rejected projected group crops without claiming nonexistent group artifacts", async () => {
+    (detectProjectedCropMismatch as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({ mismatched: true, reason: "projected_crop_low_overlap", changedPercent: 90 })
+      .mockResolvedValueOnce({ mismatched: true, reason: "projected_crop_low_overlap", changedPercent: 88 });
+    const disjointCandidate = [{
+      dx: 200,
+      dy: 0,
+      score: 0.9,
+      edgeOverlap: 0.85,
+      colorAgreement: 0.8,
+      improvement: 0.3,
+      runnerUpMargin: 0.2
+    }];
+    (searchDisplacementCandidates as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce(disjointCandidate)
+      .mockResolvedValueOnce(disjointCandidate);
+
+    const parent = makeExpected("rejected-group-parent", "Settings");
+    parent.box = { x: 0, y: 0, width: 120, height: 180 };
+    const first = makeExpected("rejected-group-e-first", "First setting");
+    first.parentId = parent.id;
+    first.box = { x: 10, y: 20, width: 40, height: 20 };
+    const second = makeExpected("rejected-group-e-second", "Second setting");
+    second.parentId = parent.id;
+    second.box = { x: 10, y: 80, width: 40, height: 20 };
+    parent.childIds = [first.id, second.id];
+    const actualFirst = makeActualProjected("rejected-group-a-first");
+    actualFirst.box = { x: 8, y: 18, width: 30, height: 15 };
+    const actualSecond = makeActualProjected("rejected-group-a-second");
+    actualSecond.box = { x: 8, y: 72, width: 30, height: 15 };
+
+    const result = await runProjectedPreAudit({
+      pairs: [makePair("rejected-group-p-first", first.id, actualFirst.id), makePair("rejected-group-p-second", second.id, actualSecond.id)],
+      expectedElements: [parent, first, second],
+      actualElements: [actualFirst, actualSecond],
+      expectedRgba: makeRgba(200, 400),
+      actualRgba: makeRgba(150, 300, 10),
+      artifactDir: await fs.mkdtemp(path.join(os.tmpdir(), "projected-group-rejected-"))
+    });
+
+    const groupId = result.diffs[0]!.findingGroupId!;
+    expect(result.diffs.every(diff => diff.findingGroupId === groupId)).toBe(true);
+    expect(result.geometryRejections).toContainEqual({
+      producer: "projected_pre_audit",
+      reason: "disjoint",
+      reference: `finding-group:${groupId}`
+    });
+    for (const diff of result.diffs) {
+      expect(diff.artifactPaths.some(artifact => artifact.role.startsWith("projected_group_"))).toBe(false);
     }
   });
 

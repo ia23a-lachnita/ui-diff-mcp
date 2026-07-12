@@ -1,7 +1,10 @@
 import type {
   Box,
+  ComparisonBoxRejectionReason,
   ComparisonBoxResolution,
-  ComparisonBoxSourceSpace
+  ComparisonBoxSourceSpace,
+  GeometryDiagnosticReference,
+  GeometryDiagnostics
 } from "../schemas/core.js";
 import type { ImagePairTransform } from "./coordinates.js";
 import { projectActualBoxToExpectedSource } from "./coordinates.js";
@@ -14,7 +17,45 @@ export interface ResolveComparisonBoxInput {
   minimumSize?: { width: number; height: number };
 }
 
+export interface ComparisonExtractionBounds {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+export type ComparisonExtractionResolution =
+  | {
+    status: "valid";
+    box: Box;
+    bounds: ComparisonExtractionBounds;
+    clipped: boolean;
+    sourceSpace: ComparisonBoxSourceSpace;
+  }
+  | {
+    status: "rejected";
+    reason: ComparisonBoxRejectionReason;
+    sourceSpace: ComparisonBoxSourceSpace;
+  };
+
 const MINIMUM_ARTIFACT_SIZE = 2;
+
+export function summarizeGeometryDiagnostics(references: GeometryDiagnosticReference[]): GeometryDiagnostics {
+  const emptyCounts = (): Record<ComparisonBoxRejectionReason, number> => ({
+    non_finite: 0,
+    non_positive: 0,
+    disjoint: 0,
+    below_minimum_artifact_size: 0
+  });
+  const countsByReason = emptyCounts();
+  const countsByProducer: Record<string, Record<ComparisonBoxRejectionReason, number>> = {};
+  for (const diagnostic of references) {
+    countsByReason[diagnostic.reason]++;
+    const producerCounts = countsByProducer[diagnostic.producer] ??= emptyCounts();
+    producerCounts[diagnostic.reason]++;
+  }
+  return { countsByReason, countsByProducer, references: [...references] };
+}
 
 // Preserve finite fractional comparison coordinates. Task 4 owns integer extraction rounding.
 export function resolveComparisonBox(input: ResolveComparisonBoxInput): ComparisonBoxResolution {
@@ -70,6 +111,36 @@ export function resolveComparisonBox(input: ResolveComparisonBoxInput): Comparis
     clipped: x !== box.x || y !== box.y || width !== box.width || height !== box.height,
     coordinateSpace: "comparison_expected_normalized",
     sourceSpace: input.sourceSpace
+  };
+}
+
+// Image libraries require integer rectangles. Keep continuous validation above, then use one
+// conservative floor/ceil conversion so fractional coverage is never silently discarded.
+export function resolveComparisonExtraction(input: ResolveComparisonBoxInput): ComparisonExtractionResolution {
+  const resolution = resolveComparisonBox(input);
+  if (resolution.status === "rejected") {
+    return { status: "rejected", reason: resolution.reason, sourceSpace: resolution.sourceSpace };
+  }
+
+  const left = Math.max(0, Math.floor(resolution.box.x));
+  const top = Math.max(0, Math.floor(resolution.box.y));
+  const right = Math.min(input.canvas.width, Math.ceil(resolution.box.x + resolution.box.width));
+  const bottom = Math.min(input.canvas.height, Math.ceil(resolution.box.y + resolution.box.height));
+  const width = right - left;
+  const height = bottom - top;
+  if (!Number.isFinite(left) || !Number.isFinite(top) || !Number.isFinite(right) || !Number.isFinite(bottom)) {
+    return { status: "rejected", reason: "non_finite", sourceSpace: input.sourceSpace };
+  }
+  if (width < MINIMUM_ARTIFACT_SIZE || height < MINIMUM_ARTIFACT_SIZE) {
+    return { status: "rejected", reason: "below_minimum_artifact_size", sourceSpace: input.sourceSpace };
+  }
+
+  return {
+    status: "valid",
+    box: resolution.box,
+    bounds: { left, top, width, height },
+    clipped: resolution.clipped,
+    sourceSpace: resolution.sourceSpace
   };
 }
 

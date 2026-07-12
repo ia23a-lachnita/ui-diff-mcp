@@ -1,26 +1,17 @@
 import sharp from "sharp";
 import type { Box } from "../schemas/core.js";
+import { resolveComparisonExtraction, type ComparisonExtractionBounds } from "./comparison-geometry.js";
 
-export function extractImageCrop(
+export function extractImageCropFromBounds(
   imageData: Uint8Array,
   imageWidth: number,
-  imageHeight: number,
-  box: Box
+  bounds: ComparisonExtractionBounds
 ): Uint8Array {
-  const x = Math.max(0, Math.round(box.x));
-  const y = Math.max(0, Math.round(box.y));
-  const w = Math.min(Math.round(box.width), imageWidth - x);
-  const h = Math.min(Math.round(box.height), imageHeight - y);
-
-  if (w <= 0 || h <= 0) {
-    return new Uint8Array(4);
-  }
-
-  const croppedData = new Uint8Array(w * h * 4);
-  for (let row = 0; row < h; row++) {
-    for (let col = 0; col < w; col++) {
-      const srcIdx = ((y + row) * imageWidth + (x + col)) * 4;
-      const destIdx = (row * w + col) * 4;
+  const croppedData = new Uint8Array(bounds.width * bounds.height * 4);
+  for (let row = 0; row < bounds.height; row++) {
+    for (let col = 0; col < bounds.width; col++) {
+      const srcIdx = ((bounds.top + row) * imageWidth + (bounds.left + col)) * 4;
+      const destIdx = (row * bounds.width + col) * 4;
       croppedData[destIdx] = imageData[srcIdx] ?? 0;
       croppedData[destIdx + 1] = imageData[srcIdx + 1] ?? 0;
       croppedData[destIdx + 2] = imageData[srcIdx + 2] ?? 0;
@@ -28,6 +19,21 @@ export function extractImageCrop(
     }
   }
   return croppedData;
+}
+
+export function extractImageCrop(
+  imageData: Uint8Array,
+  imageWidth: number,
+  imageHeight: number,
+  box: Box
+): Uint8Array {
+  const resolution = resolveComparisonExtraction({
+    box,
+    sourceSpace: "comparison_expected_normalized",
+    canvas: { width: imageWidth, height: imageHeight }
+  });
+  if (resolution.status === "rejected") throw new Error(resolution.reason);
+  return extractImageCropFromBounds(imageData, imageWidth, resolution.bounds);
 }
 
 export async function resizeRgbaForComparison(

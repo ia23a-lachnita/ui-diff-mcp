@@ -11,6 +11,13 @@ import { startMockSidecar } from "../fixtures/mock-sidecar.js";
 import { makeMockFetch } from "../fixtures/mock-models.js";
 import type { MockSidecar } from "../fixtures/mock-sidecar.js";
 
+vi.mock("../../src/diff/projected-preaudit.js", async importOriginal => {
+  const actual = await importOriginal<typeof import("../../src/diff/projected-preaudit.js")>();
+  return { ...actual, runProjectedPreAudit: vi.fn(actual.runProjectedPreAudit) };
+});
+
+import { runProjectedPreAudit } from "../../src/diff/projected-preaudit.js";
+
 let tmpDir: string;
 let sidecar: MockSidecar;
 
@@ -140,6 +147,98 @@ describe("runUiDiff end-to-end (deterministic_only mode)", () => {
         expected: { source: "canonical_default", verification: "caller_attested" },
         actual: { source: "auto_capture", verification: "caller_attested" }
       }
+    });
+  });
+
+  it("preserves rejected recovery evidence and geometry diagnostics through checkpoints and the final report", async () => {
+    const expected = await writeSolidPng(tmpDir, "rejected-evidence-expected.png", 200, 400, 255, 255, 255);
+    const actualBase = await writeSolidPng(tmpDir, "rejected-evidence-actual-base.png", 200, 400, 255, 255, 255);
+    const actual = path.join(tmpDir, "rejected-evidence-actual.png");
+    await sharp(actualBase)
+      .composite([{ input: { create: { width: 1, height: 50, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 1 } } }, left: 20, top: 20 }])
+      .png()
+      .toFile(actual);
+    const checkpointDiagnostics: unknown[] = [];
+
+    const result = await runUiDiff({
+      expectedImagePath: expected,
+      actualImagePath: actual,
+      projectRoot: tmpDir,
+      mode: "deterministic_only",
+      onCheckpoint: async ({ checkpointPath }) => {
+        const checkpoint = JSON.parse(await fs.readFile(checkpointPath, "utf8")) as { geometryDiagnostics?: unknown };
+        checkpointDiagnostics.push(checkpoint.geometryDiagnostics);
+      }
+    });
+
+    expect(checkpointDiagnostics.length).toBeGreaterThan(0);
+    expect(checkpointDiagnostics.every(diagnostics => diagnostics !== undefined)).toBe(true);
+    const rawReport = JSON.parse(await fs.readFile(result.reportPath, "utf8")) as {
+      geometryDiagnostics?: { countsByReason: Record<string, number>; countsByProducer: Record<string, Record<string, number>> };
+      unresolvedRegions: unknown[];
+    };
+    const report = await hydrateReportParts(rawReport as Parameters<typeof hydrateReportParts>[0], result.reportPath) as typeof rawReport;
+
+    expect(report.geometryDiagnostics).toMatchObject({
+      countsByReason: { below_minimum_artifact_size: 1 },
+      countsByProducer: { recovery_artifact_backfill: { below_minimum_artifact_size: 1 } }
+    });
+    expect(report.unresolvedRegions).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        reason: "evidence_crop_rejected",
+        detail: "evidence_crop_rejected: below_minimum_artifact_size"
+      })
+    ]));
+  });
+
+  it("accounts for rejected projected-group crops in checkpoints and the final report", async () => {
+    const expected = await writeSolidPng(tmpDir, "rejected-group-expected.png", 200, 400, 255, 255, 255);
+    const actual = await writeSolidPng(tmpDir, "rejected-group-actual.png", 200, 400, 255, 255, 255);
+    const groupId = "displacement-rejected-group";
+    vi.mocked(runProjectedPreAudit).mockResolvedValueOnce({
+      diffs: [],
+      skipVlmPairIds: new Set(),
+      summary: {
+        projectedPairsChecked: 0,
+        deterministicProjectedDiffs: 0,
+        sentToVlmPairs: 0,
+        skippedFromVlmPairIds: [],
+        uniqueDisplacements: 0,
+        displacementGroups: 0,
+        structuralMismatchGroups: 0,
+        groupedPairs: 0
+      },
+      geometryRejections: [{
+        producer: "projected_pre_audit",
+        reason: "disjoint",
+        reference: `finding-group:${groupId}`
+      }]
+    });
+    const checkpointDiagnostics: Array<{ countsByReason: Record<string, number>; countsByProducer: Record<string, Record<string, number>>; references: Array<{ reference: string }> }> = [];
+
+    const result = await runUiDiff({
+      expectedImagePath: expected,
+      actualImagePath: actual,
+      projectRoot: tmpDir,
+      mode: "deterministic_only",
+      onCheckpoint: async ({ checkpointPath }) => {
+        const checkpoint = JSON.parse(await fs.readFile(checkpointPath, "utf8")) as { geometryDiagnostics: typeof checkpointDiagnostics[number] };
+        checkpointDiagnostics.push(checkpoint.geometryDiagnostics);
+      }
+    });
+
+    expect(checkpointDiagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        countsByReason: expect.objectContaining({ disjoint: 1 }),
+        countsByProducer: expect.objectContaining({ projected_pre_audit: expect.objectContaining({ disjoint: 1 }) }),
+        references: expect.arrayContaining([expect.objectContaining({ reference: `finding-group:${groupId}` })])
+      })
+    ]));
+    const report = JSON.parse(await fs.readFile(result.reportPath, "utf8")) as { geometryDiagnostics: typeof checkpointDiagnostics[number] };
+    expect(report.geometryDiagnostics).toMatchObject({
+      countsByReason: { disjoint: 1 },
+      countsByProducer: { projected_pre_audit: { disjoint: 1 } },
+      references: [{ producer: "projected_pre_audit", reason: "disjoint", reference: `finding-group:${groupId}` }]
     });
   });
 

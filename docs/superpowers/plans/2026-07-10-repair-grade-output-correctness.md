@@ -234,11 +234,11 @@ export async function writeComparisonCrop(input: {
 }): Promise<CropResult | { status: "rejected"; reason: ComparisonBoxRejectionReason }>;
 ```
 
-- [ ] **Step 1: Write failing crop tests**
+- [x] **Step 1: Write failing crop tests**
 
 Assert a `1x1` requested edge crop returns `status:"rejected"`, writes no file, and is counted as `below_minimum_artifact_size`. Assert a clipped `4x4` crop writes exactly 4x4. Assert a disjoint group causes `zoomStatus:"rejected"` in `final-diff-groups-legend.json` and no `final-diff-zoom-*.png`.
 
-- [ ] **Step 2: Run the red tests**
+- [x] **Step 2: Run the red tests**
 
 ```powershell
 npx vitest run tests/unit/crop-validation.test.ts tests/unit/context-overlays.test.ts
@@ -246,11 +246,11 @@ npx vitest run tests/unit/crop-validation.test.ts tests/unit/context-overlays.te
 
 Expected: FAIL because crop writers still synthesize `1x1` raw images or use independent clamping.
 
-- [ ] **Step 3: Route every extraction through shared validation**
+- [x] **Step 3: Route every extraction through shared validation**
 
 Replace local `Math.max(1, ...)`, `Uint8Array(4)`, and independent overlay/zoom clamp paths with the comparison resolver. `audit-target` must skip malformed provider evidence and emit a trace rejection. `target-recovery` must retain/reason about the unresolved component instead of passing a 1x1 crop to a model. `writeZoomPanel` returns a structured result and the legend records `zoomStatus`, reason, and canonical coordinate space.
 
-- [ ] **Step 4: Run green tests and focused e2e regression**
+- [x] **Step 4: Run green tests and focused e2e regression**
 
 ```powershell
 npx vitest run tests/unit/crop-validation.test.ts tests/unit/context-overlays.test.ts tests/unit/audit.test.ts tests/unit/target-recovery.test.ts
@@ -259,13 +259,17 @@ npx vitest run tests/e2e/compare-ui-images.test.ts
 
 Expected: PASS; no test fixture writes a synthetic 1x1 crop.
 
-- [ ] **Step 5: Commit and push**
+- [ ] **Step 5: Commit and push (deferred by explicit user direction)**
 
 ```powershell
 git add src/images/artifacts.ts src/images/crop.ts src/audit/audit-target.ts src/recovery/target-recovery.ts src/report/context-overlays.ts tests/unit/crop-validation.test.ts tests/unit/context-overlays.test.ts tests/unit/audit.test.ts tests/unit/target-recovery.test.ts tests/e2e/compare-ui-images.test.ts docs/implementation-status.md
 git commit -m "fix: reject invalid diff artifacts"
 git push origin HEAD
 ```
+
+**Review findings follow-up (2026-07-12):** [x] Final recovery-artifact backfill now preserves `evidence_crop_rejected:<reason>` through the region ledger and final report instead of replacing it with `not_classified`. Checkpoints and the final report aggregate `geometryDiagnostics` by reason and producer with report-safe pair/region/finding-group references. Projected pre-audit propagates shared integer extraction bounds to detection, search, and artifact writes; fractional and actual-source single-projection regressions are covered. RED: `npx vitest run tests/unit/projected-preaudit.test.ts tests/e2e/compare-ui-images.test.ts` failed on omitted diagnostics and rounded-source mismatch. GREEN: focused Task 4 suite (120 tests), `npm run typecheck`, and `npm run verify` PASS. Pre-review in Antigravity MCP conversation `ui-diff-mcp-task4-review-findings-20260712` timed out after 300 seconds; post-review using `gemini-3.1-pro-preview` returned `AGREEMENT_STATUS: agree`, `MUST_FIX: none`.
+
+**Final review findings follow-up (2026-07-12):** [x] Projected pre-audit now passes its resolver-derived integer `actualBounds` to displacement search, so the Task 4 path does not re-round projected dimensions. Generic callers retain the compatible `projectedBox` fallback. Rejected projected-group crops now append a report-safe `projected_pre_audit` diagnostic with `finding-group:<id>` reference and reason, while the related diffs retain no nonexistent group artifacts. RED: `npx vitest run tests/unit/projected-preaudit.test.ts tests/e2e/compare-ui-images.test.ts` failed on absent bounds and group diagnostics. GREEN: `npx vitest run tests/unit/displacement-search.test.ts tests/unit/projected-preaudit.test.ts tests/e2e/compare-ui-images.test.ts` PASS (31 tests), `npm run typecheck`, and `npm run verify` PASS (640 unit/e2e + 19 parser + build + 22 integration). Antigravity MCP review in `ui-diff-mcp-task4-review-findings-20260712`, `gemini-3.1-pro-preview`, returned `AGREEMENT_STATUS: agree`, `MUST_FIX: none`.
 
 ## Task 5: Deterministic Hierarchy And Full Locator Markup Cleanup
 

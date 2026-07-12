@@ -5,6 +5,7 @@ import sharp from "sharp";
 import { resolveInputImagePath, createRunDirectory } from "../security/paths.js";
 import { loadNormalizedImage } from "../images/normalize.js";
 import { createImagePairTransform } from "../images/coordinates.js";
+import { summarizeGeometryDiagnostics } from "../images/comparison-geometry.js";
 import { computeViewportCompatibility } from "../images/viewport.js";
 import { buildRegionLedger, applyFindingCoverage, applyRecoveryOutcomes, unresolvedRegionsFromLedger, type RegionLedger } from "../report/region-ledger.js";
 import { consolidateFindings } from "../report/finding-consolidation.js";
@@ -42,7 +43,7 @@ import { buildDiffSummary, buildScopeDiffSummaries } from "../diff/scope-summary
 import { writeUiDiffReport, writeReportCheckpoint } from "../report/report-writer.js";
 import { hydrateReportParts } from "../report/report-parts.js";
 import { filterComponentsForScope, filterPairsForScope, normalizeDiffScope } from "./diff-scope.js";
-import type { UiDiffReport, RunStatus, VisualClassificationStatus, LocatorCoverageStatus, DiffRecord, ElementPair, UiArtifact, AuditScope, ModelSelection, RecoverySummary, RecoveryCursor, StageStatus, LocatorLaneMetadata, RunDebugSummary, ProjectedPreAuditSummary, DiffScope, UsageSummary, LocatorInputSizing, InputProvenance, InputProvenanceRequest } from "../schemas/core.js";
+import type { UiDiffReport, RunStatus, VisualClassificationStatus, LocatorCoverageStatus, DiffRecord, ElementPair, UiArtifact, AuditScope, ModelSelection, RecoverySummary, RecoveryCursor, StageStatus, LocatorLaneMetadata, RunDebugSummary, ProjectedPreAuditSummary, DiffScope, UsageSummary, LocatorInputSizing, InputProvenance, InputProvenanceRequest, ComparisonBoxRejectionReason, GeometryDiagnosticReference } from "../schemas/core.js";
 import { computeColorEvidence } from "../signals/color.js";
 import { createRunId } from "./run-store.js";
 import { UiDiffReportSchema } from "../schemas/core.js";
@@ -334,6 +335,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
   let recoverySummary: RecoverySummary | undefined = undefined;
   let recoveryCursor: RecoveryCursor | undefined = undefined;
   let regionLedger: RegionLedger | undefined;
+  const geometryRejections: GeometryDiagnosticReference[] = [];
   const debugTrace: RunDebugTrace = { audit: [], coverage: [], recovery: [] };
   const providerTrace = new ProviderTraceWriter();
   const allDiffs: DiffRecord[] = [];
@@ -363,6 +365,60 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     const existingIndex = runArtifacts.findIndex(a => a.role === "provider_trace");
     if (existingIndex >= 0) runArtifacts[existingIndex] = artifact;
     else runArtifacts.push(artifact);
+  }
+
+  function recordGeometryRejection(
+    producer: string,
+    reason: ComparisonBoxRejectionReason,
+    reference: string
+  ): void {
+    geometryRejections.push({ producer, reason, reference });
+  }
+
+  function recordEvidenceCropRejection(producer: string, rejectionReason: string | undefined, reference: string): void {
+    const reason = rejectionReason?.match(/^evidence_crop_rejected:\s*(.+)$/)?.[1];
+    if (isGeometryRejectionReason(reason)) {
+      recordGeometryRejection(producer, reason, reference);
+    }
+  }
+
+  function isGeometryRejectionReason(value: string | undefined): value is ComparisonBoxRejectionReason {
+    return value === "non_finite"
+      || value === "non_positive"
+      || value === "disjoint"
+      || value === "below_minimum_artifact_size";
+  }
+
+  function recoveryOutcomeFromPrepared(
+    entry: Awaited<ReturnType<typeof prepareRecoveryRegionArtifacts>>[number],
+    fallbackReason: string
+  ) {
+    if (entry.status === "rejected") {
+      return {
+        regionId: entry.regionId,
+        state: "unresolved" as const,
+        reason: `evidence_crop_rejected: ${entry.reason}`,
+        rejectionReason: entry.reason,
+        artifactPaths: []
+      };
+    }
+    return {
+      regionId: entry.regionId,
+      state: "unresolved" as const,
+      reason: fallbackReason,
+      artifactPaths: entry.artifacts
+    };
+  }
+
+  function recordPreparedGeometryRejections(
+    producer: string,
+    prepared: Awaited<ReturnType<typeof prepareRecoveryRegionArtifacts>>
+  ): void {
+    for (const entry of prepared) {
+      if (entry.status === "rejected" && isGeometryRejectionReason(entry.reason)) {
+        recordGeometryRejection(producer, entry.reason, `region:${entry.regionId}`);
+      }
+    }
   }
 
   function upsertStage(
@@ -410,6 +466,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
       inputProvenance: effectiveInputProvenance,
       ...(recoverySummary !== undefined ? { recoverySummary } : {}),
       ...(recoveryCursor !== undefined ? { recoveryCursor } : {}),
+      geometryDiagnostics: summarizeGeometryDiagnostics(geometryRejections),
       imageNormalization: { expected: expectedImg.metadata, actual: actualImg.metadata },
       viewportCompatibilityStatus: viewportCompatibility.status,
       viewportCompatibilityReasons: viewportCompatibility.reasons,
@@ -661,6 +718,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     actualRgba: { data: actualImg.rgba, width: actualImg.width, height: actualImg.height },
     artifactDir: artifactRoot
   });
+  geometryRejections.push(...projectedPreAuditResult.geometryRejections);
   allDiffs.push(...projectedPreAuditResult.diffs);
   projectedPreAuditSummary = projectedPreAuditResult.summary;
 
@@ -920,6 +978,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
             reviewerCaller,
             expectedRgba: { data: expectedImg.rgba, width: expectedImg.width, height: expectedImg.height },
             actualRgba: { data: actualImg.rgba, width: actualImg.width, height: actualImg.height },
+            imagePairTransform,
             measurements: colorMeasurements,
             triggerCtx: {
               pairingStatus: pair.status,
@@ -951,6 +1010,9 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
             break;
           }
           debugTrace.audit.push(...trace);
+          for (const entry of trace) {
+            recordEvidenceCropRejection("audit_evidence", entry.rejectionReason, `pair:${entry.pairId}`);
+          }
           auditedDiffs.push(...accepted);
           const providerCalled = trace.some(t => t.status !== "criterion_not_triggered");
           const reviewed = trace.some(t => ["reviewer_accepted", "reviewer_rejected", "reviewer_needs_escalation"].includes(t.status));
@@ -1025,12 +1087,8 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
             directionalOverlayPath,
             artifactDir: artifactRoot
           });
-          applyRecoveryOutcomes(regionLedger, prepared.map(entry => ({
-            regionId: entry.regionId,
-            state: "unresolved" as const,
-            reason: "caller_unavailable",
-            artifactPaths: entry.artifacts
-          })));
+          recordPreparedGeometryRejections("recovery_artifact_prepare", prepared);
+          applyRecoveryOutcomes(regionLedger, prepared.map(entry => recoveryOutcomeFromPrepared(entry, "caller_unavailable")));
           recoveryCursor = { nextRegionIndex: 0, remainingModelCalls: 0, remainingRegionIds: uncoveredComponents.map(component => component.id) };
           warnings.push("Target recovery skipped: no passing target_recovery route available for current mode. Uncovered pixel regions will not be classified.");
           visualClassificationStatus = "incomplete";
@@ -1083,6 +1141,9 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
             reviewerCaller
           });
           debugTrace.recovery.push(...recoveryResult.trace);
+          for (const entry of recoveryResult.trace) {
+            recordEvidenceCropRejection("target_recovery", entry.rejectionReason, `region:${entry.componentId}`);
+          }
           const activeRecovered = filterAcceptedDiffs(recoveryResult.recovered);
           allDiffs.push(...activeRecovered);
           applyFindingCoverage(regionLedger, activeRecovered);
@@ -1148,7 +1209,11 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
   applyFindingCoverage(regionLedger, activeDiffs);
   applyResidualSuppression(regionLedger);
   debugTrace.coverage = regionLedger.coverageTrace;
-  const artifactlessRegions = regionLedger.regions.filter(region => region.state === "unresolved" && region.artifactPaths.length === 0);
+  const artifactlessRegions = regionLedger.regions.filter(region =>
+    region.state === "unresolved"
+    && region.artifactPaths.length === 0
+    && !region.unresolvedDetail?.startsWith("evidence_crop_rejected:")
+  );
   if (artifactlessRegions.length > 0) {
     const prepared = await prepareRecoveryRegionArtifacts(
       artifactlessRegions.map(region => ({ id: region.id, box: region.box, pixelCount: region.pixelCount })),
@@ -1161,12 +1226,8 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
         artifactDir: artifactRoot
       }
     );
-    applyRecoveryOutcomes(regionLedger, prepared.map(entry => ({
-      regionId: entry.regionId,
-      state: "unresolved" as const,
-      reason: "not_classified",
-      artifactPaths: entry.artifacts
-    })));
+    recordPreparedGeometryRejections("recovery_artifact_backfill", prepared);
+    applyRecoveryOutcomes(regionLedger, prepared.map(entry => recoveryOutcomeFromPrepared(entry, "not_classified")));
   }
   const unresolvedReason = auditScope?.stoppedReason === "route_exhausted"
     ? "audit_route_exhausted" as const
@@ -1187,7 +1248,8 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     unresolvedRegions,
     elements: expectedElements,
     actualElements,
-    imagePairTransform
+    imagePairTransform,
+    geometryRejections
   });
   runArtifacts.push(...contextArtifacts);
 
@@ -1228,6 +1290,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     ...(recoverySummary !== undefined ? { recoverySummary } : {}),
     ...(recoveryCursor !== undefined ? { recoveryCursor } : {}),
     ...(projectedPreAuditSummary !== undefined ? { projectedPreAudit: projectedPreAuditSummary } : {}),
+    geometryDiagnostics: summarizeGeometryDiagnostics(geometryRejections),
     providerDiagnosticsPresent: providerTrace.getEvents().some(e => e.diagnostic !== undefined),
     imageNormalization: { expected: expectedImg.metadata, actual: actualImg.metadata },
     comparisonSpace: {

@@ -1,8 +1,9 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
-import type { Box, DiffRecord, UiArtifact, UiElement, UnresolvedRegion } from "../schemas/core.js";
+import type { Box, ComparisonBoxRejectionReason, DiffRecord, FindingGroupLegendEntry, GeometryDiagnosticReference, UiArtifact, UiElement, UnresolvedRegion } from "../schemas/core.js";
 import { projectActualBoxToExpectedSource, type ImagePairTransform } from "../images/coordinates.js";
+import { resolveComparisonExtraction } from "../images/comparison-geometry.js";
 
 type AnnotationKind = "diff" | "unresolved" | "element" | "hierarchy";
 
@@ -47,6 +48,7 @@ export interface RegionContextOverlayInput {
   elements?: UiElement[];
   actualElements?: UiElement[];
   imagePairTransform?: ImagePairTransform;
+  geometryRejections?: GeometryDiagnosticReference[];
 }
 
 const SEMANTIC_ELEMENT_TYPES = new Set<UiElement["type"]>([
@@ -67,11 +69,13 @@ function escapeXml(value: string): string {
 }
 
 function clampBox(box: Box, width: number, height: number): Box {
-  const x = Math.max(0, Math.min(Math.round(box.x), Math.max(0, width - 1)));
-  const y = Math.max(0, Math.min(Math.round(box.y), Math.max(0, height - 1)));
-  const right = Math.max(x + 1, Math.min(Math.round(box.x + box.width), width));
-  const bottom = Math.max(y + 1, Math.min(Math.round(box.y + box.height), height));
-  return { x, y, width: right - x, height: bottom - y };
+  const resolution = resolveComparisonExtraction({
+    box,
+    sourceSpace: "comparison_expected_normalized",
+    canvas: { width, height }
+  });
+  if (resolution.status === "rejected") return { x: 0, y: 0, width: 0, height: 0 };
+  return { x: resolution.bounds.left, y: resolution.bounds.top, width: resolution.bounds.width, height: resolution.bounds.height };
 }
 
 function boxArea(box: Box): number {
@@ -323,23 +327,36 @@ async function writeZoomPanel(
   outPath: string,
   group: FindingGroup,
   index: number
-): Promise<void> {
+): Promise<{ status: "valid"; path: string } | { status: "rejected"; reason: ComparisonBoxRejectionReason }> {
   await fs.mkdir(path.dirname(outPath), { recursive: true });
   const metadata = await sharp(baseImagePath).metadata();
-  const width = metadata.width ?? 1;
-  const height = metadata.height ?? 1;
-  const pad = Math.max(32, Math.round(Math.max(group.box.width, group.box.height) * 0.35));
-  const crop = clampBox({
+  if (!metadata.width || !metadata.height) return { status: "rejected", reason: "non_positive" };
+  const width = metadata.width;
+  const height = metadata.height;
+  const groupResolution = resolveComparisonExtraction({
+    box: group.box,
+    sourceSpace: "comparison_expected_normalized",
+    canvas: { width, height }
+  });
+  if (groupResolution.status === "rejected") return { status: "rejected", reason: groupResolution.reason };
+  const pad = Math.max(32, Math.max(groupResolution.box.width, groupResolution.box.height) * 0.35);
+  const cropResolution = resolveComparisonExtraction({
+    box: {
     x: group.box.x - pad,
     y: group.box.y - pad,
     width: group.box.width + pad * 2,
     height: group.box.height + pad * 2
-  }, width, height);
+    },
+    sourceSpace: "comparison_expected_normalized",
+    canvas: { width, height }
+  });
+  if (cropResolution.status === "rejected") return { status: "rejected", reason: cropResolution.reason };
+  const crop = cropResolution.bounds;
   const localBox = {
-    x: group.box.x - crop.x,
-    y: group.box.y - crop.y,
-    width: group.box.width,
-    height: group.box.height
+    x: groupResolution.box.x - crop.left,
+    y: groupResolution.box.y - crop.top,
+    width: groupResolution.box.width,
+    height: groupResolution.box.height
   };
   const svg = svgForAnnotations(crop.width, crop.height, [{
     box: localBox,
@@ -347,10 +364,11 @@ async function writeZoomPanel(
     kind: "diff"
   }]);
   await sharp(baseImagePath)
-    .extract({ left: crop.x, top: crop.y, width: crop.width, height: crop.height })
+    .extract(crop)
     .composite([{ input: svg, blend: "over" }])
     .png()
     .toFile(outPath);
+  return { status: "valid", path: outPath };
 }
 
 async function writeJson(outPath: string, value: unknown): Promise<void> {
@@ -394,20 +412,30 @@ export async function writeRegionContextOverlays(input: RegionContextOverlayInpu
     .sort((a, b) => severityRank(b.severity) - severityRank(a.severity) || boxArea(b.box) - boxArea(a.box))
     .slice(0, Math.max(0, maxZooms));
   const zoomArtifacts: UiArtifact[] = [];
-  const legendGroups = [];
+  const legendGroups: FindingGroupLegendEntry[] = [];
   for (const [index, group] of zoomGroups.entries()) {
     const zoomPath = path.join(input.artifactDir, `final-diff-zoom-${String(index + 1).padStart(3, "0")}.png`);
-    await writeZoomPanel(input.actualComparisonPath, zoomPath, group, index + 1);
-    zoomArtifacts.push({ role: "final_diff_zoom", path: zoomPath });
-    legendGroups.push({
+    const zoom = await writeZoomPanel(input.actualComparisonPath, zoomPath, group, index + 1);
+    const legendGroup = {
       id: group.id,
       label: group.label,
       box: group.box,
       diffIds: group.diffIds,
-      criteria: group.criteria,
+      criteria: group.criteria as FindingGroupLegendEntry["criteria"],
       severity: group.severity,
-      zoomArtifact: zoomPath
-    });
+      coordinateSpace: "comparison_expected_normalized" as const
+    };
+    if (zoom.status === "valid") {
+      zoomArtifacts.push({ role: "final_diff_zoom", path: zoom.path });
+      legendGroups.push({ ...legendGroup, zoomStatus: "valid", zoomArtifact: zoom.path });
+    } else {
+      input.geometryRejections?.push({
+        producer: "final_diff_zoom",
+        reason: zoom.reason,
+        reference: `finding-group:${group.id}`
+      });
+      legendGroups.push({ ...legendGroup, zoomStatus: "rejected", zoomRejectionReason: zoom.reason });
+    }
   }
   await writeJson(legendPath, { groups: legendGroups });
   await writeJson(hierarchyLegendPath, { nodes: hierarchyNodes });

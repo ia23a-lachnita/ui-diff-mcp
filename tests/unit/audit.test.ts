@@ -162,6 +162,18 @@ describe("prompt builders", () => {
 });
 
 describe("auditElementPair", () => {
+  it("rejects invalid crop evidence before calling an auditor", async () => {
+    const auditorCaller: VisionJsonCaller = vi.fn();
+    const result = await auditElementPair(pair, makeAuditContext({
+      auditorCaller,
+      expectedElements: [{ ...expectedEl, box: { x: 199, y: 199, width: 1, height: 1 } }]
+    }));
+
+    expect(auditorCaller).not.toHaveBeenCalled();
+    expect(result.trace).toEqual(expect.arrayContaining([
+      expect.objectContaining({ status: "reviewer_rejected", rejectionReason: "evidence_crop_rejected: below_minimum_artifact_size" })
+    ]));
+  });
   let tmpDir: string;
   let grayPng: string;
 
@@ -194,6 +206,7 @@ describe("auditElementPair", () => {
     auditorCaller?: VisionJsonCaller;
     reviewerCaller?: VisionJsonCaller;
     boxDeltaPx?: number;
+    expectedElements?: UiElement[];
   } = {}) {
     const auditorCaller: VisionJsonCaller = overrides.auditorCaller ?? vi.fn().mockResolvedValue({
       parsed: { hasDiff: false },
@@ -210,7 +223,7 @@ describe("auditElementPair", () => {
     return {
       expectedImagePath: grayPng,
       actualImagePath: grayPng,
-      expectedElements: [expectedEl],
+      expectedElements: overrides.expectedElements ?? [expectedEl],
       actualElements: [{ ...expectedEl, id: "a1", box: { x: 10, y: 50 + (overrides.boxDeltaPx ?? 0), width: 80, height: 40 } }],
       artifactDir: tmpDir,
       auditorCaller,

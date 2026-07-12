@@ -119,7 +119,7 @@ export function unresolvedRegionsFromLedger(
       sourceComponentIds: region.sourceComponentIds,
       relatedFindingIds: region.coveringFindingIds,
       relation: region.coveringFindingIds.length > 0 ? "nearby_larger_finding" : "none",
-      reason,
+      reason: region.unresolvedDetail?.startsWith("evidence_crop_rejected:") ? "evidence_crop_rejected" : reason,
       ...(region.unresolvedDetail ? { detail: region.unresolvedDetail } : {}),
       artifactPaths: region.artifactPaths
     }));

@@ -1,7 +1,8 @@
 import path from "node:path";
 import fs from "node:fs/promises";
 import sharp from "sharp";
-import type { Box } from "../schemas/core.js";
+import type { Box, ComparisonBoxRejectionReason } from "../schemas/core.js";
+import { resolveComparisonExtraction } from "./comparison-geometry.js";
 
 export interface CropResult {
   path: string;
@@ -9,12 +10,30 @@ export interface CropResult {
   height: number;
 }
 
-function clampBox(box: Box, imageWidth: number, imageHeight: number): Box {
-  const x = Math.max(0, Math.min(Math.round(box.x), imageWidth - 1));
-  const y = Math.max(0, Math.min(Math.round(box.y), imageHeight - 1));
-  const width = Math.max(1, Math.min(Math.round(box.width), imageWidth - x));
-  const height = Math.max(1, Math.min(Math.round(box.height), imageHeight - y));
-  return { x, y, width, height };
+export type ComparisonCropResult =
+  | ({ status: "valid" } & CropResult)
+  | { status: "rejected"; reason: ComparisonBoxRejectionReason };
+
+export async function writeComparisonCrop(input: {
+  imagePath: string;
+  comparisonBox: Box;
+  outPath: string;
+  canvas: { width: number; height: number };
+}): Promise<ComparisonCropResult> {
+  const resolution = resolveComparisonExtraction({
+    box: input.comparisonBox,
+    sourceSpace: "comparison_expected_normalized",
+    canvas: input.canvas
+  });
+  if (resolution.status === "rejected") return { status: "rejected", reason: resolution.reason };
+
+  await fs.mkdir(path.dirname(input.outPath), { recursive: true });
+  await sharp(input.imagePath)
+    .extract(resolution.bounds)
+    .png()
+    .toFile(input.outPath);
+
+  return { status: "valid", path: input.outPath, width: resolution.bounds.width, height: resolution.bounds.height };
 }
 
 export async function writeCrop(
@@ -30,18 +49,13 @@ export async function writeCrop(
     box.x + box.width > imageWidth ||
     box.y + box.height > imageHeight
   ) {
-    throw new Error(
-      `Box {x:${box.x},y:${box.y},w:${box.width},h:${box.height}} exceeds image bounds ${imageWidth}x${imageHeight}`
-    );
+    throw new Error(`Box {x:${box.x},y:${box.y},w:${box.width},h:${box.height}} exceeds image bounds ${imageWidth}x${imageHeight}`);
   }
-
-  const clamped = clampBox(box, imageWidth, imageHeight);
-  await sharp(imagePath)
-    .extract({ left: clamped.x, top: clamped.y, width: clamped.width, height: clamped.height })
-    .png()
-    .toFile(outPath);
-
-  return { path: outPath, width: clamped.width, height: clamped.height };
+  const result = await writeComparisonCrop({ imagePath, comparisonBox: box, outPath, canvas: { width: imageWidth, height: imageHeight } });
+  if (result.status === "rejected") {
+    throw new Error(`Box {x:${box.x},y:${box.y},w:${box.width},h:${box.height}} exceeds image bounds ${imageWidth}x${imageHeight}: ${result.reason}`);
+  }
+  return result;
 }
 
 export async function writeOverlay(

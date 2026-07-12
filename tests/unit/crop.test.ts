@@ -38,9 +38,9 @@ describe("extractImageCrop", () => {
     expect(crop[13]).toBe(20);
   });
 
-  it("returns a 1-pixel fallback for a box with zero effective width", () => {
+  it("rejects a box with zero effective width instead of manufacturing a 1-pixel crop", () => {
     const data = new Uint8Array(4 * 4 * 4);
-    const crop = extractImageCrop(data, 4, 4, { x: 4, y: 0, width: 2, height: 2 });
-    expect(crop.length).toBe(4);
+    expect(() => extractImageCrop(data, 4, 4, { x: 4, y: 0, width: 2, height: 2 }))
+      .toThrow("disjoint");
   });
 });

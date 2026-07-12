@@ -47,9 +47,17 @@ const GeometryRejectionCountsSchema = z.record(
   z.number().int().nonnegative()
 );
 
+export const GeometryDiagnosticReferenceSchema = z.object({
+  producer: z.string().min(1),
+  reason: ComparisonBoxRejectionReasonSchema,
+  reference: z.string().min(1)
+}).strict();
+export type GeometryDiagnosticReference = z.infer<typeof GeometryDiagnosticReferenceSchema>;
+
 export const GeometryDiagnosticsSchema = z.object({
   countsByReason: GeometryRejectionCountsSchema,
-  countsByProducer: z.record(z.string().min(1), GeometryRejectionCountsSchema)
+  countsByProducer: z.record(z.string().min(1), GeometryRejectionCountsSchema),
+  references: z.array(GeometryDiagnosticReferenceSchema).default([])
 }).strict();
 export type GeometryDiagnostics = z.infer<typeof GeometryDiagnosticsSchema>;
 
@@ -342,6 +350,7 @@ export const UnresolvedRegionSchema = z.object({
     "audit_route_exhausted",
     "recovery_route_exhausted",
     "recovery_budget_exhausted",
+    "evidence_crop_rejected",
     "interrupted"
   ]),
   detail: z.string().max(200).optional(),
@@ -639,6 +648,7 @@ export const RecoveryDecisionStatusSchema = z.enum([
   "recovery_error",
   "recovery_schema_error",
   "missing_required_fields",
+  "evidence_crop_rejected",
   "box_out_of_bounds",
   "box_no_component_overlap"
 ]);

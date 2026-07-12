@@ -1,4 +1,5 @@
 import type { Box } from "../schemas/core.js";
+import type { ComparisonExtractionBounds } from "../images/comparison-geometry.js";
 import { resizeRgbaForComparison } from "../images/crop.js";
 
 export interface RgbaSearchImage {
@@ -117,13 +118,14 @@ export async function searchDisplacementCandidates(input: {
   expected: RgbaSearchImage;
   index: DisplacementSearchIndex;
   projectedBox: Box;
+  actualBounds?: ComparisonExtractionBounds;
   maxDx?: number;
   maxDy?: number;
   coarseStride?: number;
   excludedBoxes?: Box[];
 }): Promise<DisplacementCandidate[]> {
-  const targetWidth = Math.max(1, Math.round(input.projectedBox.width));
-  const targetHeight = Math.max(1, Math.round(input.projectedBox.height));
+  const targetWidth = input.actualBounds?.width ?? Math.max(1, Math.round(input.projectedBox.width));
+  const targetHeight = input.actualBounds?.height ?? Math.max(1, Math.round(input.projectedBox.height));
   const templateData = input.expected.width === targetWidth && input.expected.height === targetHeight
     ? input.expected.data
     : await resizeRgbaForComparison(input.expected, targetWidth, targetHeight);
@@ -131,8 +133,8 @@ export async function searchDisplacementCandidates(input: {
   const points = sampleEdgePoints(templateMaps.edgeMap, templateMaps.colorMap, targetWidth);
   if (points.length < 4) return [];
 
-  const originX = Math.round(input.projectedBox.x);
-  const originY = Math.round(input.projectedBox.y);
+  const originX = input.actualBounds?.left ?? Math.round(input.projectedBox.x);
+  const originY = input.actualBounds?.top ?? Math.round(input.projectedBox.y);
   const maxDx = Math.max(0, Math.min(input.maxDx ?? Math.max(40, Math.round(input.index.width * 0.2)), 256));
   const maxDy = Math.max(0, Math.min(input.maxDy ?? Math.max(40, Math.round(input.index.height * 0.35)), 640));
   const coarseStride = Math.max(1, Math.round(input.coarseStride ?? 4));
