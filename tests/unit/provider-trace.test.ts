@@ -2,7 +2,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { ProviderTraceWriter, writeProviderTrace } from "../../src/debug/provider-trace.js";
+import { buildRuntimeModelUsageLedger, ProviderTraceWriter, writeProviderTrace } from "../../src/debug/provider-trace.js";
+import { buildUsageSummaryFromLedger } from "../../src/debug/usage-summary.js";
 
 let tmpDir: string;
 beforeEach(async () => { tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "provider-trace-test-")); });
@@ -111,6 +112,179 @@ describe("ProviderTraceWriter", () => {
       }
     });
     expect(writer.getEvents()[0]?.diagnostic).toMatchObject({ kind: "truncated_json", retryDecision: "same_route_compact_retry" });
+  });
+
+  it("derives runtime usage from matched call lifecycles and diagnoses unmatched events", () => {
+    const writer = new ProviderTraceWriter();
+    writer.emit({
+      phase: "audit", event: "call_start", role: "auditor", provider: "gemini", model: "gemini-3.5-flash",
+      modelFamilyKey: "gemini-3.5-flash", callId: "audit-success"
+    });
+    writer.emit({
+      phase: "audit", event: "call_success", role: "auditor", provider: "gemini", model: "gemini-3.5-flash",
+      modelFamilyKey: "gemini-3.5-flash", callId: "audit-success", status: "ok", inputTokens: 12, outputTokens: 4, totalTokens: 16
+    });
+    writer.emit({
+      phase: "audit", event: "call_start", role: "auditor", provider: "gemini", model: "gemini-3.5-flash",
+      modelFamilyKey: "gemini-3.5-flash", callId: "audit-error", attempt: 1
+    });
+    writer.emit({
+      phase: "audit", event: "call_error", role: "auditor", provider: "gemini", model: "gemini-3.5-flash",
+      modelFamilyKey: "gemini-3.5-flash", callId: "audit-error", attempt: 1, status: "error"
+    });
+    writer.emit({
+      phase: "audit", event: "call_start", role: "auditor", provider: "gemini", model: "gemini-3.5-flash",
+      modelFamilyKey: "gemini-3.5-flash", callId: "audit-incomplete", attempt: 2
+    });
+    writer.emit({
+      phase: "reviewer", event: "fallback", role: "reviewer", provider: "mistral", model: "mistral-small-3.2",
+      modelFamilyKey: "mistral-small-3.2"
+    });
+    writer.emit({
+      phase: "reviewer", event: "call_start", role: "reviewer", provider: "mistral", model: "mistral-small-3.2",
+      modelFamilyKey: "mistral-small-3.2", callId: "review-missing-usage"
+    });
+    writer.emit({
+      phase: "reviewer", event: "call_success", role: "reviewer", provider: "mistral", model: "mistral-small-3.2",
+      modelFamilyKey: "mistral-small-3.2", callId: "review-missing-usage", status: "ok"
+    });
+    writer.emit({
+      phase: "recovery", event: "fallback", role: "target_recovery", provider: "mistral", model: "mistral-large",
+      modelFamilyKey: "mistral-large"
+    });
+    writer.emit({
+      phase: "audit", event: "call_success", role: "auditor", provider: "gemini", model: "gemini-3.5-flash",
+      modelFamilyKey: "gemini-3.5-flash", callId: "orphan", status: "ok"
+    });
+    writer.emit({
+      phase: "audit", event: "call_start", role: "auditor", provider: "gemini", model: "gemini-3.5-flash",
+      modelFamilyKey: "gemini-3.5-flash"
+    });
+    writer.emit({
+      phase: "audit", event: "call_success", role: "auditor", provider: "gemini", model: "gemini-3.5-flash",
+      modelFamilyKey: "gemini-3.5-flash", status: "ok"
+    });
+
+    const events = writer.getEvents();
+    const ledger = buildRuntimeModelUsageLedger([...events, events[1]!]);
+
+    expect(ledger.usage).toEqual([
+      {
+        phase: "audit", role: "auditor", provider: "gemini", model: "gemini-3.5-flash",
+        callStartCount: 3, callSuccessCount: 1, callErrorCount: 1, fallbackCount: 0,
+        incompleteStartedCallCount: 1, successesWithUsage: 1, successesMissingUsage: 0,
+        inputTokens: 12, outputTokens: 4, totalTokens: 16
+      },
+      {
+        phase: "reviewer", role: "reviewer", provider: "mistral", model: "mistral-small-3.2",
+        callStartCount: 1, callSuccessCount: 1, callErrorCount: 0, fallbackCount: 1,
+        incompleteStartedCallCount: 0, successesWithUsage: 0, successesMissingUsage: 1
+      }
+    ]);
+    expect(ledger.diagnostics).toEqual({
+      orphanTerminalCount: 1,
+      legacyUnmatchedLifecycleEventCount: 2,
+      duplicateCallStartCount: 0,
+      fallbackWithoutCallStartCount: 1,
+      terminalRouteMismatchCount: 0,
+      terminalStatusMismatchCount: 0
+    });
+  });
+
+  it("requires an exact route tuple and expected terminal status before closing a call", () => {
+    const writer = new ProviderTraceWriter();
+    writer.emit({
+      phase: "audit", event: "call_start", role: "auditor", provider: "gemini", model: "gemini-3.5-flash",
+      modelFamilyKey: "gemini-3.5-flash", callId: "tuple-mismatch"
+    });
+    writer.emit({
+      phase: "audit", event: "call_success", role: "auditor", provider: "mistral", model: "mistral-small-3.2",
+      modelFamilyKey: "mistral-small-3.2", callId: "tuple-mismatch", status: "ok", totalTokens: 999
+    });
+    writer.emit({
+      phase: "audit", event: "call_error", role: "auditor", provider: "gemini", model: "gemini-3.5-flash",
+      modelFamilyKey: "gemini-3.5-flash", callId: "tuple-mismatch", status: "ok"
+    });
+
+    const ledger = buildRuntimeModelUsageLedger(writer.getEvents());
+    expect(ledger.usage).toEqual([{
+      phase: "audit", role: "auditor", provider: "gemini", model: "gemini-3.5-flash",
+      callStartCount: 1, callSuccessCount: 0, callErrorCount: 0, fallbackCount: 0,
+      incompleteStartedCallCount: 1, successesWithUsage: 0, successesMissingUsage: 0
+    }]);
+    expect(ledger.diagnostics).toMatchObject({ terminalRouteMismatchCount: 1, terminalStatusMismatchCount: 1 });
+  });
+
+  it("derives usage summary only from reconciled lifecycle successes", () => {
+    const writer = new ProviderTraceWriter();
+    writer.emit({
+      phase: "audit", event: "call_start", role: "auditor", provider: "gemini", model: "gemini-3.5-flash",
+      modelFamilyKey: "gemini-3.5-flash", callId: "accepted"
+    });
+    writer.emit({
+      phase: "audit", event: "call_success", role: "auditor", provider: "gemini", model: "gemini-3.5-flash",
+      modelFamilyKey: "gemini-3.5-flash", callId: "accepted", status: "ok", inputTokens: 10, outputTokens: 4, totalTokens: 14
+    });
+    writer.emit({
+      phase: "audit", event: "call_success", role: "auditor", provider: "mistral", model: "mistral-small-3.2",
+      modelFamilyKey: "mistral-small-3.2", callId: "orphan", status: "ok", totalTokens: 999
+    });
+    writer.emit({
+      phase: "audit", event: "call_success", role: "auditor", provider: "gemini", model: "gemini-3.5-flash",
+      modelFamilyKey: "gemini-3.5-flash", status: "ok", totalTokens: 888
+    });
+
+    const ledger = buildRuntimeModelUsageLedger(writer.getEvents());
+    const usageSummary = buildUsageSummaryFromLedger(ledger);
+    expect(usageSummary).toMatchObject({
+      calls: ledger.usage[0]?.callSuccessCount,
+      inputTokens: ledger.usage[0]?.inputTokens,
+      outputTokens: ledger.usage[0]?.outputTokens,
+      totalTokens: ledger.usage[0]?.totalTokens,
+      successesWithUsage: ledger.usage[0]?.successesWithUsage,
+      successesMissingUsage: ledger.usage[0]?.successesMissingUsage
+    });
+    expect(usageSummary.totalTokens).toBe(14);
+    expect(usageSummary.byRoute).toEqual({
+      "gemini/gemini-3.5-flash": expect.objectContaining({ totalTokens: 14, calls: 1 })
+    });
+  });
+
+  it("preserves deduplicated imported route exhaustion in usage summary without runtime work", () => {
+    const checkpoint = new ProviderTraceWriter();
+    checkpoint.emit({
+      phase: "recovery", event: "route_exhausted", role: "target_recovery", provider: "mistral", model: "mistral-large",
+      modelFamilyKey: "mistral-large", status: "error"
+    });
+    const resumed = new ProviderTraceWriter();
+    resumed.importEvents([...checkpoint.getEvents(), ...checkpoint.getEvents()]);
+
+    const ledger = buildRuntimeModelUsageLedger(resumed.getEvents());
+    const summary = buildUsageSummaryFromLedger(ledger);
+
+    expect(ledger.usage).toEqual([]);
+    expect(summary).toMatchObject({
+      calls: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      totalTokens: 0,
+      routeExhaustedCount: 1
+    });
+    expect(summary.byRoute).toEqual({
+      "mistral/mistral-large": expect.objectContaining({ routeExhaustedCount: 1, calls: 0, totalTokens: 0 })
+    });
+  });
+
+  it("imports checkpoint events once by event ID", () => {
+    const first = new ProviderTraceWriter();
+    first.emit({
+      phase: "audit", event: "call_start", role: "auditor", provider: "gemini", model: "gemini-3.5-flash",
+      modelFamilyKey: "gemini-3.5-flash"
+    });
+    const resumed = new ProviderTraceWriter();
+    resumed.importEvents([...first.getEvents(), ...first.getEvents()]);
+
+    expect(resumed.getEvents()).toHaveLength(1);
   });
 });
 

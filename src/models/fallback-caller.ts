@@ -75,42 +75,19 @@ export function makeFallbackVisionCaller(
       const candidate = candidates[i]!;
       const phase = candidate.phase ?? "audit";
       const role = phase === "reviewer" ? "reviewer" as const : phase === "recovery" ? "target_recovery" as const : "auditor" as const;
-      const startedAt = new Date().toISOString();
-      traceSink?.({
-        phase,
-        event: "call_start",
-        role,
-        provider: candidate.provider,
-        model: candidate.model,
-        modelFamilyKey: modelFamilyKey(candidate.model),
-        routeIndex: i,
-        startedAt
-      });
       try {
-        const callStart = Date.now();
-        const result = await candidate.caller(req);
-        const completedAt = new Date().toISOString();
-        traceSink?.({
-          phase,
-          event: "call_success",
-          role,
-          provider: candidate.provider,
-          model: candidate.model,
-          modelFamilyKey: modelFamilyKey(candidate.model),
-          routeIndex: i,
-          startedAt,
-          completedAt,
-          durationMs: Date.now() - callStart,
-          status: "ok",
-          ...(result.usage?.prompt_tokens !== undefined ? { inputTokens: result.usage.prompt_tokens } : {}),
-          ...(result.usage?.completion_tokens !== undefined ? { outputTokens: result.usage.completion_tokens } : {}),
-          ...(result.usage?.total_tokens !== undefined ? { totalTokens: result.usage.total_tokens } : {}),
-          ...(result.usage?.reasoning_tokens !== undefined ? { reasoningTokens: result.usage.reasoning_tokens } : {}),
-          ...(result.ttftMs != null ? { ttftMs: result.ttftMs } : {}),
-          ...(result.finishReason !== undefined ? { finishReason: result.finishReason } : {}),
-          ...(result.retryDecision !== undefined ? { retryDecision: result.retryDecision } : {})
+        return await candidate.caller(traceSink === undefined ? req : {
+          ...req,
+          lifecycle: {
+            traceSink,
+            phase,
+            role,
+            provider: candidate.provider,
+            model: candidate.model,
+            modelFamilyKey: modelFamilyKey(candidate.model),
+            routeIndex: i
+          }
         });
-        return result;
       } catch (err) {
         lastErr = err;
         persistedLastErr = err;
@@ -123,22 +100,6 @@ export function makeFallbackVisionCaller(
           : httpStatus ? { kind: "http_error" as const, httpStatus: Number(httpStatus) }
           : /timeout|ETIMEDOUT|AbortError/i.test(errMsg) ? { kind: "timeout" as const }
           : undefined;
-        traceSink?.({
-          phase,
-          event: "call_error",
-          role,
-          provider: candidate.provider,
-          model: candidate.model,
-          modelFamilyKey: modelFamilyKey(candidate.model),
-          routeIndex: i,
-          startedAt,
-          completedAt,
-          status: "error",
-          retryable,
-          reason: errMsg.slice(0, 500),
-          ...(httpStatus ? { httpStatus: Number(httpStatus) } : {}),
-          ...(diagnostic !== undefined ? { diagnostic } : {})
-        });
         if (!retryable) throw err;
         // Quota exhaustion and repeated schema-invalid JSON are useful run-wide
         // health signals. Timeouts, network errors, and 5xx responses are transient:

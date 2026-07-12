@@ -112,6 +112,16 @@ export interface VisionJsonRequest {
   timeoutMs: number;
   jsonMode?: "json_schema" | "json_object" | "parser_only";
   maxOutputTokens?: number;
+  attempt?: number;
+  lifecycle?: {
+    traceSink: ProviderTraceSink;
+    phase: ProviderTraceEvent["phase"];
+    role: ProviderTraceEvent["role"];
+    provider: string;
+    model: string;
+    modelFamilyKey: string;
+    routeIndex?: number;
+  };
 }
 
 export interface VisionJsonResponse {
@@ -284,17 +294,99 @@ function makeOpenRouterSingleCaller(apiKey: string, model: string): VisionJsonCa
   };
 }
 
+function providerTraceError(error: unknown): Pick<ProviderTraceEvent, "status" | "retryable" | "reason" | "httpStatus" | "diagnostic"> {
+  const reason = error instanceof Error ? error.message : String(error);
+  const httpStatus = /HTTP (\d{3})/.exec(reason)?.[1];
+  const diagnostic = error instanceof ProviderJsonParseError
+    ? error.diagnostic
+    : httpStatus === undefined
+      ? /timeout|ETIMEDOUT|AbortError/i.test(reason) ? { kind: "timeout" as const } : undefined
+      : { kind: "http_error" as const, httpStatus: Number(httpStatus) };
+  return {
+    status: "error",
+    retryable: true,
+    reason: reason.slice(0, 500),
+    ...(httpStatus !== undefined ? { httpStatus: Number(httpStatus) } : {}),
+    ...(diagnostic !== undefined ? { diagnostic } : {})
+  };
+}
+
+function withRequestLifecycle(single: VisionJsonCaller): VisionJsonCaller {
+  return async req => {
+    const lifecycle = req.lifecycle;
+    const callId = lifecycle === undefined ? undefined : crypto.randomUUID();
+    const startedAt = new Date().toISOString();
+    lifecycle?.traceSink({
+      phase: lifecycle.phase,
+      event: "call_start",
+      role: lifecycle.role,
+      provider: lifecycle.provider,
+      model: lifecycle.model,
+      modelFamilyKey: lifecycle.modelFamilyKey,
+      ...(callId !== undefined ? { callId } : {}),
+      ...(lifecycle.routeIndex !== undefined ? { routeIndex: lifecycle.routeIndex } : {}),
+      ...(req.attempt !== undefined ? { attempt: req.attempt } : {}),
+      startedAt
+    });
+    const startedMs = Date.now();
+    try {
+      const response = await single(req);
+      lifecycle?.traceSink({
+        phase: lifecycle.phase,
+        event: "call_success",
+        role: lifecycle.role,
+        provider: lifecycle.provider,
+        model: lifecycle.model,
+        modelFamilyKey: lifecycle.modelFamilyKey,
+        ...(callId !== undefined ? { callId } : {}),
+        ...(lifecycle.routeIndex !== undefined ? { routeIndex: lifecycle.routeIndex } : {}),
+        ...(req.attempt !== undefined ? { attempt: req.attempt } : {}),
+        startedAt,
+        completedAt: new Date().toISOString(),
+        durationMs: Date.now() - startedMs,
+        status: "ok",
+        ...(response.usage?.prompt_tokens !== undefined ? { inputTokens: response.usage.prompt_tokens } : {}),
+        ...(response.usage?.completion_tokens !== undefined ? { outputTokens: response.usage.completion_tokens } : {}),
+        ...(response.usage?.total_tokens !== undefined ? { totalTokens: response.usage.total_tokens } : {}),
+        ...(response.usage?.reasoning_tokens !== undefined ? { reasoningTokens: response.usage.reasoning_tokens } : {}),
+        ...(response.ttftMs != null ? { ttftMs: response.ttftMs } : {}),
+        ...(response.finishReason !== undefined ? { finishReason: response.finishReason } : {})
+      });
+      return response;
+    } catch (error) {
+      lifecycle?.traceSink({
+        phase: lifecycle.phase,
+        event: "call_error",
+        role: lifecycle.role,
+        provider: lifecycle.provider,
+        model: lifecycle.model,
+        modelFamilyKey: lifecycle.modelFamilyKey,
+        ...(callId !== undefined ? { callId } : {}),
+        ...(lifecycle.routeIndex !== undefined ? { routeIndex: lifecycle.routeIndex } : {}),
+        ...(req.attempt !== undefined ? { attempt: req.attempt } : {}),
+        startedAt,
+        completedAt: new Date().toISOString(),
+        durationMs: Date.now() - startedMs,
+        ...providerTraceError(error)
+      });
+      throw error;
+    }
+  };
+}
+
 export function withStructuredRetry(single: VisionJsonCaller): VisionJsonCaller {
+  const tracedSingle = withRequestLifecycle(single);
   return async req => {
     try {
-      return await single(req);
+      return await tracedSingle({ ...req, attempt: 0 });
     } catch (err) {
       if (!(err instanceof ProviderJsonParseError) || !["truncated_json", "schema_invalid"].includes(err.diagnostic.kind)) throw err;
       try {
-        const retried = await single({
+        const retried = await tracedSingle({
           ...req,
           prompt: `${req.prompt}\nReturn the smallest valid JSON object matching the schema. No prose.`,
-          maxOutputTokens: Math.max(req.maxOutputTokens ?? 0, 4096)
+          maxOutputTokens: Math.max(req.maxOutputTokens ?? 0, 4096),
+          attempt: 1
         });
         return { ...retried, retryDecision: "same_route_compact_retry" };
       } catch (retryErr) {
@@ -437,3 +529,6 @@ function makeNvidiaSingleCaller(apiKey: string, model: string, baseUrl?: string)
 export function makeNvidiaVisionCaller(apiKey: string, model: string, baseUrl?: string): VisionJsonCaller {
   return withStructuredRetry(makeNvidiaSingleCaller(apiKey, model, baseUrl));
 }
+import crypto from "node:crypto";
+import type { ProviderTraceSink } from "../debug/provider-trace.js";
+import type { ProviderTraceEvent } from "../schemas/core.js";

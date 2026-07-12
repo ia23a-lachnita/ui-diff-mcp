@@ -365,6 +365,115 @@ describe("runUiDiff end-to-end (deterministic_only mode)", () => {
     expect((report as typeof report & { inputProvenance?: unknown }).inputProvenance).toEqual(checkpoint["inputProvenance"]);
   });
 
+  it("carries valid provider trace events across a resumed run into compact and persisted runtime usage", async () => {
+    const { expected, actual } = await writeTwoButtonFixture(tmpDir, "resume-trace-e.png", "resume-trace-a.png");
+    const first = await runUiDiff({
+      expectedImagePath: expected,
+      actualImagePath: actual,
+      projectRoot: tmpDir,
+      mode: "deterministic_only",
+      runId: "run-resume-trace"
+    });
+    const checkpoint = JSON.parse(await fs.readFile(first.reportPath, "utf8")) as Record<string, unknown>;
+    checkpoint["status"] = "interrupted";
+    checkpoint["isCheckpoint"] = true;
+    await fs.writeFile(first.reportPath, JSON.stringify(checkpoint), "utf8");
+    await fs.writeFile(path.join(first.artifactRoot, "provider-trace.json"), JSON.stringify([
+      {
+        eventId: "persisted-audit-start",
+        callId: "persisted-audit-call",
+        phase: "audit",
+        event: "call_start",
+        role: "auditor",
+        provider: "gemini",
+        model: "gemini-3.5-flash",
+        modelFamilyKey: "gemini-3.5-flash"
+      },
+      {
+        eventId: "persisted-audit-success",
+        callId: "persisted-audit-call",
+        phase: "audit",
+        event: "call_success",
+        role: "auditor",
+        provider: "gemini",
+        model: "gemini-3.5-flash",
+        modelFamilyKey: "gemini-3.5-flash",
+        status: "ok",
+        totalTokens: 20
+      }
+    ]), "utf8");
+
+    const resumed = await runUiDiff({
+      expectedImagePath: expected,
+      actualImagePath: actual,
+      projectRoot: tmpDir,
+      mode: "deterministic_only",
+      resumeRunId: "run-resume-trace"
+    });
+    const report = JSON.parse(await fs.readFile(resumed.reportPath, "utf8")) as {
+      runtimeModelUsage?: Array<{ phase: string; role: string; provider: string; model: string; callStartCount: number; callSuccessCount: number; totalTokens?: number }>;
+    };
+    const compact = resumed as typeof resumed & { runtimeModelUsage?: typeof report.runtimeModelUsage };
+
+    expect(report.runtimeModelUsage).toEqual([{
+      phase: "audit", role: "auditor", provider: "gemini", model: "gemini-3.5-flash",
+      callStartCount: 1, callSuccessCount: 1, callErrorCount: 0, fallbackCount: 0,
+      incompleteStartedCallCount: 0, successesWithUsage: 1, successesMissingUsage: 0, totalTokens: 20
+    }]);
+    expect(compact.runtimeModelUsage).toEqual(report.runtimeModelUsage);
+  });
+
+  it("rejects a malformed explicit resume report without overwriting its checkpoint", async () => {
+    const { expected, actual } = await writeTwoButtonFixture(tmpDir, "resume-invalid-e.png", "resume-invalid-a.png");
+    const first = await runUiDiff({
+      expectedImagePath: expected,
+      actualImagePath: actual,
+      projectRoot: tmpDir,
+      mode: "deterministic_only",
+      runId: "run-resume-invalid"
+    });
+    const malformed = "{ not valid report JSON";
+    await fs.writeFile(first.reportPath, malformed, "utf8");
+
+    await expect(runUiDiff({
+      expectedImagePath: expected,
+      actualImagePath: actual,
+      projectRoot: tmpDir,
+      mode: "deterministic_only",
+      resumeRunId: "run-resume-invalid"
+    })).rejects.toThrow(/resume.*invalid|resume.*hydrate/i);
+    await expect(fs.readFile(first.reportPath, "utf8")).resolves.toBe(malformed);
+  });
+
+  it("rejects a malformed explicit resumed provider trace without overwriting artifacts", async () => {
+    const { expected, actual } = await writeTwoButtonFixture(tmpDir, "resume-trace-invalid-e.png", "resume-trace-invalid-a.png");
+    const first = await runUiDiff({
+      expectedImagePath: expected,
+      actualImagePath: actual,
+      projectRoot: tmpDir,
+      mode: "deterministic_only",
+      runId: "run-resume-trace-invalid"
+    });
+    const checkpoint = JSON.parse(await fs.readFile(first.reportPath, "utf8")) as Record<string, unknown>;
+    checkpoint["status"] = "interrupted";
+    checkpoint["isCheckpoint"] = true;
+    await fs.writeFile(first.reportPath, JSON.stringify(checkpoint), "utf8");
+    const tracePath = path.join(first.artifactRoot, "provider-trace.json");
+    const malformedTrace = "{ not valid trace JSON";
+    const reportBefore = await fs.readFile(first.reportPath, "utf8");
+    await fs.writeFile(tracePath, malformedTrace, "utf8");
+
+    await expect(runUiDiff({
+      expectedImagePath: expected,
+      actualImagePath: actual,
+      projectRoot: tmpDir,
+      mode: "deterministic_only",
+      resumeRunId: "run-resume-trace-invalid"
+    })).rejects.toThrow(/resume.*provider trace|resume.*invalid/i);
+    await expect(fs.readFile(first.reportPath, "utf8")).resolves.toBe(reportBefore);
+    await expect(fs.readFile(tracePath, "utf8")).resolves.toBe(malformedTrace);
+  });
+
   it("allows an explicit resumed attestation replacement only for identical image identities", async () => {
     const { expected, actual } = await writeTwoButtonFixture(tmpDir, "resume-provenance-e.png", "resume-provenance-a.png");
     const first = await runUiDiff({

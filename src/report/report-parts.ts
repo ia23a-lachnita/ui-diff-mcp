@@ -37,6 +37,41 @@ type PartPayload = z.infer<typeof ElementsPartSchema>
 
 type ReadFile = (path: string) => Promise<string | Buffer>;
 
+export type RunInputComparability =
+  | { status: "comparable" }
+  | {
+      status: "not_comparable";
+      reason:
+        | "missing_input_identity"
+        | "expected_image_hash_mismatch"
+        | "actual_image_hash_mismatch"
+        | "cohort_not_declared"
+        | "cohort_mismatch";
+    };
+
+export function compareRunInputs(
+  left: Pick<UiDiffReport, "inputProvenance">,
+  right: Pick<UiDiffReport, "inputProvenance">,
+  cohorts: { leftCohort?: string; rightCohort?: string } = {}
+): RunInputComparability {
+  if (left.inputProvenance === undefined || right.inputProvenance === undefined) {
+    return { status: "not_comparable", reason: "missing_input_identity" };
+  }
+  if (left.inputProvenance.identity.expected.sha256 !== right.inputProvenance.identity.expected.sha256) {
+    return { status: "not_comparable", reason: "expected_image_hash_mismatch" };
+  }
+  if (left.inputProvenance.identity.actual.sha256 !== right.inputProvenance.identity.actual.sha256) {
+    return { status: "not_comparable", reason: "actual_image_hash_mismatch" };
+  }
+  if (cohorts.leftCohort === undefined || cohorts.rightCohort === undefined) {
+    return { status: "not_comparable", reason: "cohort_not_declared" };
+  }
+  if (cohorts.leftCohort !== cohorts.rightCohort) {
+    return { status: "not_comparable", reason: "cohort_mismatch" };
+  }
+  return { status: "comparable" };
+}
+
 export async function writeReportPart<T extends PartPayload>(
   artifactRoot: string,
   role: ReportPart["role"],

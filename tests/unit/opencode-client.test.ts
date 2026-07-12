@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { makeOpenCodeVisionCaller } from "../../src/models/opencode-client.js";
+import { ProviderTraceWriter } from "../../src/debug/provider-trace.js";
 import { ProviderJsonParseError } from "../../src/models/vision-json.js";
 
 const schema = {
@@ -125,5 +126,36 @@ describe("makeOpenCodeVisionCaller", () => {
       messages: Array<{ content: Array<{ text?: string }> }>;
     };
     expect(retryBody.messages[0]?.content[0]?.text).toContain("smallest valid JSON object");
+  });
+
+  it("traces each structured retry as an independent call lifecycle", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(completion('{"wrong":"field"}'))
+      .mockResolvedValueOnce(completion('{"color":"red"}'));
+    vi.stubGlobal("fetch", fetchMock);
+    const trace = new ProviderTraceWriter();
+
+    await makeOpenCodeVisionCaller()( {
+      prompt: "Identify.",
+      images: [],
+      jsonSchema: schema,
+      timeoutMs: 1000,
+      lifecycle: {
+        traceSink: trace.sink,
+        phase: "audit",
+        role: "auditor",
+        provider: "opencode",
+        model: "mimo-v2.5-free",
+        modelFamilyKey: "mimo-v2.5-free",
+        routeIndex: 0
+      }
+    });
+
+    const lifecycle = trace.getEvents().filter(event => event.event.startsWith("call_"));
+    expect(lifecycle).toHaveLength(4);
+    expect(lifecycle.map(event => event.event)).toEqual(["call_start", "call_error", "call_start", "call_success"]);
+    expect(lifecycle[0]?.callId).toBe(lifecycle[1]?.callId);
+    expect(lifecycle[2]?.callId).toBe(lifecycle[3]?.callId);
+    expect(lifecycle[0]?.callId).not.toBe(lifecycle[2]?.callId);
   });
 });

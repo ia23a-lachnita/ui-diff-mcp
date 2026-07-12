@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { assignDiffComponentsToRecords } from "../../src/report/coverage.js";
+import { compareRunInputs } from "../../src/report/report-parts.js";
 import { writeUiDiffReport } from "../../src/report/report-writer.js";
 import { UiDiffReportSchema, type DiffRecord } from "../../src/schemas/core.js";
 import { makeElementSlug } from "../../src/audit/audit-target.js";
@@ -182,6 +183,75 @@ describe("writeUiDiffReport", () => {
 
     const output = await writeUiDiffReport(report);
     expect(output.auditScope).toBeUndefined();
+  });
+
+  it("keeps selected routes separate from trace-derived runtime usage in compact and persisted reports", async () => {
+    const artifactRoot = path.join(tmpDir, "artifacts-runtime-usage");
+    const report = {
+      schemaVersion: "0.1" as const,
+      runId: "run-runtime-usage",
+      createdAt: new Date().toISOString(),
+      status: "complete" as const,
+      visualClassificationStatus: "complete" as const,
+      locatorCoverageStatus: "not_run" as const,
+      expectedImagePath: "e.png",
+      actualImagePath: "a.png",
+      artifactRoot,
+      elements: { expected: [], actual: [] },
+      pairs: [],
+      diffs: [],
+      unresolvedRegions: [],
+      modelHealth: [],
+      runArtifacts: [],
+      warnings: [],
+      stages: [],
+      modelSelection: {
+        auditor: { provider: "gemini", model: "gemini-3.5-flash", costClass: "free" as const },
+        reviewer: { provider: "mistral", model: "mistral-small-3.2", costClass: "free" as const },
+        targetRecovery: { provider: "mistral", model: "mistral-large", costClass: "free" as const }
+      },
+      runtimeModelUsage: [
+        {
+          phase: "audit" as const, role: "auditor" as const, provider: "gemini", model: "gemini-3.5-flash",
+          callStartCount: 3, callSuccessCount: 3, callErrorCount: 0, fallbackCount: 0,
+          incompleteStartedCallCount: 0, successesWithUsage: 0, successesMissingUsage: 3
+        },
+        {
+          phase: "reviewer" as const, role: "reviewer" as const, provider: "mistral", model: "mistral-small-3.2",
+          callStartCount: 1, callSuccessCount: 1, callErrorCount: 0, fallbackCount: 0,
+          incompleteStartedCallCount: 0, successesWithUsage: 1, successesMissingUsage: 0, inputTokens: 10
+        }
+      ],
+      runtimeModelUsageDiagnostics: {
+        orphanTerminalCount: 1,
+        legacyUnmatchedLifecycleEventCount: 2,
+        duplicateCallStartCount: 0,
+        fallbackWithoutCallStartCount: 1,
+        terminalRouteMismatchCount: 0,
+        terminalStatusMismatchCount: 0
+      }
+    };
+
+    const output = await writeUiDiffReport(report);
+    const compact = output as typeof output & { runtimeModelUsage?: unknown; runtimeModelUsageDiagnostics?: unknown };
+    const persisted = JSON.parse(await fs.readFile(output.reportPath, "utf8")) as {
+      runtimeModelUsage?: Array<{ model: string }>;
+      runtimeModelUsageDiagnostics?: unknown;
+    };
+
+    expect(compact.runtimeModelUsage).toEqual(report.runtimeModelUsage);
+    expect(compact.runtimeModelUsageDiagnostics).toEqual(report.runtimeModelUsageDiagnostics);
+    expect(persisted.runtimeModelUsage).toEqual(report.runtimeModelUsage);
+    expect(persisted.runtimeModelUsageDiagnostics).toEqual(report.runtimeModelUsageDiagnostics);
+    expect(persisted.runtimeModelUsage?.map(entry => entry.model)).not.toContain("mistral-large");
+  });
+
+  it("rejects cross-run model comparison when actual image identities differ", () => {
+    expect(compareRunInputs(
+      { inputProvenance: { identity: { expected: { sha256: "a".repeat(64) }, actual: { sha256: "b".repeat(64) } } } },
+      { inputProvenance: { identity: { expected: { sha256: "a".repeat(64) }, actual: { sha256: "c".repeat(64) } } } },
+      { leftCohort: "full", rightCohort: "full" }
+    )).toEqual({ status: "not_comparable", reason: "actual_image_hash_mismatch" });
   });
 });
 

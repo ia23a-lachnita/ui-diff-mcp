@@ -470,11 +470,11 @@ interface RuntimeModelUsage {
 }
 ```
 
-- [ ] **Step 1: Write failing attribution tests**
+- [x] **Step 1: Write failing attribution tests**
 
 Use a trace with Gemini audit successes only, Mistral reviewer successes, and a selected-but-never-successful recovery route. Assert runtime aggregates are phase/model specific, the selected route remains separate, and report text never says the unused route completed work. Add a cross-run helper test that returns `not_comparable` for distinct actual-image hashes.
 
-- [ ] **Step 2: Run red tests**
+- [x] **Step 2: Run red tests**
 
 ```powershell
 npx vitest run tests/unit/provider-trace.test.ts tests/unit/report.test.ts tests/e2e/compare-ui-images.test.ts
@@ -482,11 +482,11 @@ npx vitest run tests/unit/provider-trace.test.ts tests/unit/report.test.ts tests
 
 Expected: FAIL because report-facing aggregates and comparability status do not exist.
 
-- [ ] **Step 3: Implement trace-derived aggregates and bounded narrative**
+- [x] **Step 3: Implement trace-derived aggregates and bounded narrative**
 
 Aggregate immutable provider trace events after pipeline completion; attach the result to the report alongside `modelSelection`. Populate per-diff/recovery model fields only from successful caller responses. Make report parts/status helpers say `not comparable` without matching expected/actual content hashes and declared cohorts. Replace stale status prose with the audited run's verified 3/0, 32/31, and 179/179 counts.
 
-- [ ] **Step 4: Run green tests**
+- [x] **Step 4: Run green tests**
 
 ```powershell
 npx vitest run tests/unit/provider-trace.test.ts tests/unit/report.test.ts tests/e2e/compare-ui-images.test.ts
@@ -494,13 +494,21 @@ npx vitest run tests/unit/provider-trace.test.ts tests/unit/report.test.ts tests
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit and push**
+- [ ] **Step 5: Commit and push (deferred by explicit user direction)**
 
 ```powershell
 git add src/schemas/core.ts src/debug/provider-trace.ts src/pipeline/run-ui-diff.ts src/report/report-parts.ts tests/unit/provider-trace.test.ts tests/unit/report.test.ts tests/e2e/compare-ui-images.test.ts docs/implementation-status.md
 git commit -m "fix: report runtime model attribution"
 git push origin HEAD
 ```
+
+**Task 8 tracking note (2026-07-12):** [x] Runtime usage is now derived solely from `provider-trace.json` call lifecycle events, keyed by phase, role, provider, and model. It separately counts starts, successes, errors, fallbacks, and success-reported tokens; terminally incomplete starts remain visible, exact duplicate event IDs are ignored, and route-exhausted/probe-selection events do not become runtime work. Resumed traces are imported defensively, so unreadable or truncated trace JSON leaves a bounded warning and a new trace rather than failing the resumed run. `runtimeModelUsage` persists in checkpoints/final compact reports and is returned in compact/MCP read output; legacy reports may omit it. Cross-run comparison returns `not_comparable` unless expected/actual hashes and declared cohorts match. RED: focused provider-trace/report/e2e tests failed on missing reducer/import/report field/comparability. GREEN: focused 43 tests, `npm run typecheck`, and `npm run verify` PASS (681 unit/e2e + 20 parser + build + 22 integration); `git diff --check` PASS. Post-review in Antigravity MCP conversation `ui-diff-mcp-task8-runtime-attribution-20260712`, `gemini-3.1-pro-preview`, returned `AGREEMENT_STATUS: agree`, `MUST_FIX: none`, `SHOULD_FIX: none`. MCP response noise: a stale waiting sentence preceded the complete structured verdict. Commit/push are deferred by explicit user direction.
+
+**Task 8 lifecycle correction (2026-07-13):** [x] Runtime aggregation now reconciles only `call_start`/`call_success`/`call_error` events with the same new `callId`; terminal events without a matching prior start are excluded from route counts and reported in `runtimeModelUsageDiagnostics`. Legacy lifecycle events without a call ID remain separately unmatched; no inferred pairing is created. Every request attempt, including a same-route structured retry, emits its own lifecycle inside `vision-json`; the fallback layer now emits only transition/health events and passes lifecycle context to the concrete caller. Fallback-only targets remain diagnostics until a target `call_start` exists. Per-route records expose incomplete starts plus successes with versus without reported usage, and token totals use reported success usage only. Explicit malformed resume report/hydration now rejects without rewriting the checkpoint. RED: lifecycle provider-trace, OpenCode retry, fallback-only, compact diagnostics, and malformed-resume e2e tests failed on the old behavior. GREEN: focused 78 tests, `npm run typecheck`, and `npm run verify` PASS (683 unit/e2e + 20 parser + build + 22 integration); `git diff --check` PASS. Post-review in Antigravity MCP conversation `ui-diff-mcp-task8-lifecycle-ledger-20260713`, `gemini-3.1-pro-preview`, returned `AGREEMENT_STATUS: agree`, `MUST_FIX: none`, `SHOULD_FIX: none`, with no MCP response noise. Commit/push are deferred by explicit user direction.
+
+**Task 8 final ledger correction (2026-07-13):** [x] A terminal now closes a lifecycle only when its `callId`, phase, role, provider, model, and terminal status agree with the prior start. Route/status mismatches are diagnostics and leave the start incomplete. Pipeline `usageSummary` now derives from the reconciled ledger's matched successful terminals, so orphan, legacy, and mismatched success events cannot contribute report or MCP token totals; missing usage accounting remains explicit. Explicit resumed provider-trace parse failures reject before either trace or report rewrite. RED: route-tuple/status mismatch, reconciled-summary, and malformed-resumed-trace tests failed on the prior behavior. GREEN: focused 36 tests, `npm run typecheck`, and `npm run verify` PASS (686 unit/e2e + 20 parser + build + 22 integration); `git diff --check` PASS. Required post-review was unavailable: `Error executing ask-ai: agy exited with code 1. Error: Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 2h40m32s.` Commit/push are deferred by explicit user direction.
+
+**Task 8 P2 route-exhaustion correction (2026-07-13):** [x] The lifecycle ledger retains deduplicated `route_exhausted` events separately from runtime lifecycle rows and passes them to `usageSummary` for the overall and phase/role/route exhaustion counts. An exhaustion-only trace does not create runtime route usage, calls, successes, errors, or tokens. Duplicate event IDs, including imported resumed traces, are handled by the same ledger deduplication before summary aggregation; the regression imports duplicate exhausted events into a resumed writer before building the ledger. RED: the exhaustion-only provider-trace/usage-summary test failed with a zero count. GREEN: focused 15 tests, `npm run typecheck`, and `npm run verify` PASS (687 unit/e2e + 20 parser + build + 22 integration); `git diff --check` PASS. Required post-review remains unavailable: `Error executing ask-ai: agy exited with code 1. Error: Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 2h40m32s.` Commit/push are deferred by explicit user direction.
 
 ## Task 9: Pipeline Contract, Full Verification, And Exhaustive Live Artifact Inspection
 

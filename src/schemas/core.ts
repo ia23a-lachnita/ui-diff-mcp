@@ -251,6 +251,9 @@ export type ProviderFailureDiagnostic = z.infer<typeof ProviderFailureDiagnostic
 
 export const ProviderTraceEventSchema = z.object({
   eventId: z.string().min(1),
+  // Legacy traces predate call lifecycle IDs. New call_start/call_success/call_error
+  // events always carry this field; absence remains parseable for backward reads.
+  callId: z.string().min(1).optional(),
   phase: z.enum(["probe", "audit", "reviewer", "recovery", "quota_preflight"]),
   event: z.enum([
     "call_start", "call_success", "call_error",
@@ -283,6 +286,34 @@ export const ProviderTraceEventSchema = z.object({
 }).strict(); // strict() rejects unknown fields to prevent accidental leakage of sensitive data
 export type ProviderTraceEvent = z.infer<typeof ProviderTraceEventSchema>;
 
+export const RuntimeModelUsageSchema = z.object({
+  phase: z.enum(["probe", "audit", "reviewer", "recovery", "quota_preflight"]),
+  role: z.enum(["auditor", "reviewer", "target_recovery", "locator", "quota"]),
+  provider: z.string().min(1),
+  model: z.string().min(1),
+  callStartCount: z.number().int().nonnegative(),
+  callSuccessCount: z.number().int().nonnegative(),
+  callErrorCount: z.number().int().nonnegative(),
+  fallbackCount: z.number().int().nonnegative(),
+  incompleteStartedCallCount: z.number().int().nonnegative().default(0),
+  successesWithUsage: z.number().int().nonnegative().default(0),
+  successesMissingUsage: z.number().int().nonnegative().default(0),
+  inputTokens: z.number().int().nonnegative().optional(),
+  outputTokens: z.number().int().nonnegative().optional(),
+  totalTokens: z.number().int().nonnegative().optional()
+}).strict();
+export type RuntimeModelUsage = z.infer<typeof RuntimeModelUsageSchema>;
+
+export const RuntimeModelUsageDiagnosticsSchema = z.object({
+  orphanTerminalCount: z.number().int().nonnegative().default(0),
+  legacyUnmatchedLifecycleEventCount: z.number().int().nonnegative().default(0),
+  duplicateCallStartCount: z.number().int().nonnegative().default(0),
+  fallbackWithoutCallStartCount: z.number().int().nonnegative().default(0),
+  terminalRouteMismatchCount: z.number().int().nonnegative().default(0),
+  terminalStatusMismatchCount: z.number().int().nonnegative().default(0)
+}).strict();
+export type RuntimeModelUsageDiagnostics = z.infer<typeof RuntimeModelUsageDiagnosticsSchema>;
+
 export const DiffScopeSchema = z.preprocess(
   value => value ?? { kind: "full" },
   z.discriminatedUnion("kind", [
@@ -299,6 +330,8 @@ export type DiffScope = z.infer<typeof DiffScopeSchema>;
 
 export const UsageBucketSchema = z.object({
   calls: z.number().int().nonnegative(),
+  successesWithUsage: z.number().int().nonnegative().default(0),
+  successesMissingUsage: z.number().int().nonnegative().default(0),
   inputTokens: z.number().int().nonnegative(),
   outputTokens: z.number().int().nonnegative(),
   totalTokens: z.number().int().nonnegative(),
@@ -829,6 +862,8 @@ export const UiDiffReportSchema = z.object({
   projectedPreAudit: ProjectedPreAuditSummarySchema.optional(),
   geometryDiagnostics: GeometryDiagnosticsSchema.optional(),
   modelSelection: ModelSelectionSchema.optional(),
+  runtimeModelUsage: z.array(RuntimeModelUsageSchema).optional(),
+  runtimeModelUsageDiagnostics: RuntimeModelUsageDiagnosticsSchema.optional(),
   inputProvenance: InputProvenanceSchema.optional(),
   expectedImagePath: z.string().min(1),
   actualImagePath: z.string().min(1),

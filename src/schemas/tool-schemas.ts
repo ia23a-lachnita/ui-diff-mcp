@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { RunStatusSchema, UiDiffReportSchema, UiArtifactSchema, AuditScopeSchema, LocatorCoverageStatusSchema, VisualClassificationStatusSchema, RecoverySummarySchema, RunDebugSummarySchema, DiffScopeSchema, UsageSummarySchema, InputProvenanceRequestSchema } from "./core.js";
+import { RunStatusSchema, UiDiffReportSchema, UiArtifactSchema, AuditScopeSchema, LocatorCoverageStatusSchema, VisualClassificationStatusSchema, RecoverySummarySchema, RunDebugSummarySchema, DiffScopeSchema, UsageSummarySchema, RuntimeModelUsageDiagnosticsSchema, RuntimeModelUsageSchema, InputProvenanceRequestSchema } from "./core.js";
 
 export const CompareUiImagesInputSchema = {
   expectedImagePath: z.string().min(1),
@@ -27,7 +27,9 @@ export const CompareUiImagesOutputSchema = {
   auditScope: AuditScopeSchema.optional(),
   recoverySummary: RecoverySummarySchema.optional(),
   debugSummary: RunDebugSummarySchema.optional(),
-  usageSummary: UsageSummarySchema.optional()
+  usageSummary: UsageSummarySchema.optional(),
+  runtimeModelUsage: z.array(RuntimeModelUsageSchema).default([]),
+  runtimeModelUsageDiagnostics: RuntimeModelUsageDiagnosticsSchema.optional()
 };
 
 export const ModelHealthOutputSchema = {

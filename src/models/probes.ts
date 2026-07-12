@@ -125,7 +125,17 @@ async function runRoleProbe(
       prompt: MULTI_IMAGE_PROBE_PROMPT,
       images,
       jsonSchema: MULTI_IMAGE_PROBE_SCHEMA,
-      timeoutMs: 30000
+      timeoutMs: 30000,
+      ...(traceSink !== undefined ? {
+        lifecycle: {
+          traceSink,
+          phase: "probe" as const,
+          role: probeRole,
+          provider: entry.provider,
+          model: entry.model,
+          modelFamilyKey: modelFamilyKey(entry.model)
+        }
+      } : {})
     });
 
     const parsed = result.parsed as { imageCount?: unknown; hasBlueImage?: unknown };

@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { UiDiffReport, UiArtifact, AuditScope, RecoverySummary, RunDebugSummary, UsageSummary } from "../schemas/core.js";
+import type { UiDiffReport, UiArtifact, AuditScope, RecoverySummary, RunDebugSummary, RuntimeModelUsage, RuntimeModelUsageDiagnostics, UsageSummary } from "../schemas/core.js";
 import { UiDiffReportSchema } from "../schemas/core.js";
 import { slimReportForParts, writeReportParts } from "./report-parts.js";
 
@@ -21,6 +21,8 @@ export interface CompactOutput {
   recoverySummary?: RecoverySummary;
   debugSummary?: RunDebugSummary;
   usageSummary?: UsageSummary;
+  runtimeModelUsage?: RuntimeModelUsage[];
+  runtimeModelUsageDiagnostics?: RuntimeModelUsageDiagnostics;
 }
 
 export async function writeReportCheckpoint(report: UiDiffReport): Promise<string> {
@@ -95,6 +97,8 @@ export async function writeUiDiffReport(
     ...(report.auditScope !== undefined ? { auditScope: report.auditScope } : {}),
     ...(report.recoverySummary !== undefined ? { recoverySummary: report.recoverySummary } : {}),
     ...(report.debugSummary !== undefined ? { debugSummary: report.debugSummary } : {}),
-    ...(report.usageSummary !== undefined ? { usageSummary: report.usageSummary } : {})
+    ...(report.usageSummary !== undefined ? { usageSummary: report.usageSummary } : {}),
+    runtimeModelUsage: report.runtimeModelUsage ?? [],
+    ...(report.runtimeModelUsageDiagnostics !== undefined ? { runtimeModelUsageDiagnostics: report.runtimeModelUsageDiagnostics } : {})
   };
 }

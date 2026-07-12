@@ -35,15 +35,15 @@ import { auditScopeSummaries } from "../audit/audit-scope.js";
 import { filterAcceptedDiffs, reviewAndMergeFindings } from "../audit/review-findings.js";
 import { prepareRecoveryRegionArtifacts, runTargetRecovery } from "../recovery/target-recovery.js";
 import { writeRunDebugArtifacts, summarizeAuditPairOutcomes, type AuditPairOutcome, type RunDebugTrace } from "../debug/run-debug.js";
-import { ProviderTraceWriter, writeProviderTrace } from "../debug/provider-trace.js";
-import { buildUsageSummary } from "../debug/usage-summary.js";
+import { buildRuntimeModelUsageLedger, parseProviderTraceEvents, ProviderTraceWriter, writeProviderTrace } from "../debug/provider-trace.js";
+import { buildUsageSummaryFromLedger } from "../debug/usage-summary.js";
 import { buildDeterministicDiffs } from "../diff/deterministic-diffs.js";
 import { runProjectedPreAudit } from "../diff/projected-preaudit.js";
 import { buildDiffSummary, buildScopeDiffSummaries } from "../diff/scope-summary.js";
 import { writeUiDiffReport, writeReportCheckpoint } from "../report/report-writer.js";
 import { hydrateReportParts } from "../report/report-parts.js";
 import { filterComponentsForScope, filterPairsForScope, normalizeDiffScope } from "./diff-scope.js";
-import type { UiDiffReport, RunStatus, VisualClassificationStatus, LocatorCoverageStatus, DiffRecord, ElementPair, UiArtifact, AuditScope, ModelSelection, RecoverySummary, RecoveryCursor, StageStatus, LocatorLaneMetadata, RunDebugSummary, ProjectedPreAuditSummary, DiffScope, UsageSummary, LocatorInputSizing, InputProvenance, InputProvenanceRequest, ComparisonBoxRejectionReason, GeometryDiagnosticReference } from "../schemas/core.js";
+import type { UiDiffReport, RunStatus, VisualClassificationStatus, LocatorCoverageStatus, DiffRecord, ElementPair, UiArtifact, AuditScope, ModelSelection, RecoverySummary, RecoveryCursor, StageStatus, LocatorLaneMetadata, RunDebugSummary, ProjectedPreAuditSummary, DiffScope, RuntimeModelUsage, RuntimeModelUsageDiagnostics, UsageSummary, LocatorInputSizing, InputProvenance, InputProvenanceRequest, ComparisonBoxRejectionReason, GeometryDiagnosticReference } from "../schemas/core.js";
 import { computeColorEvidence } from "../signals/color.js";
 import { createRunId } from "./run-store.js";
 import { UiDiffReportSchema } from "../schemas/core.js";
@@ -81,6 +81,8 @@ export interface RunOutput {
   recoverySummary?: RecoverySummary;
   debugSummary?: RunDebugSummary;
   usageSummary?: UsageSummary;
+  runtimeModelUsage?: RuntimeModelUsage[];
+  runtimeModelUsageDiagnostics?: RuntimeModelUsageDiagnostics;
 }
 
 type ProbeOverride = (entries: ModelEntry[], config: VisionProviderConfig) => Promise<ProbeResult[]>;
@@ -256,8 +258,18 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     try {
       const parsed = UiDiffReportSchema.parse(JSON.parse(await fs.readFile(reportPath, "utf8")));
       resumedReport = UiDiffReportSchema.parse(await hydrateReportParts(parsed, reportPath));
-    } catch {
-      resumedReport = undefined;
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      throw new Error(`Resume invalid for run "${input.resumeRunId}": persisted report cannot be hydrated (${detail.slice(0, 300)}).`);
+    }
+  }
+  let resumedProviderTraceEvents: ReturnType<typeof parseProviderTraceEvents> | undefined;
+  if (input.resumeRunId) {
+    try {
+      resumedProviderTraceEvents = parseProviderTraceEvents(JSON.parse(await fs.readFile(path.join(artifactRoot, "provider-trace.json"), "utf8")));
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      throw new Error(`Resume invalid for run "${input.resumeRunId}": persisted provider trace cannot be loaded (${detail.slice(0, 300)}).`);
     }
   }
 
@@ -338,7 +350,12 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
   const geometryRejections: GeometryDiagnosticReference[] = [];
   const debugTrace: RunDebugTrace = { audit: [], coverage: [], recovery: [] };
   const providerTrace = new ProviderTraceWriter();
+  if (resumedProviderTraceEvents !== undefined) providerTrace.importEvents(resumedProviderTraceEvents);
   const allDiffs: DiffRecord[] = [];
+
+  function runtimeUsageLedger() {
+    return buildRuntimeModelUsageLedger(providerTrace.getEvents());
+  }
   const stages: StageStatus[] = resumedReport?.stages ? [...resumedReport.stages] : [];
   const createdAt = new Date().toISOString();
   const runArtifacts: UiArtifact[] = [
@@ -463,6 +480,8 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
       ...(locatorInputSizing !== undefined ? { locatorInputSizing } : {}),
       ...(auditScope !== undefined ? { auditScope } : {}),
       ...(modelSelection !== undefined ? { modelSelection } : {}),
+      runtimeModelUsage: runtimeUsageLedger().usage,
+      runtimeModelUsageDiagnostics: runtimeUsageLedger().diagnostics,
       inputProvenance: effectiveInputProvenance,
       ...(recoverySummary !== undefined ? { recoverySummary } : {}),
       ...(recoveryCursor !== undefined ? { recoveryCursor } : {}),
@@ -479,7 +498,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
       unresolvedRegions: [],
       modelHealth: currentModelHealth,
       runArtifacts,
-      usageSummary: buildUsageSummary(providerTrace.getEvents()),
+      usageSummary: buildUsageSummaryFromLedger(runtimeUsageLedger()),
       warnings,
       stages: [...stages]
     });
@@ -1302,6 +1321,8 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     ...(locatorInputSizing !== undefined ? { locatorInputSizing } : {}),
     ...(auditScope !== undefined ? { auditScope } : {}),
     ...(modelSelection !== undefined ? { modelSelection } : {}),
+    runtimeModelUsage: runtimeUsageLedger().usage,
+    runtimeModelUsageDiagnostics: runtimeUsageLedger().diagnostics,
     inputProvenance: effectiveInputProvenance,
     ...(recoverySummary !== undefined ? { recoverySummary } : {}),
     ...(recoveryCursor !== undefined ? { recoveryCursor } : {}),
@@ -1327,7 +1348,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     diffSummary,
     modelHealth,
     runArtifacts,
-    usageSummary: buildUsageSummary(providerTrace.getEvents()),
+    usageSummary: buildUsageSummaryFromLedger(runtimeUsageLedger()),
     warnings,
     stages,
     debugSummary: debugArtifactsResult.summary

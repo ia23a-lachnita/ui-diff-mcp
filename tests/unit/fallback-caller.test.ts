@@ -17,25 +17,20 @@ describe("makeFallbackVisionCaller", () => {
     expect(result.model).toBe("m1");
   });
 
-  it("records provider-returned token usage on successful calls", async () => {
+  it("passes lifecycle context to the concrete provider caller without emitting an outer lifecycle", async () => {
     const events: ProviderTraceEvent[] = [];
-    const resultWithUsage = {
-      ...ok1,
-      usage: { prompt_tokens: 12_345, completion_tokens: 678, total_tokens: 13_023, reasoning_tokens: 42 }
-    };
+    const candidate = vi.fn().mockResolvedValue(ok1);
 
     await makeFallbackVisionCaller(
-      [cand(vi.fn().mockResolvedValue(resultWithUsage))],
+      [cand(candidate)],
       undefined,
       event => events.push({ eventId: "x", ...event } as ProviderTraceEvent)
     )(dummyReq);
 
-    expect(events.find(event => event.event === "call_success")).toMatchObject({
-      inputTokens: 12_345,
-      outputTokens: 678,
-      totalTokens: 13_023,
-      reasoningTokens: 42
+    expect(candidate.mock.calls[0]?.[0].lifecycle).toMatchObject({
+      phase: "audit", role: "auditor", provider: "nvidia", model: "m1", routeIndex: 0
     });
+    expect(events).toEqual([]);
   });
 
   it("falls back to second candidate on HTTP 503", async () => {
@@ -122,7 +117,7 @@ describe("makeFallbackVisionCaller", () => {
     expect(events).toHaveLength(1); // event fires once at the transition, not per-call
   });
 
-  it("route_exhausted traceSink emits exactly once across repeated post-exhaustion calls, and short-circuit skips call_start", async () => {
+  it("route_exhausted traceSink emits exactly once across repeated post-exhaustion calls", async () => {
     const trace: string[] = [];
     const traceSink = vi.fn((e: { event: string }) => trace.push(e.event));
     const c1 = cand(vi.fn().mockRejectedValue(new Error("HTTP 429")), "nvidia", "m1");
@@ -133,8 +128,7 @@ describe("makeFallbackVisionCaller", () => {
     await expect(caller(dummyReq)).rejects.toThrow(); // short-circuits — no new provider calls
     // route_exhausted must appear exactly once regardless of how many times caller is invoked after exhaustion
     expect(trace.filter(e => e === "route_exhausted")).toHaveLength(1);
-    // call 1 emits 2 call_starts (m1 then m2); calls 2 and 3 short-circuit before the loop
-    expect(trace.filter(e => e === "call_start")).toHaveLength(2);
+    expect(trace).not.toContain("call_start");
   });
 
   it("retries transiently timed-out routes on the next request", async () => {
@@ -224,9 +218,9 @@ describe("diagnostic field on trace events", () => {
     const traceSink = (e: Omit<ProviderTraceEvent, "eventId">) => events.push({ eventId: "x", ...e } as ProviderTraceEvent);
     await makeFallbackVisionCaller([c1, c2], undefined, traceSink)(dummyReq);
 
-    const errorEvent = events.find(e => e.event === "call_error");
-    expect(errorEvent?.diagnostic?.kind).toBe("invalid_json");
-    // raw body must not be in any trace field
+    expect(events).toEqual(expect.arrayContaining([expect.objectContaining({ event: "fallback" })]));
+    expect(events.find(event => event.event === "call_error")).toBeUndefined();
+    // Fallback metadata never contains the raw provider body.
     const serialized = JSON.stringify(events);
     expect(serialized).not.toContain(rawBody);
   });
@@ -237,7 +231,8 @@ describe("diagnostic field on trace events", () => {
     const c2 = cand(vi.fn().mockResolvedValue(ok2), "openrouter", "m2");
     const events: ProviderTraceEvent[] = [];
     await makeFallbackVisionCaller([c1, c2], undefined, event => events.push({ eventId: "x", ...event } as ProviderTraceEvent))(dummyReq);
-    expect(events.find(event => event.event === "call_error")?.diagnostic?.kind).toBe("timeout");
+    expect(events.find(event => event.event === "call_error")).toBeUndefined();
+    expect(events.find(event => event.event === "fallback")).toBeDefined();
   });
 
   it("includes diagnostic.kind=http_error with httpStatus=429 on rate-limit error", async () => {
@@ -248,9 +243,8 @@ describe("diagnostic field on trace events", () => {
     const traceSink = (e: Omit<ProviderTraceEvent, "eventId">) => events.push({ eventId: "x", ...e } as ProviderTraceEvent);
     await makeFallbackVisionCaller([c1, c2], undefined, traceSink)(dummyReq);
 
-    const errorEvent = events.find(e => e.event === "call_error");
-    expect(errorEvent?.diagnostic?.kind).toBe("http_error");
-    expect(errorEvent?.diagnostic?.httpStatus).toBe(429);
+    expect(events.find(e => e.event === "call_error")).toBeUndefined();
+    expect(events.find(e => e.event === "fallback")).toBeDefined();
   });
 });
 

@@ -145,6 +145,8 @@ describe("writeUiDiffReport", () => {
     const report = makeReport({
       usageSummary: {
         calls: 1,
+        successesWithUsage: 1,
+        successesMissingUsage: 0,
         inputTokens: 100,
         outputTokens: 20,
         totalTokens: 120,
