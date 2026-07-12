@@ -78,7 +78,7 @@ Persist per-run geometry diagnostics with counts by reason and artifact producer
 
 ### Parent selection
 
-After duplicate suppression, evaluate all valid strict containers for each element. Ordinary nodes retain the conservative guard: a candidate parent contains the child's center, is at least 1.5 times the child area, and has strictly greater area. For a candidate with a recognized compact interactive role/type (for example, a chip or icon button), use an adaptive compact-component rule only when the candidate geometrically contains the child box within the documented rounding tolerance and has strictly greater area; this permits tight padding without globally relaxing ordinary containment. Never infer compactness from label text or apply the compact rule to unrecognized nodes.
+After duplicate suppression, evaluate all valid strict containers for each element. Every candidate parent must contain the full child box within a `0.5px` raster-rounding tolerance, contain the child's center, and have strictly greater area; partial overlap is never containment. Ordinary nodes additionally require a parent area at least 1.5 times the child area. A compact candidate may relax only that area-ratio guard when a trusted query/category mapping or explicit deterministic type records compact-role eligibility (for example, a chip or icon button). Never infer compactness from label text or a label-guessed display type.
 
 Choose the eligible candidate with the smallest area; break exact-area ties by stable element ID. Derive `parentId` from that selection, then derive every `childIds` list from selected `parentId` values. Do not assign relationships during pairwise iteration. Overlap alone, including overlapping siblings, is not containment under either rule.
 
@@ -98,7 +98,7 @@ The hierarchy legend records `nodeRole`, canonical `box`, `parentNodeId`, `child
 
 Both boundaries sanitize only the known grounding-token family: paired or unmatched `<ref>`, `</ref>`, `<box>`, `</box>`, and coordinate grounding tags that match the documented numeric coordinate grammar, such as `<123>` or `<12,34,56,78>`. The Python sidecar sanitizer runs immediately after parsing; the TypeScript element-map sanitizer is the mandatory second net. It removes matching tokens, not arbitrary angle-bracket text or arbitrary text enclosed by them.
 
-Sanitization removes those tokens and normalizes whitespace. It preserves ordinary prose, including comparison/math labels such as `x < y`; an unknown angle-bracket sequence must remain unchanged. If the resulting label is empty, numeric-only, a prompt echo, or still token-contaminated, use the stable `${type}-${queryId}-${index}` fallback. Preserve the raw sidecar response only in existing non-report debugging channels, never as a hierarchy label.
+Sanitization removes those tokens and normalizes whitespace. It preserves ordinary prose, including comparison/math labels such as `x < y`; an unknown angle-bracket sequence must remain unchanged. If the resulting label is empty, numeric-only, a prompt echo, or still token-contaminated, use the stable `${type}-${queryId}-${rank}` fallback. Compute `rank` after canonical sorting by query, display type, geometry, and sanitized/raw content, and assign equal canonical candidates the same rank before duplicate suppression. Preserve the raw sidecar response only in existing non-report debugging channels, never as a hierarchy label.
 
 ## Repair-Grade Finding Groups And Artifacts
 

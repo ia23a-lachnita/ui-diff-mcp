@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { buildElementMap, projectElementsToActual, mergeLocatorLanes } from "../../src/locator/element-map.js";
+import {
+  buildElementMap,
+  projectElementsToActual,
+  mergeLocatorLanes,
+  selectNearestContainingParents
+} from "../../src/locator/element-map.js";
 import { createImagePairTransform } from "../../src/images/coordinates.js";
 import type { LocateAnythingElement } from "../../src/locator/locateanything-client.js";
+import type { UiElement, UiElementType } from "../../src/schemas/core.js";
 
 function makeEl(id: string, label: string, x: number, y: number, w: number, h: number): LocateAnythingElement {
   return {
@@ -11,6 +17,28 @@ function makeEl(id: string, label: string, x: number, y: number, w: number, h: n
     rawBox1000: [x * 5, y * 5, w * 5, h * 5],
     confidence: 0.9
   };
+}
+
+function hierarchyElement(
+  id: string,
+  type: UiElementType,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  compactRoleSource?: "query_mapping" | "deterministic"
+): UiElement {
+  const element: UiElement = {
+    id,
+    label: id,
+    type,
+    box: { x, y, width, height },
+    normalizedBox: { x: x / 500, y: y / 500, width: width / 500, height: height / 500 },
+    confidence: 1,
+    source: "locator",
+    childIds: []
+  };
+  return compactRoleSource === undefined ? element : { ...element, compactRoleSource };
 }
 
 describe("buildElementMap", () => {
@@ -24,13 +52,13 @@ describe("buildElementMap", () => {
     expect(els[0]?.type).toBe("button");
   });
 
-  it("replaces labels that leaked model grounding tokens with stable fallback names", () => {
+  it("removes leaked model grounding tokens while retaining ordinary label text", () => {
     const els = buildElementMap(
       [makeEl("buttons", "tate</ref> buttons and tappable controls", 10, 10, 80, 40)],
       { width: 200, height: 400 }
     );
     expect(els).toHaveLength(1);
-    expect(els[0]?.label).toBe("button-buttons-0");
+    expect(els[0]?.label).toBe("tate buttons and tappable controls");
   });
 
   it("falls back when a label is empty after stripping model tokens", () => {
@@ -40,6 +68,15 @@ describe("buildElementMap", () => {
     );
     expect(els).toHaveLength(1);
     expect(els[0]?.label).toBe("icon-icons-0");
+  });
+
+  it("removes only known grounding tags before stable ID creation", () => {
+    const els = buildElementMap(
+      [makeEl("text_labels", "Score <ref>meter</ref> <box><1, 2, 3, 4></box> <aside>keep</aside> x < y </box>", 10, 10, 80, 40)],
+      { width: 200, height: 400 }
+    );
+
+    expect(els[0]?.label).toBe("Score meter <aside>keep</aside> x < y");
   });
 
   it("merges two locator boxes with IoU >= 0.82 into one element", () => {
@@ -109,6 +146,129 @@ describe("buildElementMap", () => {
       { width: 200, height: 400 }
     );
     expect(els[0]?.label).toBe("Submit button");
+  });
+
+  it("retains tight cross-role children through NMS before selecting their trusted compact parent", () => {
+    const elements = buildElementMap([
+      makeEl("buttons", "Filter", 10, 20, 100, 30),
+      makeEl("text_labels", "Popular", 10.4, 20.4, 99.2, 29.2),
+      makeEl("buttons", "More", 130, 20, 30, 30),
+      makeEl("icons", "Chevron", 130.4, 20.4, 29.2, 29.2)
+    ], { width: 240, height: 120 });
+    const byLabel = new Map(elements.map(element => [element.label, element]));
+
+    expect(elements).toHaveLength(4);
+    expect(byLabel.get("Popular")?.parentId).toBe(byLabel.get("Filter")?.id);
+    expect(byLabel.get("Chevron")?.parentId).toBe(byLabel.get("More")?.id);
+  });
+
+  it("does not grant compact parenting to a button-like label without trusted metadata", () => {
+    const elements = buildElementMap([
+      makeEl("untrusted_lane", "button-looking wrapper", 10, 20, 100, 30),
+      makeEl("text_labels", "Label", 10.4, 20.4, 99.2, 29.2)
+    ], { width: 240, height: 120 });
+    const byLabel = new Map(elements.map(element => [element.label, element]));
+
+    expect(byLabel.get("button-looking wrapper")?.type).toBe("button");
+    expect(byLabel.get("Label")?.parentId).toBeUndefined();
+  });
+
+  it("assigns fallback labels and IDs stably across input permutations and exact duplicates", () => {
+    const first = makeEl("icons", "Locate icons", 10, 20, 30, 30);
+    const duplicate = makeEl("icons", "Locate icons", 10, 20, 30, 30);
+    const second = makeEl("icons", "<ref></ref>", 100, 20, 30, 30);
+    const summarize = (elements: LocateAnythingElement[]) => buildElementMap(elements, { width: 200, height: 120 })
+      .map(element => ({ x: element.box.x, label: element.label, id: element.id }))
+      .sort((a, b) => a.x - b.x);
+
+    expect(summarize([first, second, duplicate])).toEqual(summarize([second, duplicate, first]));
+    expect(summarize([first, second, duplicate])).toHaveLength(2);
+    expect(summarize([first, second, duplicate]).map(element => element.label)).toEqual([
+      "icon-icons-0",
+      "icon-icons-1"
+    ]);
+  });
+});
+
+describe("selectNearestContainingParents", () => {
+  it("selects the smallest enclosing parent and rebuilds stable child lists under input permutations", () => {
+    const createElements = () => [
+      hierarchyElement("outer", "card", 0, 0, 300, 300),
+      hierarchyElement("inner", "card", 50, 50, 100, 100),
+      hierarchyElement("leaf", "text", 75, 75, 30, 30)
+    ];
+    const permutations = [
+      createElements(),
+      [...createElements()].reverse(),
+      [createElements()[1]!, createElements()[2]!, createElements()[0]!]
+    ];
+
+    for (const elements of permutations) {
+      const selected = selectNearestContainingParents(elements);
+      const byId = new Map(selected.map(element => [element.id, element]));
+      expect(byId.get("leaf")?.parentId).toBe("inner");
+      expect(byId.get("inner")?.parentId).toBe("outer");
+      expect(byId.get("outer")?.childIds).toEqual(["inner"]);
+      expect(byId.get("inner")?.childIds).toEqual(["leaf"]);
+    }
+  });
+
+  it("breaks equal-area parent ties by stable ID", () => {
+    const selected = selectNearestContainingParents([
+      hierarchyElement("z-parent", "card", 0, 0, 100, 100),
+      hierarchyElement("a-parent", "card", 50, 0, 100, 100),
+      hierarchyElement("child", "text", 60, 40, 10, 10)
+    ]);
+
+    expect(selected.find(element => element.id === "child")?.parentId).toBe("a-parent");
+  });
+
+  it("allows tight recognized compact buttons to contain text or icons", () => {
+    const selected = selectNearestContainingParents([
+      hierarchyElement("chip", "button", 0, 0, 100, 30, "query_mapping"),
+      hierarchyElement("chip-text", "text", 0.4, 0.4, 99.2, 29.2),
+      hierarchyElement("icon-button", "button", 0, 40, 30, 30, "query_mapping"),
+      hierarchyElement("icon", "icon", 0.4, 40.4, 29.2, 29.2)
+    ]);
+
+    expect(selected.find(element => element.id === "chip-text")?.parentId).toBe("chip");
+    expect(selected.find(element => element.id === "icon")?.parentId).toBe("icon-button");
+  });
+
+  it("does not parent overlapping siblings or use compact containment for ordinary nodes", () => {
+    const selected = selectNearestContainingParents([
+      hierarchyElement("left", "card", 0, 0, 100, 100),
+      hierarchyElement("right", "card", 50, 0, 100, 100),
+      hierarchyElement("tight-card", "card", 0, 150, 100, 30),
+      hierarchyElement("tight-text", "text", 0.4, 150.4, 99.2, 29.2)
+    ]);
+    const byId = new Map(selected.map(element => [element.id, element]));
+
+    expect(byId.get("left")?.parentId).toBeUndefined();
+    expect(byId.get("right")?.parentId).toBeUndefined();
+    expect(byId.get("tight-text")?.parentId).toBeUndefined();
+  });
+
+  it("does not parent partial overlaps even when their centers are contained", () => {
+    const selected = selectNearestContainingParents([
+      hierarchyElement("ordinary", "card", 0, 0, 100, 100),
+      hierarchyElement("ordinary-child", "text", 90, 40, 20, 20),
+      hierarchyElement("compact", "button", 0, 150, 100, 30, "query_mapping"),
+      hierarchyElement("compact-child", "icon", 0, 149, 100, 30)
+    ]);
+    const byId = new Map(selected.map(element => [element.id, element]));
+
+    expect(byId.get("ordinary-child")?.parentId).toBeUndefined();
+    expect(byId.get("compact-child")?.parentId).toBeUndefined();
+  });
+
+  it("does not give a non-button compact-role metadata relaxation", () => {
+    const selected = selectNearestContainingParents([
+      hierarchyElement("forged-card", "card", 0, 0, 100, 30, "deterministic"),
+      hierarchyElement("tight-text", "text", 0.4, 0.4, 99.2, 29.2)
+    ]);
+
+    expect(selected.find(element => element.id === "tight-text")?.parentId).toBeUndefined();
   });
 });
 

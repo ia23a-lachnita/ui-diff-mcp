@@ -2,11 +2,20 @@ import { describe, expect, it } from "vitest";
 import type { UiElement } from "../../src/schemas/core.js";
 import { suppressDuplicateElements } from "../../src/locator/nms.js";
 
-function el(id: string, queryId: string, x: number, y: number, width: number, height: number, confidence: number): UiElement {
+function el(
+  id: string,
+  queryId: string,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  confidence: number,
+  type: UiElement["type"] = "unknown"
+): UiElement {
   return {
     id,
     label: id,
-    type: "unknown",
+    type,
     queryId,
     box: { x, y, width, height },
     normalizedBox: { x: x / 200, y: y / 400, width: width / 200, height: height / 400 },
@@ -28,5 +37,14 @@ describe("suppressDuplicateElements", () => {
     expect(result[0]?.queryId).toContain("ocr_text");
     expect(result[0]?.queryId).toContain("yolo_ui");
     expect(result[0]?.confidence).toBe(0.95);
+  });
+
+  it("retains overlapping elements with different semantic roles for hierarchy selection", () => {
+    const result = suppressDuplicateElements([
+      el("button", "buttons", 10, 20, 100, 30, 0.95, "button"),
+      el("text", "text_labels", 10.4, 20.4, 99.2, 29.2, 0.90, "text")
+    ]);
+
+    expect(result.map(element => element.type).sort()).toEqual(["button", "text"]);
   });
 });

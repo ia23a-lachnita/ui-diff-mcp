@@ -1,6 +1,6 @@
 import unittest
 
-from sidecars.locateanything.parser import parse_elements
+from sidecars.locateanything.parser import _sanitize_label, parse_elements
 from sidecars.locateanything.server import (
     _apply_worker_runtime_config,
     _locateanything_generation_mode,
@@ -89,6 +89,14 @@ class LocateAnythingParserTests(unittest.TestCase):
 
         self.assertEqual(len(elements), 1)
         self.assertEqual(elements[0]["label"], "icons")
+
+    def test_label_sanitizer_removes_only_known_grounding_tokens(self) -> None:
+        label = _sanitize_label(
+            "Panel <ref>details</ref> <box>content</box> <12, 34, -56> "
+            "<unknown>keep</unknown> x < y </ref> </box>"
+        )
+
+        self.assertEqual(label, "Panel details content <unknown>keep</unknown> x < y")
 
     def test_skips_invalid_coordinate_order_with_warning(self) -> None:
         elements, warnings = parse_elements(

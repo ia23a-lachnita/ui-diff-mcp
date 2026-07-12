@@ -287,11 +287,11 @@ export function selectNearestContainingParents(elements: UiElement[]): UiElement
 // Each child has at most one parent; parent childIds are reconstructed from selected parentId values.
 ```
 
-- [ ] **Step 1: Write failing parser and hierarchy-parent tests**
+- [x] **Step 1: Write failing parser and hierarchy-parent tests**
 
-Add red Python parser cases that remove only paired/unmatched `<ref>` and `<box>` tokens plus numeric coordinate grounding tags, while preserving `x < y` and unknown angle-bracket prose. Add matching red TypeScript label-normalization cases before stable ID creation. Add TypeScript parent-selection cases where the same nested boxes arrive in three permutations and always produce `child.parentId === inner.id`, `inner.parentId === outer.id`, and stable child lists. Cover an equal-area ID tie, a tight recognized chip containing text, a tight recognized icon button containing an icon, and overlapping sibling boxes that must not become parent/child.
+Add red Python parser cases that remove only paired/unmatched `<ref>` and `<box>` tokens plus numeric coordinate grounding tags, while preserving `x < y` and unknown angle-bracket prose. Add matching red TypeScript label-normalization cases before stable ID creation. Add TypeScript parent-selection cases where the same nested boxes arrive in three permutations and always produce `child.parentId === inner.id`, `inner.parentId === outer.id`, and stable child lists. Cover an equal-area ID tie, a tight recognized chip containing text, a tight recognized icon button containing an icon, and overlapping sibling boxes that must not become parent/child. Add build-element-map regressions proving cross-role tight children survive NMS, label-guessed buttons receive no compact eligibility, fallback labels/IDs remain stable under permutation and exact duplicates, and partial overlaps never parent.
 
-- [ ] **Step 2: Run red tests**
+- [x] **Step 2: Run red tests**
 
 ```powershell
 python -m unittest sidecars.locateanything.test_parser
@@ -300,11 +300,11 @@ npx vitest run tests/unit/element-map.test.ts
 
 Expected: FAIL because first-match iteration controls parent selection, sanitizer matching is broader than known grounding tokens or leaves unmatched tokens, and compact components are not handled without globally weakening containment.
 
-- [ ] **Step 3: Implement full sanitizer and selected-parent construction**
+- [x] **Step 3: Implement full sanitizer and selected-parent construction**
 
-Make Python parsing/sanitization remove only known grounding tokens and coordinate-tag grammar while retaining normal prose, including `x < y`; apply the identical intent in TypeScript before stable ID creation. After NMS, build candidate parent lists. Ordinary candidates require the conservative center-containing, >=1.5-area, strictly-larger rule. A candidate with a recognized compact component role/type may use the adaptive rule only when it geometrically contains the child within documented rounding tolerance and is strictly larger; overlap is insufficient, labels never determine compactness, and unrecognized nodes never use this exception. Sort eligible candidates by area then ID, set one `parentId`, and reconstruct `childIds` from that relation. Reject or ignore invalid geometry candidates through the shared resolver policy where image dimensions are available.
+Make Python parsing/sanitization remove only known grounding tokens and coordinate-tag grammar while retaining normal prose, including `x < y`; apply the identical intent in TypeScript before stable ID creation. Canonically sort raw locator candidates by query/type/geometry/content before assigning shared fallback ranks to equal candidates. Preserve different semantic roles through NMS while retaining same-role duplicate suppression. After NMS, build candidate parent lists. Every candidate requires full child-box containment within the documented `0.5px` rounding tolerance, center containment, and strictly larger area; ordinary candidates additionally require the >=1.5-area guard. Compact eligibility comes only from trusted query/category or explicit deterministic metadata and relaxes only that area ratio, never containment. Sort eligible candidates by area then ID, set one `parentId`, and reconstruct `childIds` from that relation. Reject or ignore invalid geometry candidates through the shared resolver policy where image dimensions are available.
 
-- [ ] **Step 4: Run green tests**
+- [x] **Step 4: Run green tests**
 
 ```powershell
 python -m unittest sidecars.locateanything.test_parser
@@ -313,13 +313,17 @@ npx vitest run tests/unit/element-map.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit and push**
+- [ ] **Step 5: Commit and push (deferred by explicit user direction)**
 
 ```powershell
 git add sidecars/locateanything/parser.py sidecars/locateanything/test_parser.py src/locator/element-map.ts tests/unit/element-map.test.ts docs/implementation-status.md
 git commit -m "fix: stabilize locator hierarchy parents"
 git push origin HEAD
 ```
+
+**Review follow-up (2026-07-12):** [x] NMS now preserves different semantic roles for hierarchy selection while retaining same-role suppression. Compact eligibility is explicit trusted metadata rather than a label guess. Raw candidates receive canonical, duplicate-stable fallback ranks before NMS. Every selected parent requires full child-box containment within `0.5px`, center containment, and strict area growth; compact metadata relaxes only the ordinary `>=1.5x` area ratio. RED: `npx vitest run tests/unit/locator-nms.test.ts tests/unit/element-map.test.ts` failed on cross-role NMS loss, raw-order fallback IDs, and ordinary partial-overlap parenting. GREEN: parser 20 tests, locator/NMS 38 tests, `npm run typecheck`, and `npm run verify` PASS (650 unit/e2e + 20 parser + build + 22 integration). Post-review in `ui-diff-mcp-task5-hierarchy-20260712` returned `AGREEMENT_STATUS: agree`, `MUST_FIX: none`.
+
+**Final P2 follow-up (2026-07-12):** [x] `UiElementSchema` now rejects `compactRoleSource` on non-button elements while leaving the omitted field backward-compatible. Parent selection redundantly requires both `type:"button"` and trusted metadata before relaxing only the ordinary area ratio. RED: schema and direct forged-card selector regressions failed as intended. GREEN: parser 20 tests, focused schemas/element/NMS 66 tests, `npm run typecheck`, and `npm run verify` PASS (652 unit/e2e + 20 parser + build + 22 integration). The first post-review response contained two unrelated status-check lines and was recorded as MCP response noise; a clean same-conversation follow-up returned `AGREEMENT_STATUS: agree`, `MUST_FIX: none`.
 
 ## Task 6: Visible Containers And Ordinary Leaves
 

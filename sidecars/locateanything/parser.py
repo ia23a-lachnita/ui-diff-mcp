@@ -11,8 +11,8 @@ BOX_PATTERN = re.compile(
 )
 
 _REF_TOKEN = re.compile(r"</?ref>")
-_BOX_TOKEN = re.compile(r"<box>.*?</box>", re.DOTALL)
-_COORD_TOKEN = re.compile(r"<-?\d+>")
+_BOX_TOKEN = re.compile(r"</?box>")
+_COORD_TOKEN = re.compile(r"<-?\d+(?:\s*,\s*-?\d+)*>")
 
 
 def _sanitize_label(raw_label: str) -> str:

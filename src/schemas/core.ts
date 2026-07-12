@@ -104,6 +104,9 @@ export const UiElementTypeSchema = z.enum([
 ]);
 export type UiElementType = z.infer<typeof UiElementTypeSchema>;
 
+export const CompactRoleSourceSchema = z.enum(["query_mapping", "deterministic"]);
+export type CompactRoleSource = z.infer<typeof CompactRoleSourceSchema>;
+
 export const UiCriterionSchema = z.enum([
   "presence",
   "geometry",
@@ -155,6 +158,7 @@ export const UiElementSchema = z.object({
   id: z.string().min(1),
   label: z.string().min(1),
   type: UiElementTypeSchema,
+  compactRoleSource: CompactRoleSourceSchema.optional(),
   queryId: z.string().optional(),
   box: BoxSchema,
   normalizedBox: NormalizedBoxSchema,
@@ -164,6 +168,14 @@ export const UiElementSchema = z.object({
   projectionMetadata: ProjectionMetadataSchema.optional(),
   parentId: z.string().optional(),
   childIds: z.array(z.string()).default([])
+}).superRefine((element, context) => {
+  if (element.compactRoleSource !== undefined && element.type !== "button") {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["compactRoleSource"],
+      message: "compactRoleSource is valid only for button elements"
+    });
+  }
 });
 export type UiElement = z.infer<typeof UiElementSchema>;
 

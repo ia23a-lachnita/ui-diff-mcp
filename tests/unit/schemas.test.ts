@@ -14,6 +14,7 @@ import {
   StageStatusSchema,
   UiArtifactSchema,
   UiDiffReportSchema,
+  UiElementSchema,
   UnresolvedRegionSchema
 } from "../../src/schemas/core.js";
 
@@ -36,6 +37,24 @@ function makeMinimalReport(overrides: Record<string, unknown> = {}) {
 }
 
 describe("core schemas", () => {
+  it("rejects compact-role metadata on non-button elements while accepting legacy elements", () => {
+    const baseElement = {
+      id: "element-1",
+      label: "Container",
+      type: "card",
+      box: { x: 0, y: 0, width: 100, height: 30 },
+      normalizedBox: { x: 0, y: 0, width: 0.5, height: 0.1 },
+      confidence: 1,
+      source: "locator",
+      childIds: []
+    };
+
+    expect(UiElementSchema.parse(baseElement)).toMatchObject({ type: "card" });
+    for (const compactRoleSource of ["query_mapping", "deterministic"] as const) {
+      expect(() => UiElementSchema.parse({ ...baseElement, compactRoleSource })).toThrow();
+    }
+  });
+
   it("accepts canonical comparison-box resolutions", () => {
     expect(ComparisonBoxResolutionSchema.parse({
       status: "valid",

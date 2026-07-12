@@ -40,6 +40,7 @@ function suppressContainedElements(
     for (let j = i + 1; j < byAreaDesc.length; j++) {
       const small = byAreaDesc[j]!;
       if (suppressed.has(small.id)) continue;
+      if (large.type !== small.type) continue;
       const smallArea = area(small.box);
       if (smallArea === 0 || largeArea / smallArea > maxAreaRatio) continue;
       const inter = intersect(large.box, small.box);
@@ -61,7 +62,9 @@ export function suppressDuplicateElements(
   const kept: UiElement[] = [];
 
   for (const element of sorted) {
-    const index = kept.findIndex(existing => iou(existing.box, element.box) >= iouThreshold);
+    const index = kept.findIndex(existing =>
+      existing.type === element.type && iou(existing.box, element.box) >= iouThreshold
+    );
     if (index === -1) {
       kept.push(element);
       continue;
