@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import * as schemas from "../../src/schemas/core.js";
 import {
   CoverageDecisionTraceSchema,
   ComparisonBoxResolutionSchema,
@@ -37,6 +38,28 @@ function makeMinimalReport(overrides: Record<string, unknown> = {}) {
 }
 
 describe("core schemas", () => {
+  it("defines strict canonical semantic hierarchy nodes", () => {
+    const semanticHierarchyNodeSchema = (schemas as unknown as Record<string, {
+      parse: (input: unknown) => unknown;
+    }>).SemanticHierarchyNodeSchema;
+    const node = {
+      id: "title",
+      elementId: "title",
+      label: "Protein",
+      type: "text",
+      box: { x: 10, y: 20, width: 30, height: 12 },
+      nodeRole: "leaf",
+      coordinateSpace: "comparison_expected_normalized",
+      parentNodeId: "card",
+      childNodeIds: []
+    };
+
+    expect(semanticHierarchyNodeSchema).toBeDefined();
+    expect(semanticHierarchyNodeSchema!.parse(node)).toMatchObject(node);
+    expect(() => semanticHierarchyNodeSchema!.parse({ ...node, unexpected: true })).toThrow();
+    expect(() => semanticHierarchyNodeSchema!.parse({ ...node, coordinateSpace: "actual_normalized" })).toThrow();
+  });
+
   it("rejects compact-role metadata on non-button elements while accepting legacy elements", () => {
     const baseElement = {
       id: "element-1",

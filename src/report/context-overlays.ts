@@ -1,9 +1,9 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
-import type { Box, ComparisonBoxRejectionReason, DiffRecord, FindingGroupLegendEntry, GeometryDiagnosticReference, UiArtifact, UiElement, UnresolvedRegion } from "../schemas/core.js";
+import type { Box, ComparisonBoxRejectionReason, DiffRecord, FindingGroupLegendEntry, GeometryDiagnosticReference, SemanticHierarchyNode, UiArtifact, UiElement, UnresolvedRegion } from "../schemas/core.js";
 import { projectActualBoxToExpectedSource, type ImagePairTransform } from "../images/coordinates.js";
-import { resolveComparisonExtraction } from "../images/comparison-geometry.js";
+import { resolveComparisonBox, resolveComparisonExtraction } from "../images/comparison-geometry.js";
 
 type AnnotationKind = "diff" | "unresolved" | "element" | "hierarchy";
 
@@ -20,16 +20,6 @@ export interface FindingGroup {
   criteria: string[];
   severity: "low" | "medium" | "high";
   label: string;
-}
-
-export interface SemanticHierarchyNode {
-  id: string;
-  elementId?: string;
-  label: string;
-  type: UiElement["type"] | "screen";
-  box: Box;
-  parentNodeId?: string;
-  childNodeIds: string[];
 }
 
 export interface OverlayStyle {
@@ -200,32 +190,75 @@ function labelForElement(element: UiElement): string {
 // no structure — its children re-parent upward instead.
 const FULL_SCREEN_AREA_RATIO = 0.85;
 
-function nearestNodeAncestorId(
+const REF_TOKEN = /<\/?ref>/g;
+const BOX_TOKEN = /<\/?box>/g;
+const COORD_TOKEN = /<-?\d+(?:\s*,\s*-?\d+)*>/g;
+
+function normalizeHierarchyLabel(rawLabel: string): string {
+  return rawLabel
+    .replace(REF_TOKEN, "")
+    .replace(BOX_TOKEN, "")
+    .replace(COORD_TOKEN, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isMeaningfulHierarchyLabel(label: string): boolean {
+  return label.length > 0 && !/^\d+$/.test(label) && !label.toLowerCase().startsWith("locate ");
+}
+
+function nearestVisibleContainerAncestorId(
   element: UiElement,
   elementMap: Map<string, UiElement>,
-  nodeIds: Set<string>
+  nodes: Map<string, SemanticHierarchyNode>
 ): string | undefined {
   let current = element.parentId ? elementMap.get(element.parentId) : undefined;
   const visited = new Set<string>();
   while (current && !visited.has(current.id)) {
     visited.add(current.id);
-    if (nodeIds.has(current.id)) return current.id;
+    const node = nodes.get(current.id);
+    if (node?.nodeRole === "container") return current.id;
     current = current.parentId ? elementMap.get(current.parentId) : undefined;
   }
   return undefined;
 }
 
-export function buildSemanticHierarchy(elements: UiElement[] = [], imageWidth: number, imageHeight: number): SemanticHierarchyNode[] {
-  const elementMap = new Map(elements.map(element => [element.id, element]));
+export function buildSemanticHierarchy(
+  elements: UiElement[] = [],
+  imageWidth: number,
+  imageHeight: number,
+  geometryRejections?: GeometryDiagnosticReference[]
+): SemanticHierarchyNode[] {
+  const sortedElements = [...elements].sort((a, b) => a.id.localeCompare(b.id));
+  const elementMap = new Map(sortedElements.map(element => [element.id, element]));
   const imageArea = Math.max(1, imageWidth * imageHeight);
-  // Hierarchy skeleton = semantic-typed elements plus containers of any type
-  // that hold at least two elements (cv-component sections/cards), so a run
-  // whose semantic lanes are empty still yields real parent/child structure.
-  const isNodeElement = (element: UiElement): boolean =>
-    boxArea(element.box) / imageArea < FULL_SCREEN_AREA_RATIO &&
-    (SEMANTIC_ELEMENT_TYPES.has(element.type) || element.childIds.length >= 2);
-  const nodeElements = elements.filter(isNodeElement);
-  const nodeIds = new Set(nodeElements.map(element => element.id));
+  const validElements = new Map<string, { element: UiElement; box: Box; label: string }>();
+  for (const element of sortedElements) {
+    const resolution = resolveComparisonBox({
+      box: element.box,
+      sourceSpace: "comparison_expected_normalized",
+      canvas: { width: imageWidth, height: imageHeight }
+    });
+    if (resolution.status === "rejected") {
+      geometryRejections?.push({
+        producer: "semantic_hierarchy",
+        reason: resolution.reason,
+        reference: `element:${element.id}`
+      });
+      continue;
+    }
+    validElements.set(element.id, {
+      element,
+      box: resolution.box,
+      label: normalizeHierarchyLabel(element.label)
+    });
+  }
+
+  const validChildCounts = new Map<string, number>();
+  for (const { element } of validElements.values()) {
+    if (!element.parentId || !validElements.has(element.parentId)) continue;
+    validChildCounts.set(element.parentId, (validChildCounts.get(element.parentId) ?? 0) + 1);
+  }
 
   const nodes = new Map<string, SemanticHierarchyNode>();
   nodes.set("screen", {
@@ -233,30 +266,41 @@ export function buildSemanticHierarchy(elements: UiElement[] = [], imageWidth: n
     label: "Screen",
     type: "screen",
     box: { x: 0, y: 0, width: imageWidth, height: imageHeight },
+    nodeRole: "screen",
+    coordinateSpace: "comparison_expected_normalized",
     childNodeIds: []
   });
 
-  for (const element of nodeElements) {
+  for (const { element, box, label } of validElements.values()) {
+    const nodeRole = SEMANTIC_ELEMENT_TYPES.has(element.type) || (validChildCounts.get(element.id) ?? 0) >= 2
+      ? "container"
+      : "leaf";
+    if (boxArea(box) / imageArea >= FULL_SCREEN_AREA_RATIO) continue;
+    if (nodeRole === "leaf" && !isMeaningfulHierarchyLabel(label)) continue;
     nodes.set(element.id, {
       id: element.id,
       elementId: element.id,
-      label: element.label,
+      label: isMeaningfulHierarchyLabel(label) ? label : `${element.type} ${element.id}`,
       type: element.type,
-      box: element.box,
+      box,
+      nodeRole,
+      coordinateSpace: "comparison_expected_normalized",
       childNodeIds: []
     });
   }
 
-  for (const element of nodeElements) {
-    const parentId = nearestNodeAncestorId(element, elementMap, nodeIds) ?? "screen";
+  for (const { element } of validElements.values()) {
     const node = nodes.get(element.id);
+    if (!node || node.id === "screen") continue;
+    const parentId = nearestVisibleContainerAncestorId(element, elementMap, nodes) ?? "screen";
     const parent = nodes.get(parentId);
-    if (!node || !parent || parent.id === node.id) continue;
+    if (!parent || parent.id === node.id) continue;
     node.parentNodeId = parent.id;
     if (!parent.childNodeIds.includes(node.id)) parent.childNodeIds.push(node.id);
   }
 
-  return [...nodes.values()];
+  for (const node of nodes.values()) node.childNodeIds.sort((a, b) => a.localeCompare(b));
+  return [nodes.get("screen")!, ...[...nodes.values()].filter(node => node.id !== "screen").sort((a, b) => a.id.localeCompare(b.id))];
 }
 
 function elementAnnotations(
@@ -278,9 +322,9 @@ function elementAnnotations(
 }
 
 function hierarchyAnnotations(nodes: SemanticHierarchyNode[]): Annotation[] {
-  return nodes.map((node, index) => ({
+  return nodes.map(node => ({
     box: node.box,
-    label: `H${String(index + 1).padStart(3, "0")} ${node.type} ${node.label}`.slice(0, 52),
+    label: `H ${node.id} ${node.nodeRole} ${node.label}`.slice(0, 52),
     kind: "hierarchy" as const
   }));
 }
@@ -380,7 +424,7 @@ export async function writeRegionContextOverlays(input: RegionContextOverlayInpu
   const width = metadata.width ?? 1;
   const height = metadata.height ?? 1;
   const elementBoxes = elementAnnotations(input.elements, input.actualElements, input.imagePairTransform);
-  const hierarchyNodes = buildSemanticHierarchy(input.elements, width, height);
+  const hierarchyNodes = buildSemanticHierarchy(input.elements, width, height, input.geometryRejections);
   const findingGroups = buildFindingGroups(input.diffs);
   const diffBoxes: Annotation[] = findingGroups.map(group => ({
     box: group.box,

@@ -179,6 +179,19 @@ export const UiElementSchema = z.object({
 });
 export type UiElement = z.infer<typeof UiElementSchema>;
 
+export const SemanticHierarchyNodeSchema = z.object({
+  id: z.string().min(1),
+  elementId: z.string().min(1).optional(),
+  label: z.string().min(1),
+  type: z.union([UiElementTypeSchema, z.literal("screen")]),
+  box: BoxSchema,
+  nodeRole: z.enum(["screen", "container", "leaf"]),
+  coordinateSpace: ComparisonCoordinateSpaceSchema,
+  parentNodeId: z.string().min(1).optional(),
+  childNodeIds: z.array(z.string().min(1)).default([])
+}).strict();
+export type SemanticHierarchyNode = z.infer<typeof SemanticHierarchyNodeSchema>;
+
 export const PairingStatusSchema = z.enum(["matched", "missing", "extra", "uncertain"]);
 export type PairingStatus = z.infer<typeof PairingStatusSchema>;
 

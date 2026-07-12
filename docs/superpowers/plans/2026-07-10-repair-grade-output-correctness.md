@@ -346,11 +346,11 @@ interface SemanticHierarchyNode {
 }
 ```
 
-- [ ] **Step 1: Write failing hierarchy visibility tests**
+- [x] **Step 1: Write failing hierarchy visibility tests**
 
 Construct a card containing ordinary `text` title/value leaves and an `icon` leaf through an intermediate `cv_component`; assert all leaves appear under the card in the legend and hierarchy overlay annotations. Assert near-full-screen parent nodes are hidden but their children are reparented to the nearest visible ancestor/screen. Assert invalid/disjoint nodes are absent with rejection diagnostics.
 
-- [ ] **Step 2: Run red tests**
+- [x] **Step 2: Run red tests**
 
 ```powershell
 npx vitest run tests/unit/context-overlays.test.ts tests/unit/schemas.test.ts
@@ -358,11 +358,11 @@ npx vitest run tests/unit/context-overlays.test.ts tests/unit/schemas.test.ts
 
 Expected: FAIL because text/icon filtering and untyped hierarchy metadata remain.
 
-- [ ] **Step 3: Implement node-role hierarchy and aligned annotations**
+- [x] **Step 3: Implement node-role hierarchy and aligned annotations**
 
 Use selected containment from Task 5. Make semantic types and multi-child elements containers; emit meaningful non-container elements as leaves. Walk suppressed ancestor chains before choosing the visible parent. Build hierarchy annotations from exactly these nodes. Store canonical boxes and coordinate-space metadata in the hierarchy legend.
 
-- [ ] **Step 4: Run green tests**
+- [x] **Step 4: Run green tests**
 
 ```powershell
 npx vitest run tests/unit/context-overlays.test.ts tests/unit/schemas.test.ts
@@ -377,6 +377,8 @@ git add src/report/context-overlays.ts src/schemas/core.ts tests/unit/context-ov
 git commit -m "feat: preserve hierarchy leaves"
 git push origin HEAD
 ```
+
+**Task 6 tracking note (2026-07-12):** Fresh main `npm run verify` passed with 656 unit/e2e tests, 20 parser tests, build, and 22 integration tests. `git diff --check` passed. No live gate was run. A Terra reviewer attempt failed before review due usage limit (`MODEL_CAPACITY_EXHAUSTED`). The permitted fallback was the read-only Antigravity MCP conversation `ui-diff-task6-visible-hierarchy-2026-07-12` using `gemini-3.1-pro-preview`; its structured verdict was complete: `AGREEMENT_STATUS: agree`, `MUST_FIX: none`, `SHOULD_FIX: none`, `SPEC_COMPLIANCE: approved`, `CODE_QUALITY: approved`. Response-format noise split the word `by` across lines in the rationale; this did not affect the structured verdict. Reviewer-side `git status` remained unchanged. Commit/push remain intentionally deferred by explicit user direction; Task 7 remains pending.
 
 ## Task 7: Repair-Local Grouping, Suppression, And Canonical Overlays
 

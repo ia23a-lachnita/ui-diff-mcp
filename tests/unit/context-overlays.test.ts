@@ -5,7 +5,7 @@ import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { buildFindingGroups, buildSemanticHierarchy, overlayStyleForImage, writeRegionContextOverlays } from "../../src/report/context-overlays.js";
 import { writeSolidPng } from "../../src/testing/fixture-images.js";
-import type { DiffRecord, UiElement, UnresolvedRegion } from "../../src/schemas/core.js";
+import type { DiffRecord, GeometryDiagnosticReference, UiElement, UnresolvedRegion } from "../../src/schemas/core.js";
 
 let tmpDir: string;
 
@@ -137,9 +137,70 @@ describe("writeRegionContextOverlays", () => {
 
     const nodes = buildSemanticHierarchy([section, label1, label2], 200, 400);
 
-    expect(nodes.find(node => node.id === "sec")).toMatchObject({ parentNodeId: "screen", type: "unknown" });
-    expect(nodes.find(node => node.id === "t1")).toBeUndefined();
-    expect(nodes.find(node => node.id === "t2")).toBeUndefined();
+    expect(nodes.find(node => node.id === "sec")).toMatchObject({ parentNodeId: "screen", type: "unknown", nodeRole: "container" });
+    expect(nodes.find(node => node.id === "t1")).toMatchObject({ parentNodeId: "sec", nodeRole: "leaf" });
+    expect(nodes.find(node => node.id === "t2")).toMatchObject({ parentNodeId: "sec", nodeRole: "leaf" });
+  });
+
+  it("retains ordinary text and icon leaves beneath a card through a structural component", () => {
+    const summary = element("summary", "<ref> Macro summary </ref><12,34,56,78>", "card", { x: 10, y: 40, width: 180, height: 160 });
+    const component = element("component", "cv_component", "unknown", { x: 20, y: 60, width: 160, height: 120 }, summary.id);
+    const title = element("title", "<box> Protein </box><1,2,3,4>", "text", { x: 30, y: 70, width: 70, height: 20 }, component.id);
+    const icon = element("icon", "<ref> Macro icon </ref>", "icon", { x: 35, y: 105, width: 20, height: 20 }, component.id);
+    const value = element("value", "96 g", "text", { x: 65, y: 105, width: 50, height: 20 }, component.id);
+    summary.childIds = [component.id];
+    component.childIds = [title.id, icon.id, value.id];
+
+    const nodes = buildSemanticHierarchy([summary, component, title, icon, value], 200, 400);
+
+    expect(nodes.find(node => node.id === "summary")).toMatchObject({ nodeRole: "container", parentNodeId: "screen" });
+    expect(nodes.find(node => node.id === "component")).toMatchObject({ nodeRole: "container", parentNodeId: "summary" });
+    for (const id of [title.id, icon.id, value.id]) {
+      expect(nodes.find(node => node.id === id)).toMatchObject({ nodeRole: "leaf", parentNodeId: component.id });
+    }
+    expect(nodes.map(node => node.label).join(" ")).not.toMatch(/<\/?(?:ref|box)>|<\d+(?:\s*,\s*\d+)*>/);
+    expect(nodes.every(node => node.coordinateSpace === "comparison_expected_normalized")).toBe(true);
+  });
+
+  it("keeps multiple macro cards under a structural container in deterministic order", () => {
+    const section = element("section", "Macro section", "unknown", { x: 0, y: 40, width: 200, height: 180 });
+    const carbs = element("carbs", "Carbs", "card", { x: 10, y: 55, width: 80, height: 120 }, section.id);
+    const protein = element("protein", "Protein", "card", { x: 110, y: 55, width: 80, height: 120 }, section.id);
+    section.childIds = [carbs.id, protein.id];
+
+    const forward = buildSemanticHierarchy([section, carbs, protein], 200, 400);
+    const reversed = buildSemanticHierarchy([protein, carbs, section], 200, 400);
+
+    expect(forward).toEqual(reversed);
+    expect(forward.find(node => node.id === section.id)).toMatchObject({
+      nodeRole: "container",
+      childNodeIds: ["carbs", "protein"]
+    });
+  });
+
+  it("suppresses hidden or disjoint parents without dropping reachable descendants", () => {
+    const diagnostics: GeometryDiagnosticReference[] = [];
+    const outer = element("outer", "Dashboard", "card", { x: 0, y: 50, width: 200, height: 300 });
+    const fullScreen = element("full", "Visible controls", "unknown", { x: 0, y: 20, width: 200, height: 370 }, outer.id);
+    const hiddenText = element("hidden-text", "Daily target", "text", { x: 20, y: 60, width: 80, height: 20 }, fullScreen.id);
+    const disjoint = element("disjoint", "Offscreen card", "card", { x: 220, y: 40, width: 40, height: 40 }, outer.id);
+    const disjointIcon = element("disjoint-icon", "Target icon", "icon", { x: 30, y: 100, width: 20, height: 20 }, disjoint.id);
+    outer.childIds = [fullScreen.id, disjoint.id];
+    fullScreen.childIds = [hiddenText.id];
+    disjoint.childIds = [disjointIcon.id];
+
+    const nodes = buildSemanticHierarchy(
+      [outer, fullScreen, hiddenText, disjoint, disjointIcon],
+      200,
+      400,
+      diagnostics
+    );
+
+    expect(nodes.find(node => node.id === fullScreen.id)).toBeUndefined();
+    expect(nodes.find(node => node.id === disjoint.id)).toBeUndefined();
+    expect(nodes.find(node => node.id === hiddenText.id)).toMatchObject({ parentNodeId: outer.id, nodeRole: "leaf" });
+    expect(nodes.find(node => node.id === disjointIcon.id)).toMatchObject({ parentNodeId: outer.id, nodeRole: "leaf" });
+    expect(diagnostics).toContainEqual({ producer: "semantic_hierarchy", reason: "disjoint", reference: "element:disjoint" });
   });
 
   it("walks parenting through non-node ancestors to the nearest hierarchy node", () => {
