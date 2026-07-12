@@ -82,7 +82,7 @@ export function buildDeterministicDiffs(input: {
         severity: "medium",
         title: `${actual.label} extra in actual screenshot`,
         location: actual.box,
-        evidence: [`Actual element exists at x=${actual.box.x}, y=${actual.box.y}, w=${actual.box.width}, h=${actual.box.height}; no expected element was paired.`],
+        evidence: [`Actual element exists in actual-image coordinates at x=${actual.box.x}, y=${actual.box.y}, w=${actual.box.width}, h=${actual.box.height}; no expected element was paired.`],
         measurements: [],
         artifactPaths: [],
         reviewerStatus: "not_reviewed",

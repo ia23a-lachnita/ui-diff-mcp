@@ -16,7 +16,13 @@ vi.mock("../../src/diff/projected-preaudit.js", async importOriginal => {
   return { ...actual, runProjectedPreAudit: vi.fn(actual.runProjectedPreAudit) };
 });
 
+vi.mock("../../src/diff/deterministic-diffs.js", async importOriginal => {
+  const actual = await importOriginal<typeof import("../../src/diff/deterministic-diffs.js")>();
+  return { ...actual, buildDeterministicDiffs: vi.fn(actual.buildDeterministicDiffs) };
+});
+
 import { runProjectedPreAudit } from "../../src/diff/projected-preaudit.js";
+import { buildDeterministicDiffs } from "../../src/diff/deterministic-diffs.js";
 
 let tmpDir: string;
 let sidecar: MockSidecar;
@@ -26,6 +32,8 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  const actualDeterministic = await vi.importActual<typeof import("../../src/diff/deterministic-diffs.js")>("../../src/diff/deterministic-diffs.js");
+  vi.mocked(buildDeterministicDiffs).mockImplementation(actualDeterministic.buildDeterministicDiffs);
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
   if (sidecar) await sidecar.stop();
@@ -180,8 +188,10 @@ describe("runUiDiff end-to-end (deterministic_only mode)", () => {
     const report = await hydrateReportParts(rawReport as Parameters<typeof hydrateReportParts>[0], result.reportPath) as typeof rawReport;
 
     expect(report.geometryDiagnostics).toMatchObject({
-      countsByReason: { below_minimum_artifact_size: 1 },
-      countsByProducer: { recovery_artifact_backfill: { below_minimum_artifact_size: 1 } }
+      countsByReason: { below_minimum_artifact_size: 2 },
+      countsByProducer: {
+        recovery_artifact_backfill: { below_minimum_artifact_size: 1 }
+      }
     });
     expect(report.unresolvedRegions).toEqual(expect.arrayContaining([
       expect.objectContaining({
@@ -556,6 +566,40 @@ describe("runUiDiff with mock sidecar and models (full mode)", () => {
 
     expect(sidecar.requests).toHaveLength(1);
     expect(sidecar.requests[0]?.queries).toHaveLength(8);
+  });
+
+  it("removes broad accepted VLM evidence from final coverage and reports it unresolved", async () => {
+    const expected = await writeSolidPng(tmpDir, "broad-vlm-expected.png", 200, 400, 255, 255, 255);
+    const actual = await writeSolidPng(tmpDir, "broad-vlm-actual.png", 200, 400, 0, 0, 0);
+    sidecar = await startMockSidecar({ imageWidth: 200, imageHeight: 400 });
+    vi.stubEnv("LOCATEANYTHING_SIDECAR_URL", sidecar.url);
+    vi.stubEnv("OPENROUTER_API_KEY", "sk-test-broad-vlm");
+    vi.mocked(buildDeterministicDiffs).mockClear();
+    vi.mocked(buildDeterministicDiffs).mockImplementation(() => [{
+        id: "broad-vlm",
+        criterion: "geometry",
+        severity: "high",
+        title: "Entire screen changed",
+        location: { x: 0, y: 0, width: 200, height: 400 },
+        evidence: ["entire screen differs"],
+        measurements: [],
+        artifactPaths: [],
+        reviewerStatus: "accepted",
+        classificationSource: "vlm_reviewed"
+      }]);
+    const probeOverride = async () => [
+      { role: "auditor", provider: "openrouter", model: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free", status: "pass" as const, checkedAt: new Date().toISOString() },
+      { role: "reviewer", provider: "openrouter", model: "nex-agi/nex-n2-pro:free", status: "pass" as const, checkedAt: new Date().toISOString() }
+    ];
+
+    const result = await runUiDiff({ expectedImagePath: expected, actualImagePath: actual, projectRoot: tmpDir, mode: "full" }, { probeOverride });
+    expect(buildDeterministicDiffs).toHaveBeenCalled();
+    const raw = JSON.parse(await fs.readFile(result.reportPath, "utf8")) as { diffs: Array<{ classificationSource?: string }>; unresolvedRegions: Array<{ reason: string; relatedFindingIds: string[] }>; visualClassificationStatus: string };
+    const report = await hydrateReportParts(raw as Parameters<typeof hydrateReportParts>[0], result.reportPath) as typeof raw;
+
+    expect(report.diffs.some(diff => diff.classificationSource === "vlm_reviewed")).toBe(false);
+    expect(report.unresolvedRegions).toContainEqual(expect.objectContaining({ reason: "broad_vlm_evidence" }));
+    expect(report.visualClassificationStatus).toBe("incomplete");
   });
 
   it("records the exact images sent to LocateAnything as report artifacts", async () => {

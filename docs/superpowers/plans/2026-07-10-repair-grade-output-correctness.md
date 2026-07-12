@@ -401,11 +401,11 @@ type FindingSuppressionReason =
   | "nonlocal_parent_explanation";
 ```
 
-- [ ] **Step 1: Write failing local-group tests**
+- [x] **Step 1: Write failing local-group tests**
 
 Create: (a) three nearby same-direction leaf diffs that form one local group; (b) a full-screen parent plus two separated leaf diffs that must remain two groups with the parent context-only; (c) a full-screen-only VLM finding that becomes broad unresolved/escalated and yields no normal zoom; (d) an actual-source location that is projected before group/overlay construction.
 
-- [ ] **Step 2: Run red tests**
+- [x] **Step 2: Run red tests**
 
 ```powershell
 npx vitest run tests/unit/finding-consolidation.test.ts tests/unit/context-overlays.test.ts tests/e2e/compare-ui-images.test.ts
@@ -413,11 +413,11 @@ npx vitest run tests/unit/finding-consolidation.test.ts tests/unit/context-overl
 
 Expected: FAIL because grouping accepts broad unions and legend/overlay boxes lack a single explicit canonical contract.
 
-- [ ] **Step 3: Implement validated grouping and explicit suppression**
+- [x] **Step 3: Implement validated grouping and explicit suppression**
 
 Canonicalize/validate every final location before grouping. Require bounded scale plus local relation/shared container/coherent displacement. Preserve suppressed child references in group legend data. Mark non-decomposable broad evidence with `repairLocality:"broad"`, keep it unresolved/escalated, and exclude it from normal numbered repair groups and zoom artifacts. Write all overlays only from accepted canonical boxes.
 
-- [ ] **Step 4: Run green tests**
+- [x] **Step 4: Run green tests**
 
 ```powershell
 npx vitest run tests/unit/finding-consolidation.test.ts tests/unit/context-overlays.test.ts tests/e2e/compare-ui-images.test.ts
@@ -425,13 +425,21 @@ npx vitest run tests/unit/finding-consolidation.test.ts tests/unit/context-overl
 
 Expected: PASS; all legend boxes declare `comparison_expected_normalized`.
 
-- [ ] **Step 5: Commit and push**
+- [ ] **Step 5: Commit and push (deferred by explicit user direction)**
 
 ```powershell
 git add src/report/finding-consolidation.ts src/report/context-overlays.ts src/schemas/core.ts tests/unit/finding-consolidation.test.ts tests/unit/context-overlays.test.ts tests/e2e/compare-ui-images.test.ts docs/implementation-status.md
 git commit -m "fix: localize repair diff groups"
 git push origin HEAD
 ```
+
+**Task 7 tracking note (2026-07-12):** [x] Final diff locations are canonicalized/validated before consolidation and overlay grouping; actual-source deterministic mismatches project exactly once and carry `comparison_expected_normalized` metadata. Local repair groups require bounded proximity plus shared semantic targets or coherent displacement; broad/context-only evidence never becomes a numbered group or normal zoom. Parent/child layout suppression records `duplicate_child_of_group` and retained child IDs, which remain reachable in the legend. Broad VLM evidence is `repairLocality:"broad"` and `needs_escalation`; invalid boxes record diagnostics and write no group/zoom artifacts. RED: the Task 7 focused suite failed on absent suppression, projection, local-group, and broad-exclusion behavior. GREEN: focused 53 tests, `npm run typecheck`, `npm run verify` (664 unit/e2e + 20 parser + build + 22 integration), and `git diff --check` PASS. No live gate ran by user-requested scope. Antigravity MCP review conversation `ui-diff-mcp-task7-repair-locality-20260712` with `gemini-3.1-pro-preview` returned `AGREEMENT_STATUS: agree`, `MUST_FIX: none`. Commit/push remain intentionally deferred by explicit user direction.
+
+**Task 7 corrective contract (2026-07-12):** [x] Canonical finalization is the sole production sequence for final local diffs: it feeds coverage, fallback ledger construction, report diffs, prebuilt groups, overlays, and zooms. Broad accepted VLM evidence is excluded from final repair evidence, forces `visualClassificationStatus:"incomplete"`, and marks overlapping unresolved regions `broad_vlm_evidence`. Parent/shared-container/explicit-group relations are candidates only and still require bounded locality plus coherent displacement. Suppression requires selected semantic ancestry, identical criterion/evidence, and matching displacement direction within 4px. The legend contains every repair group; each carries an explicit `valid`, `rejected`, or `skipped:max_zooms_exceeded` zoom state. RED: corrective focused tests failed on all five contracts. GREEN: focused 86 tests, `npm run typecheck`, `npm run verify` (669 unit/e2e + 20 parser + build + 22 integration), and `git diff --check` PASS. Antigravity MCP post-review in `ui-diff-mcp-task7-review-findings-20260712` returned `AGREEMENT_STATUS: agree`, `MUST_FIX: none`. Commit/push remain deferred by explicit user direction.
+
+**Task 7 final corrective findings (2026-07-12):** [x] Extra `deterministic_presence` boxes project once from actual to expected comparison space; missing expected boxes remain expected-space. Suppression requires complete vectors on both sides, accepting deterministic `deltaX`/`deltaY` and VLM `horizontal_shift`/`vertical_shift` with same direction and 4px tolerance. Every group addition must remain local to every existing member, preventing adjacency chains. `evidence_crop_rejected` remains the primary unresolved reason/detail when broad VLM context overlaps. Semantic-parent ties include stable IDs. GREEN: focused 60 tests, `npm run typecheck`, `npm run verify` (671 unit/e2e + 20 parser + build + 22 integration), and `git diff --check` PASS. Commit/push remain deferred by explicit user direction.
+
+**Task 7 final equivalence/tie correction (2026-07-12):** [x] Suppression evidence equivalence is exact normalized set equality (trimmed, case-normalized, deduplicated, sorted); partial overlap never hides independent child evidence. Stable IDs break fallback semantic-parent, suppression-parent, equal-priority zoom, and equal-area residual ties. GREEN: focused 42 tests, `npm run typecheck`, `npm run verify` (672 unit/e2e + 20 parser + build + 22 integration), and `git diff --check` PASS. Commit/push remain deferred by explicit user direction.
 
 ## Task 8: Runtime Model Attribution And Status Truth
 

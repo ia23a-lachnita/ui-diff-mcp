@@ -214,6 +214,30 @@ describe("buildRegionLedger", () => {
 });
 
 describe("residual fragment classification", () => {
+  it("selects equal-area residual candidates by stable ID under permutations", () => {
+    const ledger = buildRegionLedger([makeComponent(10, 10, 2, 20, 40)], [], {
+      minPixelCount: 1,
+      maxGapPx: 12,
+      maxClusterAreaRatio: 0.5,
+      imageWidth: 200,
+      imageHeight: 200
+    });
+    const aFinding = { ...makeDiff(0, 0, 100, 100), id: "a-finding" };
+    const zFinding = { ...makeDiff(0, 0, 100, 100), id: "z-finding" };
+    const options = {
+      maxDistancePx: 24,
+      maxResidualPixels: 120,
+      maxThinSidePx: 4,
+      minAreaMultiplier: 8
+    };
+
+    const selectedId = (findings: DiffRecord[]) =>
+      classifyResidualFragments(ledger.regions, findings, options)[0]?.coveringFindingId;
+
+    expect(selectedId([zFinding, aFinding])).toBe("a-finding");
+    expect(selectedId([aFinding, zFinding])).toBe("a-finding");
+  });
+
   it("marks a tiny sliver near a larger accepted finding as residual noise", () => {
     const ledger = buildRegionLedger([makeComponent(544, 2241, 3, 28, 80)], [], {
       minPixelCount: 50,

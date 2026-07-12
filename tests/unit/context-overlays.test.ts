@@ -2,8 +2,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import sharp from "sharp";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { buildFindingGroups, buildSemanticHierarchy, overlayStyleForImage, writeRegionContextOverlays } from "../../src/report/context-overlays.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { buildFindingGroups, buildSemanticHierarchy, overlayStyleForImage, selectZoomGroups, writeRegionContextOverlays } from "../../src/report/context-overlays.js";
 import { writeSolidPng } from "../../src/testing/fixture-images.js";
 import type { DiffRecord, GeometryDiagnosticReference, UiElement, UnresolvedRegion } from "../../src/schemas/core.js";
 
@@ -27,6 +27,7 @@ function diff(id: string): DiffRecord {
     evidence: ["card is shifted"],
     measurements: [],
     artifactPaths: [],
+    targetIds: ["card-1"],
     reviewerStatus: "accepted",
     classificationSource: "vlm_reviewed"
   };
@@ -99,6 +100,35 @@ describe("writeRegionContextOverlays", () => {
 
     expect(groups).toHaveLength(2);
     expect(groups.map(group => group.diffIds)).toEqual(expect.arrayContaining([["screen"], ["local"]]));
+  });
+
+  it("forms one repair group only for nearby coherent displacement evidence", () => {
+    const nearby = [0, 1, 2].map(index => ({
+      ...diff(`shift-${index}`),
+      location: { x: 20 + index * 32, y: 40, width: 24, height: 20 },
+      findingGroupId: "shifted-summary",
+      findingGroupKind: "coherent_displacement" as const,
+      measurements: [{ name: "horizontal_shift", value: 12, unit: "px" }]
+    }));
+
+    const groups = buildFindingGroups(nearby);
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.diffIds).toEqual(["shift-0", "shift-1", "shift-2"]);
+  });
+
+  it("keeps separated cards in distinct repair groups despite a shared screen explanation", () => {
+    const parent = {
+      ...diff("screen-context"),
+      location: { x: 0, y: 0, width: 200, height: 400 },
+      scopeKind: "screen" as const
+    };
+    const topCard = { ...diff("top-card"), location: { x: 20, y: 40, width: 80, height: 60 }, targetIds: ["top-card"] };
+    const bottomCard = { ...diff("bottom-card"), location: { x: 20, y: 280, width: 80, height: 60 }, targetIds: ["bottom-card"] };
+
+    const groups = buildFindingGroups([parent, topCard, bottomCard]);
+
+    expect(groups.map(group => group.diffIds)).toEqual([["top-card"], ["bottom-card"]]);
   });
 
   it("builds semantic hierarchy separately from visual diff groups", () => {
@@ -268,13 +298,15 @@ describe("writeRegionContextOverlays", () => {
     const directionalOverlayPath = await writeSolidPng(tmpDir, "directional-overlay.png", 200, 400, 10, 10, 10);
     const rejectedDiff = { ...diff("edge-diff"), location: { x: 400, y: 500, width: 10, height: 10 } };
 
+    const geometryRejections: GeometryDiagnosticReference[] = [];
     const artifacts = await writeRegionContextOverlays({
       actualComparisonPath,
       directionalOverlayPath,
       artifactDir: tmpDir,
       diffs: [rejectedDiff],
       unresolvedRegions: [],
-      elements: []
+      elements: [],
+      geometryRejections
     });
 
     expect(artifacts.some(artifact => artifact.role === "final_diff_zoom")).toBe(false);
@@ -282,5 +314,118 @@ describe("writeRegionContextOverlays", () => {
     const legendPath = artifacts.find(artifact => artifact.role === "final_diff_groups_legend")!.path;
     await expect(fs.readFile(legendPath, "utf8")).resolves.toContain('"zoomStatus": "rejected"');
     await expect(fs.readFile(legendPath, "utf8")).resolves.toContain('"zoomRejectionReason": "disjoint"');
+  });
+
+  it("uses pipeline-canonical locations in group legends and excludes broad VLM evidence from zooms", async () => {
+    const actualComparisonPath = await writeSolidPng(tmpDir, "actual-comparison.png", 200, 400, 30, 30, 30);
+    const directionalOverlayPath = await writeSolidPng(tmpDir, "directional-overlay.png", 200, 400, 10, 10, 10);
+    const projected = {
+      ...diff("actual-source"),
+      location: { x: 50, y: 100, width: 20, height: 20 },
+      reviewerStatus: "not_reviewed" as const,
+      classificationSource: "deterministic_projected_mismatch" as const,
+      coordinateSpace: "comparison_expected_normalized" as const
+    };
+    const broad = {
+      ...diff("broad-vlm"),
+      location: { x: 0, y: 0, width: 200, height: 400 },
+      targetIds: [],
+      scopeKind: "screen" as const
+    };
+
+    const artifacts = await writeRegionContextOverlays({
+      actualComparisonPath,
+      directionalOverlayPath,
+      artifactDir: tmpDir,
+      diffs: [projected, broad],
+      unresolvedRegions: [],
+      elements: []
+    });
+
+    const legendPath = artifacts.find(artifact => artifact.role === "final_diff_groups_legend")!.path;
+    const legend = JSON.parse(await fs.readFile(legendPath, "utf8")) as { groups: Array<{ box: DiffRecord["location"]; diffIds: string[] }> };
+    expect(legend.groups).toEqual([expect.objectContaining({
+      box: { x: 50, y: 100, width: 20, height: 20 },
+      diffIds: ["actual-source"],
+      coordinateSpace: "comparison_expected_normalized"
+    })]);
+    expect(artifacts.filter(artifact => artifact.role === "final_diff_zoom")).toHaveLength(1);
+  });
+
+  it("keeps suppressed child evidence reachable through the repair-group legend", async () => {
+    const actualComparisonPath = await writeSolidPng(tmpDir, "actual-comparison.png", 200, 400, 30, 30, 30);
+    const directionalOverlayPath = await writeSolidPng(tmpDir, "directional-overlay.png", 200, 400, 10, 10, 10);
+    const retainedParent = {
+      ...diff("card-layout"),
+      suppression: {
+        reason: "duplicate_child_of_group" as const,
+        retainedFindingIds: ["title-layout", "value-layout"]
+      }
+    };
+
+    const artifacts = await writeRegionContextOverlays({
+      actualComparisonPath,
+      directionalOverlayPath,
+      artifactDir: tmpDir,
+      diffs: [retainedParent],
+      unresolvedRegions: [],
+      elements: []
+    });
+
+    const legendPath = artifacts.find(artifact => artifact.role === "final_diff_groups_legend")!.path;
+    const legend = JSON.parse(await fs.readFile(legendPath, "utf8")) as {
+      groups: Array<{ retainedFindingIds: string[]; suppressions: Array<{ reason: string; retainedFindingIds: string[] }> }>;
+    };
+    expect(legend.groups[0]).toMatchObject({
+      retainedFindingIds: ["card-layout", "title-layout", "value-layout"],
+      suppressions: [{ reason: "duplicate_child_of_group", retainedFindingIds: ["title-layout", "value-layout"] }]
+    });
+  });
+
+  it("keeps every repair group in the legend when zoom output is capped", async () => {
+    vi.stubEnv("UI_DIFF_MAX_CONTEXT_ZOOMS", "1");
+    const actualComparisonPath = await writeSolidPng(tmpDir, "actual-comparison.png", 200, 400, 30, 30, 30);
+    const directionalOverlayPath = await writeSolidPng(tmpDir, "directional-overlay.png", 200, 400, 10, 10, 10);
+    const diffs = [20, 140, 260].map((y, index) => ({
+      ...diff(`group-${index + 1}`),
+      location: { x: 20, y, width: 40, height: 30 },
+      targetIds: [`card-${index + 1}`]
+    }));
+
+    const artifacts = await writeRegionContextOverlays({
+      actualComparisonPath,
+      directionalOverlayPath,
+      artifactDir: tmpDir,
+      diffs,
+      unresolvedRegions: [],
+      elements: []
+    });
+    const legendPath = artifacts.find(artifact => artifact.role === "final_diff_groups_legend")!.path;
+    const legend = JSON.parse(await fs.readFile(legendPath, "utf8")) as { groups: Array<{ zoomStatus: string; zoomSkippedReason?: string }> };
+
+    expect(legend.groups).toHaveLength(3);
+    expect(legend.groups.map(group => group.zoomStatus)).toEqual(["valid", "skipped", "skipped"]);
+    expect(legend.groups.slice(1).every(group => group.zoomSkippedReason === "max_zooms_exceeded")).toBe(true);
+  });
+
+  it("selects the stable-ID equal-priority prebuilt group for the capped zoom", () => {
+    const make = (id: string) => ({
+      id,
+      label: id,
+      box: { x: 20, y: 40, width: 40, height: 30 },
+      diffIds: [id],
+      criteria: ["geometry"],
+      severity: "medium" as const,
+      retainedFindingIds: [id],
+      suppressions: [],
+      targetIds: [id],
+      evidenceArea: 1_200,
+      coherentDisplacementKey: undefined
+    });
+    const aGroup = make("a-group");
+    const zGroup = make("z-group");
+
+    expect(selectZoomGroups([zGroup, aGroup], 1).map(group => group.id)).toEqual(["a-group"]);
+    expect(selectZoomGroups([aGroup, zGroup], 1).map(group => group.id)).toEqual(["a-group"]);
   });
 });

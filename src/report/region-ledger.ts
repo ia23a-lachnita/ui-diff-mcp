@@ -94,6 +94,18 @@ export function applyFindingCoverage(ledger: RegionLedger, findings: DiffRecord[
   }
 }
 
+export function markBroadVlmEvidence(ledger: RegionLedger, findings: DiffRecord[]): void {
+  for (const region of ledger.regions) {
+    if (region.state !== "unresolved") continue;
+    const related = findings.filter(finding => overlapRatio(region.box, finding) >= 0.1).map(finding => finding.id).sort();
+    if (related.length === 0) continue;
+    region.unresolvedDetail = region.unresolvedDetail?.startsWith("evidence_crop_rejected:")
+      ? `${region.unresolvedDetail}; broad_vlm_evidence: ${related.join(",")}`
+      : `broad_vlm_evidence: ${related.join(",")}`;
+    region.coveringFindingIds = related;
+  }
+}
+
 export function applyRecoveryOutcomes(ledger: RegionLedger, outcomes: RecoveryRegionOutcome[]): void {
   const byId = new Map(ledger.regions.map(region => [region.id, region]));
   for (const outcome of outcomes) {
@@ -119,7 +131,11 @@ export function unresolvedRegionsFromLedger(
       sourceComponentIds: region.sourceComponentIds,
       relatedFindingIds: region.coveringFindingIds,
       relation: region.coveringFindingIds.length > 0 ? "nearby_larger_finding" : "none",
-      reason: region.unresolvedDetail?.startsWith("evidence_crop_rejected:") ? "evidence_crop_rejected" : reason,
+      reason: region.unresolvedDetail?.startsWith("evidence_crop_rejected:")
+        ? "evidence_crop_rejected"
+        : region.unresolvedDetail?.startsWith("broad_vlm_evidence:")
+          ? "broad_vlm_evidence"
+          : reason,
       ...(region.unresolvedDetail ? { detail: region.unresolvedDetail } : {}),
       artifactPaths: region.artifactPaths
     }));

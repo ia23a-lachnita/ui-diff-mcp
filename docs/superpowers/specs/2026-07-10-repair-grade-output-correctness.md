@@ -1,7 +1,7 @@
 # Repair-Grade UI Diff Output Correctness
 
 Date: 2026-07-10  
-Status: design approved by request; implementation not started  
+Status: Tasks 1-7 implemented; Task 7 corrective finalization contract approved on 2026-07-12.
 Scope: repair output correctness and evidence usability after the 2026-07-10 post-session audit. This is not a Calorix parity-edit specification.
 
 ## Problem Statement
@@ -161,3 +161,13 @@ The release validation run must use fresh auto-capture with `UI_DIFF_LIVE_ACTUAL
 Pre-plan Antigravity MCP review was requested on 2026-07-10 with `model:"gemini-3.1-pro-preview"`, `approvalMode:"yolo"`, and conversation `ui-diff-repair-grade-output-design-2026-07-10`. The first request returned `timed out awaiting tools/call after 300s`. The subsequently returned review findings are not green: `MUST_FIX` requires a sanitizer limited to known `<ref>`, `<box>`, and coordinate grounding token families while preserving `x < y` prose, with red Python parser and TypeScript tests; `SHOULD_FIX` requires adaptive compact-component parenting based on recognized role/type plus geometric containment, while ordinary nodes retain the conservative guard, with tight chip/icon-button, overlapping-sibling, and input-order-determinism coverage. These findings are incorporated in this revision. Retry in the same conversation before implementation and retain the conversation ID. A post-implementation review in that conversation is also required; green requires `AGREEMENT_STATUS: agree` and `MUST_FIX: none`.
 
 Main-agent follow-up review was recorded on 2026-07-11 in conversation `risk-first-remediation-plans-2026-07-11` with `model:"gemini-3.1-pro-preview"`. Verdict: `AGREEMENT_STATUS: agree`, `MUST_FIX: none`, `SHOULD_FIX: none`; no MCP response noise. This marks the plan review green and authorizes staged execution beginning with canonical Calorix reference evidence and deterministic ui-diff work; it does not claim implementation.
+
+## Task 7 Contract Clarification (2026-07-12)
+
+Final repair evidence has one canonical pipeline sequence: resolve/canonicalize final candidates, partition broad accepted VLM evidence, consolidate only local candidates, construct numbered repair groups, then feed the same typed local results to coverage, fallback ledger construction, report diffs, overlays, legends, and zooms. Rendering must not resolve final diff coordinates again.
+
+Broad accepted VLM evidence is not accepted repair evidence. It must not cover changed pixels or appear in final diffs/groups/zooms; overlapping ledger regions are unresolved with `reason:"broad_vlm_evidence"`, linked IDs, and incomplete visual classification. A shared selected container or explicit group ID only makes findings candidates: each merge still needs bounded locality, union size, and coherent displacement. Suppression additionally requires selected semantic ancestry, identical criterion/evidence, and same-direction displacement within 4px. Every numbered group appears in the legend, with its full members/suppressions and a `valid`, `rejected`, or `skipped:max_zooms_exceeded` zoom state. Ordering is stable under input permutation.
+
+Deterministic extra-presence boxes originate in actual-image coordinates and must project once into expected-normalized comparison space; missing expected boxes remain expected-space. Suppression requires complete displacement vectors on both findings, normalized from deterministic `deltaX`/`deltaY` or VLM `horizontal_shift`/`vertical_shift`. Evidence-crop rejection reason/detail remains primary when broad VLM context also applies. Group locality is group-wide for every incremental member, preventing endpoint-spanning adjacency chains; equal-area semantic/suppression ties resolve by stable ID.
+
+Suppression evidence equivalence is exact equality of normalized evidence sets: trim, case-normalize, discard empty strings, deduplicate, sort, then compare every member. Any additional independent child evidence prevents suppression. Remaining selection/output ties use stable finding or element IDs, including equal-priority zoom groups and equal-area residual candidates.

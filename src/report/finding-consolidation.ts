@@ -1,4 +1,6 @@
-import type { Box, DiffRecord, ElementPair, UiElement } from "../schemas/core.js";
+import type { Box, DiffRecord, ElementPair, GeometryDiagnosticReference, UiElement } from "../schemas/core.js";
+import { resolveComparisonBox } from "../images/comparison-geometry.js";
+import type { ImagePairTransform } from "../images/coordinates.js";
 import { intersect } from "../signals/geometry.js";
 
 const SEMANTIC_PARENT_TYPES = new Set<UiElement["type"]>([
@@ -13,6 +15,17 @@ interface OwnedFinding {
   fallbackKey: string;
 }
 
+export interface FindingConsolidationContext {
+  canvas: { width: number; height: number };
+  imagePairTransform?: ImagePairTransform;
+  geometryRejections?: GeometryDiagnosticReference[];
+}
+
+export interface FindingFinalization {
+  diffs: DiffRecord[];
+  broadVlmFindings: DiffRecord[];
+}
+
 function boxArea(box: Box): number {
   return box.width * box.height;
 }
@@ -21,6 +34,39 @@ function strongOverlap(a: Box, b: Box): boolean {
   const overlap = intersect(a, b);
   if (!overlap) return false;
   return (overlap.width * overlap.height) / Math.min(boxArea(a), boxArea(b)) >= 0.7;
+}
+
+function comparableScale(a: Box, b: Box): boolean {
+  return Math.max(boxArea(a), boxArea(b)) / Math.max(1, Math.min(boxArea(a), boxArea(b))) <= 8;
+}
+
+function centerDistanceRatio(a: Box, b: Box): number {
+  const distance = Math.hypot(a.x + a.width / 2 - (b.x + b.width / 2), a.y + a.height / 2 - (b.y + b.height / 2));
+  return distance / Math.max(a.width, a.height, b.width, b.height, 1);
+}
+
+function localUnion(a: Box, b: Box, viewportArea: number): boolean {
+  const union = unionBoxes([a, b]);
+  return (strongOverlap(a, b) || centerDistanceRatio(a, b) <= 1.5)
+    && boxArea(union) / Math.max(1, viewportArea) < MAX_REPAIR_PARENT_AREA_RATIO
+    && boxArea(union) <= Math.max(1, boxArea(a) + boxArea(b)) * 3;
+}
+
+function displacement(finding: DiffRecord): { x: number; y: number } | undefined {
+  const horizontal = finding.measurements.find(measurement => measurement.name === "horizontal_shift" || measurement.name === "deltaX")?.value;
+  const vertical = finding.measurements.find(measurement => measurement.name === "vertical_shift" || measurement.name === "deltaY")?.value;
+  if (typeof horizontal !== "number" || typeof vertical !== "number") return undefined;
+  return { x: horizontal, y: vertical };
+}
+
+function coherentDisplacement(a: DiffRecord, b: DiffRecord, tolerance = 4): boolean {
+  const first = displacement(a);
+  const second = displacement(b);
+  if (!first || !second) return false;
+  return Math.sign(first.x) === Math.sign(second.x)
+    && Math.sign(first.y) === Math.sign(second.y)
+    && Math.abs(first.x - second.x) <= tolerance
+    && Math.abs(first.y - second.y) <= tolerance;
 }
 
 function hasSharedTarget(a: OwnedFinding, b: OwnedFinding): boolean {
@@ -81,7 +127,7 @@ function overlappingSemanticParent(finding: DiffRecord, elements: UiElement[], v
     .map(element => ({ element, overlap: intersect(finding.location, element.box) }))
     .filter((entry): entry is { element: UiElement; overlap: Box } => entry.overlap !== undefined && entry.overlap !== null)
     .filter(entry => boxArea(entry.overlap) / boxArea(finding.location) >= 0.5)
-    .sort((a, b) => boxArea(a.element.box) - boxArea(b.element.box))[0]?.element;
+    .sort((a, b) => boxArea(a.element.box) - boxArea(b.element.box) || a.element.id.localeCompare(b.element.id))[0]?.element;
 }
 
 function resolveOwnership(
@@ -102,9 +148,9 @@ function resolveOwnership(
     .filter(element => !isOversizedRepairParent(element, viewportArea))
     .sort((a, b) => {
       const sourceRank = (element: UiElement) => element.source === "projected" ? 1 : 0;
-      return sourceRank(a) - sourceRank(b) || boxArea(a.box) - boxArea(b.box);
+      return sourceRank(a) - sourceRank(b) || boxArea(a.box) - boxArea(b.box) || a.id.localeCompare(b.id);
     });
-  const parent = semanticParents[0] ?? overlappingSemanticParent(finding, elements, viewportArea);
+  const parent = semanticParents[0] ?? (targetIds.length === 0 ? overlappingSemanticParent(finding, elements, viewportArea) : undefined);
   if (parent && !targetIds.includes(parent.id)) targetIds.push(parent.id);
   return {
     finding,
@@ -174,6 +220,7 @@ function shouldMergeOwnedGroups(a: OwnedFinding[], b: OwnedFinding[]): boolean {
   return a.some(aEntry => b.some(bEntry =>
     aEntry.finding.criterion === bEntry.finding.criterion &&
     hasSharedTarget(aEntry, bEntry) &&
+    comparableScale(aEntry.finding.location, bEntry.finding.location) &&
     strongOverlap(aEntry.finding.location, bEntry.finding.location)
   ));
 }
@@ -194,7 +241,7 @@ function mergeOverlappingOwnedGroups(groups: OwnedFinding[][]): OwnedFinding[][]
 function shouldMergeFinalFindings(a: DiffRecord, b: DiffRecord): boolean {
   const aTargets = new Set(a.targetIds ?? []);
   const sharedTarget = (b.targetIds ?? []).some(targetId => aTargets.has(targetId));
-  return sharedTarget && a.criterion === b.criterion && strongOverlap(a.location, b.location);
+  return sharedTarget && a.criterion === b.criterion && comparableScale(a.location, b.location) && strongOverlap(a.location, b.location);
 }
 
 function mergeFinalFindingGroup(group: DiffRecord[]): DiffRecord {
@@ -261,17 +308,20 @@ function parentExplainsChildLayout(
   viewportArea: number
 ): boolean {
   if (parent.id === child.id) return false;
-  if (!isLayoutFinding(parent) || !isLayoutFinding(child)) return false;
+  if (!isLayoutFinding(parent) || parent.criterion !== child.criterion) return false;
   if (boxArea(parent.location) / Math.max(1, viewportArea) >= MAX_REPAIR_PARENT_AREA_RATIO) return false;
   if (boxArea(parent.location) <= boxArea(child.location)) return false;
   const parentTargets = targetIdsForFinding(parent, pairMap);
   const childTargets = targetIdsForFinding(child, pairMap);
   if (parentTargets.length === 0 || childTargets.length === 0) return false;
   const descendant = parentTargets.some(parentId =>
-    childTargets.some(childId => childId === parentId || isDescendantOf(childId, parentId, elements))
+    childTargets.some(childId => childId !== parentId && isDescendantOf(childId, parentId, elements))
   );
-  const containment = containedRatio(child.location, parent.location);
-  return containment >= 0.8 || (descendant && containment >= 0.5);
+  if (!descendant || !coherentDisplacement(parent, child)) return false;
+  const normalizeEvidence = (values: string[]) => [...new Set(values.map(value => value.trim().toLocaleLowerCase()).filter(Boolean))].sort();
+  const parentEvidence = normalizeEvidence(parent.evidence);
+  const childEvidence = normalizeEvidence(child.evidence);
+  return parentEvidence.length === childEvidence.length && parentEvidence.every((value, index) => value === childEvidence[index]);
 }
 
 function mergeChildIntoParent(parent: DiffRecord, children: DiffRecord[]): DiffRecord {
@@ -296,6 +346,9 @@ function mergeChildIntoParent(parent: DiffRecord, children: DiffRecord[]): DiffR
     : allFindings.reduce<DiffRecord["reviewerStatus"]>((best, finding) =>
       reviewRank[finding.reviewerStatus] > reviewRank[best] ? finding.reviewerStatus : best,
     parent.reviewerStatus);
+  const retainedFindingIds = [...new Set(childFindingIds)]
+    .filter(id => id !== parent.id)
+    .sort((a, b) => a.localeCompare(b));
 
   return {
     ...parent,
@@ -305,8 +358,29 @@ function mergeChildIntoParent(parent: DiffRecord, children: DiffRecord[]): DiffR
     coverageLocations: [...coverageLocations.values()],
     childFindingIds,
     targetIds,
-    reviewerStatus
+    reviewerStatus,
+    ...(retainedFindingIds.length > 0 ? {
+      suppression: {
+        reason: "duplicate_child_of_group" as const,
+        retainedFindingIds
+      }
+    } : {})
   };
+}
+
+export function selectSuppressionParent(
+  candidates: DiffRecord[],
+  child: DiffRecord,
+  elements: UiElement[],
+  pairs: ElementPair[],
+  viewportArea: number
+): DiffRecord | undefined {
+  const elementMap = new Map(elements.map(element => [element.id, element]));
+  const pairMap = new Map(pairs.map(pair => [pair.id, pair]));
+  return candidates
+    .filter(isLayoutFinding)
+    .sort((a, b) => boxArea(b.location) - boxArea(a.location) || a.id.localeCompare(b.id))
+    .find(candidate => candidate.id !== child.id && parentExplainsChildLayout(candidate, child, elementMap, pairMap, viewportArea));
 }
 
 function suppressLayoutChildrenCoveredByParent(
@@ -315,20 +389,17 @@ function suppressLayoutChildrenCoveredByParent(
   pairs: ElementPair[],
   viewportArea: number
 ): DiffRecord[] {
-  const elementMap = new Map(elements.map(element => [element.id, element]));
-  const pairMap = new Map(pairs.map(pair => [pair.id, pair]));
   const consumed = new Set<string>();
   const parentToChildren = new Map<string, DiffRecord[]>();
-  const parents = findings
-    .filter(isLayoutFinding)
-    .sort((a, b) => boxArea(b.location) - boxArea(a.location));
 
   for (const child of findings) {
     if (!isLayoutFinding(child)) continue;
-    const parent = parents.find(candidate =>
-      !consumed.has(candidate.id) &&
-      candidate.id !== child.id &&
-      parentExplainsChildLayout(candidate, child, elementMap, pairMap, viewportArea)
+    const parent = selectSuppressionParent(
+      findings.filter(candidate => !consumed.has(candidate.id)),
+      child,
+      elements,
+      pairs,
+      viewportArea
     );
     if (!parent) continue;
     const children = parentToChildren.get(parent.id) ?? [];
@@ -348,14 +419,16 @@ function suppressLayoutChildrenCoveredByParent(
 export function consolidateFindings(
   findings: DiffRecord[],
   elements: UiElement[],
-  pairs: ElementPair[]
+  pairs: ElementPair[],
+  context?: FindingConsolidationContext
 ): DiffRecord[] {
-  const viewportArea = estimateViewportArea(elements);
+  const canonicalFindings = context ? canonicalizeFinalFindings(findings, context) : findings;
+  const viewportArea = context ? context.canvas.width * context.canvas.height : estimateViewportArea(elements);
   const elementMap = new Map(elements.map(element => [element.id, element]));
   const pairMap = new Map(pairs.map(pair => [pair.id, pair]));
   const groups = new Map<string, OwnedFinding[]>();
 
-  for (const finding of findings) {
+  for (const finding of [...canonicalFindings].sort((a, b) => a.location.y - b.location.y || a.location.x - b.location.x || a.id.localeCompare(b.id))) {
     const owned = resolveOwnership(finding, elements, viewportArea, elementMap, pairMap);
     const explicitGroup = finding.findingGroupId && finding.findingGroupKind
       ? `explicit:${finding.findingGroupKind}:${finding.findingGroupId}:${finding.criterion}`
@@ -363,11 +436,18 @@ export function consolidateFindings(
     let key = explicitGroup ?? (owned.parent
       ? `parent:${owned.parent.id}:${finding.criterion}`
       : `fallback:${owned.fallbackKey}`);
+    const isSemanticChildFinding = owned.parent !== undefined && owned.targetIds.some(id => id !== owned.parent!.id);
     if (!explicitGroup && !owned.parent) {
       const existing = groups.get(key);
       if (existing && !existing.some(entry => strongOverlap(entry.finding.location, finding.location))) {
         key = `${key}:${finding.id}`;
       }
+    }
+    const existing = groups.get(key);
+    if (existing && (isSemanticChildFinding || !existing.every(entry =>
+      localUnion(entry.finding.location, finding.location, viewportArea) && coherentDisplacement(entry.finding, finding)
+    ))) {
+      key = `${key}:${finding.id}`;
     }
     const group = groups.get(key) ?? [];
     group.push(owned);
@@ -376,5 +456,69 @@ export function consolidateFindings(
 
   const initiallyMerged = mergeOverlappingOwnedGroups([...groups.values()]).map(mergeGroup);
   const finalMerged = mergeFinalDuplicateFindings(initiallyMerged);
-  return suppressLayoutChildrenCoveredByParent(finalMerged, elements, pairs, viewportArea);
+  return suppressLayoutChildrenCoveredByParent(finalMerged, elements, pairs, viewportArea)
+    .sort((a, b) => a.location.y - b.location.y || a.location.x - b.location.x || a.id.localeCompare(b.id));
+}
+
+export function finalizeFindings(
+  findings: DiffRecord[],
+  elements: UiElement[],
+  pairs: ElementPair[],
+  context: FindingConsolidationContext
+): FindingFinalization {
+  const canonical = canonicalizeFinalFindings(findings, context, pairs);
+  const broadVlmFindings = canonical
+    .filter(finding => finding.repairLocality === "broad" && finding.classificationSource === "vlm_reviewed")
+    .sort((a, b) => a.id.localeCompare(b.id));
+  return {
+    diffs: consolidateFindings(
+      canonical.filter(finding => !broadVlmFindings.some(broad => broad.id === finding.id)),
+      elements,
+      pairs
+    ).sort((a, b) => a.location.y - b.location.y || a.location.x - b.location.x || a.id.localeCompare(b.id)),
+    broadVlmFindings
+  };
+}
+
+function canonicalizeFinalFindings(
+  findings: DiffRecord[],
+  context: FindingConsolidationContext,
+  pairs: ElementPair[] = []
+): DiffRecord[] {
+  const canvasArea = Math.max(1, context.canvas.width * context.canvas.height);
+  return findings.flatMap(finding => {
+    const pair = finding.pairId ? pairs.find(candidate => candidate.id === finding.pairId) : undefined;
+    const sourceSpace = finding.classificationSource === "deterministic_projected_mismatch"
+      || (finding.classificationSource === "deterministic_presence" && pair?.status === "extra")
+      ? "actual_normalized" as const
+      : "comparison_expected_normalized" as const;
+    const resolution = resolveComparisonBox({
+      box: finding.location,
+      sourceSpace,
+      canvas: context.canvas,
+      ...(context.imagePairTransform ? { transform: context.imagePairTransform } : {})
+    });
+    if (resolution.status === "rejected") {
+      context.geometryRejections?.push({
+        producer: "final_finding_canonicalization",
+        reason: resolution.reason,
+        reference: `diff:${finding.id}`
+      });
+      return [];
+    }
+    const repairLocality = boxArea(resolution.box) / canvasArea >= MAX_REPAIR_PARENT_AREA_RATIO
+      ? "broad" as const
+      : "local" as const;
+    const broadVlmEvidence = repairLocality === "broad" && finding.classificationSource === "vlm_reviewed";
+    return [{
+      ...finding,
+      location: resolution.box,
+      coordinateSpace: "comparison_expected_normalized",
+      repairLocality,
+      ...(broadVlmEvidence ? {
+        reviewerStatus: "needs_escalation" as const,
+        reviewerReason: finding.reviewerReason ?? "Broad VLM evidence cannot be decomposed into a repair-local finding."
+      } : {})
+    }];
+  });
 }

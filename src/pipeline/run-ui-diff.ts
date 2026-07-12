@@ -7,10 +7,10 @@ import { loadNormalizedImage } from "../images/normalize.js";
 import { createImagePairTransform } from "../images/coordinates.js";
 import { summarizeGeometryDiagnostics } from "../images/comparison-geometry.js";
 import { computeViewportCompatibility } from "../images/viewport.js";
-import { buildRegionLedger, applyFindingCoverage, applyRecoveryOutcomes, unresolvedRegionsFromLedger, type RegionLedger } from "../report/region-ledger.js";
-import { consolidateFindings } from "../report/finding-consolidation.js";
+import { buildRegionLedger, applyFindingCoverage, applyRecoveryOutcomes, markBroadVlmEvidence, unresolvedRegionsFromLedger, type RegionLedger } from "../report/region-ledger.js";
+import { finalizeFindings } from "../report/finding-consolidation.js";
 import { applyResidualFragmentDecisions, classifyResidualFragments } from "../report/residual-fragments.js";
-import { writeRegionContextOverlays } from "../report/context-overlays.js";
+import { buildFindingGroups, writeRegionContextOverlays } from "../report/context-overlays.js";
 import { writeLocatorOverlays } from "../report/locator-overlays.js";
 import { writeOverlay, writeJsonArtifact } from "../images/artifacts.js";
 import { computePixelDiff } from "../signals/pixel-diff.js";
@@ -350,8 +350,8 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     { role: "directional_overlay", path: directionalOverlayPath }
   ];
 
-  function applyResidualSuppression(ledger: RegionLedger): void {
-    const decisions = classifyResidualFragments(ledger.regions, allDiffs, {
+  function applyResidualSuppression(ledger: RegionLedger, findings: DiffRecord[]): void {
+    const decisions = classifyResidualFragments(ledger.regions, findings, {
       maxDistancePx: 24,
       maxResidualPixels: 120,
       maxThinSidePx: 4,
@@ -1038,14 +1038,22 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
 
         // Target recovery: classify uncovered changed-pixel regions
         const significantComponents = pixelDiff.components.filter(c => c.pixelCount >= 50);
-        regionLedger = buildRegionLedger(significantComponents, allDiffs, {
+        const broadVlmEvidence = filterAcceptedDiffs(allDiffs).filter(finding =>
+          finding.classificationSource === "vlm_reviewed"
+          && finding.location.width * finding.location.height >= expectedImg.width * expectedImg.height * 0.3
+        );
+        const preRecoveryCoverage = filterAcceptedDiffs(allDiffs)
+          .filter(finding => !broadVlmEvidence.some(broad => broad.id === finding.id));
+        regionLedger = buildRegionLedger(significantComponents, preRecoveryCoverage, {
           minPixelCount: 50,
           maxGapPx: 12,
           maxClusterAreaRatio: 0.5,
           imageWidth: expectedImg.width,
           imageHeight: expectedImg.height
         });
-        applyResidualSuppression(regionLedger);
+        markBroadVlmEvidence(regionLedger, broadVlmEvidence);
+        applyResidualSuppression(regionLedger, preRecoveryCoverage);
+        if (broadVlmEvidence.length > 0) visualClassificationStatus = "incomplete";
         debugTrace.coverage = regionLedger.coverageTrace;
         const allUncoveredComponents = regionLedger.regions
           .filter(region => region.state === "unresolved")
@@ -1148,7 +1156,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
           allDiffs.push(...activeRecovered);
           applyFindingCoverage(regionLedger, activeRecovered);
           applyRecoveryOutcomes(regionLedger, recoveryResult.regionOutcomes);
-          applyResidualSuppression(regionLedger);
+          applyResidualSuppression(regionLedger, [...preRecoveryCoverage, ...activeRecovered]);
           debugTrace.coverage = regionLedger.coverageTrace;
           recoveryCursor = recoveryResult.cursor;
           recoverySummary = {
@@ -1198,16 +1206,22 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
   }
 
   const significantComponents = pixelDiff.components.filter(c => c.pixelCount >= 50);
-  regionLedger ??= buildRegionLedger(significantComponents, allDiffs, {
+  const finalization = finalizeFindings(allDiffs, [...expectedElements, ...actualElements], pairs, {
+    canvas: { width: expectedImg.width, height: expectedImg.height },
+    imagePairTransform,
+    geometryRejections
+  });
+  regionLedger ??= buildRegionLedger(significantComponents, finalization.diffs, {
     minPixelCount: 50,
     maxGapPx: 12,
     maxClusterAreaRatio: 0.5,
     imageWidth: expectedImg.width,
     imageHeight: expectedImg.height
   });
-  const activeDiffs = filterAcceptedDiffs(allDiffs);
-  applyFindingCoverage(regionLedger, activeDiffs);
-  applyResidualSuppression(regionLedger);
+  applyFindingCoverage(regionLedger, finalization.diffs);
+  markBroadVlmEvidence(regionLedger, finalization.broadVlmFindings);
+  applyResidualSuppression(regionLedger, finalization.diffs);
+  if (finalization.broadVlmFindings.length > 0) visualClassificationStatus = "incomplete";
   debugTrace.coverage = regionLedger.coverageTrace;
   const artifactlessRegions = regionLedger.regions.filter(region =>
     region.state === "unresolved"
@@ -1229,6 +1243,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     recordPreparedGeometryRejections("recovery_artifact_backfill", prepared);
     applyRecoveryOutcomes(regionLedger, prepared.map(entry => recoveryOutcomeFromPrepared(entry, "not_classified")));
   }
+  markBroadVlmEvidence(regionLedger, finalization.broadVlmFindings);
   const unresolvedReason = auditScope?.stoppedReason === "route_exhausted"
     ? "audit_route_exhausted" as const
     : recoverySummary?.stoppedReason === "caller_unavailable"
@@ -1236,7 +1251,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
       : recoverySummary?.stoppedReason && recoverySummary.stoppedReason !== "none"
         ? "recovery_budget_exhausted" as const
         : "not_classified" as const;
-  const finalDiffs = consolidateFindings(activeDiffs, [...expectedElements, ...actualElements], pairs);
+  const finalDiffs = finalization.diffs;
   const unresolvedRegions = unresolvedRegionsFromLedger(regionLedger, unresolvedReason);
   const diffSummary = buildDiffSummary(finalDiffs, unresolvedRegions.length, scopeSummaries);
 
@@ -1245,6 +1260,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     directionalOverlayPath,
     artifactDir: artifactRoot,
     diffs: finalDiffs,
+    findingGroups: buildFindingGroups(finalDiffs, { width: expectedImg.width, height: expectedImg.height }),
     unresolvedRegions,
     elements: expectedElements,
     actualElements,

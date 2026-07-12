@@ -90,7 +90,7 @@ export function classifyResidualFragments(
       .filter((entry): entry is { finding: DiffRecord; relation: ResidualFragmentDecision["relation"]; findingArea: number } =>
         entry.relation !== undefined && entry.findingArea >= regionArea * options.minAreaMultiplier
       )
-      .sort((a, b) => a.findingArea - b.findingArea);
+      .sort((a, b) => a.findingArea - b.findingArea || a.finding.id.localeCompare(b.finding.id));
 
     const best = candidates[0];
     if (!best) continue;

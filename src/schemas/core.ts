@@ -121,11 +121,29 @@ export const UiCriterionSchema = z.enum([
 ]);
 export type UiCriterion = z.infer<typeof UiCriterionSchema>;
 
+export const RepairLocalitySchema = z.enum(["local", "broad"]);
+export type RepairLocality = z.infer<typeof RepairLocalitySchema>;
+
+export const FindingSuppressionReasonSchema = z.enum([
+  "duplicate_child_of_group",
+  "screen_sized_context_only",
+  "nonlocal_parent_explanation"
+]);
+export type FindingSuppressionReason = z.infer<typeof FindingSuppressionReasonSchema>;
+
+export const FindingSuppressionSchema = z.object({
+  reason: FindingSuppressionReasonSchema,
+  retainedFindingIds: z.array(z.string().min(1)).min(1)
+}).strict();
+export type FindingSuppression = z.infer<typeof FindingSuppressionSchema>;
+
 const FindingGroupLegendBaseShape = {
   id: z.string().min(1),
   label: z.string().min(1),
   box: BoxSchema,
   diffIds: z.array(z.string().min(1)),
+  retainedFindingIds: z.array(z.string().min(1)).default([]),
+  suppressions: z.array(FindingSuppressionSchema).default([]),
   criteria: z.array(UiCriterionSchema),
   severity: z.enum(["low", "medium", "high"]),
   coordinateSpace: ComparisonCoordinateSpaceSchema
@@ -141,6 +159,11 @@ export const FindingGroupLegendEntrySchema = z.discriminatedUnion("zoomStatus", 
     ...FindingGroupLegendBaseShape,
     zoomStatus: z.literal("rejected"),
     zoomRejectionReason: ComparisonBoxRejectionReasonSchema
+  }).strict(),
+  z.object({
+    ...FindingGroupLegendBaseShape,
+    zoomStatus: z.literal("skipped"),
+    zoomSkippedReason: z.literal("max_zooms_exceeded")
   }).strict()
 ]);
 export type FindingGroupLegendEntry = z.infer<typeof FindingGroupLegendEntrySchema>;
@@ -376,6 +399,7 @@ export const UnresolvedRegionSchema = z.object({
     "recovery_route_exhausted",
     "recovery_budget_exhausted",
     "evidence_crop_rejected",
+    "broad_vlm_evidence",
     "interrupted"
   ]),
   detail: z.string().max(200).optional(),
@@ -419,6 +443,9 @@ export const DiffRecordSchema = z.object({
   scopeId: z.string().min(1).optional(),
   scopeKind: z.enum(["screen", "region", "target"]).optional(),
   scopeLabel: z.string().min(1).optional(),
+  coordinateSpace: ComparisonCoordinateSpaceSchema.optional(),
+  repairLocality: RepairLocalitySchema.optional(),
+  suppression: FindingSuppressionSchema.optional(),
   reviewerStatus: z.enum(["accepted", "rejected", "needs_escalation", "not_reviewed"]),
   reviewerReason: z.string().min(1).optional(),
   model: z.string().optional(),
