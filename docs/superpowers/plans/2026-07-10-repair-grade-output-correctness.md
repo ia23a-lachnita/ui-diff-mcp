@@ -521,11 +521,11 @@ git push origin HEAD
 **Interfaces:**
 - Produces a release evidence record containing run ID, image identities, run/model statistics, geometry diagnostics, final status/source counts, and per-artifact inspection table.
 
-- [ ] **Step 1: Add e2e report invariants**
+- [x] **Step 1: Add e2e report invariants**
 
 Assert all final diff locations and legend/hierarchy nodes carry canonical comparison-space metadata; every listed final zoom file has metadata dimensions at least `2x2`; rejected zooms have no file; broad records are unresolved/escalated, not numbered groups; `runtimeModelUsage` agrees with synthetic provider traces.
 
-- [ ] **Step 2: Run full deterministic verification**
+- [x] **Step 2: Run full deterministic verification**
 
 ```powershell
 npm run verify

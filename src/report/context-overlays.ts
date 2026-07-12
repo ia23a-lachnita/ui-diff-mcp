@@ -56,6 +56,7 @@ const SEMANTIC_ELEMENT_TYPES = new Set<UiElement["type"]>([
   "image"
 ]);
 const MAX_REPAIR_LOCAL_AREA_RATIO = 0.3;
+const FINAL_DIFF_ZOOM_FILE_NAME = /^final-diff-zoom-\d+\.png$/;
 
 function escapeXml(value: string): string {
   return value
@@ -539,6 +540,17 @@ async function writeJson(outPath: string, value: unknown): Promise<void> {
   await fs.writeFile(outPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
 }
 
+async function removeOrphanedZoomArtifacts(artifactDir: string, validZoomArtifacts: UiArtifact[]): Promise<void> {
+  const validNames = new Set(validZoomArtifacts
+    .map(artifact => path.basename(artifact.path))
+    .filter(fileName => FINAL_DIFF_ZOOM_FILE_NAME.test(fileName)));
+  const entries = await fs.readdir(artifactDir, { withFileTypes: true });
+  for (const entry of entries) {
+    if (!entry.isFile() || !FINAL_DIFF_ZOOM_FILE_NAME.test(entry.name) || validNames.has(entry.name)) continue;
+    await fs.unlink(path.join(artifactDir, entry.name));
+  }
+}
+
 export async function writeRegionContextOverlays(input: RegionContextOverlayInput): Promise<UiArtifact[]> {
   const metadata = await sharp(input.actualComparisonPath).metadata();
   const width = metadata.width ?? 1;
@@ -603,6 +615,7 @@ export async function writeRegionContextOverlays(input: RegionContextOverlayInpu
       legendGroups.push({ ...legendGroup, zoomStatus: "rejected", zoomRejectionReason: zoom.reason });
     }
   }
+  await removeOrphanedZoomArtifacts(input.artifactDir, zoomArtifacts);
   await writeJson(legendPath, { groups: legendGroups });
   await writeJson(hierarchyLegendPath, { nodes: hierarchyNodes });
 

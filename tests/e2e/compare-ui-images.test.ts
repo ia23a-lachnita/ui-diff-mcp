@@ -6,6 +6,8 @@ import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runUiDiff } from "../../src/pipeline/run-ui-diff.js";
 import { hydrateReportParts } from "../../src/report/report-parts.js";
+import { buildRuntimeModelUsageLedger } from "../../src/debug/provider-trace.js";
+import { buildUsageSummaryFromLedger } from "../../src/debug/usage-summary.js";
 import { writeTwoButtonFixture, writeSolidPng } from "../../src/testing/fixture-images.js";
 import { startMockSidecar } from "../fixtures/mock-sidecar.js";
 import { makeMockFetch } from "../fixtures/mock-models.js";
@@ -21,11 +23,108 @@ vi.mock("../../src/diff/deterministic-diffs.js", async importOriginal => {
   return { ...actual, buildDeterministicDiffs: vi.fn(actual.buildDeterministicDiffs) };
 });
 
+vi.mock("../../src/report/context-overlays.js", async importOriginal => {
+  const actual = await importOriginal<typeof import("../../src/report/context-overlays.js")>();
+  return { ...actual, buildFindingGroups: vi.fn(actual.buildFindingGroups) };
+});
+
 import { runProjectedPreAudit } from "../../src/diff/projected-preaudit.js";
 import { buildDeterministicDiffs } from "../../src/diff/deterministic-diffs.js";
+import { buildFindingGroups } from "../../src/report/context-overlays.js";
 
 let tmpDir: string;
 let sidecar: MockSidecar;
+
+type FinalArtifactReport = {
+  comparisonSpace: { width: number; height: number };
+  diffs: Array<{ id: string; location: { x: number; y: number; width: number; height: number }; coordinateSpace?: string; repairLocality?: string }>;
+  geometryDiagnostics?: { countsByReason: Record<string, number>; countsByProducer: Record<string, Record<string, number>>; references: unknown[] };
+  inputProvenance?: { identity: { expected: { sha256: string }; actual: { sha256: string } } };
+  runArtifacts: Array<{ role: string; path: string }>;
+};
+
+type FinalGroupLegend = {
+  groups: Array<{
+    id: string;
+    box: { x: number; y: number; width: number; height: number };
+    diffIds: string[];
+    coordinateSpace?: string;
+    zoomStatus: "valid" | "rejected" | "skipped";
+    zoomArtifact?: string;
+  }>;
+};
+
+type HierarchyLegend = {
+  nodes: Array<{
+    id: string;
+    box: { x: number; y: number; width: number; height: number };
+    coordinateSpace?: string;
+  }>;
+};
+
+function expectCanonicalBox(
+  box: { x: number; y: number; width: number; height: number },
+  canvas: { width: number; height: number }
+): void {
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.y).toBeGreaterThanOrEqual(0);
+  expect(box.width).toBeGreaterThan(0);
+  expect(box.height).toBeGreaterThan(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(canvas.width);
+  expect(box.y + box.height).toBeLessThanOrEqual(canvas.height);
+}
+
+async function expectFinalArtifactManifest(report: FinalArtifactReport): Promise<void> {
+  expect(report.inputProvenance?.identity.expected.sha256).toMatch(/^[a-f0-9]{64}$/);
+  expect(report.inputProvenance?.identity.actual.sha256).toMatch(/^[a-f0-9]{64}$/);
+  expect(report.geometryDiagnostics).toEqual(expect.objectContaining({
+    countsByReason: expect.any(Object),
+    countsByProducer: expect.any(Object),
+    references: expect.any(Array)
+  }));
+
+  for (const diff of report.diffs) {
+    expect(diff.coordinateSpace).toBe("comparison_expected_normalized");
+    expect(diff.repairLocality).toBe("local");
+    expectCanonicalBox(diff.location, report.comparisonSpace);
+  }
+
+  const groupLegendArtifact = report.runArtifacts.find(artifact => artifact.role === "final_diff_groups_legend");
+  const hierarchyLegendArtifact = report.runArtifacts.find(artifact => artifact.role === "semantic_hierarchy_legend");
+  expect(groupLegendArtifact).toBeDefined();
+  expect(hierarchyLegendArtifact).toBeDefined();
+
+  const groupLegend = JSON.parse(await fs.readFile(groupLegendArtifact!.path, "utf8")) as FinalGroupLegend;
+  const hierarchyLegend = JSON.parse(await fs.readFile(hierarchyLegendArtifact!.path, "utf8")) as HierarchyLegend;
+  const groupedDiffIds = groupLegend.groups.flatMap(group => group.diffIds).sort();
+  expect(groupedDiffIds).toEqual(report.diffs.map(diff => diff.id).sort());
+
+  const listedZoomArtifacts = new Set(report.runArtifacts
+    .filter(artifact => artifact.role === "final_diff_zoom")
+    .map(artifact => artifact.path));
+  for (const group of groupLegend.groups) {
+    expect(group.coordinateSpace).toBe("comparison_expected_normalized");
+    expectCanonicalBox(group.box, report.comparisonSpace);
+    if (group.zoomStatus === "valid") {
+      expect(group.zoomArtifact).toBeDefined();
+      expect(listedZoomArtifacts.has(group.zoomArtifact!)).toBe(true);
+      const metadata = await sharp(group.zoomArtifact!).metadata();
+      expect(metadata.width).toBeGreaterThanOrEqual(2);
+      expect(metadata.height).toBeGreaterThanOrEqual(2);
+    } else {
+      expect(group.zoomArtifact).toBeUndefined();
+    }
+  }
+  expect(listedZoomArtifacts).toEqual(new Set(groupLegend.groups
+    .filter(group => group.zoomStatus === "valid")
+    .map(group => group.zoomArtifact)));
+
+  expect(hierarchyLegend.nodes.length).toBeGreaterThan(0);
+  for (const node of hierarchyLegend.nodes) {
+    expect(node.coordinateSpace).toBe("comparison_expected_normalized");
+    expectCanonicalBox(node.box, report.comparisonSpace);
+  }
+}
 
 beforeEach(async () => {
   tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ui-diff-e2e-"));
@@ -33,7 +132,9 @@ beforeEach(async () => {
 
 afterEach(async () => {
   const actualDeterministic = await vi.importActual<typeof import("../../src/diff/deterministic-diffs.js")>("../../src/diff/deterministic-diffs.js");
+  const actualContextOverlays = await vi.importActual<typeof import("../../src/report/context-overlays.js")>("../../src/report/context-overlays.js");
   vi.mocked(buildDeterministicDiffs).mockImplementation(actualDeterministic.buildDeterministicDiffs);
+  vi.mocked(buildFindingGroups).mockImplementation(actualContextOverlays.buildFindingGroups);
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
   if (sidecar) await sidecar.stop();
@@ -365,7 +466,7 @@ describe("runUiDiff end-to-end (deterministic_only mode)", () => {
     expect((report as typeof report & { inputProvenance?: unknown }).inputProvenance).toEqual(checkpoint["inputProvenance"]);
   });
 
-  it("carries valid provider trace events across a resumed run into compact and persisted runtime usage", async () => {
+  it("reconciles only valid provider lifecycles across persisted, hydrated, and compact output", async () => {
     const { expected, actual } = await writeTwoButtonFixture(tmpDir, "resume-trace-e.png", "resume-trace-a.png");
     const first = await runUiDiff({
       expectedImagePath: expected,
@@ -400,6 +501,62 @@ describe("runUiDiff end-to-end (deterministic_only mode)", () => {
         modelFamilyKey: "gemini-3.5-flash",
         status: "ok",
         totalTokens: 20
+      },
+      {
+        eventId: "orphan-success-with-tokens",
+        callId: "orphan-call",
+        phase: "audit",
+        event: "call_success",
+        role: "auditor",
+        provider: "gemini",
+        model: "gemini-3.5-flash",
+        modelFamilyKey: "gemini-3.5-flash",
+        status: "ok",
+        totalTokens: 200
+      },
+      {
+        eventId: "mismatched-route-start",
+        callId: "mismatched-route-call",
+        phase: "audit",
+        event: "call_start",
+        role: "auditor",
+        provider: "gemini",
+        model: "gemini-3.5-flash",
+        modelFamilyKey: "gemini-3.5-flash"
+      },
+      {
+        eventId: "mismatched-route-success-with-tokens",
+        callId: "mismatched-route-call",
+        phase: "audit",
+        event: "call_success",
+        role: "reviewer",
+        provider: "gemini",
+        model: "gemini-3.5-flash",
+        modelFamilyKey: "gemini-3.5-flash",
+        status: "ok",
+        totalTokens: 300
+      },
+      {
+        eventId: "mismatched-status-start",
+        callId: "mismatched-status-call",
+        phase: "audit",
+        event: "call_start",
+        role: "auditor",
+        provider: "gemini",
+        model: "gemini-3.5-flash",
+        modelFamilyKey: "gemini-3.5-flash"
+      },
+      {
+        eventId: "mismatched-status-success-with-tokens",
+        callId: "mismatched-status-call",
+        phase: "audit",
+        event: "call_success",
+        role: "auditor",
+        provider: "gemini",
+        model: "gemini-3.5-flash",
+        modelFamilyKey: "gemini-3.5-flash",
+        status: "error",
+        totalTokens: 400
       }
     ]), "utf8");
 
@@ -410,17 +567,137 @@ describe("runUiDiff end-to-end (deterministic_only mode)", () => {
       mode: "deterministic_only",
       resumeRunId: "run-resume-trace"
     });
-    const report = JSON.parse(await fs.readFile(resumed.reportPath, "utf8")) as {
+    const rawReport = JSON.parse(await fs.readFile(resumed.reportPath, "utf8")) as {
       runtimeModelUsage?: Array<{ phase: string; role: string; provider: string; model: string; callStartCount: number; callSuccessCount: number; totalTokens?: number }>;
+      runtimeModelUsageDiagnostics?: unknown;
+      usageSummary?: { calls: number; totalTokens: number; successesWithUsage: number; successesMissingUsage: number; errorCalls: number };
+      runArtifacts: Array<{ role: string; path: string }>;
     };
-    const compact = resumed as typeof resumed & { runtimeModelUsage?: typeof report.runtimeModelUsage };
+    const report = await hydrateReportParts(rawReport as Parameters<typeof hydrateReportParts>[0], resumed.reportPath) as typeof rawReport;
+    const compact = resumed as typeof resumed & {
+      runtimeModelUsage?: typeof report.runtimeModelUsage;
+      runtimeModelUsageDiagnostics?: typeof report.runtimeModelUsageDiagnostics;
+      usageSummary?: typeof report.usageSummary;
+    };
 
     expect(report.runtimeModelUsage).toEqual([{
       phase: "audit", role: "auditor", provider: "gemini", model: "gemini-3.5-flash",
-      callStartCount: 1, callSuccessCount: 1, callErrorCount: 0, fallbackCount: 0,
-      incompleteStartedCallCount: 0, successesWithUsage: 1, successesMissingUsage: 0, totalTokens: 20
+      callStartCount: 3, callSuccessCount: 1, callErrorCount: 0, fallbackCount: 0,
+      incompleteStartedCallCount: 2, successesWithUsage: 1, successesMissingUsage: 0, totalTokens: 20
     }]);
+    expect(report.runtimeModelUsageDiagnostics).toEqual({
+      orphanTerminalCount: 1,
+      legacyUnmatchedLifecycleEventCount: 0,
+      duplicateCallStartCount: 0,
+      fallbackWithoutCallStartCount: 0,
+      terminalRouteMismatchCount: 1,
+      terminalStatusMismatchCount: 1
+    });
+    expect(report.usageSummary).toMatchObject({
+      calls: 1,
+      totalTokens: 20,
+      successesWithUsage: 1,
+      successesMissingUsage: 0,
+      errorCalls: 0
+    });
     expect(compact.runtimeModelUsage).toEqual(report.runtimeModelUsage);
+    expect(compact.runtimeModelUsageDiagnostics).toEqual(report.runtimeModelUsageDiagnostics);
+    expect(compact.usageSummary).toEqual(report.usageSummary);
+
+    const traceArtifact = report.runArtifacts.find(artifact => artifact.role === "provider_trace");
+    expect(traceArtifact).toBeDefined();
+    const persistedTrace = JSON.parse(await fs.readFile(traceArtifact!.path, "utf8"));
+    const ledger = buildRuntimeModelUsageLedger(persistedTrace);
+    expect(ledger.usage).toEqual(report.runtimeModelUsage);
+    expect(ledger.diagnostics).toEqual(report.runtimeModelUsageDiagnostics);
+    expect(buildUsageSummaryFromLedger(ledger)).toEqual(report.usageSummary);
+  });
+
+  it("removes only orphaned direct-child zoom files from a resumed artifact directory", async () => {
+    const { expected, actual } = await writeTwoButtonFixture(tmpDir, "rejected-zoom-e.png", "rejected-zoom-a.png");
+    vi.mocked(buildFindingGroups).mockImplementation(diffs => [
+      {
+        id: "forced-rejected-group",
+        box: { x: 1000, y: 1000, width: 20, height: 20 },
+        diffIds: [diffs[0]?.id ?? "forced-rejected-diff"],
+        criteria: ["geometry"],
+        severity: "medium",
+        label: "G1",
+        retainedFindingIds: [],
+        suppressions: [],
+        targetIds: [],
+        evidenceArea: 400,
+        coherentDisplacementKey: undefined
+      },
+      {
+        id: "valid-zoom-group",
+        box: { x: 20, y: 20, width: 20, height: 20 },
+        diffIds: [diffs[0]?.id ?? "valid-zoom-diff"],
+        criteria: ["geometry"],
+        severity: "medium",
+        label: "G2",
+        retainedFindingIds: [],
+        suppressions: [],
+        targetIds: [],
+        evidenceArea: 400,
+        coherentDisplacementKey: undefined
+      }
+    ]);
+
+    const first = await runUiDiff({
+      expectedImagePath: expected,
+      actualImagePath: actual,
+      projectRoot: tmpDir,
+      mode: "deterministic_only",
+      runId: "run-rejected-zoom"
+    });
+    const checkpoint = JSON.parse(await fs.readFile(first.reportPath, "utf8")) as Record<string, unknown>;
+    checkpoint["status"] = "interrupted";
+    checkpoint["isCheckpoint"] = true;
+    await fs.writeFile(first.reportPath, JSON.stringify(checkpoint), "utf8");
+
+    const staleShortZoomPath = path.join(first.artifactRoot, "final-diff-zoom-1.png");
+    const staleLongZoomPath = path.join(first.artifactRoot, "final-diff-zoom-1234.png");
+    const sentinelPath = path.join(first.artifactRoot, "unrelated-sentinel.txt");
+    const nestedArtifactPath = path.join(first.artifactRoot, "nested-artifacts", "final-diff-zoom-1234.png");
+    await fs.writeFile(staleShortZoomPath, "stale short zoom artifact", "utf8");
+    await fs.writeFile(staleLongZoomPath, "stale long zoom artifact", "utf8");
+    await fs.writeFile(sentinelPath, "leave this direct child alone", "utf8");
+    await fs.mkdir(path.dirname(nestedArtifactPath), { recursive: true });
+    await fs.writeFile(nestedArtifactPath, "leave this nested artifact alone", "utf8");
+
+    const resumed = await runUiDiff({
+      expectedImagePath: expected,
+      actualImagePath: actual,
+      projectRoot: tmpDir,
+      mode: "deterministic_only",
+      resumeRunId: "run-rejected-zoom"
+    });
+    const report = JSON.parse(await fs.readFile(resumed.reportPath, "utf8")) as {
+      runArtifacts: Array<{ role: string; path: string }>;
+    };
+    const legendArtifact = report.runArtifacts.find(artifact => artifact.role === "final_diff_groups_legend");
+    expect(legendArtifact).toBeDefined();
+    const legend = JSON.parse(await fs.readFile(legendArtifact!.path, "utf8")) as FinalGroupLegend;
+    expect(legend.groups).toContainEqual(expect.objectContaining({
+      id: "forced-rejected-group",
+      zoomStatus: "rejected"
+    }));
+    const validZoomGroup = legend.groups.find(group => group.id === "valid-zoom-group");
+    expect(validZoomGroup).toMatchObject({ zoomStatus: "valid" });
+    await expect(fs.access(validZoomGroup!.zoomArtifact!)).resolves.toBeUndefined();
+
+    await expect(fs.access(staleShortZoomPath)).rejects.toThrow();
+    await expect(fs.access(staleLongZoomPath)).rejects.toThrow();
+    await expect(fs.readFile(sentinelPath, "utf8")).resolves.toBe("leave this direct child alone");
+    await expect(fs.readFile(nestedArtifactPath, "utf8")).resolves.toBe("leave this nested artifact alone");
+    const validZoomNames = new Set(legend.groups
+      .filter(group => group.zoomStatus === "valid")
+      .map(group => path.basename(group.zoomArtifact!)));
+    const scopedZoomNames = (await fs.readdir(resumed.artifactRoot, { withFileTypes: true }))
+      .filter(entry => entry.isFile() && /^final-diff-zoom-\d+\.png$/.test(entry.name))
+      .map(entry => entry.name);
+    expect(new Set(scopedZoomNames)).toEqual(validZoomNames);
   });
 
   it("rejects a malformed explicit resume report without overwriting its checkpoint", async () => {
@@ -673,6 +950,10 @@ describe("runUiDiff with mock sidecar and models (full mode)", () => {
     expect(report.runArtifacts.some((a: { role: string }) => a.role === "locator_overlay_legend")).toBe(true);
     expect(report.runArtifacts.some((a: { role: string }) => a.role === "locator_input_actual")).toBe(false);
 
+    await expectFinalArtifactManifest(report as unknown as FinalArtifactReport);
+    expect(result.diffCount).toBe(report.diffs.length);
+    expect(result.unresolvedRegionCount).toBe(report.unresolvedRegions.length);
+
     expect(sidecar.requests).toHaveLength(1);
     expect(sidecar.requests[0]?.queries).toHaveLength(8);
   });
@@ -703,12 +984,21 @@ describe("runUiDiff with mock sidecar and models (full mode)", () => {
 
     const result = await runUiDiff({ expectedImagePath: expected, actualImagePath: actual, projectRoot: tmpDir, mode: "full" }, { probeOverride });
     expect(buildDeterministicDiffs).toHaveBeenCalled();
-    const raw = JSON.parse(await fs.readFile(result.reportPath, "utf8")) as { diffs: Array<{ classificationSource?: string }>; unresolvedRegions: Array<{ reason: string; relatedFindingIds: string[] }>; visualClassificationStatus: string };
+    const raw = JSON.parse(await fs.readFile(result.reportPath, "utf8")) as {
+      diffs: Array<{ classificationSource?: string }>;
+      unresolvedRegions: Array<{ reason: string; relatedFindingIds: string[] }>;
+      visualClassificationStatus: string;
+      runArtifacts: Array<{ role: string; path: string }>;
+    };
     const report = await hydrateReportParts(raw as Parameters<typeof hydrateReportParts>[0], result.reportPath) as typeof raw;
 
     expect(report.diffs.some(diff => diff.classificationSource === "vlm_reviewed")).toBe(false);
-    expect(report.unresolvedRegions).toContainEqual(expect.objectContaining({ reason: "broad_vlm_evidence" }));
+    expect(report.unresolvedRegions).toContainEqual(expect.objectContaining({
+      reason: "broad_vlm_evidence",
+      relatedFindingIds: ["broad-vlm"]
+    }));
     expect(report.visualClassificationStatus).toBe("incomplete");
+    await expectFinalArtifactManifest(report as unknown as FinalArtifactReport);
   });
 
   it("records the exact images sent to LocateAnything as report artifacts", async () => {
