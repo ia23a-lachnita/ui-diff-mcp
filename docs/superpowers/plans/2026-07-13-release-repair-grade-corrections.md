@@ -1,6 +1,6 @@
 # Release Repair-Grade Corrections
 
-> **For agentic workers:** Stage B is the active bounded remediation. Use test-first development for behavior changes, keep ownership limited to the files named by the task, and never commit or push; the main agent reviews, verifies, and commits/pushes meaningful stages after green post-review under `AGENTS.md`.
+> **For agentic workers:** Stage C is the active bounded remediation. Use test-first development for behavior changes, keep ownership limited to the files named by the task, and never commit or push; the main agent reviews, verifies, and commits/pushes meaningful stages after green post-review under `AGENTS.md`.
 
 **Goal:** Make final UI-diff findings repair-local and artifact-complete after the mechanically green full and strict release runs.
 
@@ -29,7 +29,7 @@
 
 ### Stage B: Claim Guards And Recovery Integrity
 
-**Active checkpoint:** Stage B started on `master` at pushed `a6200a4`. The user-scoped worker will not commit or push. Intended verification is the owned focused suites, `npm run typecheck`, `npm run verify`, and `git diff --check`.
+**Completed:** Stage B committed and pushed at `f2b80d6` on `master`. Verified: focused owned suites (123/123 active tests, 4 skipped), `npm run typecheck`, `npm run verify` (63 files, 786 tests), and `git diff --check` passed. Post-review corrections applied: scopeKind branching and AGENTS.md delegation policy. Final Antigravity follow-up green. **Stage B is complete.**
 
 - [x] Add one common claim guard shared by target audit, scope audit, and recovery so unsupported claims are rejected consistently.
 - [x] Require crop-grounded evidence for global-absence claims, including the full expected/actual comparison crop context used by audit, scope, and recovery paths.
@@ -39,6 +39,8 @@
 - [x] Add focused tests covering the shared guard, crop-grounded global absence, `px²`/percentage parsing, deterministic recovery prompts/measurements, and unsupported-claim unresolved output.
 
 ### Stage C: Fresh Release Evidence And Exhaustive Artifact Sign-Off
+
+**Active checkpoint:** Stage C starts from committed `f2b80d6` on `master`. Stage A/B corrections are committed/pushed. Intended verification: fresh auto-capture Calorix full gate (`npm run verify:calorix-full-live`) then strict release gate (`npm run verify:calorix-release-live`), with `RUN_CALORIX_UI_DIFF_LIVE=1`, expected image `C:\Users\xursc\projects\calorix\docs\design-handoff\placeholder-app\reference-images\today--dark.png`, `UI_DIFF_LIVE_ACTUAL_IMAGE` unset, sidecar URL `http://127.0.0.1:39731`, and Eagle dir `C:\Users\xursc\projects\Eagle\Embodied`. Production readiness remains unclaimed until both fresh gates and exhaustive artifact inspection complete.
 
 - [ ] Run fresh full and strict release gates with the committed Stage A/B corrections and preserve their run IDs.
 - [ ] Inspect every final diff artifact and confirm final counts by status/source, `auditLimited`, `visualClassificationStatus`, provider fallback/error summaries, and unresolved/escalated blockers.
