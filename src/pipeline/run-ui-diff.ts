@@ -21,7 +21,7 @@ import { buildElementMap, computeLocatorMetadata, projectElementsToActual, merge
 import { computeImageLocatorCoverage, type ImageLocatorCoverage } from "../locator/coverage.js";
 import { buildTargetMapJson } from "../locator/diagnostics.js";
 import { pairElements } from "../pairing/pair-elements.js";
-import { selectModelForMode, selectFallbackModelsForMode, resolveMode, CANONICAL_MODEL_RANKING, type ModelEntry } from "../models/model-registry.js";
+import { selectModelForMode, selectFallbackModelsForMode, resolveMode, CANONICAL_MODEL_RANKING, freeProviderPhaseOrderForMode, type ModelEntry } from "../models/model-registry.js";
 import { makeFallbackVisionCaller, RouteExhaustedError } from "../models/fallback-caller.js";
 import { probeRequiredModels, type ProbeResult } from "../models/probes.js";
 import { estimateFreeRunBudget, lookupOpenRouterQuota, checkFreeQuotaSufficiency } from "../models/free-quota.js";
@@ -86,6 +86,16 @@ export interface RunOutput {
 }
 
 type ProbeOverride = (entries: ModelEntry[], config: VisionProviderConfig) => Promise<ProbeResult[]>;
+
+function deduplicateProbeEntries(entries: ModelEntry[]): ModelEntry[] {
+  const seen = new Set<string>();
+  return entries.filter(entry => {
+    const key = `${entry.role}:${entry.provider}:${entry.model}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
 
 async function computeFileSha256(filePath: string): Promise<string> {
   return crypto.createHash("sha256").update(await fs.readFile(filePath)).digest("hex");
@@ -761,10 +771,11 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
 
   if (mode !== "deterministic_only" && status !== "insufficient_free_quota") {
     const probe = opts?.probeOverride ?? probeRequiredModels;
-    const probeEntries: ModelEntry[] = CANONICAL_MODEL_RANKING.flatMap(c => {
+    const freeProviders = freeProviderPhaseOrderForMode(mode);
+    const freeProbeEntries = CANONICAL_MODEL_RANKING.flatMap(c => {
       const supportsRecovery = c.role !== "target_recovery" &&
         c.capabilities?.allowedRoles.includes("target_recovery") === true;
-      const freeEntries = c.eligibleFreeProviderRoutes.map(r => ({
+      const entries = c.eligibleFreeProviderRoutes.map(r => ({
         role: c.role,
         provider: r.provider,
         model: r.model,
@@ -782,7 +793,17 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
             required: false
           }))
         : [];
-      const paidEntries = (mode === "paid" && paidModeEnabled && c.paidRoutes)
+      return [...entries, ...freeRecoveryEntries];
+    }).filter(entry => freeProviders.includes(entry.provider))
+      .sort((left, right) =>
+        freeProviders.indexOf(left.provider) -
+        freeProviders.indexOf(right.provider)
+      );
+    const paidProbeEntries: ModelEntry[] = (mode === "paid" && paidModeEnabled)
+      ? CANONICAL_MODEL_RANKING.flatMap(c => {
+        const supportsRecovery = c.role !== "target_recovery" &&
+          c.capabilities?.allowedRoles.includes("target_recovery") === true;
+        const entries = c.paidRoutes
         ? c.paidRoutes.map(r => ({
             role: c.role,
             provider: r.provider,
@@ -792,7 +813,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
             required: false
           }))
         : [];
-      const paidRecoveryEntries: ModelEntry[] = (supportsRecovery && mode === "paid" && paidModeEnabled && c.paidRoutes)
+        const paidRecoveryEntries: ModelEntry[] = (supportsRecovery && c.paidRoutes)
         ? c.paidRoutes.map(r => ({
             role: "target_recovery" as const,
             provider: r.provider,
@@ -802,8 +823,10 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
             required: false
           }))
         : [];
-      return [...freeEntries, ...freeRecoveryEntries, ...paidEntries, ...paidRecoveryEntries];
-    });
+        return [...entries, ...paidRecoveryEntries];
+      })
+      : [];
+    const probeEntries = deduplicateProbeEntries([...freeProbeEntries, ...paidProbeEntries]);
 
     const probeResults = await probe(probeEntries, providerConfig, providerTrace.sink);
     for (const p of probeResults) {

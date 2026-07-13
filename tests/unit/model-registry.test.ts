@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CANONICAL_MODEL_RANKING, getModelByRole, getRequiredModels, selectModelForMode, selectFallbackModelsForMode, resolveMode, requiredImagesForRole, modelFamilyKey, candidateSupportsLogicalRole } from "../../src/models/model-registry.js";
+import { CANONICAL_MODEL_RANKING, FREE_PROVIDER_PHASE_ORDER, getModelByRole, getRequiredModels, selectModelForMode, selectFallbackModelsForMode, resolveMode, requiredImagesForRole, modelFamilyKey, candidateSupportsLogicalRole } from "../../src/models/model-registry.js";
 import type { ProbeResult } from "../../src/models/probes.js";
 
 const NOW = new Date().toISOString();
@@ -19,6 +19,10 @@ function allPass(): ProbeResult[] {
 }
 
 describe("CANONICAL_MODEL_RANKING", () => {
+  it("exports the generic free provider phase order", () => {
+    expect(FREE_PROVIDER_PHASE_ORDER).toEqual(["gemini", "mistral", "opencode", "nvidia", "openrouter"]);
+  });
+
   it("ranks OpenCode MiMo as a free visual route and excludes text-only DeepSeek", () => {
     const routes = CANONICAL_MODEL_RANKING.flatMap(c => c.eligibleFreeProviderRoutes);
     expect(routes).toContainEqual({ provider: "opencode", model: "mimo-v2.5-free" });

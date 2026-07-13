@@ -19,6 +19,24 @@ export function modelFamilyKey(model: string): string {
 
 export type { VisionMode };
 
+export const FREE_PROVIDER_PHASE_ORDER: readonly VisionProvider[] = [
+  "gemini",
+  "mistral",
+  "opencode",
+  "nvidia",
+  "openrouter"
+];
+
+export function freeProviderPhaseOrderForMode(mode: VisionMode): readonly VisionProvider[] {
+  if (mode === "free") return FREE_PROVIDER_PHASE_ORDER;
+  if (mode === "free_gemini") return ["gemini"];
+  if (mode === "free_mistral") return ["mistral"];
+  if (mode === "free_opencode") return ["opencode"];
+  if (mode === "free_nvidia") return ["nvidia"];
+  if (mode === "free_openrouter") return ["openrouter"];
+  return [];
+}
+
 export type ModelRole =
   | "locator"
   | "auditor"
@@ -682,8 +700,8 @@ export function selectFallbackModelsForMode(
   const seen = new Set<string>();
 
   if (mode === "free") {
-    const phases: VisionMode[] = ["free_gemini", "free_mistral", "free_opencode", "free_nvidia", "free_openrouter"];
-    for (const phase of phases) {
+    for (const provider of FREE_PROVIDER_PHASE_ORDER) {
+      const phase = `free_${provider}` as VisionMode;
       if (results.length >= maxCandidates) break;
       const phaseExcluded = [...excludedRoutes, ...results.map(r => ({ provider: r.provider, model: r.model }))];
       const differentFamily: ModelEntry[] = [];

@@ -62,6 +62,88 @@ type HierarchyLegend = {
   }>;
 };
 
+function makeProbeSseResponse(jsonContent: string, model: string): Response {
+  const encoder = new TextEncoder();
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(encoder.encode([
+        `data: ${JSON.stringify({ model, choices: [{ delta: { content: jsonContent } }] })}`,
+        "data: [DONE]",
+        ""
+      ].join("\n")));
+      controller.close();
+    }
+  });
+  return { ok: true, status: 200, body } as Response;
+}
+
+function probeImageCount(body: Record<string, unknown>): number {
+  const geminiParts = (body.contents as Array<{ parts?: Array<Record<string, unknown>> }> | undefined)
+    ?.flatMap(content => content.parts ?? []);
+  if (geminiParts) {
+    return geminiParts.filter(part => "inlineData" in part).length;
+  }
+
+  const content = ((body.messages as Array<{ content?: unknown }> | undefined)?.[0]?.content);
+  return Array.isArray(content)
+    ? content.filter(part => typeof part === "object" && part !== null && (part as { type?: string }).type === "image_url").length
+    : 0;
+}
+
+function makeSuccessfulProbeFetch(
+  fallback: (url: unknown, init?: RequestInit) => Promise<unknown>,
+  providerRequests: string[]
+): ReturnType<typeof vi.fn> {
+  return vi.fn().mockImplementation((url: unknown, init?: RequestInit) => {
+    if (typeof url !== "string") return fallback(url, init);
+
+    const body = typeof init?.body === "string" ? JSON.parse(init.body) as Record<string, unknown> : undefined;
+    const imageCount = body === undefined ? 0 : probeImageCount(body);
+    const probeResult = JSON.stringify({ imageCount, hasBlueImage: true });
+
+    if (url.includes("gemini.test")) {
+      providerRequests.push("gemini");
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({
+          candidates: [{ content: { parts: [{ text: probeResult }] }, finishReason: "STOP" }]
+        })
+      } as Response);
+    }
+    if (url.includes("mistral.test")) {
+      providerRequests.push("mistral");
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({
+          choices: [{ message: { content: probeResult }, finish_reason: "stop" }]
+        })
+      } as Response);
+    }
+    if (url.includes("opencode.test")) {
+      providerRequests.push("opencode");
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({
+          choices: [{ message: { content: probeResult }, finish_reason: "stop" }]
+        })
+      } as Response);
+    }
+    if (url.includes("nvidia.test")) {
+      providerRequests.push("nvidia");
+      return Promise.resolve(makeProbeSseResponse(probeResult, "fake-nvidia"));
+    }
+    if (url.includes("openrouter.ai/api/v1/chat/completions")) {
+      providerRequests.push("openrouter");
+      return Promise.resolve(makeProbeSseResponse(probeResult, "fake-openrouter"));
+    }
+
+    return fallback(url, init);
+  });
+}
+
 function expectCanonicalBox(
   box: { x: number; y: number; width: number; height: number },
   canvas: { width: number; height: number }
@@ -808,6 +890,182 @@ describe("runUiDiff end-to-end (deterministic_only mode)", () => {
 });
 
 describe("runUiDiff with mock sidecar and models (full mode)", () => {
+  it("deduplicates exact logical probe tuples before persisting model health", async () => {
+    const expected = await writeSolidPng(tmpDir, "dedupe-expected.png", 200, 400, 200, 200, 200);
+    const actual = await writeSolidPng(tmpDir, "dedupe-actual.png", 200, 400, 200, 200, 200);
+    sidecar = await startMockSidecar({ imageWidth: 200, imageHeight: 400 });
+    vi.stubGlobal("fetch", makeMockFetch([], { sidecarImageWidth: 200, sidecarImageHeight: 400 }));
+    vi.stubEnv("LOCATEANYTHING_SIDECAR_URL", sidecar.url);
+    vi.mocked(runProjectedPreAudit).mockImplementationOnce(async ({ pairs }) => ({
+      diffs: [],
+      skipVlmPairIds: new Set(pairs.map(pair => pair.id)),
+      summary: {
+        projectedPairsChecked: pairs.length,
+        deterministicProjectedDiffs: 0,
+        sentToVlmPairs: 0,
+        skippedFromVlmPairIds: pairs.map(pair => pair.id),
+        uniqueDisplacements: 0,
+        displacementGroups: 0,
+        structuralMismatchGroups: 0,
+        groupedPairs: 0
+      },
+      geometryRejections: []
+    }));
+
+    const receivedProbeEntries: Array<{ role: string; provider: string; model: string }> = [];
+    const result = await runUiDiff({
+      expectedImagePath: expected,
+      actualImagePath: actual,
+      projectRoot: tmpDir,
+      mode: "free"
+    }, {
+      probeOverride: async entries => {
+        receivedProbeEntries.push(...entries);
+        return entries.map(entry => ({
+          role: entry.role,
+          provider: entry.provider,
+          model: entry.model,
+          status: "pass" as const,
+          checkedAt: new Date().toISOString(),
+          schemaValid: true,
+          contentAccurate: true,
+          maxImagesSupported: 5
+        }));
+      }
+    });
+
+    const report = JSON.parse(await fs.readFile(result.reportPath, "utf8")) as {
+      modelHealth: Array<{ role: string; provider: string; model: string }>;
+    };
+    const tuple = (entry: { role: string; provider: string; model: string }) =>
+      `${entry.role}:${entry.provider}:${entry.model}`;
+    expect(new Set(receivedProbeEntries.map(tuple)).size).toBe(receivedProbeEntries.length);
+    expect(new Set(report.modelHealth.map(tuple)).size).toBe(report.modelHealth.length);
+  });
+
+  it.each([
+    ["free_nvidia", "nvidia"],
+    ["free_openrouter", "openrouter"]
+  ] as const)("does not let successful routes from another provider starve %s", async (mode, provider) => {
+    const expected = await writeSolidPng(tmpDir, `${mode}-real-probe-expected.png`, 200, 400, 200, 200, 200);
+    const actual = await writeSolidPng(tmpDir, `${mode}-real-probe-actual.png`, 200, 400, 200, 200, 200);
+    sidecar = await startMockSidecar({ imageWidth: 200, imageHeight: 400 });
+    const providerRequests: string[] = [];
+    vi.stubGlobal("fetch", makeSuccessfulProbeFetch(
+      makeMockFetch([], { sidecarImageWidth: 200, sidecarImageHeight: 400 }) as unknown as (url: unknown, init?: RequestInit) => Promise<unknown>,
+      providerRequests
+    ));
+    vi.stubEnv("LOCATEANYTHING_SIDECAR_URL", sidecar.url);
+    vi.stubEnv("GEMINI_API_KEY", "gemini-test-key");
+    vi.stubEnv("GEMINI_BASE_URL", "https://gemini.test/v1beta");
+    vi.stubEnv("MISTRAL_API_KEY", "mistral-test-key");
+    vi.stubEnv("MISTRAL_BASE_URL", "https://mistral.test/v1");
+    vi.stubEnv("OPENCODE_API_KEY", "opencode-test-key");
+    vi.stubEnv("OPENCODE_ZEN_BASE_URL", "https://opencode.test/v1");
+    vi.stubEnv("NVIDIA_API_KEY", "nvidia-test-key");
+    vi.stubEnv("NVIDIA_VLM_BASE_URL", "https://nvidia.test/v1");
+    vi.stubEnv("OPENROUTER_API_KEY", "openrouter-test-key");
+    vi.mocked(runProjectedPreAudit).mockImplementationOnce(async ({ pairs }) => ({
+      diffs: [],
+      skipVlmPairIds: new Set(pairs.map(pair => pair.id)),
+      summary: {
+        projectedPairsChecked: pairs.length,
+        deterministicProjectedDiffs: 0,
+        sentToVlmPairs: 0,
+        skippedFromVlmPairIds: pairs.map(pair => pair.id),
+        uniqueDisplacements: 0,
+        displacementGroups: 0,
+        structuralMismatchGroups: 0,
+        groupedPairs: 0
+      },
+      geometryRejections: []
+    }));
+
+    const result = await runUiDiff({
+      expectedImagePath: expected,
+      actualImagePath: actual,
+      projectRoot: tmpDir,
+      mode
+    });
+
+    const report = JSON.parse(await fs.readFile(result.reportPath, "utf8")) as {
+      modelHealth: Array<{ provider: string; status: string }>;
+      modelSelection?: Record<string, { provider: string }>;
+    };
+    expect(providerRequests).not.toHaveLength(0);
+    expect(providerRequests.every(requestProvider => requestProvider === provider)).toBe(true);
+    expect(report.modelHealth.every(entry => entry.provider === provider)).toBe(true);
+    expect(report.modelSelection).toBeDefined();
+    expect(report.modelSelection!.auditor?.provider).toBe(provider);
+    expect(report.modelSelection!.reviewer?.provider).toBe(provider);
+  });
+
+  it.each([
+    ["free_openrouter", "openrouter"],
+    ["free_gemini", "gemini"],
+    ["free_mistral", "mistral"],
+    ["free_opencode", "opencode"],
+    ["free_nvidia", "nvidia"]
+  ] as const)("probes only %s routes and selects its passing auditor and reviewer", async (mode, provider) => {
+    const expected = await writeSolidPng(tmpDir, `${mode}-expected.png`, 200, 400, 200, 200, 200);
+    const actual = await writeSolidPng(tmpDir, `${mode}-actual.png`, 200, 400, 200, 200, 200);
+    sidecar = await startMockSidecar({ imageWidth: 200, imageHeight: 400 });
+    vi.stubGlobal("fetch", makeMockFetch([], { sidecarImageWidth: 200, sidecarImageHeight: 400 }));
+    vi.stubEnv("LOCATEANYTHING_SIDECAR_URL", sidecar.url);
+    vi.stubEnv("NVIDIA_API_KEY", "nvidia-test-key");
+    vi.mocked(runProjectedPreAudit).mockImplementationOnce(async ({ pairs }) => ({
+      diffs: [],
+      skipVlmPairIds: new Set(pairs.map(pair => pair.id)),
+      summary: {
+        projectedPairsChecked: pairs.length,
+        deterministicProjectedDiffs: 0,
+        sentToVlmPairs: 0,
+        skippedFromVlmPairIds: pairs.map(pair => pair.id),
+        uniqueDisplacements: 0,
+        displacementGroups: 0,
+        structuralMismatchGroups: 0,
+        groupedPairs: 0
+      },
+      geometryRejections: []
+    }));
+
+    const receivedProbeEntries: Array<{ role: string; provider: string; costClass: string }> = [];
+    const result = await runUiDiff({
+      expectedImagePath: expected,
+      actualImagePath: actual,
+      projectRoot: tmpDir,
+      mode
+    }, {
+      probeOverride: async entries => {
+        receivedProbeEntries.push(...entries);
+        return entries.map(entry => ({
+          role: entry.role,
+          provider: entry.provider,
+          model: entry.model,
+          status: "pass" as const,
+          checkedAt: new Date().toISOString(),
+          schemaValid: true,
+          contentAccurate: true,
+          maxImagesSupported: 5
+        }));
+      }
+    });
+
+    expect(receivedProbeEntries.length).toBeGreaterThan(0);
+    expect(receivedProbeEntries.every(entry => entry.provider === provider)).toBe(true);
+    expect(receivedProbeEntries.every(entry => entry.costClass === "free")).toBe(true);
+    expect([...new Set(receivedProbeEntries.map(entry => entry.role))]).toEqual(
+      expect.arrayContaining(["auditor", "reviewer", "target_recovery"])
+    );
+
+    const report = JSON.parse(await fs.readFile(result.reportPath, "utf8")) as {
+      modelSelection?: Record<string, { provider: string }>;
+    };
+    expect(result.status).toBe("complete");
+    expect(report.modelSelection?.["auditor"]).toMatchObject({ provider });
+    expect(report.modelSelection?.["reviewer"]).toMatchObject({ provider });
+  });
+
   it("routes free_opencode semantic calls through Zen and records exact model selections", async () => {
     const expected = await writeSolidPng(tmpDir, "opencode-e.png", 200, 400, 200, 200, 200);
     const actual = await writeSolidPng(tmpDir, "opencode-a.png", 200, 400, 200, 200, 200);
