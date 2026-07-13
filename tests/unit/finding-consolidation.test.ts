@@ -190,7 +190,8 @@ describe("consolidateFindings", () => {
 
     const result = consolidateFindings([scopeFinding, childFinding], [card, label], [pair("pair-label", label.id)]);
 
-    expect(result).toHaveLength(2);
+    expect(result).toHaveLength(1);
+    expect(result[0]?.childFindingIds).toEqual(expect.arrayContaining(["region-layout", "label-layout"]));
   });
 
   it("folds explicit projected structural groups into an overlapping scope finding for the same target and criterion", () => {
@@ -220,7 +221,8 @@ describe("consolidateFindings", () => {
 
     const result = consolidateFindings([projected, scopeFinding], [nav, tab], [pair("pair-tab", tab.id)]);
 
-    expect(result).toHaveLength(2);
+    expect(result).toHaveLength(1);
+    expect(result[0]?.childFindingIds).toEqual(expect.arrayContaining(["nav-layout", "projected-tab"]));
   });
 
   it("does not fold projected groups into a screen-sized final finding created by child consolidation", () => {
@@ -335,7 +337,8 @@ describe("consolidateFindings", () => {
       [pair("pair-card", card.id), pair("pair-label", label.id), pair("pair-bar", bar.id)]
     );
 
-    expect(result).toHaveLength(3);
+    expect(result).toHaveLength(2);
+    expect(result.find(item => item.criterion === "geometry")?.childFindingIds).toEqual(expect.arrayContaining(["card-geometry", "bar-geometry"]));
   });
 
   it("keeps child color and typography findings separate from parent layout displacement", () => {
@@ -623,7 +626,7 @@ describe("consolidateFindings", () => {
     expect(result.diffs[0]?.coordinateSpace).toBe("comparison_expected_normalized");
   });
 
-  it("does not suppress an ancestry child when either displacement vector is absent", () => {
+  it("consolidates an overlapping ancestry child when displacement evidence is absent", () => {
     const card = element("card", "card", 20, 60, 150, 160);
     const child = element("child", "text", 40, 100, 80, 20, card.id);
     const parent = finding("parent", "pair-card", "geometry", 20, 60, 150, 160);
@@ -636,10 +639,11 @@ describe("consolidateFindings", () => {
 
     const result = consolidateFindings([parent, childFinding], [card, child], [pair("pair-card", card.id), pair("pair-child", child.id)]);
 
-    expect(result.map(item => item.id).sort()).toEqual(["child", "parent"]);
+    expect(result).toHaveLength(1);
+    expect(result[0]?.childFindingIds).toEqual(expect.arrayContaining(["child", "parent"]));
   });
 
-  it("retains a child with extra independent evidence despite partial normalized overlap", () => {
+  it("preserves independent child evidence while consolidating an overlapping ancestry duplicate", () => {
     const card = element("card", "card", 20, 60, 150, 160);
     const child = element("child", "text", 40, 100, 80, 20, card.id);
     const parent = finding("parent", "pair-card", "geometry", 20, 60, 150, 160);
@@ -653,7 +657,54 @@ describe("consolidateFindings", () => {
 
     const result = consolidateFindings([parent, childFinding], [card, child], [pair("pair-card", card.id), pair("pair-child", child.id)]);
 
-    expect(result.map(item => item.id).sort()).toEqual(["child", "parent"]);
+    expect(result).toHaveLength(1);
+    expect(result[0]?.evidence).toEqual(expect.arrayContaining([
+      " Shared translated evidence ",
+      "shared translated evidence",
+      "independent icon defect"
+    ]));
+    expect(result[0]?.artifactPaths).toEqual(expect.arrayContaining([
+      { role: "expected_crop", path: "parent-expected.png" },
+      { role: "expected_crop", path: "child-expected.png" }
+    ]));
+  });
+
+  it("consolidates the real full-gate header parent and contained component duplicate", () => {
+    const nav = element("nav", "nav", 0, 0, 402, 874);
+    const header = element("header", "text", 16.884, 52.44, 117.786, 14.858, nav.id);
+    const component = element("component", "text", 119, 56, 14, 9, header.id);
+    nav.childIds = [header.id];
+    header.childIds = [component.id];
+    const parent = finding("header-diff", "pair-header", "geometry", 16.884, 52.44, 117.786, 14.858);
+    const child = finding("component-diff", "pair-component", "geometry", 119, 56, 14, 9);
+    parent.targetIds = [header.id, nav.id];
+    child.targetIds = [component.id, nav.id];
+    parent.evidence = ["parent geometry evidence"];
+    child.evidence = ["contained component evidence"];
+
+    const result = consolidateFindings(
+      [parent, child],
+      [nav, header, component],
+      [pair("pair-header", header.id), pair("pair-component", component.id)]
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0]?.location).toMatchObject({
+      x: expect.closeTo(16.884),
+      y: expect.closeTo(52.44),
+      width: expect.closeTo(117.786),
+      height: expect.closeTo(14.858)
+    });
+    expect(result[0]?.evidence).toEqual(expect.arrayContaining(["parent geometry evidence", "contained component evidence"]));
+    expect(result[0]?.artifactPaths).toEqual(expect.arrayContaining([
+      { role: "expected_crop", path: "header-diff-expected.png" },
+      { role: "expected_crop", path: "component-diff-expected.png" }
+    ]));
+    expect(result[0]?.childFindingIds).toEqual(expect.arrayContaining(["header-diff", "component-diff"]));
+    expect(result[0]?.suppression).toEqual({
+      reason: "duplicate_child_of_group",
+      retainedFindingIds: [expect.stringMatching(/^(header|component)-diff$/)]
+    });
   });
 
   it("selects equal-area fallback semantic parents stably under permutations", () => {

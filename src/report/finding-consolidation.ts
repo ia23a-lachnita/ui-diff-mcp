@@ -241,15 +241,27 @@ function mergeOverlappingOwnedGroups(groups: OwnedFinding[][]): OwnedFinding[][]
 function shouldMergeFinalFindings(a: DiffRecord, b: DiffRecord): boolean {
   const aTargets = new Set(a.targetIds ?? []);
   const sharedTarget = (b.targetIds ?? []).some(targetId => aTargets.has(targetId));
-  return sharedTarget && a.criterion === b.criterion && comparableScale(a.location, b.location) && strongOverlap(a.location, b.location);
+  return sharedTarget && a.criterion === b.criterion && strongOverlap(a.location, b.location);
 }
 
 function mergeFinalFindingGroup(group: DiffRecord[]): DiffRecord {
-  return mergeGroup(group.map(finding => ({
+  const merged = mergeGroup(group.map(finding => ({
     finding,
     targetIds: finding.targetIds ?? [],
     fallbackKey: `${finding.id}:${finding.criterion}`
   })));
+  const retainedFindingIds = [...new Set(merged.childFindingIds ?? group.map(finding => finding.id))]
+    .filter(id => id !== merged.id)
+    .sort((a, b) => a.localeCompare(b));
+  return {
+    ...merged,
+    ...(retainedFindingIds.length > 0 ? {
+      suppression: {
+        reason: "duplicate_child_of_group" as const,
+        retainedFindingIds
+      }
+    } : {})
+  };
 }
 
 function mergeFinalDuplicateFindings(findings: DiffRecord[]): DiffRecord[] {
