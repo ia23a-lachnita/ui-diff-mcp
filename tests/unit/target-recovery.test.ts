@@ -1,9 +1,11 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runTargetRecovery } from "../../src/recovery/target-recovery.js";
 import type { RecoveryBudget, RecoveryContext } from "../../src/recovery/target-recovery.js";
+import { createImagePairTransform } from "../../src/images/coordinates.js";
 import type { PixelComponent } from "../../src/signals/pixel-diff.js";
 import type { VisionJsonCaller } from "../../src/models/vision-json.js";
 import { writeSolidPng } from "../../src/testing/fixture-images.js";
@@ -70,14 +72,14 @@ const component: PixelComponent = {
 describe("runTargetRecovery", () => {
   it("retains an unresolved reason and skips model input for invalid recovery crops", async () => {
     const recoveryCaller: VisionJsonCaller = vi.fn();
-    const invalidComponent: PixelComponent = { box: { x: 199, y: 199, width: 1, height: 1 }, pixelCount: 500 };
+    const invalidComponent: PixelComponent = { box: { x: 250, y: 10, width: 80, height: 60 }, pixelCount: 500 };
 
     const result = await runTargetRecovery([invalidComponent], makeCtx({ recoveryCaller }), unlimitedBudget);
 
     expect(recoveryCaller).not.toHaveBeenCalled();
     expect(result.statusCounts["evidence_crop_rejected"]).toBe(1);
     expect(result.regionOutcomes).toEqual(expect.arrayContaining([
-      expect.objectContaining({ state: "unresolved", reason: "evidence_crop_rejected: below_minimum_artifact_size" })
+      expect.objectContaining({ state: "unresolved", reason: "evidence_crop_rejected: disjoint" })
     ]));
     await expect(fs.readdir(tmpDir)).resolves.not.toContain("recovery-component-0001-expected.png");
   });
@@ -87,6 +89,61 @@ describe("runTargetRecovery", () => {
     deadlineMs: Date.now() + 300000,
     minComponentPixels: 1
   };
+
+  it.each([
+    ["interior", { x: 16, y: 20, width: 1, height: 100 }, { x: 16, y: 20, width: 2, height: 100 }],
+    ["right edge", { x: 199, y: 20, width: 1, height: 100 }, { x: 198, y: 20, width: 2, height: 100 }]
+  ] as const)("expands a thin %s region for evidence while preserving its authoritative location", async (_label, box, expectedEvidenceBox) => {
+    const recoveryCaller: VisionJsonCaller = vi.fn().mockResolvedValue({
+      parsed: { classified: true, criterion: "geometry", severity: "medium", label: "Thin border", evidence: ["vertical border differs"] },
+      rawContent: "",
+      model: "test-model",
+      provider: "openrouter"
+    });
+    const result = await runTargetRecovery([{ box, pixelCount: 500 }], makeCtx({ recoveryCaller }), unlimitedBudget);
+
+    expect(recoveryCaller).toHaveBeenCalledOnce();
+    expect(result.unclassifiedCount).toBe(0);
+    expect(result.recovered[0]?.location).toEqual(box);
+    expect(result.trace[0]).toMatchObject({
+      componentBox: box,
+      evidenceBox: expectedEvidenceBox,
+      actualEvidenceBox: expectedEvidenceBox,
+      status: "recovery_accepted"
+    });
+    for (const artifact of result.recovered[0]!.artifactPaths) {
+      const metadata = await sharp(artifact.path).metadata();
+      expect(metadata.width).toBe(2);
+      expect(metadata.height).toBe(100);
+    }
+  });
+
+  it("independently expands a projected actual evidence box after downscaling", async () => {
+    const recoveryCaller: VisionJsonCaller = vi.fn().mockResolvedValue({
+      parsed: { classified: true, criterion: "geometry", severity: "medium", label: "Thin border", evidence: ["vertical border differs"] },
+      rawContent: "",
+      model: "test-model",
+      provider: "openrouter"
+    });
+    const component = { box: { x: 10, y: 20, width: 1, height: 100 }, pixelCount: 500 };
+    const result = await runTargetRecovery([component], makeCtx({
+      recoveryCaller,
+      actualRgba: makeRgba(100, 100),
+      imagePairTransform: createImagePairTransform({ width: 200, height: 200 }, { width: 100, height: 100 })
+    }), unlimitedBudget);
+
+    expect(result.recovered[0]?.location).toEqual(component.box);
+    expect(result.trace[0]).toMatchObject({
+      componentBox: component.box,
+      evidenceBox: { x: 10, y: 20, width: 2, height: 100 },
+      actualEvidenceBox: { x: 5, y: 10, width: 2, height: 50 },
+      status: "recovery_accepted"
+    });
+    const expectedArtifact = result.recovered[0]!.artifactPaths.find(artifact => artifact.role === "recovery_expected_crop")!;
+    const actualArtifact = result.recovered[0]!.artifactPaths.find(artifact => artifact.role === "recovery_actual_crop")!;
+    await expect(sharp(expectedArtifact.path).metadata()).resolves.toMatchObject({ width: 2, height: 100 });
+    await expect(sharp(actualArtifact.path).metadata()).resolves.toMatchObject({ width: 2, height: 50 });
+  });
 
   it("returns empty when no components are provided", async () => {
     const ctx = makeCtx();

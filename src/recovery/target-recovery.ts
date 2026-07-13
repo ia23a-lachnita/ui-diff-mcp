@@ -13,6 +13,7 @@ import { extractImageCropFromBounds } from "../images/crop.js";
 import { resolveComparisonExtraction, type ComparisonExtractionBounds } from "../images/comparison-geometry.js";
 
 const CLASSIFIABLE_CRITERIA = UiCriterionSchema.exclude(["unclassified_visual_change"]);
+const MIN_RECOVERY_EVIDENCE_SIZE = 2;
 
 const RecoveryVlmResponseSchema = z.object({
   classified: z.boolean(),
@@ -175,6 +176,8 @@ interface PreparedRecoveryEvidence {
   status: "valid";
   regionId: string;
   component: RecoveryRegionInput;
+  evidenceBox: Box;
+  actualEvidenceBox: Box;
   artifacts: UiArtifact[];
   expCrop: { data: Uint8Array; width: number; height: number };
   actCrop: { data: Uint8Array; width: number; height: number };
@@ -186,11 +189,36 @@ interface RejectedRecoveryEvidence {
   status: "rejected";
   regionId: string;
   component: RecoveryRegionInput;
+  evidenceBox: Box;
+  actualEvidenceBox: Box;
   reason: string;
   artifacts: UiArtifact[];
 }
 
 type RecoveryEvidencePreparation = PreparedRecoveryEvidence | RejectedRecoveryEvidence;
+
+function expandRecoveryEvidenceBox(box: Box, canvas: { width: number; height: number }): Box {
+  const values = [box.x, box.y, box.width, box.height, canvas.width, canvas.height];
+  if (!values.every(Number.isFinite) || box.width <= 0 || box.height <= 0 || canvas.width <= 0 || canvas.height <= 0) {
+    return box;
+  }
+  const left = Math.max(0, box.x);
+  const top = Math.max(0, box.y);
+  const right = Math.min(canvas.width, box.x + box.width);
+  const bottom = Math.min(canvas.height, box.y + box.height);
+  if (right <= left || bottom <= top) return box;
+
+  const expandAxis = (start: number, size: number, limit: number): { start: number; size: number } => {
+    if (size >= MIN_RECOVERY_EVIDENCE_SIZE || limit < MIN_RECOVERY_EVIDENCE_SIZE) return { start, size };
+    return {
+      start: Math.min(Math.max(0, start), limit - MIN_RECOVERY_EVIDENCE_SIZE),
+      size: MIN_RECOVERY_EVIDENCE_SIZE
+    };
+  };
+  const horizontal = expandAxis(left, right - left, canvas.width);
+  const vertical = expandAxis(top, bottom - top, canvas.height);
+  return { x: horizontal.start, y: vertical.start, width: horizontal.size, height: vertical.size };
+}
 
 export async function prepareRecoveryRegionArtifacts(
   regions: RecoveryRegionInput[],
@@ -203,14 +231,22 @@ export async function prepareRecoveryRegionArtifacts(
     const component = regions[index]!;
     const regionId = component.id ?? `component-${String(index + 1).padStart(4, "0")}`;
     const safeId = regionId.replace(/[^a-zA-Z0-9_-]/g, "-");
+    const evidenceBox = expandRecoveryEvidenceBox(component.box, {
+      width: ctx.expectedRgba.width,
+      height: ctx.expectedRgba.height
+    });
     const comparison = resolveComparisonExtraction({
-      box: component.box,
+      box: evidenceBox,
       sourceSpace: "comparison_expected_normalized",
       canvas: { width: ctx.expectedRgba.width, height: ctx.expectedRgba.height }
     });
-    const actualBox = ctx.imagePairTransform ? projectExpectedBoxToActualSource(component.box, ctx.imagePairTransform) : component.box;
+    const projectedActualBox = ctx.imagePairTransform ? projectExpectedBoxToActualSource(evidenceBox, ctx.imagePairTransform) : evidenceBox;
+    const actualEvidenceBox = expandRecoveryEvidenceBox(projectedActualBox, {
+      width: ctx.actualRgba.width,
+      height: ctx.actualRgba.height
+    });
     const actual = resolveComparisonExtraction({
-      box: actualBox,
+      box: actualEvidenceBox,
       sourceSpace: "comparison_expected_normalized",
       canvas: { width: ctx.actualRgba.width, height: ctx.actualRgba.height }
     });
@@ -219,6 +255,8 @@ export async function prepareRecoveryRegionArtifacts(
         status: "rejected",
         regionId,
         component,
+        evidenceBox,
+        actualEvidenceBox,
         reason: comparison.status === "rejected"
           ? comparison.reason
           : actual.status === "rejected"
@@ -244,6 +282,8 @@ export async function prepareRecoveryRegionArtifacts(
       status: "valid",
       regionId,
       component,
+      evidenceBox: comparison.box,
+      actualEvidenceBox: actual.box,
       expCrop,
       actCrop,
       overlayCrop,
@@ -304,6 +344,8 @@ export async function runTargetRecovery(
       componentId: entry.regionId,
       rank: 0,
       componentBox: entry.component.box,
+      evidenceBox: entry.evidenceBox,
+      actualEvidenceBox: entry.actualEvidenceBox,
       pixelCount: entry.component.pixelCount,
       status: "evidence_crop_rejected",
       rejectionReason: entry.reason,
@@ -320,12 +362,15 @@ export async function runTargetRecovery(
 
   // Push below-threshold traces
   for (const entry of ranked.filter(e => e.component.pixelCount < budget.minComponentPixels && preparedById.get(e.componentId)?.status === "valid")) {
-    const artifacts = preparedById.get(entry.componentId)!.artifacts;
+    const preparedEvidence = preparedById.get(entry.componentId)! as PreparedRecoveryEvidence;
+    const artifacts = preparedEvidence.artifacts;
     countStatus("below_threshold");
     trace.push({
       componentId: entry.componentId,
       rank: 0,
       componentBox: entry.component.box,
+      evidenceBox: preparedEvidence.evidenceBox,
+      actualEvidenceBox: preparedEvidence.actualEvidenceBox,
       pixelCount: entry.component.pixelCount,
       status: "below_threshold",
       artifactPaths: artifacts
@@ -374,7 +419,15 @@ export async function runTargetRecovery(
       pixelDiffMaskArtifact: artifacts[3]!
     };
 
-    const baseTrace = { componentId, rank: rankIndex, componentBox: box, pixelCount: component.pixelCount, artifactPaths: artifacts };
+    const baseTrace = {
+      componentId,
+      rank: rankIndex,
+      componentBox: box,
+      evidenceBox: preparedEvidence.evidenceBox,
+      actualEvidenceBox: preparedEvidence.actualEvidenceBox,
+      pixelCount: component.pixelCount,
+      artifactPaths: artifacts
+    };
 
     // Encode crops for VLM
     const expB64 = await toBase64Png(expCrop.data, expCrop.width, expCrop.height, 4);
@@ -570,12 +623,17 @@ export async function runTargetRecovery(
     const skippedStatus = stoppedReason === "deadline_exceeded" ? "skipped_deadline" as const : "skipped_model_call_cap" as const;
     for (let i = loopStoppedAt; i < toProcess.length; i++) {
       const entry = toProcess[i]!;
-      const artifacts = preparedById.get(entry.componentId)?.artifacts ?? [];
+      const preparedEvidence = preparedById.get(entry.componentId);
+      const artifacts = preparedEvidence?.artifacts ?? [];
       countStatus(skippedStatus);
       trace.push({
         componentId: entry.componentId,
         rank: i,
         componentBox: entry.component.box,
+        ...(preparedEvidence?.status === "valid" ? {
+          evidenceBox: preparedEvidence.evidenceBox,
+          actualEvidenceBox: preparedEvidence.actualEvidenceBox
+        } : {}),
         pixelCount: entry.component.pixelCount,
         status: skippedStatus,
         artifactPaths: artifacts

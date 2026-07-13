@@ -742,6 +742,8 @@ export const RecoveryComponentTraceSchema = z.object({
   componentId: z.string().min(1),
   rank: z.number().int(),
   componentBox: BoxSchema,
+  evidenceBox: BoxSchema.optional(),
+  actualEvidenceBox: BoxSchema.optional(),
   pixelCount: z.number().int().min(0),
   status: RecoveryDecisionStatusSchema,
   model: z.string().optional(),

@@ -341,7 +341,7 @@ describe("runUiDiff end-to-end (deterministic_only mode)", () => {
     });
   });
 
-  it("preserves rejected recovery evidence and geometry diagnostics through checkpoints and the final report", async () => {
+  it("preserves thin recovery evidence without reporting an artifact geometry rejection", async () => {
     const expected = await writeSolidPng(tmpDir, "rejected-evidence-expected.png", 200, 400, 255, 255, 255);
     const actualBase = await writeSolidPng(tmpDir, "rejected-evidence-actual-base.png", 200, 400, 255, 255, 255);
     const actual = path.join(tmpDir, "rejected-evidence-actual.png");
@@ -364,24 +364,21 @@ describe("runUiDiff end-to-end (deterministic_only mode)", () => {
 
     expect(checkpointDiagnostics.length).toBeGreaterThan(0);
     expect(checkpointDiagnostics.every(diagnostics => diagnostics !== undefined)).toBe(true);
-    const rawReport = JSON.parse(await fs.readFile(result.reportPath, "utf8")) as {
-      geometryDiagnostics?: { countsByReason: Record<string, number>; countsByProducer: Record<string, Record<string, number>> };
-      unresolvedRegions: unknown[];
-    };
-    const report = await hydrateReportParts(rawReport as Parameters<typeof hydrateReportParts>[0], result.reportPath) as typeof rawReport;
+    const rawReport = JSON.parse(await fs.readFile(result.reportPath, "utf8"));
+    const report = await hydrateReportParts(rawReport, result.reportPath);
 
-    expect(report.geometryDiagnostics).toMatchObject({
-      countsByReason: { below_minimum_artifact_size: 2 },
-      countsByProducer: {
-        recovery_artifact_backfill: { below_minimum_artifact_size: 1 }
-      }
-    });
-    expect(report.unresolvedRegions).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        reason: "evidence_crop_rejected",
-        detail: "evidence_crop_rejected: below_minimum_artifact_size"
-      })
-    ]));
+    expect(report.geometryDiagnostics?.countsByProducer["recovery_artifact_backfill"]).toBeUndefined();
+    const thinRegion = report.unresolvedRegions.find(region => region.location.width === 1 && region.location.height === 50);
+    expect(thinRegion).toMatchObject({ reason: "not_classified", location: { x: 20, y: 20, width: 1, height: 50 } });
+    expect(thinRegion?.artifactPaths.map(artifact => artifact.role).sort()).toEqual([
+      "recovery_actual_crop",
+      "recovery_directional_overlay",
+      "recovery_expected_crop",
+      "recovery_pixel_diff_mask"
+    ]);
+    for (const artifact of thinRegion!.artifactPaths) {
+      await expect(sharp(artifact.path).metadata()).resolves.toMatchObject({ width: 2, height: 50 });
+    }
   });
 
   it("accounts for rejected projected-group crops in checkpoints and the final report", async () => {
