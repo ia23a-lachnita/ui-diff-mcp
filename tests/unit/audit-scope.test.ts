@@ -4,6 +4,7 @@ import path from "node:path";
 import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { auditScopeSummaries } from "../../src/audit/audit-scope.js";
+import { UiArtifactSchema } from "../../src/schemas/core.js";
 import type { ScopeDiffSummary } from "../../src/schemas/core.js";
 import type { VisionJsonCaller } from "../../src/models/vision-json.js";
 
@@ -79,5 +80,14 @@ describe("auditScopeSummaries", () => {
       classificationSource: "vlm_reviewed",
       reviewerStatus: "accepted"
     });
+    const artifacts = result.accepted[0]?.artifactPaths ?? [];
+    expect(artifacts).toEqual(expect.arrayContaining([
+      { role: "expected_normalized", path: expectedPath },
+      { role: "actual_comparison_space", path: actualPath },
+      { role: "directional_overlay", path: overlayPath },
+      { role: "pixel_diff_mask", path: maskPath }
+    ]));
+    expect(artifacts).toHaveLength(4);
+    for (const artifact of artifacts) UiArtifactSchema.parse(artifact);
   });
 });

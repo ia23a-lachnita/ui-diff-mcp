@@ -64,6 +64,15 @@ describe("sampleColorStats", () => {
     const stats = sampleColorStats(buf, 10, BOX);
     expect(stats.dominantPalette.length).toBeGreaterThan(0);
   });
+
+  it("clamps quantized palette channels to the valid RGB boundary", () => {
+    const stats = sampleColorStats(makeRgbaBuffer(255, 254, 253), 10, BOX);
+
+    expect(stats.dominantPalette[0]).toMatchObject({ r: 255, g: 255, b: 255 });
+    expect(stats.dominantPalette.every(color =>
+      [color.r, color.g, color.b].every(channel => channel >= 0 && channel <= 255)
+    )).toBe(true);
+  });
 });
 
 describe("computeColorEvidence", () => {

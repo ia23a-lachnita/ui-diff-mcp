@@ -64,6 +64,10 @@ function srgbToOklab(r: number, g: number, b: number): { L: number; a: number; b
   };
 }
 
+function quantizeRgbChannel(channel: number): number {
+  return Math.max(0, Math.min(255, Math.round(channel / 32) * 32));
+}
+
 export function computeOklabDistance(
   r1: number, g1: number, b1: number,
   r2: number, g2: number, b2: number
@@ -96,9 +100,9 @@ export function sampleColorStats(rgba: Uint8Array, imageWidth: number, box: Box)
       sumR += r; sumG += g; sumB += b; sumA += a;
       count++;
 
-      const qr = Math.round(r / 32) * 32;
-      const qg = Math.round(g / 32) * 32;
-      const qb = Math.round(b / 32) * 32;
+      const qr = quantizeRgbChannel(r);
+      const qg = quantizeRgbChannel(g);
+      const qb = quantizeRgbChannel(b);
       const key = `${qr},${qg},${qb}`;
       const bucket = buckets.get(key) ?? { r: qr, g: qg, b: qb, count: 0 };
       bucket.count++;

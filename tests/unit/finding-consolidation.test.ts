@@ -574,6 +574,79 @@ describe("consolidateFindings", () => {
     });
   });
 
+  it("keeps a local Protein finding out from under a full-screen nav across mixed image spaces", () => {
+    const expectedSize = { width: 402, height: 874 };
+    const actualSize = { width: 1080, height: 2400 };
+    const expectedNav = element("expected-nav", "nav", 0, 0, expectedSize.width, expectedSize.height);
+    const actualNav = element("actual-nav", "nav", 0, 0, actualSize.width, actualSize.height);
+    expectedNav.normalizedBox = { x: 0, y: 0, width: 1, height: 1 };
+    actualNav.normalizedBox = { x: 0, y: 0, width: 1, height: 1 };
+    const proteinExpected = element("protein-expected", "text", 24, 310, 180, 80, expectedNav.id);
+    const proteinActual = element("protein-actual", "text", 64.4776, 851.03, 483.5821, 219.4514, actualNav.id);
+    proteinExpected.normalizedBox = { x: 24 / expectedSize.width, y: 310 / expectedSize.height, width: 180 / expectedSize.width, height: 80 / expectedSize.height };
+    proteinActual.normalizedBox = { x: 64.4776 / actualSize.width, y: 851.03 / actualSize.height, width: 483.5821 / actualSize.width, height: 219.4514 / actualSize.height };
+    expectedNav.childIds = [proteinExpected.id];
+    actualNav.childIds = [proteinActual.id];
+
+    const navFinding = finding("nav-screen", undefined, "geometry", 0, 0, expectedSize.width, expectedSize.height);
+    const proteinFinding = finding("protein-local", "protein-pair", "geometry", 24, 310, 180, 80);
+
+    const result = finalizeFindings(
+      [navFinding, proteinFinding],
+      [expectedNav, proteinExpected, actualNav, proteinActual],
+      [{ id: "protein-pair", expectedId: proteinExpected.id, actualId: proteinActual.id, status: "matched", score: 1, reasons: [] }],
+      { canvas: expectedSize, imagePairTransform: createImagePairTransform(expectedSize, actualSize) }
+    );
+
+    expect(result.broadVlmFindings.map(item => item.id)).toEqual(["nav-screen"]);
+    expect(result.diffs).toHaveLength(1);
+    expect(result.diffs[0]).toMatchObject({
+      id: "protein-local",
+      repairLocality: "local",
+      coordinateSpace: "comparison_expected_normalized"
+    });
+    expect(result.diffs[0]?.targetIds).not.toContain(expectedNav.id);
+    expect(result.diffs[0]?.targetIds).not.toContain(actualNav.id);
+    expect(result.diffs[0]?.title.toLowerCase()).not.toContain("nav");
+    expect(result.diffs[0]?.title).not.toContain(expectedNav.label);
+    expect(result.diffs[0]?.title).not.toContain(actualNav.label);
+  });
+
+  it("passes pairs into contextual consolidation so extra findings use actual source space", () => {
+    const expectedSize = { width: 402, height: 874 };
+    const actualSize = { width: 1080, height: 2400 };
+    const actualExtra = element("actual-extra", "button", 540, 1200, 108, 240);
+    actualExtra.normalizedBox = {
+      x: actualExtra.box.x / actualSize.width,
+      y: actualExtra.box.y / actualSize.height,
+      width: actualExtra.box.width / actualSize.width,
+      height: actualExtra.box.height / actualSize.height
+    };
+    const extra = finding("extra-contextual", "extra-pair", "presence", 540, 1200, 108, 240, "deterministic_presence");
+    extra.reviewerStatus = "not_reviewed";
+
+    const result = consolidateFindings(
+      [extra],
+      [actualExtra],
+      [{ id: "extra-pair", actualId: actualExtra.id, status: "extra", score: 1, reasons: [] }],
+      {
+        canvas: expectedSize,
+        imagePairTransform: createImagePairTransform(expectedSize, actualSize)
+      }
+    );
+
+    expect(result[0]).toMatchObject({
+      id: "extra-contextual",
+      coordinateSpace: "comparison_expected_normalized"
+    });
+    expect(result[0]?.location).toMatchObject({
+      x: expect.closeTo(201),
+      y: expect.closeTo(437),
+      width: expect.closeTo(40.2),
+      height: expect.closeTo(87.4)
+    });
+  });
+
   it("retains a spatially contained child without semantic ancestry and equivalent displacement evidence", () => {
     const card = element("card", "card", 20, 60, 150, 160);
     const unrelated = element("unrelated", "text", 40, 100, 80, 20);

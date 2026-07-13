@@ -86,27 +86,49 @@ function eligibleParent(element: UiElement): boolean {
   return SEMANTIC_PARENT_TYPES.has(element.type) && element.source !== "merged";
 }
 
-function estimateViewportArea(elements: UiElement[]): number {
-  const inferredAreas = elements
-    .flatMap(element => {
-      const width = element.normalizedBox.width > 0 ? element.box.width / element.normalizedBox.width : undefined;
-      const height = element.normalizedBox.height > 0 ? element.box.height / element.normalizedBox.height : undefined;
-      return width !== undefined && height !== undefined && Number.isFinite(width) && Number.isFinite(height)
-        ? [width * height]
-        : [];
-    })
-    .filter(area => area > 0)
-    .sort((a, b) => a - b);
-  if (inferredAreas.length > 0) {
-    return inferredAreas[Math.floor(inferredAreas.length / 2)]!;
-  }
-  const right = Math.max(1, ...elements.map(element => element.box.x + element.box.width));
-  const bottom = Math.max(1, ...elements.map(element => element.box.y + element.box.height));
-  return right * bottom;
+function median(values: number[]): number | undefined {
+  if (values.length === 0) return undefined;
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.floor(sorted.length / 2)];
 }
 
-function isOversizedRepairParent(element: UiElement, viewportArea: number): boolean {
-  return boxArea(element.box) / Math.max(1, viewportArea) >= MAX_REPAIR_PARENT_AREA_RATIO;
+function estimateOwnershipCanvas(elements: UiElement[]): { width: number; height: number } {
+  const inferredWidths = elements
+    .flatMap(element => element.normalizedBox.width > 0
+      ? [element.box.width / element.normalizedBox.width]
+      : [])
+    .filter(width => width > 0 && Number.isFinite(width));
+  const inferredHeights = elements
+    .flatMap(element => element.normalizedBox.height > 0
+      ? [element.box.height / element.normalizedBox.height]
+      : [])
+    .filter(height => height > 0 && Number.isFinite(height));
+  const right = Math.max(1, ...elements.map(element => element.box.x + element.box.width));
+  const bottom = Math.max(1, ...elements.map(element => element.box.y + element.box.height));
+  return {
+    width: median(inferredWidths) ?? right,
+    height: median(inferredHeights) ?? bottom
+  };
+}
+
+function projectElementBoxToCanvas(element: UiElement, canvas: { width: number; height: number }): Box {
+  return {
+    x: element.normalizedBox.x * canvas.width,
+    y: element.normalizedBox.y * canvas.height,
+    width: element.normalizedBox.width * canvas.width,
+    height: element.normalizedBox.height * canvas.height
+  };
+}
+
+function projectElementsToCanvas(elements: UiElement[], canvas: { width: number; height: number }): UiElement[] {
+  return elements.map(element => ({
+    ...element,
+    box: projectElementBoxToCanvas(element, canvas)
+  }));
+}
+
+function isOversizedRepairParent(element: UiElement): boolean {
+  return boxArea(element.normalizedBox) >= MAX_REPAIR_PARENT_AREA_RATIO;
 }
 
 function ascendToSemanticParent(element: UiElement, elements: Map<string, UiElement>): UiElement | undefined {
@@ -120,10 +142,10 @@ function ascendToSemanticParent(element: UiElement, elements: Map<string, UiElem
   return undefined;
 }
 
-function overlappingSemanticParent(finding: DiffRecord, elements: UiElement[], viewportArea: number): UiElement | undefined {
+function overlappingSemanticParent(finding: DiffRecord, elements: UiElement[]): UiElement | undefined {
   return elements
     .filter(eligibleParent)
-    .filter(element => !isOversizedRepairParent(element, viewportArea))
+    .filter(element => !isOversizedRepairParent(element))
     .map(element => ({ element, overlap: intersect(finding.location, element.box) }))
     .filter((entry): entry is { element: UiElement; overlap: Box } => entry.overlap !== undefined && entry.overlap !== null)
     .filter(entry => boxArea(entry.overlap) / boxArea(finding.location) >= 0.5)
@@ -133,7 +155,6 @@ function overlappingSemanticParent(finding: DiffRecord, elements: UiElement[], v
 function resolveOwnership(
   finding: DiffRecord,
   elements: UiElement[],
-  viewportArea: number,
   elementMap: Map<string, UiElement>,
   pairMap: Map<string, ElementPair>
 ): OwnedFinding {
@@ -145,12 +166,12 @@ function resolveOwnership(
     .filter((element): element is UiElement => element !== undefined)
     .map(element => ascendToSemanticParent(element, elementMap))
     .filter((element): element is UiElement => element !== undefined)
-    .filter(element => !isOversizedRepairParent(element, viewportArea))
+    .filter(element => !isOversizedRepairParent(element))
     .sort((a, b) => {
       const sourceRank = (element: UiElement) => element.source === "projected" ? 1 : 0;
       return sourceRank(a) - sourceRank(b) || boxArea(a.box) - boxArea(b.box) || a.id.localeCompare(b.id);
     });
-  const parent = semanticParents[0] ?? (targetIds.length === 0 ? overlappingSemanticParent(finding, elements, viewportArea) : undefined);
+  const parent = semanticParents[0] ?? (targetIds.length === 0 ? overlappingSemanticParent(finding, elements) : undefined);
   if (parent && !targetIds.includes(parent.id)) targetIds.push(parent.id);
   return {
     finding,
@@ -434,14 +455,16 @@ export function consolidateFindings(
   pairs: ElementPair[],
   context?: FindingConsolidationContext
 ): DiffRecord[] {
-  const canonicalFindings = context ? canonicalizeFinalFindings(findings, context) : findings;
-  const viewportArea = context ? context.canvas.width * context.canvas.height : estimateViewportArea(elements);
-  const elementMap = new Map(elements.map(element => [element.id, element]));
+  const canonicalFindings = context ? canonicalizeFinalFindings(findings, context, pairs) : findings;
+  const ownershipCanvas = context?.canvas ?? estimateOwnershipCanvas(elements);
+  const viewportArea = ownershipCanvas.width * ownershipCanvas.height;
+  const ownershipElements = projectElementsToCanvas(elements, ownershipCanvas);
+  const elementMap = new Map(ownershipElements.map(element => [element.id, element]));
   const pairMap = new Map(pairs.map(pair => [pair.id, pair]));
   const groups = new Map<string, OwnedFinding[]>();
 
   for (const finding of [...canonicalFindings].sort((a, b) => a.location.y - b.location.y || a.location.x - b.location.x || a.id.localeCompare(b.id))) {
-    const owned = resolveOwnership(finding, elements, viewportArea, elementMap, pairMap);
+    const owned = resolveOwnership(finding, ownershipElements, elementMap, pairMap);
     const explicitGroup = finding.findingGroupId && finding.findingGroupKind
       ? `explicit:${finding.findingGroupKind}:${finding.findingGroupId}:${finding.criterion}`
       : undefined;
@@ -468,7 +491,7 @@ export function consolidateFindings(
 
   const initiallyMerged = mergeOverlappingOwnedGroups([...groups.values()]).map(mergeGroup);
   const finalMerged = mergeFinalDuplicateFindings(initiallyMerged);
-  return suppressLayoutChildrenCoveredByParent(finalMerged, elements, pairs, viewportArea)
+  return suppressLayoutChildrenCoveredByParent(finalMerged, ownershipElements, pairs, viewportArea)
     .sort((a, b) => a.location.y - b.location.y || a.location.x - b.location.x || a.id.localeCompare(b.id));
 }
 
@@ -486,7 +509,8 @@ export function finalizeFindings(
     diffs: consolidateFindings(
       canonical.filter(finding => !broadVlmFindings.some(broad => broad.id === finding.id)),
       elements,
-      pairs
+      pairs,
+      context
     ).sort((a, b) => a.location.y - b.location.y || a.location.x - b.location.x || a.id.localeCompare(b.id)),
     broadVlmFindings
   };

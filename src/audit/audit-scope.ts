@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import { z } from "zod";
-import type { DiffRecord, DiffScope, ScopeDiffSummary, UiCriterion } from "../schemas/core.js";
+import type { DiffRecord, DiffScope, ScopeDiffSummary, UiArtifact, UiCriterion } from "../schemas/core.js";
 import type { VisionJsonCaller } from "../models/vision-json.js";
 import { AuditResultSchema, rubrics } from "./criteria.js";
 
@@ -94,6 +94,12 @@ export async function auditScopeSummaries(input: AuditScopeSummariesInput): Prom
     readDataUrl(input.directionalOverlayPath),
     readDataUrl(input.pixelDiffMaskPath)
   ]);
+  const scopeArtifacts: UiArtifact[] = [
+    { role: "expected_normalized", path: input.expectedImagePath },
+    { role: "actual_comparison_space", path: input.actualImagePath },
+    { role: "directional_overlay", path: input.directionalOverlayPath },
+    { role: "pixel_diff_mask", path: input.pixelDiffMaskPath }
+  ];
 
   for (const summary of selectedSummaries(input.diffScope, input.summaries)) {
     for (const criterion of summary.triggeredCriteria) {
@@ -134,7 +140,7 @@ export async function auditScopeSummaries(input: AuditScopeSummariesInput): Prom
         location: summary.box,
         evidence: auditResult.evidence,
         measurements: summary.measurements,
-        artifactPaths: [],
+        artifactPaths: scopeArtifacts,
         reviewerStatus: review.decision === "needs_escalation" ? "needs_escalation" : review.decision,
         reviewerReason: review.reason,
         model: auditResponse.model,
