@@ -149,8 +149,9 @@ describe("consolidateFindings", () => {
 
     const result = consolidateFindings(diffs, [wrapper, ...children], pairs);
 
-    expect(result).toHaveLength(3);
-    expect(result.every(item => item.title === "Nutrition summary displaced from expected position")).toBe(true);
+    expect(result).toHaveLength(1);
+    expect(result[0]?.title).toBe("Nutrition summary displaced from expected position");
+    expect(result[0]?.childFindingIds).toHaveLength(6);
   });
 
   it("keeps different explicit displacement groups separate under one generic parent", () => {
@@ -173,8 +174,8 @@ describe("consolidateFindings", () => {
 
     const result = consolidateFindings(diffs, [wrapper, ...children], pairs);
 
-    expect(result).toHaveLength(4);
-    expect(result.map(item => item.findingGroupId).sort()).toEqual(["group-a", "group-a", "group-b", "group-b"]);
+    expect(result).toHaveLength(2);
+    expect(result.map(item => item.findingGroupId).sort()).toEqual(["group-a", "group-b"]);
   });
 
   it("folds target children into a larger scope finding for the same criterion", () => {
@@ -443,7 +444,7 @@ describe("consolidateFindings", () => {
     });
   });
 
-  it("does not merge nonlocal findings that only share an explicit displacement group", () => {
+  it("preserves one final record for a nonlocal explicit displacement group", () => {
     const first = finding("first", undefined, "geometry", 20, 20, 30, 30);
     const second = finding("second", undefined, "geometry", 20, 300, 30, 30);
     for (const item of [first, second]) {
@@ -454,7 +455,120 @@ describe("consolidateFindings", () => {
 
     const result = consolidateFindings([first, second], [], [], { canvas: { width: 200, height: 400 } });
 
-    expect(result.map(item => item.id)).toEqual(["first", "second"]);
+    expect(result).toHaveLength(1);
+    expect(result[0]?.findingGroupId).toBe("same-explicit-group");
+    expect(result[0]?.location).toEqual({ x: 20, y: 20, width: 30, height: 310 });
+    expect(result[0]?.childFindingIds).toEqual(expect.arrayContaining(["first", "second"]));
+  });
+
+  it("consolidates nearby semantic children that share the real coherent displacement group shape", () => {
+    const buttons = element("buttons", "button", 15, 449, 373, 289);
+    const firstChild = element("first-child", "text", 325, 435, 26, 44, buttons.id);
+    const secondChild = element("second-child", "text", 325, 505, 26, 44, buttons.id);
+    buttons.childIds = [firstChild.id, secondChild.id];
+    const first = finding("first-diff", "pair-first-child", "geometry", 325, 435, 26, 44, "deterministic_projected_mismatch");
+    const second = finding("second-diff", "pair-second-child", "geometry", 325, 505, 26, 44, "deterministic_projected_mismatch");
+    for (const [index, item] of [first, second].entries()) {
+      item.reviewerStatus = "not_reviewed";
+      item.findingGroupId = "displacement-a696d7dd3806";
+      item.findingGroupKind = "coherent_displacement";
+      item.groupLabel = "buttons";
+      item.targetIds = [index === 0 ? firstChild.id : secondChild.id, buttons.id];
+      item.measurements = [
+        { name: "horizontal_shift", value: -15, unit: "px" },
+        { name: "vertical_shift", value: -96, unit: "px" }
+      ];
+      item.artifactPaths = [{ role: "projected_group_directional_overlay", path: "shared-group-overlay.png" }];
+    }
+
+    const result = consolidateFindings(
+      [first, second],
+      [buttons, firstChild, secondChild],
+      [pair("pair-first-child", firstChild.id), pair("pair-second-child", secondChild.id)]
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      findingGroupId: "displacement-a696d7dd3806",
+      location: { x: 325, y: 435, width: 26, height: 114 }
+    });
+    expect(result[0]?.artifactPaths).toEqual([{ role: "projected_group_directional_overlay", path: "shared-group-overlay.png" }]);
+    expect(result[0]?.childFindingIds).toEqual(expect.arrayContaining(["first-diff", "second-diff"]));
+    expect(result[0]?.targetIds).toEqual(expect.arrayContaining([buttons.id, firstChild.id, secondChild.id]));
+  });
+
+  it("canonicalizes projected coverage locations into the comparison canvas", () => {
+    const projected = finding(
+      "projected-coverage",
+      undefined,
+      "geometry",
+      540,
+      1200,
+      108,
+      240,
+      "deterministic_projected_mismatch"
+    );
+    projected.reviewerStatus = "not_reviewed";
+    projected.coverageLocations = [
+      { x: 540, y: 1200, width: 108, height: 240 },
+      { x: 540, y: 960, width: 108, height: 240 }
+    ];
+
+    const result = consolidateFindings([projected], [], [], {
+      canvas: { width: 402, height: 874 },
+      imagePairTransform: createImagePairTransform({ width: 402, height: 874 }, { width: 1080, height: 2400 })
+    });
+
+    expect(result[0]?.coverageLocations).toHaveLength(2);
+    expect(result[0]?.coverageLocations?.[0]).toMatchObject({
+      x: expect.closeTo(201),
+      y: expect.closeTo(437),
+      width: expect.closeTo(40.2),
+      height: expect.closeTo(87.4)
+    });
+    expect(result[0]?.coverageLocations?.[1]).toMatchObject({
+      x: expect.closeTo(201),
+      y: expect.closeTo(349.6),
+      width: expect.closeTo(40.2),
+      height: expect.closeTo(87.4)
+    });
+    expect(result[0]?.coverageLocations?.every(box =>
+      box.x >= 0 && box.y >= 0 && box.x + box.width <= 402 && box.y + box.height <= 874
+    )).toBe(true);
+  });
+
+  it("does not transform an already canonical projected finding twice", () => {
+    const projected = finding(
+      "already-canonical",
+      undefined,
+      "geometry",
+      201,
+      437,
+      40.2,
+      87.4,
+      "deterministic_projected_mismatch"
+    );
+    projected.reviewerStatus = "not_reviewed";
+    projected.coordinateSpace = "comparison_expected_normalized";
+    projected.coverageLocations = [{ x: 201, y: 349.6, width: 40.2, height: 87.4 }];
+
+    const result = consolidateFindings([projected], [], [], {
+      canvas: { width: 402, height: 874 },
+      imagePairTransform: createImagePairTransform({ width: 402, height: 874 }, { width: 1080, height: 2400 })
+    });
+
+    expect(result[0]?.location).toMatchObject({
+      x: expect.closeTo(201),
+      y: expect.closeTo(437),
+      width: expect.closeTo(40.2),
+      height: expect.closeTo(87.4)
+    });
+    expect(result[0]?.coverageLocations?.[0]).toMatchObject({
+      x: expect.closeTo(201),
+      y: expect.closeTo(349.6),
+      width: expect.closeTo(40.2),
+      height: expect.closeTo(87.4)
+    });
   });
 
   it("retains a spatially contained child without semantic ancestry and equivalent displacement evidence", () => {

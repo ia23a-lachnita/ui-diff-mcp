@@ -444,7 +444,7 @@ export function consolidateFindings(
       }
     }
     const existing = groups.get(key);
-    if (existing && (isSemanticChildFinding || !existing.every(entry =>
+    if (!explicitGroup && existing && (isSemanticChildFinding || !existing.every(entry =>
       localUnion(entry.finding.location, finding.location, viewportArea) && coherentDisplacement(entry.finding, finding)
     ))) {
       key = `${key}:${finding.id}`;
@@ -488,7 +488,9 @@ function canonicalizeFinalFindings(
   const canvasArea = Math.max(1, context.canvas.width * context.canvas.height);
   return findings.flatMap(finding => {
     const pair = finding.pairId ? pairs.find(candidate => candidate.id === finding.pairId) : undefined;
-    const sourceSpace = finding.classificationSource === "deterministic_projected_mismatch"
+    const sourceSpace = finding.coordinateSpace === "comparison_expected_normalized"
+      ? "comparison_expected_normalized" as const
+      : finding.classificationSource === "deterministic_projected_mismatch"
       || (finding.classificationSource === "deterministic_presence" && pair?.status === "extra")
       ? "actual_normalized" as const
       : "comparison_expected_normalized" as const;
@@ -506,6 +508,23 @@ function canonicalizeFinalFindings(
       });
       return [];
     }
+    const canonicalCoverageLocations = (finding.coverageLocations ?? []).flatMap((coverageLocation, index) => {
+      const coverageResolution = resolveComparisonBox({
+        box: coverageLocation,
+        sourceSpace,
+        canvas: context.canvas,
+        ...(context.imagePairTransform ? { transform: context.imagePairTransform } : {})
+      });
+      if (coverageResolution.status === "rejected") {
+        context.geometryRejections?.push({
+          producer: "final_finding_canonicalization_coverage",
+          reason: coverageResolution.reason,
+          reference: `diff:${finding.id}:coverage:${index}`
+        });
+        return [];
+      }
+      return [coverageResolution.box];
+    });
     const repairLocality = boxArea(resolution.box) / canvasArea >= MAX_REPAIR_PARENT_AREA_RATIO
       ? "broad" as const
       : "local" as const;
@@ -513,6 +532,7 @@ function canonicalizeFinalFindings(
     return [{
       ...finding,
       location: resolution.box,
+      coverageLocations: canonicalCoverageLocations.length > 0 ? canonicalCoverageLocations : [resolution.box],
       coordinateSpace: "comparison_expected_normalized",
       repairLocality,
       ...(broadVlmEvidence ? {
