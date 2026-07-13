@@ -8,7 +8,7 @@ import { runUiDiff } from "../../src/pipeline/run-ui-diff.js";
 import { hydrateReportParts } from "../../src/report/report-parts.js";
 import { buildRuntimeModelUsageLedger } from "../../src/debug/provider-trace.js";
 import { buildUsageSummaryFromLedger } from "../../src/debug/usage-summary.js";
-import { writeTwoButtonFixture, writeSolidPng } from "../../src/testing/fixture-images.js";
+import { writeTwoButtonFixture, writeSolidPng, writeRectPng } from "../../src/testing/fixture-images.js";
 import { startMockSidecar } from "../fixtures/mock-sidecar.js";
 import { makeMockFetch } from "../fixtures/mock-models.js";
 import type { MockSidecar } from "../fixtures/mock-sidecar.js";
@@ -1254,6 +1254,61 @@ describe("runUiDiff with mock sidecar and models (full mode)", () => {
     }));
     expect(report.visualClassificationStatus).toBe("incomplete");
     await expectFinalArtifactManifest(report as unknown as FinalArtifactReport);
+  });
+
+  it("completes when a broad raw finding is fully superseded by local coverage", async () => {
+    const expected = await writeSolidPng(tmpDir, "broad-superseded-expected.png", 200, 400, 255, 255, 255);
+    const actual = await writeRectPng(tmpDir, "broad-superseded-actual.png", 200, 400, 255, 255, 255, 20, 50, 160, 44, 0, 0, 0);
+    sidecar = await startMockSidecar({ imageWidth: 200, imageHeight: 400 });
+    vi.stubEnv("LOCATEANYTHING_SIDECAR_URL", sidecar.url);
+    vi.stubEnv("OPENROUTER_API_KEY", "sk-test-broad-superseded");
+    vi.stubGlobal("fetch", makeMockFetch(Array.from({ length: 100 }, () => ({
+      criterion: "geometry" as const,
+      hasDiff: false,
+      reviewerDecision: "accepted" as const
+    }))));
+    vi.mocked(buildDeterministicDiffs).mockImplementation(() => [
+      {
+        id: "broad-raw",
+        criterion: "geometry",
+        severity: "high",
+        title: "Broad raw finding",
+        location: { x: 0, y: 0, width: 200, height: 400 },
+        evidence: ["broad raw evidence"],
+        measurements: [],
+        artifactPaths: [],
+        reviewerStatus: "accepted",
+        classificationSource: "vlm_reviewed"
+      },
+      {
+        id: "local-coverage",
+        criterion: "geometry",
+        severity: "medium",
+        title: "Local coverage finding",
+        location: { x: 20, y: 50, width: 160, height: 44 },
+        evidence: ["local coverage evidence"],
+        measurements: [],
+        artifactPaths: [],
+        reviewerStatus: "not_reviewed",
+        classificationSource: "deterministic_geometry"
+      }
+    ]);
+    const probeOverride = async () => [
+      { role: "auditor", provider: "openrouter", model: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free", status: "pass" as const, checkedAt: new Date().toISOString(), schemaValid: true, contentAccurate: true, maxImagesSupported: 5 },
+      { role: "reviewer", provider: "openrouter", model: "nex-agi/nex-n2-pro:free", status: "pass" as const, checkedAt: new Date().toISOString(), schemaValid: true, contentAccurate: true, maxImagesSupported: 5 }
+    ];
+
+    const result = await runUiDiff({ expectedImagePath: expected, actualImagePath: actual, projectRoot: tmpDir, mode: "full" }, { probeOverride });
+    const raw = JSON.parse(await fs.readFile(result.reportPath, "utf8")) as {
+      diffs: Array<{ id: string }>;
+      unresolvedRegions: unknown[];
+      visualClassificationStatus: string;
+    };
+    const report = await hydrateReportParts(raw as Parameters<typeof hydrateReportParts>[0], result.reportPath) as typeof raw;
+    expect(report.diffs.some(diff => diff.id === "broad-raw")).toBe(false);
+    expect(report.diffs.some(diff => diff.id === "local-coverage")).toBe(true);
+    expect(report.unresolvedRegions).toHaveLength(0);
+    expect(report.visualClassificationStatus).toBe("complete");
   });
 
   it("records the exact images sent to LocateAnything as report artifacts", async () => {

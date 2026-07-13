@@ -47,7 +47,7 @@ import type { UiDiffReport, RunStatus, VisualClassificationStatus, LocatorCovera
 import { computeColorEvidence } from "../signals/color.js";
 import { createRunId } from "./run-store.js";
 import { UiDiffReportSchema } from "../schemas/core.js";
-import { auditTraceHasFailure, deriveAuditStageOutcome, deriveRecoveryStageOutcome } from "./stages.js";
+import { auditTraceHasFailure, deriveAuditStageOutcome, deriveRecoveryStageOutcome, deriveVisualClassificationStatus } from "./stages.js";
 import type { StageOutcome } from "../schemas/core.js";
 import type { LocateAnythingRequestSizing } from "../locator/locateanything-client.js";
 
@@ -1261,9 +1261,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     imageHeight: expectedImg.height
   });
   applyFindingCoverage(regionLedger, finalization.diffs);
-  markBroadVlmEvidence(regionLedger, finalization.broadVlmFindings);
   applyResidualSuppression(regionLedger, finalization.diffs);
-  if (finalization.broadVlmFindings.length > 0) visualClassificationStatus = "incomplete";
   debugTrace.coverage = regionLedger.coverageTrace;
   const artifactlessRegions = regionLedger.regions.filter(region =>
     region.state === "unresolved"
@@ -1295,6 +1293,15 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
         : "not_classified" as const;
   const finalDiffs = finalization.diffs;
   const unresolvedRegions = unresolvedRegionsFromLedger(regionLedger, unresolvedReason);
+  visualClassificationStatus = deriveVisualClassificationStatus({
+    mode,
+    runStatus: status,
+    locatorFailed,
+    locatorCoverageStatus,
+    ...(auditScope !== undefined ? { auditScope } : {}),
+    ...(recoverySummary !== undefined ? { recoverySummary } : {}),
+    unresolvedRegionCount: unresolvedRegions.length
+  });
   const diffSummary = buildDiffSummary(finalDiffs, unresolvedRegions.length, scopeSummaries);
 
   const contextArtifacts = await writeRegionContextOverlays({

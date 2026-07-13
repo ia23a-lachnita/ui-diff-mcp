@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { runStage } from "../../src/pipeline/stages.js";
-import { auditTraceHasFailure, deriveAuditStageOutcome, deriveRecoveryStageOutcome } from "../../src/pipeline/stages.js";
+import { auditTraceHasFailure, deriveAuditStageOutcome, deriveRecoveryStageOutcome, deriveVisualClassificationStatus, type VisualClassificationFacts } from "../../src/pipeline/stages.js";
 
 describe("runStage", () => {
   it("returns stage result with timing and data", async () => {
@@ -81,5 +81,52 @@ describe("semantic stage outcomes", () => {
       stoppedReason: "caller_unavailable",
       statusCounts: {}
     })).toEqual({ outcome: "unavailable", detail: "caller_unavailable" });
+  });
+});
+
+describe("visual classification status", () => {
+  const cleanFacts: VisualClassificationFacts = {
+    mode: "full",
+    runStatus: "complete",
+    locatorFailed: false,
+    locatorCoverageStatus: "complete",
+    auditScope: { auditLimited: false, stoppedReason: "none", failedPairs: 0, remainingPairs: 0 },
+    recoverySummary: { stoppedReason: "none", unclassifiedCount: 0, remainingComponents: 0 },
+    unresolvedRegionCount: 0
+  };
+
+  it("returns complete when all final classification facts are clean", () => {
+    expect(deriveVisualClassificationStatus(cleanFacts)).toBe("complete");
+  });
+
+  it("returns not_run for deterministic-only mode", () => {
+    expect(deriveVisualClassificationStatus({ ...cleanFacts, mode: "deterministic_only" })).toBe("not_run");
+  });
+
+  it.each([
+    ["locator failure", { locatorFailed: true }],
+    ["failed locator coverage", { locatorCoverageStatus: "failed" as const }],
+    ["insufficient free quota", { runStatus: "insufficient_free_quota" as const }],
+    ["model unavailable", { runStatus: "model_unavailable" as const }],
+    ["failed run", { runStatus: "failed" as const }],
+    ["interrupted run", { runStatus: "interrupted" as const }],
+    ["incomplete run", { runStatus: "incomplete" as const }],
+    ["audit limit", { auditScope: { auditLimited: true } }],
+    ["audit stopped", { auditScope: { stoppedReason: "route_exhausted" as const } }],
+    ["failed audit pairs", { auditScope: { failedPairs: 1 } }],
+    ["remaining audit pairs", { auditScope: { remainingPairs: 1 } }],
+    ["stopped recovery", { recoverySummary: { stoppedReason: "deadline_exceeded" as const } }],
+    ["unclassified recovery regions", { recoverySummary: { unclassifiedCount: 1 } }],
+    ["remaining recovery regions", { recoverySummary: { remainingComponents: 1 } }],
+    ["unresolved emitted region", { unresolvedRegionCount: 1 }]
+  ] as const)("returns incomplete for %s", (_condition, override) => {
+    expect(deriveVisualClassificationStatus({ ...cleanFacts, ...override })).toBe("incomplete");
+  });
+
+  it("keeps audit exhaustion incomplete when recovery succeeds", () => {
+    expect(deriveVisualClassificationStatus({
+      ...cleanFacts,
+      auditScope: { auditLimited: false, stoppedReason: "route_exhausted", failedPairs: 0, remainingPairs: 0 }
+    })).toBe("incomplete");
   });
 });
