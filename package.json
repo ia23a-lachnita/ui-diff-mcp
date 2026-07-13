@@ -17,7 +17,7 @@
     "test:live": "vitest run tests/live/ --testTimeout 900000",
     "verify": "npm run typecheck && npm test && npm run test:sidecar && npm run build && npm run test:integration",
     "verify:mcp-live": "node scripts/require-live-env.js RUN_UI_DIFF_LIVE && npm run build && vitest run tests/live/mcp-full.live.test.ts --testTimeout 900000",
-    "verify:openrouter-free-live": "node scripts/require-live-env.js RUN_OPENROUTER_FREE_LIVE && npm run build && vitest run tests/live/openrouter.live.test.ts tests/live/mcp-openrouter-free.live.test.ts --testTimeout 300000",
+    "verify:openrouter-free-live": "node scripts/require-live-env.js RUN_OPENROUTER_FREE_LIVE && npm run build && vitest run tests/live/openrouter.live.test.ts tests/live/mcp-openrouter-free.live.test.ts --testTimeout 660000",
     "verify:free-live": "npm run verify:openrouter-free-live",
     "verify:nvidia-live": "node scripts/require-live-env.js RUN_NVIDIA_LIVE && npm run build && vitest run tests/live/nvidia-live.test.ts --testTimeout 300000",
     "verify:opencode-live": "node scripts/require-live-env.js RUN_OPENCODE_LIVE && npm run build && vitest run tests/live/opencode-live.test.ts --testTimeout 300000",

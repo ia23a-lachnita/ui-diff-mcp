@@ -5,57 +5,69 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { hydrateReportParts } from "../../src/report/report-parts.js";
 import { UiDiffReportSchema } from "../../src/schemas/core.js";
 import { writeTwoButtonFixture } from "../../src/testing/fixture-images.js";
-import { startUiDiffMcpClient, type StartedMcpClient } from "../helpers/mcp-client.js";
+import { startUiDiffMcpClient, waitForUiDiffRun, type StartedMcpClient } from "../helpers/mcp-client.js";
 
 const liveEnabled = process.env["RUN_OPENROUTER_FREE_LIVE"] === "1";
 
 let tmpDir = "";
 let started: StartedMcpClient | undefined;
+let passed = false;
 
 beforeEach(async () => {
   tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ui-diff-live-openrouter-"));
+  passed = false;
   if (liveEnabled) {
-    // Live gate may take 2–3 minutes; use a long foreground budget so the pipeline completes
-    // within the foreground window rather than returning an incomplete result at 45 s.
-    started = await startUiDiffMcpClient({ UI_DIFF_FOREGROUND_BUDGET_MS: "240000" });
+    started = await startUiDiffMcpClient();
   }
 });
 
 afterEach(async () => {
-  await started?.close();
-  if (tmpDir) await fs.rm(tmpDir, { recursive: true, force: true });
+  try {
+    await started?.close();
+  } finally {
+    if (tmpDir) {
+      if (passed) await fs.rm(tmpDir, { recursive: true, force: true });
+      else console.warn(`[PRESERVED OPENROUTER LIVE ARTIFACTS] ${tmpDir}`);
+    }
+  }
 });
 
-describe.skipIf(!liveEnabled)("live MCP discover_ui_diffs (OpenRouter-only free mode)", () => {
+describe.skipIf(!liveEnabled)("live MCP start_ui_diff_run (OpenRouter-only free mode)", () => {
   test("runs through stdio with real sidecar and free_openrouter mode", async () => {
     expect(process.env["OPENROUTER_API_KEY"], "OPENROUTER_API_KEY must be set").toBeTruthy();
     expect(process.env["LOCATEANYTHING_SIDECAR_URL"], "LOCATEANYTHING_SIDECAR_URL must be set").toBeTruthy();
 
     const { expected, actual } = await writeTwoButtonFixture(tmpDir, "expected.png", "actual.png");
-    const result = await started!.client.callTool({
-      name: "discover_ui_diffs",
+    const startResult = await started!.client.callTool({
+      name: "start_ui_diff_run",
       arguments: {
         expectedImagePath: expected,
         actualImagePath: actual,
         projectRoot: tmpDir,
         mode: "free_openrouter"
       }
-    }, undefined, { timeout: 240000, maxTotalTimeout: 300000 });
+    }, undefined, { timeout: 600000 });
 
-    expect(result.isError).not.toBe(true);
-    const structured = result.structuredContent as {
-      status: string;
-      diffCount: number;
-      unresolvedRegionCount: number;
-      reportPath: string;
-      runArtifacts: Array<{ role: string; path: string }>;
-    };
-    expect(structured.status).not.toBe("failed");
+    expect(startResult.isError).not.toBe(true);
+    const { runId } = startResult.structuredContent as { runId: string };
+    expect(runId).toBeTruthy();
+    const statusOut = await waitForUiDiffRun(started!, {
+      runId,
+      projectRoot: tmpDir,
+      callTimeoutMs: 600000
+    });
+    expect(statusOut.status).toBe("complete");
+    const reportPath = String(statusOut.reportPath ?? "");
+    expect(reportPath).toBeTruthy();
+
+    const rawReport = UiDiffReportSchema.parse(JSON.parse(await fs.readFile(reportPath, "utf8")));
+    const report = await hydrateReportParts(rawReport, reportPath);
+    expect(report.status).not.toBe("failed");
     expect(
-      structured.diffCount + structured.unresolvedRegionCount,
+      report.diffs.length + report.unresolvedRegions.length,
       "the known fixture change must be finalized or retained as an unresolved region"
     ).toBeGreaterThanOrEqual(1);
-    expect(structured.runArtifacts.map(a => a.role)).toEqual(expect.arrayContaining([
+    expect(report.runArtifacts.map(a => a.role)).toEqual(expect.arrayContaining([
       "expected_normalized",
       "actual_normalized",
       "pixel_diff",
@@ -63,8 +75,6 @@ describe.skipIf(!liveEnabled)("live MCP discover_ui_diffs (OpenRouter-only free 
       "directional_overlay"
     ]));
 
-    const rawReport = UiDiffReportSchema.parse(JSON.parse(await fs.readFile(structured.reportPath, "utf8")));
-    const report = await hydrateReportParts(rawReport, structured.reportPath);
     expect(report.diffs.every(diff => diff.criterion !== "unclassified_visual_change")).toBe(true);
     expect(report.modelSelection?.auditor?.provider).toBe("openrouter");
     expect(report.modelSelection?.reviewer?.provider).toBe("openrouter");
@@ -88,5 +98,6 @@ describe.skipIf(!liveEnabled)("live MCP discover_ui_diffs (OpenRouter-only free 
     for (const forbidden of ["root cause", "change the code", "edit config", "acceptance passed"]) {
       expect(reportText.includes(forbidden)).toBe(false);
     }
-  }, 300000);
+    passed = true;
+  }, 660000);
 });
