@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { hydrateReportParts } from "../../src/report/report-parts.js";
-import { UiDiffReportSchema } from "../../src/schemas/core.js";
+import { RecoveryComponentTraceSchema, UiDiffReportSchema } from "../../src/schemas/core.js";
 import type { InputProvenanceRequest, UiDiffReport } from "../../src/schemas/core.js";
 import { validateClaim, requiredAcceptedArtifactRoles } from "../../src/audit/review-findings.js";
 import {
@@ -121,6 +121,54 @@ function assertFinalFindingIntegrity(report: UiDiffReport): void {
       const sharedTarget = (a.targetIds ?? []).some(id => (b.targetIds ?? []).includes(id));
       expect(sharedTarget && a.criterion === b.criterion && overlapRatio(a.location, b.location) >= 0.7,
         `duplicate final findings ${a.id} and ${b.id} share target, criterion, and location`).toBe(false);
+    }
+  }
+}
+
+async function assertRecoveryTraceSupersessionIntegrity(report: UiDiffReport): Promise<void> {
+  if (report.recoverySummary === undefined) return;
+  const recoveryTraceArtifact = report.runArtifacts.find(a => a.role === "recovery_trace");
+  expect(recoveryTraceArtifact, "recoverySummary requires an attached recovery_trace artifact").toBeDefined();
+  if (recoveryTraceArtifact === undefined) return;
+  expect(path.isAbsolute(recoveryTraceArtifact.path), "recovery_trace path must be absolute").toBe(true);
+  const trace = RecoveryComponentTraceSchema.array().parse(
+    JSON.parse(await fs.readFile(recoveryTraceArtifact.path, "utf8"))
+  );
+  const unsupportedTrace = trace.filter(entry => entry.status === "unsupported_recovery_claim");
+  const unsupportedRegions = report.unresolvedRegions.filter(region => region.reason === "unsupported_recovery_claim");
+  expect(report.recoverySummary.unclassifiedCount, "recovery unclassified total must match final unresolved regions").toBe(report.unresolvedRegions.length);
+  expect(report.recoverySummary.remainingComponents, "recovery remaining total must match final unresolved regions").toBe(report.unresolvedRegions.length);
+  expect(report.recoverySummary.statusCounts["unsupported_recovery_claim"] ?? 0, "recovery trace unsupported total must match statusCounts").toBe(unsupportedTrace.length);
+  expect(unsupportedTrace.filter(entry => entry.supersededByFindingId === undefined).length, "non-superseded unsupported traces must match unsupported unresolved regions").toBe(unsupportedRegions.length);
+
+  for (const entry of unsupportedTrace) {
+    const region = report.unresolvedRegions.find(candidate => candidate.id === entry.componentId);
+    if (entry.supersededByFindingId !== undefined) {
+      const finding = report.diffs.find(candidate => candidate.id === entry.supersededByFindingId);
+      expect(finding, `superseded finding ${entry.supersededByFindingId} must exist in the report`).toBeDefined();
+      if (finding === undefined) continue;
+      expect(finding.reviewerStatus, `superseding finding ${finding.id} must be accepted`).toBe("accepted");
+      expect(finding.criterion, `superseding finding ${finding.id} must keep the recovery criterion`).toBe(entry.criterion);
+      const overlap = Math.max(...(finding.coverageLocations ?? [finding.location]).map(location => overlapRatio(entry.componentBox, location)));
+      expect(overlap, `superseding finding ${finding.id} must overlap the recovery region by at least 0.9`).toBeGreaterThanOrEqual(0.9);
+      expect(entry.supersessionReason).toBe("same_criterion_acceptance_overlap");
+      expect(entry.supersessionOverlapRatio).toBeGreaterThanOrEqual(0.9);
+      continue;
+    }
+
+    expect(region, `unsupported recovery trace ${entry.componentId} must have a same-ID unresolved region`).toBeDefined();
+    if (region === undefined) continue;
+    expect(region.reason).toBe("unsupported_recovery_claim");
+    expect(region.diagnostics, `unresolved region ${region.id} must retain claim diagnostics`).toBeDefined();
+    expect(entry.claimValidationDiagnostics, `recovery trace ${entry.componentId} must retain claim diagnostics`).toBeDefined();
+    const roles = new Set(entry.artifactPaths.map(artifact => artifact.role));
+    for (const role of [
+      "recovery_expected_crop",
+      "recovery_actual_crop",
+      "recovery_directional_overlay",
+      "recovery_pixel_diff_mask"
+    ] as const) {
+      expect(roles.has(role), `unsupported recovery trace ${entry.componentId} must include ${role}`).toBe(true);
     }
   }
 }
@@ -608,6 +656,7 @@ describe.skipIf(!calorixReleaseLive)("Calorix release sign-off gate", () => {
         "release gate must not pass with accepted diffs missing classificationSource"
       ).toBe(0);
       assertFinalFindingIntegrity(report);
+      await assertRecoveryTraceSupersessionIntegrity(report);
 
       // Unclassified recovery leftovers must be zero for production release.
       expect(

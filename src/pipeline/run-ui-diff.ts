@@ -7,7 +7,7 @@ import { loadNormalizedImage } from "../images/normalize.js";
 import { createImagePairTransform } from "../images/coordinates.js";
 import { summarizeGeometryDiagnostics } from "../images/comparison-geometry.js";
 import { computeViewportCompatibility } from "../images/viewport.js";
-import { buildRegionLedger, applyFindingCoverage, applyRecoveryOutcomes, markBroadVlmEvidence, unresolvedRegionsFromLedger, type RegionLedger } from "../report/region-ledger.js";
+import { annotateRecoveryTraceSupersessions, buildRegionLedger, applyFindingCoverage, applyRecoveryOutcomes, markBroadVlmEvidence, unresolvedRegionsFromLedger, type RegionLedger } from "../report/region-ledger.js";
 import { finalizeFindings } from "../report/finding-consolidation.js";
 import { applyResidualFragmentDecisions, classifyResidualFragments } from "../report/residual-fragments.js";
 import { buildFindingGroups, writeRegionContextOverlays } from "../report/context-overlays.js";
@@ -1293,6 +1293,12 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
         : "not_classified" as const;
   const finalDiffs = finalization.diffs;
   const unresolvedRegions = unresolvedRegionsFromLedger(regionLedger, unresolvedReason);
+
+  debugTrace.recovery = annotateRecoveryTraceSupersessions(regionLedger, debugTrace.recovery);
+  if (recoverySummary) {
+    recoverySummary.unclassifiedCount = unresolvedRegions.length;
+    recoverySummary.remainingComponents = unresolvedRegions.length;
+  }
   visualClassificationStatus = deriveVisualClassificationStatus({
     mode,
     runStatus: status,

@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
 import { z } from "zod";
-import type { Box, DiffRecord, UiArtifact, UnassignedVisualEvidence, RecoveryComponentTrace, DeterministicMeasurement } from "../schemas/core.js";
+import type { Box, DiffRecord, UiArtifact, UnassignedVisualEvidence, RecoveryComponentTrace, DeterministicMeasurement, RecoveryRegionOutcome } from "../schemas/core.js";
 import { UiCriterionSchema } from "../schemas/core.js";
 import type { PixelComponent } from "../signals/pixel-diff.js";
 import type { VisionJsonCaller } from "../models/vision-json.js";
@@ -160,15 +160,6 @@ export interface RecoveryCursor {
   nextRegionIndex: number;
   remainingModelCalls: number;
   remainingRegionIds: string[];
-}
-
-export interface RecoveryRegionOutcome {
-  regionId: string;
-  state: "recovered" | "noise" | "unresolved";
-  reason: string;
-  artifactPaths: UiArtifact[];
-  findingId?: string;
-  rejectionReason?: string;
 }
 
 export type RecoveryRegionInput = PixelComponent & { id?: string };
@@ -586,17 +577,20 @@ export async function runTargetRecovery(
       value: m.value as string | number | boolean,
       ...(m.unit !== undefined ? { unit: m.unit } : {})
     }));
+    const candidateTitle = `${vlmResponse.criterion} in recovered region: ${vlmResponse.label}`.slice(0, 200);
+    const candidateEvidence = vlmResponse.evidence.slice(0, 10).map(evidence => evidence.slice(0, 200));
+    const candidateMeasurements = [
+      ...deterministicMeasurements,
+      ...baseMeasurements
+    ].slice(0, 10);
     const record: DiffRecord = {
       id: diffId,
       criterion: vlmResponse.criterion,
       severity: vlmResponse.severity ?? "medium",
-      title: `${vlmResponse.criterion} in recovered region: ${vlmResponse.label}`,
+      title: candidateTitle,
       location: recoveredBox,
-      evidence: vlmResponse.evidence,
-      measurements: [
-        ...deterministicMeasurements,
-        ...baseMeasurements,
-      ],
+      evidence: candidateEvidence,
+      measurements: candidateMeasurements,
       artifactPaths: artifacts,
       reviewerStatus: reviewDecision === "needs_escalation" ? "needs_escalation" : "accepted",
       model: componentRecoveryModel,
@@ -618,14 +612,22 @@ export async function runTargetRecovery(
           recoveryDurationMs,
           reviewerDurationMs,
           criterion: vlmResponse.criterion,
-          rejectionReason: reason
+          rejectionReason: reason,
+          candidateTitle,
+          candidateEvidence,
+          candidateMeasurements,
+          ...(validation.diagnostics !== undefined ? { claimValidationDiagnostics: validation.diagnostics } : {})
         });
         regionOutcomes.push({
           regionId: componentId,
           state: "unresolved",
           reason: `unsupported_recovery_claim: ${reason}`,
           rejectionReason: reason,
-          artifactPaths: artifacts
+          artifactPaths: artifacts,
+          criterion: vlmResponse.criterion,
+          ...(validation.diagnostics !== undefined ? { diagnostics: validation.diagnostics } : {}),
+          candidateTitle,
+          candidateEvidence
         });
         continue;
       }

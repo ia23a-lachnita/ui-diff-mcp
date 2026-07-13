@@ -419,6 +419,27 @@ export const UiArtifactSchema = z.object({
 });
 export type UiArtifact = z.infer<typeof UiArtifactSchema>;
 
+export const ClaimDiagnosticsSchema = z.object({
+  code: z.enum([
+    "unsupported_absence",
+    "unsupported_crop_boundary",
+    "unsupported_quantitative",
+    "invalid_palette"
+  ]),
+  message: z.string().max(200),
+  offendingExcerpt: z.string().max(200).optional(),
+  quantitative: z.object({
+    offendingValue: z.number().finite(),
+    offendingUnit: z.string().max(32),
+    supportedMeasurements: z.array(z.object({
+      name: z.string().min(1),
+      value: z.union([z.number(), z.string(), z.boolean()]),
+      unit: z.string().optional()
+    })).max(10).default([])
+  }).optional()
+}).strict();
+export type ClaimDiagnostics = z.infer<typeof ClaimDiagnosticsSchema>;
+
 export const UnresolvedRegionSchema = z.object({
   id: z.string().min(1),
   location: BoxSchema,
@@ -433,9 +454,11 @@ export const UnresolvedRegionSchema = z.object({
     "recovery_budget_exhausted",
     "evidence_crop_rejected",
     "broad_vlm_evidence",
-    "interrupted"
+    "interrupted",
+    "unsupported_recovery_claim"
   ]),
   detail: z.string().max(200).optional(),
+  diagnostics: ClaimDiagnosticsSchema.optional(),
   artifactPaths: z.array(UiArtifactSchema).default([])
 }).strict();
 export type UnresolvedRegion = z.infer<typeof UnresolvedRegionSchema>;
@@ -756,9 +779,30 @@ export const RecoveryComponentTraceSchema = z.object({
   criterion: UiCriterionSchema.exclude(["unclassified_visual_change"]).optional(),
   errorKind: z.enum(["provider", "schema", "validation", "budget", "unexpected"]).optional(),
   errorMessage: z.string().max(500).optional(),
-  artifactPaths: z.array(UiArtifactSchema).default([])
+  artifactPaths: z.array(UiArtifactSchema).default([]),
+  candidateTitle: z.string().max(200).optional(),
+  candidateEvidence: z.array(z.string().max(200)).max(10).optional(),
+  candidateMeasurements: z.array(DeterministicMeasurementSchema).max(10).optional(),
+  claimValidationDiagnostics: ClaimDiagnosticsSchema.optional(),
+  supersededByFindingId: z.string().optional(),
+  supersessionReason: z.enum(["same_criterion_acceptance_overlap"]).optional(),
+  supersessionOverlapRatio: z.number().min(0).max(1).optional()
 });
 export type RecoveryComponentTrace = z.infer<typeof RecoveryComponentTraceSchema>;
+
+export const RecoveryRegionOutcomeSchema = z.object({
+  regionId: z.string().min(1),
+  state: z.enum(["recovered", "noise", "unresolved"]),
+  reason: z.string().min(1),
+  artifactPaths: z.array(UiArtifactSchema).default([]),
+  findingId: z.string().optional(),
+  rejectionReason: z.string().optional(),
+  criterion: UiCriterionSchema.exclude(["unclassified_visual_change"]).optional(),
+  diagnostics: ClaimDiagnosticsSchema.optional(),
+  candidateTitle: z.string().max(200).optional(),
+  candidateEvidence: z.array(z.string().max(200)).max(10).optional()
+}).strict();
+export type RecoveryRegionOutcome = z.infer<typeof RecoveryRegionOutcomeSchema>;
 
 export const RunDebugSummarySchema = z.object({
   auditPairs: z.number().int().min(0),

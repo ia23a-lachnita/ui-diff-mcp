@@ -9,6 +9,7 @@ import { createImagePairTransform } from "../../src/images/coordinates.js";
 import type { PixelComponent } from "../../src/signals/pixel-diff.js";
 import type { VisionJsonCaller } from "../../src/models/vision-json.js";
 import { writeSolidPng } from "../../src/testing/fixture-images.js";
+import { RecoveryComponentTraceSchema, RecoveryRegionOutcomeSchema } from "../../src/schemas/core.js";
 
 let tmpDir: string;
 let overlayPath: string;
@@ -242,6 +243,37 @@ describe("runTargetRecovery", () => {
       reason: expect.stringMatching(/unsupported_recovery_claim/),
       artifactPaths: expect.arrayContaining([expect.objectContaining({ role: "recovery_pixel_diff_mask" })])
     });
+  });
+
+  it("bounds long candidate evidence before schema-parsing the actual trace and outcome", async () => {
+    const result = await runTargetRecovery([component], makeCtx({
+      recoveryCaller: vi.fn().mockResolvedValue({
+        parsed: {
+          classified: true,
+          criterion: "presence",
+          severity: "high",
+          label: "Recovered target",
+          evidence: ["The actual screenshot is entirely blank. " + "evidence ".repeat(40)]
+        },
+        rawContent: "",
+        model: "recovery-model",
+        provider: "openrouter"
+      }),
+      reviewerCaller: vi.fn().mockResolvedValue({
+        parsed: { decision: "accepted", reason: "confirmed" },
+        rawContent: "",
+        model: "review-model",
+        provider: "openrouter"
+      })
+    }), unlimitedBudget);
+
+    const trace = RecoveryComponentTraceSchema.array().parse(result.trace);
+    const outcomes = RecoveryRegionOutcomeSchema.array().parse(result.regionOutcomes);
+    expect(trace[0]?.status).toBe("unsupported_recovery_claim");
+    expect(trace[0]?.candidateTitle?.length).toBeLessThanOrEqual(200);
+    expect(trace[0]?.candidateEvidence?.every(evidence => evidence.length <= 200)).toBe(true);
+    expect(outcomes[0]?.candidateTitle?.length).toBeLessThanOrEqual(200);
+    expect(outcomes[0]?.candidateEvidence?.every(evidence => evidence.length <= 200)).toBe(true);
   });
 
   it("does not require a crop-only VLM to invent screen coordinates", async () => {
