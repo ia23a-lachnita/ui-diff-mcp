@@ -730,6 +730,7 @@ export const RecoveryDecisionStatusSchema = z.enum([
   "recovery_accepted",
   "recovery_needs_escalation",
   "recovery_rejected",
+  "unsupported_recovery_claim",
   "recovery_error",
   "recovery_schema_error",
   "missing_required_fields",

@@ -13,14 +13,24 @@ const CLASSIFIABLE_CRITERIA = [
   "chart_special_geometry"
 ] as const;
 
-export function buildRecoveryPrompt(pixelCount: number, componentArea: number): string {
+export function buildRecoveryPrompt(pixelCount: number, componentArea: number, measurements: DeterministicMeasurement[] = []): string {
   const criteriaList = CLASSIFIABLE_CRITERIA.join(" | ");
+  const deterministicMeasurements = measurements.length > 0 ? measurements : [
+    { name: "changed_pixel_count", value: pixelCount, unit: "pixels" },
+    { name: "region_area_pixels", value: componentArea, unit: "px²" },
+    { name: "changed_pixel_percent", value: componentArea > 0 ? Math.round((pixelCount / componentArea) * 10000) / 100 : 0, unit: "%" },
+    { name: "coordinateSource", value: "deterministic_pixel_component" }
+  ];
+  const measurementLines = deterministicMeasurements.map(m => `  - ${m.name}: ${m.value}${m.unit ? " " + m.unit : ""}`).join("\n");
   return [
     `You are a UI diff recovery specialist. A visual difference region was detected by pixel analysis but was not matched to any located UI element.`,
     ``,
     `REGION STATS:`,
     `  - Changed pixels: ${pixelCount}`,
     `  - Component area: ${componentArea}px²`,
+    ``,
+    `DETERMINISTIC MEASUREMENTS:`,
+    measurementLines,
     ``,
     `EVIDENCE IMAGES (in order):`,
     `  1. EXPECTED crop — expected image cropped to the changed region`,

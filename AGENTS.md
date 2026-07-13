@@ -29,20 +29,30 @@ Before implementation work, read in order:
 
 ### Delegation Policy
 
-Only GPT-5.6 Luna or GPT-5.6 Terra subagents may directly edit repository files or perform token-heavy, low-reasoning work. Other subagents and external reviewers are read-only advisory. The main agent retains requirements interpretation, architecture and tradeoffs, synthesis, verification judgment, production-readiness decisions, and final reporting. Subagents never commit or push; the main agent reviews, verifies, commits, and pushes.
+All repository file edits and token-heavy implementation work are performed by OpenCode headless mode using model `opencode/mimo-v2.5-free`. The main host retains requirements interpretation, architecture and tradeoffs, synthesis, verification judgment, production-readiness decisions, final reporting, commits, and pushes.
+
+Canonical invocation:
+
+```
+opencode run --model opencode/mimo-v2.5-free --auto --dir <repo> "<prompt>"
+```
+
+Workers never commit or push; the main agent reviews, verifies, commits, and pushes.
+
+Codex host instances and Codex child agents remain allowed for read-only research, investigation, review, planning, and sub-orchestration. If OpenCode explicitly reports quota exhaustion or is unavailable, record the exact failure (category, message, timestamp); only then may Codex be used as the editing fallback. The main agent's native tools remain preferred except for the explicit OpenCode headless editing route described above.
 
 Use the host agent's native tools; do not shell out to another CLI to do what a native tool already does.
 
-| Capability | Claude Code | Codex CLI |
+| Capability | OpenCode headless | Codex CLI (read-only) |
 |---|---|---|
-| Read/edit files | `Read`, `Edit`, `Write` | `apply_patch`, shell reads |
-| Search | `Grep`, `Glob`, semantic `mcp__claude-context__search_code` | `shell_command` (rg), MCP search tools |
+| Read/edit files | `opencode run` with model `opencode/mimo-v2.5-free` | shell reads only; no repository edits |
+| Search | `Grep`, `Glob`, semantic search | `shell_command` (rg), MCP search tools |
 | Shell | `Bash` (Git Bash) and `PowerShell` | `shell_command` (PowerShell on this machine) |
-| Subagents / parallel work | `Agent` tool, background tasks | `.codex/agents` child agents |
 | Plans/tracking | TaskCreate/TaskUpdate + status file | `update_plan` + status file |
 | External review | `mcp__antigravity-mcp__ask-ai` | `mcp__antigravity_mcp__ask_ai` |
 
 Notes:
+- This is an explicit exception to the do-not-shell-out note for the OpenCode headless editing route.
 - The Antigravity review tool is the same MCP server; only the tool-name separator differs per host. Both forms in this contract refer to that one tool.
 - Long verification commands (`npm run verify`, live gates) should run in the background where the host supports it, with results collected before reporting.
 - Google MCP connectors (`gcloud`, `firebase`) are intentionally disabled by default on this machine. Do not re-enable them silently; if a task genuinely needs them, say so and let the user enable them for that session.

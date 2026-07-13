@@ -133,6 +133,24 @@ describe("prompt builders", () => {
     expect(prompt).toContain("The deterministic region already provides the screen location");
   });
 
+  it("passes deterministic recovery measurements to recovery prompts", () => {
+    const measurements = [
+      { name: "changed_pixel_count", value: 500, unit: "pixels" },
+      { name: "region_area_pixels", value: 4800, unit: "px²" },
+      { name: "changed_pixel_percent", value: 10.42, unit: "%" },
+      { name: "coordinateSource", value: "deterministic_pixel_component" }
+    ];
+    const recoveryPrompt = buildRecoveryPrompt(500, 4800, measurements);
+    const reviewerPrompt = buildReviewerPrompt("geometry", "Button", "Button shifted", ["visible shift"], measurements);
+    for (const prompt of [recoveryPrompt, reviewerPrompt]) {
+      expect(prompt).toContain("DETERMINISTIC MEASUREMENTS:");
+      expect(prompt).toContain("changed_pixel_count: 500 pixels");
+      expect(prompt).toContain("region_area_pixels: 4800 px²");
+      expect(prompt).toContain("changed_pixel_percent: 10.42 %");
+      expect(prompt).toContain("coordinateSource: deterministic_pixel_component");
+    }
+  });
+
   it("auditor prompt does not contain code-edit advice", () => {
     const prompt = buildAuditorPrompt({
       criterion: "geometry",

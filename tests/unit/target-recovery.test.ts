@@ -166,7 +166,7 @@ describe("runTargetRecovery", () => {
         criterion: "geometry",
         severity: "medium",
         label: "Submit button",
-        evidence: ["element shifted 15px"]
+        evidence: ["element visibly shifted"]
       },
       rawContent: "",
       model: "test-model",
@@ -187,8 +187,61 @@ describe("runTargetRecovery", () => {
     expect(recovered[0]).toMatchObject({ reviewerReason: "shift confirmed" });
     expect(recovered[0]?.model).toBe("test-model");
     expect(unclassifiedCount).toBe(0);
+    expect(recovered[0]?.measurements).toEqual(expect.arrayContaining([
+      { name: "changed_pixel_count", value: 500, unit: "pixels" },
+      { name: "region_area_pixels", value: 4800, unit: "px²" },
+      { name: "changed_pixel_percent", value: 10.42, unit: "%" },
+      { name: "coordinateSource", value: "deterministic_pixel_component" }
+    ]));
     // location snapped to pixel-component's deterministic bounds
     expect(recovered[0]?.location).toEqual(component.box);
+  });
+
+  it("passes identical deterministic measurements to recovery and reviewer prompts", async () => {
+    const recoveryCaller: VisionJsonCaller = vi.fn().mockResolvedValue({
+      parsed: { classified: true, criterion: "geometry", severity: "medium", label: "Button", evidence: ["shifted"] },
+      rawContent: "", model: "recovery-model", provider: "openrouter"
+    });
+    const reviewerCaller: VisionJsonCaller = vi.fn().mockResolvedValue({
+      parsed: { decision: "accepted", reason: "confirmed" },
+      rawContent: "", model: "review-model", provider: "openrouter"
+    });
+    await runTargetRecovery([component], makeCtx({ recoveryCaller, reviewerCaller }), unlimitedBudget);
+    const recoveryPrompt = vi.mocked(recoveryCaller).mock.calls[0]?.[0].prompt ?? "";
+    const reviewerPrompt = vi.mocked(reviewerCaller).mock.calls[0]?.[0].prompt ?? "";
+    for (const prompt of [recoveryPrompt, reviewerPrompt]) {
+      expect(prompt).toContain("changed_pixel_count: 500 pixels");
+      expect(prompt).toContain("region_area_pixels: 4800 px²");
+      expect(prompt).toContain("changed_pixel_percent: 10.42 %");
+      expect(prompt).toContain("coordinateSource: deterministic_pixel_component");
+    }
+  });
+
+  it("rejects reviewer-accepted unsupported claims as unresolved recovery evidence", async () => {
+    const result = await runTargetRecovery([component], makeCtx({
+      recoveryCaller: vi.fn().mockResolvedValue({
+        parsed: { classified: true, criterion: "presence", severity: "high", label: "Button", evidence: ["The actual screenshot is entirely blank."] },
+        rawContent: "", model: "recovery-model", provider: "openrouter"
+      }),
+      reviewerCaller: vi.fn().mockResolvedValue({
+        parsed: { decision: "accepted", reason: "confirmed" },
+        rawContent: "", model: "review-model", provider: "openrouter"
+      })
+    }), unlimitedBudget);
+
+    expect(result.recovered).toHaveLength(0);
+    expect(result.unclassifiedCount).toBe(1);
+    expect(result.statusCounts["unsupported_recovery_claim"]).toBe(1);
+    expect(result.trace[0]).toMatchObject({
+      status: "unsupported_recovery_claim",
+      rejectionReason: expect.stringMatching(/absence/i),
+      artifactPaths: expect.arrayContaining([expect.objectContaining({ role: "recovery_expected_crop" })])
+    });
+    expect(result.regionOutcomes[0]).toMatchObject({
+      state: "unresolved",
+      reason: expect.stringMatching(/unsupported_recovery_claim/),
+      artifactPaths: expect.arrayContaining([expect.objectContaining({ role: "recovery_pixel_diff_mask" })])
+    });
   });
 
   it("does not require a crop-only VLM to invent screen coordinates", async () => {
@@ -272,7 +325,7 @@ describe("runTargetRecovery", () => {
         label: "Unrelated element",
         coordinateFrame: "expected",
         box: { x: 140, y: 140, width: 50, height: 50 }, // far from component at (10,10)
-        evidence: ["element missing"]
+        evidence: ["element is missing within the supplied crop"]
       },
       rawContent: "",
       model: "test-model",
@@ -380,7 +433,7 @@ describe("runTargetRecovery", () => {
   it("traces recovery_accepted for accepted diff", async () => {
     const result = await runTargetRecovery([component], makeCtx({
       recoveryCaller: vi.fn().mockResolvedValue({
-        parsed: { classified: true, criterion: "geometry", severity: "medium", label: "Button", coordinateFrame: "expected", box: component.box, evidence: ["element shifted 15px"] },
+        parsed: { classified: true, criterion: "geometry", severity: "medium", label: "Button", coordinateFrame: "expected", box: component.box, evidence: ["element visibly shifted"] },
         rawContent: "", model: "recovery-model", provider: "nvidia"
       }),
       reviewerCaller: vi.fn().mockResolvedValue({

@@ -3,11 +3,12 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
 import { z } from "zod";
-import type { Box, DiffRecord, UiArtifact, UnassignedVisualEvidence, RecoveryComponentTrace } from "../schemas/core.js";
+import type { Box, DiffRecord, UiArtifact, UnassignedVisualEvidence, RecoveryComponentTrace, DeterministicMeasurement } from "../schemas/core.js";
 import { UiCriterionSchema } from "../schemas/core.js";
 import type { PixelComponent } from "../signals/pixel-diff.js";
 import type { VisionJsonCaller } from "../models/vision-json.js";
 import { buildRecoveryPrompt, buildReviewerPrompt } from "../audit/prompts.js";
+import { validateClaim } from "../audit/review-findings.js";
 import { type ImagePairTransform, projectExpectedBoxToActualSource } from "../images/coordinates.js";
 import { extractImageCropFromBounds } from "../images/crop.js";
 import { resolveComparisonExtraction, type ComparisonExtractionBounds } from "../images/comparison-geometry.js";
@@ -412,7 +413,7 @@ export async function runTargetRecovery(
       id: evidenceId,
       componentBox: box,
       pixelCount: component.pixelCount,
-      componentArea: box.width * box.height,
+      componentArea: Math.round(box.width * box.height),
       expectedCropArtifact: artifacts[0]!,
       actualCropArtifact: artifacts[1]!,
       directionalOverlayArtifact: artifacts[2]!,
@@ -442,7 +443,14 @@ export async function runTargetRecovery(
       `data:image/png;base64,${maskB64}`
     ];
 
-    const recoveryPrompt = buildRecoveryPrompt(component.pixelCount, Math.round(box.width * box.height));
+    const regionAreaPixels = Math.round(box.width * box.height);
+    const deterministicMeasurements: DeterministicMeasurement[] = [
+      { name: "changed_pixel_count", value: component.pixelCount, unit: "pixels" },
+      { name: "region_area_pixels", value: regionAreaPixels, unit: "px²" },
+      { name: "changed_pixel_percent", value: regionAreaPixels > 0 ? Math.round((component.pixelCount / regionAreaPixels) * 10000) / 100 : 0, unit: "%" },
+      { name: "coordinateSource", value: "deterministic_pixel_component" }
+    ];
+    const recoveryPrompt = buildRecoveryPrompt(component.pixelCount, regionAreaPixels, deterministicMeasurements);
 
     let vlmResponse: z.infer<typeof RecoveryVlmResponseSchema>;
     let componentRecoveryModel = "unknown";
@@ -508,7 +516,8 @@ export async function runTargetRecovery(
       vlmResponse.criterion,
       vlmResponse.label,
       `${vlmResponse.criterion} detected in unassigned region`,
-      vlmResponse.evidence
+      vlmResponse.evidence,
+      deterministicMeasurements
     );
 
     let reviewDecision: "accepted" | "rejected" | "needs_escalation" = "accepted";
@@ -585,8 +594,8 @@ export async function runTargetRecovery(
       location: recoveredBox,
       evidence: vlmResponse.evidence,
       measurements: [
+        ...deterministicMeasurements,
         ...baseMeasurements,
-        { name: "coordinateSource", value: "deterministic_pixel_component" }
       ],
       artifactPaths: artifacts,
       reviewerStatus: reviewDecision === "needs_escalation" ? "needs_escalation" : "accepted",
@@ -594,6 +603,33 @@ export async function runTargetRecovery(
       classificationSource: "target_recovery",
       ...(reviewReason !== undefined ? { reviewerReason: reviewReason } : {})
     };
+
+    if (reviewDecision === "accepted") {
+      const validation = validateClaim(record);
+      if (!validation.valid) {
+        const reason = validation.reason ?? "Unsupported claim";
+        countStatus("unsupported_recovery_claim");
+        unclassifiedCount++;
+        trace.push({
+          ...baseTrace,
+          status: "unsupported_recovery_claim",
+          model: componentRecoveryModel,
+          reviewerModel,
+          recoveryDurationMs,
+          reviewerDurationMs,
+          criterion: vlmResponse.criterion,
+          rejectionReason: reason
+        });
+        regionOutcomes.push({
+          regionId: componentId,
+          state: "unresolved",
+          reason: `unsupported_recovery_claim: ${reason}`,
+          rejectionReason: reason,
+          artifactPaths: artifacts
+        });
+        continue;
+      }
+    }
 
     recovered.push(record);
     const finalStatus = reviewDecision === "needs_escalation" ? "recovery_needs_escalation" as const : "recovery_accepted" as const;

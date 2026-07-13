@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { hydrateReportParts } from "../../src/report/report-parts.js";
 import { UiDiffReportSchema } from "../../src/schemas/core.js";
 import type { InputProvenanceRequest, UiDiffReport } from "../../src/schemas/core.js";
+import { validateClaim, requiredAcceptedArtifactRoles } from "../../src/audit/review-findings.js";
 import {
   createCalorixInputProvenance,
   resolveCalorixActualImage
@@ -71,6 +72,44 @@ function assertFinalFindingIntegrity(report: UiDiffReport): void {
   for (const diff of grouped) {
     const roles = new Set(diff.artifactPaths.map(artifact => artifact.role));
     for (const role of groupRoles) expect(roles.has(role), `grouped diff ${diff.id} must have ${role}`).toBe(true);
+  }
+  const elementTextById = new Map(
+    [...report.elements.expected, ...report.elements.actual]
+      .filter(element => element.text !== undefined)
+      .map(element => [element.id, element.text!] as const)
+  );
+  for (const diff of report.diffs.filter(item => item.reviewerStatus === "accepted")) {
+    const roles = new Set(diff.artifactPaths.map(artifact => artifact.role));
+    const requiredRoles = requiredAcceptedArtifactRoles(diff);
+    for (const role of requiredRoles) {
+      expect(roles.has(role), `accepted ${diff.classificationSource} diff ${diff.id} must have ${role}`).toBe(true);
+    }
+    const visibleTexts = (diff.targetIds ?? [])
+      .map(targetId => elementTextById.get(targetId))
+      .filter((value): value is string => value !== undefined);
+    const validation = validateClaim(diff, visibleTexts);
+    expect(validation.valid, `accepted diff ${diff.id} failed shared claim validation: ${validation.reason ?? "unknown reason"}`).toBe(true);
+    for (const measurement of diff.measurements.filter(item => /^color_dominant_.+_palette$/i.test(item.name))) {
+      expect(typeof measurement.value, `${measurement.name} must be JSON text`).toBe("string");
+      let palette: unknown;
+      try {
+        palette = JSON.parse(measurement.value as string);
+      } catch {
+        palette = undefined;
+      }
+      expect(Array.isArray(palette), `${measurement.name} must parse to an array`).toBe(true);
+      for (const entry of (Array.isArray(palette) ? palette : [])) {
+        expect(entry && typeof entry === "object", `${measurement.name} entries must be objects`).toBe(true);
+        const rgb = entry as { r?: unknown; g?: unknown; b?: unknown; count?: unknown };
+        for (const channel of ["r", "g", "b"] as const) {
+          expect(typeof rgb[channel], `${measurement.name}.${channel} must be numeric`).toBe("number");
+          expect(Number.isInteger(rgb[channel]) && (rgb[channel] as number) >= 0 && (rgb[channel] as number) <= 255,
+            `${measurement.name}.${channel} must be an integer RGB channel in 0..255`).toBe(true);
+        }
+        expect(typeof rgb.count, `${measurement.name}.count must be numeric`).toBe("number");
+        expect(Number.isInteger(rgb.count) && (rgb.count as number) >= 0, `${measurement.name}.count must be a non-negative integer`).toBe(true);
+      }
+    }
   }
   expect(report.recoverySummary?.statusCounts["skipped_component_cap"] ?? 0, "component batch size must never become a terminal skip").toBe(0);
   const childIds = report.diffs.flatMap(diff => diff.childFindingIds ?? []);
