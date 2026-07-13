@@ -5,6 +5,14 @@ import { clusterUncoveredComponentsWithMembers } from "./component-clustering.js
 import { traceCoverageDecisions } from "./coverage.js";
 import type { RecoveryRegionOutcome } from "../recovery/target-recovery.js";
 
+const MAX_UNRESOLVED_DETAIL_LENGTH = 200;
+const TRUNCATED_UNRESOLVED_DETAIL_SUFFIX = "... [truncated]";
+
+function emittedUnresolvedDetail(detail: string): string {
+  if (detail.length <= MAX_UNRESOLVED_DETAIL_LENGTH) return detail;
+  return `${detail.slice(0, MAX_UNRESOLVED_DETAIL_LENGTH - TRUNCATED_UNRESOLVED_DETAIL_SUFFIX.length)}${TRUNCATED_UNRESOLVED_DETAIL_SUFFIX}`;
+}
+
 export interface CanonicalRegion {
   id: string;
   box: Box;
@@ -124,19 +132,23 @@ export function unresolvedRegionsFromLedger(
 ): UnresolvedRegion[] {
   return ledger.regions
     .filter(region => region.state === "unresolved")
-    .map(region => ({
-      id: region.id,
-      location: region.box,
-      pixelCount: region.pixelCount,
-      sourceComponentIds: region.sourceComponentIds,
-      relatedFindingIds: region.coveringFindingIds,
-      relation: region.coveringFindingIds.length > 0 ? "nearby_larger_finding" : "none",
-      reason: region.unresolvedDetail?.startsWith("evidence_crop_rejected:")
-        ? "evidence_crop_rejected"
-        : region.unresolvedDetail?.startsWith("broad_vlm_evidence:")
-          ? "broad_vlm_evidence"
-          : reason,
-      ...(region.unresolvedDetail ? { detail: region.unresolvedDetail } : {}),
-      artifactPaths: region.artifactPaths
-    }));
+    .map(region => {
+      const fullDetail = region.unresolvedDetail;
+      const detail = fullDetail ? emittedUnresolvedDetail(fullDetail) : undefined;
+      return {
+        id: region.id,
+        location: region.box,
+        pixelCount: region.pixelCount,
+        sourceComponentIds: region.sourceComponentIds,
+        relatedFindingIds: region.coveringFindingIds,
+        relation: region.coveringFindingIds.length > 0 ? "nearby_larger_finding" : "none",
+        reason: fullDetail?.startsWith("evidence_crop_rejected:")
+          ? "evidence_crop_rejected"
+          : fullDetail?.startsWith("broad_vlm_evidence:")
+            ? "broad_vlm_evidence"
+            : reason,
+        ...(detail ? { detail } : {}),
+        artifactPaths: region.artifactPaths
+      };
+    });
 }

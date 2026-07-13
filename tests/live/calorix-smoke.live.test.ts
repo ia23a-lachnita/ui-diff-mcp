@@ -9,13 +9,19 @@ import {
   resolveCalorixActualImage
 } from "../helpers/calorix-device.js";
 import { prepareCalorixLiveGate, type PreparedCalorixLiveGate } from "../helpers/calorix-live-gate.js";
-import { startUiDiffMcpClient } from "../helpers/mcp-client.js";
+import { startUiDiffMcpClient, waitForUiDiffRun } from "../helpers/mcp-client.js";
 
 const calorixLive = process.env["RUN_CALORIX_UI_DIFF_LIVE"] === "1";
 const calorixFullLive = process.env["RUN_CALORIX_FULL_LIVE"] === "1";
 const calorixReleaseLive = process.env["RUN_CALORIX_RELEASE_LIVE"] === "1";
 const calorixDeterministicLive = process.env["RUN_CALORIX_DETERMINISTIC_LIVE"] === "1";
 const calorixLiveSuiteStartedAt = Date.now();
+
+type UiDiffRunStatusOutput = {
+  status: string;
+  reportPath?: string;
+  error?: string;
+};
 
 async function readHydratedReport(reportPath: string): Promise<UiDiffReport> {
   const rawReport = UiDiffReportSchema.parse(JSON.parse(await fs.readFile(reportPath, "utf8")));
@@ -186,22 +192,20 @@ describe.skipIf(!calorixLive)("Calorix live UI diff smoke", () => {
       const { runId } = startResult.structuredContent as { runId: string };
       expect(runId).toBeTruthy();
 
-      // Poll for up to 20 minutes
-      let statusOut: { status: string; reportPath?: string } | undefined;
-      for (let i = 0; i < 120; i++) {
-        await new Promise(r => setTimeout(r, 10000));
-        const statusResult = await started.client.callTool({ name: "get_ui_diff_run_status", arguments: { projectRoot, runId } }, undefined, { timeout: 600000 });
-        statusOut = statusResult.structuredContent as { status: string; reportPath?: string };
-        if (statusOut.status !== "running") break;
-      }
-      expect(statusOut?.status, "run must terminate — not hang").not.toBe("running");
-      expect(statusOut?.status, `run must complete, got: ${statusOut?.status}; child=${JSON.stringify(started.getDiagnostics())}`).toBe("complete");
-      expect(statusOut?.reportPath).toBeTruthy();
+      const statusOut = await waitForUiDiffRun(started, {
+        projectRoot,
+        runId,
+        maxWaitMs: 20 * 60_000,
+        intervalMs: 10_000,
+        callTimeoutMs: 600_000
+      }) as UiDiffRunStatusOutput;
+      expect(statusOut.status, `run must complete, got: ${statusOut.status}; error=${statusOut.error ?? "none"}; child=${JSON.stringify(started.getDiagnostics())}`).toBe("complete");
+      expect(statusOut.reportPath).toBeTruthy();
 
-      const report = await readHydratedReport(statusOut!.reportPath!);
+      const report = await readHydratedReport(statusOut.reportPath!);
       expect(report.inputProvenance?.acquisition).toEqual(inputProvenance.acquisition);
       started.recordRunStatus(report.status);
-      expect(path.resolve(statusOut!.reportPath!).includes(`${path.sep}.ui-diff${path.sep}runs${path.sep}`)).toBe(true);
+      expect(path.resolve(statusOut.reportPath!).includes(`${path.sep}.ui-diff${path.sep}runs${path.sep}`)).toBe(true);
 
       // Locator must have found elements with adequate coverage — weak or failed is a gate failure
       expect(report.locatorCoverageStatus, "locator coverage must not be weak or failed").not.toMatch(/^(failed|weak)$/);
@@ -306,19 +310,17 @@ describe.skipIf(!calorixFullLive)("verify:calorix-full-live unbounded all-target
       const { runId } = startResult.structuredContent as { runId: string };
       expect(runId).toBeTruthy();
 
-      // Poll for up to 40 minutes
-      let statusOut: { status: string; reportPath?: string } | undefined;
-      for (let i = 0; i < 240; i++) {
-        await new Promise(r => setTimeout(r, 10000));
-        const statusResult = await started.client.callTool({ name: "get_ui_diff_run_status", arguments: { projectRoot, runId } }, undefined, { timeout: 600000 });
-        statusOut = statusResult.structuredContent as { status: string; reportPath?: string };
-        if (statusOut.status !== "running") break;
-      }
-      expect(statusOut?.status, "run must terminate — not hang").not.toBe("running");
-      expect(statusOut?.status, `run must complete, got: ${statusOut?.status}; child=${JSON.stringify(started.getDiagnostics())}`).toBe("complete");
-      expect(statusOut?.reportPath).toBeTruthy();
+      const statusOut = await waitForUiDiffRun(started, {
+        projectRoot,
+        runId,
+        maxWaitMs: 40 * 60_000,
+        intervalMs: 10_000,
+        callTimeoutMs: 600_000
+      }) as UiDiffRunStatusOutput;
+      expect(statusOut.status, `run must complete, got: ${statusOut.status}; error=${statusOut.error ?? "none"}; child=${JSON.stringify(started.getDiagnostics())}`).toBe("complete");
+      expect(statusOut.reportPath).toBeTruthy();
 
-      const report = await readHydratedReport(statusOut!.reportPath!);
+      const report = await readHydratedReport(statusOut.reportPath!);
       expect(report.inputProvenance?.acquisition).toEqual(inputProvenance.acquisition);
       started.recordRunStatus(report.status);
       expect(report.auditScope?.auditLimited ?? false).toBe(false);
@@ -509,17 +511,16 @@ describe.skipIf(!calorixReleaseLive)("Calorix release sign-off gate", () => {
       expect(startResult.isError).not.toBe(true);
       const { runId } = startResult.structuredContent as { runId: string };
 
-      let statusOut: { status: string; reportPath?: string } | undefined;
-      for (let i = 0; i < 228; i++) {
-        await new Promise(r => setTimeout(r, 10000));
-        const statusResult = await started.client.callTool({ name: "get_ui_diff_run_status", arguments: { projectRoot, runId } }, undefined, { timeout: 600000 });
-        statusOut = statusResult.structuredContent as { status: string; reportPath?: string };
-        if (statusOut.status !== "running") break;
-      }
-      expect(statusOut?.status, "run must terminate — not hang").not.toBe("running");
-      expect(statusOut?.status, `release gate requires complete status, got: ${statusOut?.status}; child=${JSON.stringify(started.getDiagnostics())}`).toBe("complete");
+      const statusOut = await waitForUiDiffRun(started, {
+        projectRoot,
+        runId,
+        maxWaitMs: 38 * 60_000,
+        intervalMs: 10_000,
+        callTimeoutMs: 600_000
+      }) as UiDiffRunStatusOutput;
+      expect(statusOut.status, `release gate requires complete status, got: ${statusOut.status}; error=${statusOut.error ?? "none"}; child=${JSON.stringify(started.getDiagnostics())}`).toBe("complete");
 
-      const report = await readHydratedReport(statusOut!.reportPath!);
+      const report = await readHydratedReport(statusOut.reportPath!);
       expect(report.inputProvenance?.acquisition).toEqual(inputProvenance.acquisition);
       started.recordRunStatus(report.status);
 

@@ -3,6 +3,7 @@ import { findUncoveredComponents, assignDiffComponentsToRecords, traceCoverageDe
 import { clusterUncoveredComponents } from "../../src/report/component-clustering.js";
 import { buildRegionLedger, unresolvedRegionsFromLedger } from "../../src/report/region-ledger.js";
 import { applyResidualFragmentDecisions, classifyResidualFragments } from "../../src/report/residual-fragments.js";
+import { UnresolvedRegionsPartSchema } from "../../src/report/report-parts.js";
 import type { PixelComponent } from "../../src/signals/pixel-diff.js";
 import type { DiffRecord } from "../../src/schemas/core.js";
 
@@ -210,6 +211,63 @@ describe("buildRegionLedger", () => {
     expect(ledger.regions).toHaveLength(2);
     expect(ledger.regions.map(region => region.sourceComponentIds.length)).toEqual([2, 2]);
     expect(unresolvedRegionsFromLedger(ledger, "not_classified")).toHaveLength(2);
+  });
+});
+
+describe("unresolvedRegionsFromLedger", () => {
+  it("caps emitted long details without changing their classification", () => {
+    const ledger = buildRegionLedger([
+      makeComponent(0, 0, 10, 10, 100),
+      makeComponent(100, 0, 10, 10, 100)
+    ], [], {
+      minPixelCount: 1,
+      maxGapPx: 5,
+      maxClusterAreaRatio: 0.5,
+      imageWidth: 200,
+      imageHeight: 200
+    });
+    const broadDetail = `broad_vlm_evidence: ${"finding,".repeat(40)}`;
+    const recoveryDetail = `recovery evidence: ${"reviewed-region,".repeat(30)}`;
+    ledger.regions[0]!.unresolvedDetail = broadDetail;
+    ledger.regions[0]!.coveringFindingIds = ["finding-a", "finding-b"];
+    ledger.regions[1]!.unresolvedDetail = recoveryDetail;
+
+    const unresolved = unresolvedRegionsFromLedger(ledger, "recovery_route_exhausted");
+
+    expect(unresolved[0]).toMatchObject({
+      reason: "broad_vlm_evidence",
+      relatedFindingIds: ["finding-a", "finding-b"]
+    });
+    expect(unresolved[1]).toMatchObject({ reason: "recovery_route_exhausted" });
+    expect(unresolved[0]?.detail).toHaveLength(200);
+    expect(unresolved[1]?.detail).toHaveLength(200);
+    expect(unresolved[0]?.detail).toBe(`${broadDetail.slice(0, 185)}... [truncated]`);
+    expect(unresolved[1]?.detail).toBe(`${recoveryDetail.slice(0, 185)}... [truncated]`);
+    expect(() => UnresolvedRegionsPartSchema.parse({ unresolvedRegions: unresolved })).not.toThrow();
+  });
+
+  it("leaves unresolved detail at or below the report limit unchanged", () => {
+    const ledger = buildRegionLedger([
+      makeComponent(0, 0, 10, 10, 100),
+      makeComponent(100, 0, 10, 10, 100)
+    ], [], {
+      minPixelCount: 1,
+      maxGapPx: 5,
+      maxClusterAreaRatio: 0.5,
+      imageWidth: 200,
+      imageHeight: 200
+    });
+    const underLimitDetail = "broad_vlm_evidence: accepted evidence";
+    const atLimitDetail = "r".repeat(200);
+    ledger.regions[0]!.unresolvedDetail = underLimitDetail;
+    ledger.regions[1]!.unresolvedDetail = atLimitDetail;
+
+    const unresolved = unresolvedRegionsFromLedger(ledger, "recovery_route_exhausted");
+
+    expect(unresolved.map(region => region.detail)).toEqual([underLimitDetail, atLimitDetail]);
+    expect(unresolved[0]?.reason).toBe("broad_vlm_evidence");
+    expect(unresolved[1]?.reason).toBe("recovery_route_exhausted");
+    expect(() => UnresolvedRegionsPartSchema.parse({ unresolvedRegions: unresolved })).not.toThrow();
   });
 });
 
