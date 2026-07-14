@@ -7,10 +7,10 @@ import type { Box, DiffRecord, UiArtifact, UnassignedVisualEvidence, RecoveryCom
 import { UiCriterionSchema } from "../schemas/core.js";
 import type { PixelComponent } from "../signals/pixel-diff.js";
 import type { VisionJsonCaller } from "../models/vision-json.js";
-import { buildRecoveryPrompt, buildReviewerPrompt } from "../audit/prompts.js";
+import { buildRecoveryPrompt, buildRecoveryReviewerPrompt } from "../audit/prompts.js";
 import { validateClaim } from "../audit/review-findings.js";
 import { type ImagePairTransform, projectExpectedBoxToActualSource } from "../images/coordinates.js";
-import { extractImageCropFromBounds } from "../images/crop.js";
+import { extractImageCropFromBounds, resizeRgbaForComparison } from "../images/crop.js";
 import { resolveComparisonExtraction, type ComparisonExtractionBounds } from "../images/comparison-geometry.js";
 
 const CLASSIFIABLE_CRITERIA = UiCriterionSchema.exclude(["unclassified_visual_change"]);
@@ -173,6 +173,7 @@ interface PreparedRecoveryEvidence {
   artifacts: UiArtifact[];
   expCrop: { data: Uint8Array; width: number; height: number };
   actCrop: { data: Uint8Array; width: number; height: number };
+  actComparisonCrop: { data: Uint8Array; width: number; height: number };
   overlayCrop: { data: Uint8Array; width: number; height: number };
   maskCrop: { data: Uint8Array; width: number; height: number };
 }
@@ -260,14 +261,21 @@ export async function prepareRecoveryRegionArtifacts(
     }
     const expCrop = extractRgbaCrop(ctx.expectedRgba.data, ctx.expectedRgba.width, comparison.bounds);
     const actCrop = extractRgbaCrop(ctx.actualRgba.data, ctx.actualRgba.width, actual.bounds);
+    const actComparisonCrop = {
+      data: await resizeRgbaForComparison(actCrop, expCrop.width, expCrop.height),
+      width: expCrop.width,
+      height: expCrop.height
+    };
     const overlayCrop = extractRgbaCrop(overlayData, overlayRawResult.info.width, comparison.bounds);
     const maskCrop = extractMaskCrop(ctx.pixelDiffMask, ctx.expectedRgba.width, comparison.bounds);
     const expCropPath = path.join(ctx.artifactDir, `recovery-${safeId}-expected.png`);
     const actCropPath = path.join(ctx.artifactDir, `recovery-${safeId}-actual.png`);
+    const actComparisonCropPath = path.join(ctx.artifactDir, `recovery-${safeId}-actual-comparison.png`);
     const overlayPath = path.join(ctx.artifactDir, `recovery-${safeId}-overlay.png`);
     const maskPath = path.join(ctx.artifactDir, `recovery-${safeId}-mask.png`);
     await writePngArtifact(expCrop.data, expCrop.width, expCrop.height, expCropPath, 4);
     await writePngArtifact(actCrop.data, actCrop.width, actCrop.height, actCropPath, 4);
+    await writePngArtifact(actComparisonCrop.data, actComparisonCrop.width, actComparisonCrop.height, actComparisonCropPath, 4);
     await writePngArtifact(overlayCrop.data, overlayCrop.width, overlayCrop.height, overlayPath, 4);
     await writePngArtifact(maskCrop.data, maskCrop.width, maskCrop.height, maskPath, 1);
     prepared.push({
@@ -278,11 +286,13 @@ export async function prepareRecoveryRegionArtifacts(
       actualEvidenceBox: actual.box,
       expCrop,
       actCrop,
+      actComparisonCrop,
       overlayCrop,
       maskCrop,
       artifacts: [
         { role: "recovery_expected_crop", path: expCropPath },
         { role: "recovery_actual_crop", path: actCropPath },
+        { role: "recovery_actual_comparison_crop", path: actComparisonCropPath },
         { role: "recovery_directional_overlay", path: overlayPath },
         { role: "recovery_pixel_diff_mask", path: maskPath }
       ]
@@ -398,7 +408,7 @@ export async function runTargetRecovery(
     const evidenceId = componentId;
     const box = component.box;
     const preparedEvidence = preparedById.get(componentId)! as PreparedRecoveryEvidence;
-    const { expCrop, actCrop, overlayCrop, maskCrop, artifacts } = preparedEvidence;
+    const { expCrop, actComparisonCrop, overlayCrop, maskCrop, artifacts } = preparedEvidence;
 
     const evidence: UnassignedVisualEvidence = {
       id: evidenceId,
@@ -407,8 +417,9 @@ export async function runTargetRecovery(
       componentArea: Math.round(box.width * box.height),
       expectedCropArtifact: artifacts[0]!,
       actualCropArtifact: artifacts[1]!,
-      directionalOverlayArtifact: artifacts[2]!,
-      pixelDiffMaskArtifact: artifacts[3]!
+      actualComparisonCropArtifact: artifacts[2]!,
+      directionalOverlayArtifact: artifacts[3]!,
+      pixelDiffMaskArtifact: artifacts[4]!
     };
 
     const baseTrace = {
@@ -423,7 +434,7 @@ export async function runTargetRecovery(
 
     // Encode crops for VLM
     const expB64 = await toBase64Png(expCrop.data, expCrop.width, expCrop.height, 4);
-    const actB64 = await toBase64Png(actCrop.data, actCrop.width, actCrop.height, 4);
+    const actB64 = await toBase64Png(actComparisonCrop.data, actComparisonCrop.width, actComparisonCrop.height, 4);
     const overlayB64 = await toBase64Png(overlayCrop.data, overlayCrop.width, overlayCrop.height, 4);
     const maskB64 = await toBase64Png(maskCrop.data, maskCrop.width, maskCrop.height, 1);
 
@@ -501,12 +512,22 @@ export async function runTargetRecovery(
     // The VLM supplies semantic classification only. The deterministic pixel
     // component is the authoritative full-screen location for this crop.
     const recoveredBox = component.box;
+    const baseMeasurements = (vlmResponse.measurements ?? []).map(m => ({
+      name: m.name,
+      value: m.value as string | number | boolean,
+      ...(m.unit !== undefined ? { unit: m.unit } : {})
+    }));
+    const candidateTitle = `${vlmResponse.criterion} in recovered region: ${vlmResponse.label}`.slice(0, 200);
+    const candidateEvidence = vlmResponse.evidence.slice(0, 10).map(evidence => evidence.slice(0, 200));
+    const candidateMeasurements = [
+      ...deterministicMeasurements,
+      ...baseMeasurements
+    ].slice(0, 10);
 
-    // Review with standard reviewer
-    const reviewerPrompt = buildReviewerPrompt(
+    const reviewerPrompt = buildRecoveryReviewerPrompt(
       vlmResponse.criterion,
       vlmResponse.label,
-      `${vlmResponse.criterion} detected in unassigned region`,
+      candidateTitle,
       vlmResponse.evidence,
       deterministicMeasurements
     );
@@ -555,7 +576,10 @@ export async function runTargetRecovery(
         recoveryDurationMs,
         reviewerDurationMs,
         criterion: vlmResponse.criterion,
-        ...(reviewReason !== undefined ? { rejectionReason: reviewReason } : {})
+        ...(reviewReason !== undefined ? { rejectionReason: reviewReason } : {}),
+        candidateTitle,
+        candidateEvidence,
+        candidateMeasurements
       });
       unclassifiedCount++;
       regionOutcomes.push({
@@ -563,7 +587,15 @@ export async function runTargetRecovery(
         state: "unresolved",
         reason: `reviewer_rejected${reviewReason ? `: ${reviewReason.slice(0, 150)}` : ""}`,
         artifactPaths: artifacts,
-        ...(reviewReason !== undefined ? { rejectionReason: reviewReason } : {})
+        ...(reviewReason !== undefined ? { rejectionReason: reviewReason } : {}),
+        criterion: vlmResponse.criterion,
+        model: componentRecoveryModel,
+        reviewerModel,
+        recoveryDurationMs,
+        reviewerDurationMs,
+        candidateTitle,
+        candidateEvidence,
+        candidateMeasurements
       });
       continue;
     }
@@ -572,17 +604,6 @@ export async function runTargetRecovery(
     if (reviewDecision === "needs_escalation") {
       unclassifiedCount++;
     }
-    const baseMeasurements = (vlmResponse.measurements ?? []).map(m => ({
-      name: m.name,
-      value: m.value as string | number | boolean,
-      ...(m.unit !== undefined ? { unit: m.unit } : {})
-    }));
-    const candidateTitle = `${vlmResponse.criterion} in recovered region: ${vlmResponse.label}`.slice(0, 200);
-    const candidateEvidence = vlmResponse.evidence.slice(0, 10).map(evidence => evidence.slice(0, 200));
-    const candidateMeasurements = [
-      ...deterministicMeasurements,
-      ...baseMeasurements
-    ].slice(0, 10);
     const record: DiffRecord = {
       id: diffId,
       criterion: vlmResponse.criterion,
@@ -627,7 +648,12 @@ export async function runTargetRecovery(
           criterion: vlmResponse.criterion,
           ...(validation.diagnostics !== undefined ? { diagnostics: validation.diagnostics } : {}),
           candidateTitle,
-          candidateEvidence
+          candidateEvidence,
+          candidateMeasurements,
+          model: componentRecoveryModel,
+          reviewerModel,
+          recoveryDurationMs,
+          reviewerDurationMs
         });
         continue;
       }
@@ -651,7 +677,15 @@ export async function runTargetRecovery(
       state: reviewDecision === "needs_escalation" ? "unresolved" : "recovered",
       reason: reviewDecision === "needs_escalation" ? "needs_escalation" : "recovery_accepted",
       artifactPaths: artifacts,
-      findingId: record.id
+      findingId: record.id,
+      criterion: vlmResponse.criterion,
+      model: componentRecoveryModel,
+      reviewerModel,
+      recoveryDurationMs,
+      reviewerDurationMs,
+      candidateTitle,
+      candidateEvidence,
+      candidateMeasurements
     });
     void evidence; // evidence artifact metadata is captured in record.artifactPaths
   }

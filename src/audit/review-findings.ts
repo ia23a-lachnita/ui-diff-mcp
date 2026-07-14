@@ -7,6 +7,7 @@ const GLOBAL_BLANK_IMAGE_PHRASES = /\b(?:actual|expected)?\s*(?:screenshot|image
 const GLOBAL_BLACK_IMAGE_PHRASES = /\b(?:actual|expected)?\s*(?:screenshot|image|screen|page)\b[^.!?;\n]{0,80}\b(?:(?:entirely|completely|totally|solid)\s+black|all[-\s]?black)\b/i;
 const ABSENCE_QUALIFIER = /\b(?:crop|projected\s+expected\s+position|expected\s+position|within\s+(?:the\s+)?supplied\s+crop)\b/i;
 const NEGATED_ABSENCE_PHRASE = /\b(?:not|isn't|is\s+not|doesn't|does\s+not|cannot|can't|no|without|never)\b[^.!?;\n]{0,60}\b(?:absent|missing|misplaced|gone|no\s+(?:visible\s+)?content|no\s+element|blank|empty|black)\b/i;
+const EXACT_HEX_COLOR_PATTERN = "#(?:[0-9a-f]{8}|[0-9a-f]{6}|[0-9a-f]{4}|[0-9a-f]{3})(?![0-9a-f])";
 
 export function hasUnsupportedCropBoundaryClaim(diff: Pick<DiffRecord, "title" | "evidence">): boolean {
   const searchable = [diff.title, ...diff.evidence].join(" ");
@@ -101,6 +102,7 @@ function analyzeQuantitativeClaims(
 ): QuantitativeAnalysis | undefined {
   let searchable = [diff.title, ...diff.evidence].join(" ");
   searchable = searchable.replace(/(["'`]).*?\1/g, " ");
+  searchable = searchable.replace(new RegExp(EXACT_HEX_COLOR_PATTERN, "gi"), " ");
   for (const visibleText of visibleTexts.filter(Boolean).sort((a, b) => b.length - a.length)) {
     searchable = searchable.replace(new RegExp(escapeRegExp(visibleText), "gi"), " ");
   }
@@ -141,6 +143,22 @@ function analyzeQuantitativeClaims(
     offendingUnit: "",
     excerpt: extractContext(searchable, layoutMatch.index, layoutMatch[0].length)
   };
+}
+
+function analyzeExactColorClaims(
+  diff: Pick<DiffRecord, "title" | "evidence">,
+  measurements: DeterministicMeasurement[]
+): { excerpt: string } | undefined {
+  const searchable = [diff.title, ...diff.evidence].join(" ");
+  const supportedValues = measurements
+    .flatMap(measurement => typeof measurement.value === "string" ? [measurement.value.toLowerCase()] : []);
+  for (const match of searchable.matchAll(new RegExp(EXACT_HEX_COLOR_PATTERN, "gi"))) {
+    const literal = match[0];
+    if (!supportedValues.some(value => value.includes(literal.toLowerCase()))) {
+      return { excerpt: extractContext(searchable, match.index, literal.length) };
+    }
+  }
+  return undefined;
 }
 
 function hasInvalidPaletteMeasurement(measurement: DeterministicMeasurement): boolean {
@@ -229,6 +247,18 @@ export function validateClaim(
       }
     };
   }
+  const exactColor = analyzeExactColorClaims(diff, diff.measurements);
+  if (exactColor !== undefined) {
+    return {
+      valid: false,
+      reason: "Unsupported exact hex color claim",
+      diagnostics: {
+        code: "unsupported_exact_color",
+        message: "Unsupported exact hex color claim",
+        offendingExcerpt: exactColor.excerpt
+      }
+    };
+  }
   if (hasUnsupportedQuantitativeClaim(diff, diff.measurements, visibleTexts)) {
     const analysis = analyzeQuantitativeClaims(diff, diff.measurements, visibleTexts)!;
     const supported = boundedSupportedMeasurements(diff.measurements);
@@ -306,7 +336,7 @@ export function reviewAndMergeFindings(rawDiffs: DiffRecord[]): DiffRecord[] {
 
 const SCOPE_AUDIT_ROLES = ["expected_normalized", "actual_comparison_space", "directional_overlay", "pixel_diff_mask"] as const;
 const TARGET_AUDIT_ROLES = ["expected_crop", "actual_crop", "local_directional_overlay", "local_pixel_diff_mask", "context_crop"] as const;
-const RECOVERY_ROLES = ["recovery_expected_crop", "recovery_actual_crop", "recovery_directional_overlay", "recovery_pixel_diff_mask"] as const;
+const RECOVERY_ROLES = ["recovery_expected_crop", "recovery_actual_crop", "recovery_actual_comparison_crop", "recovery_directional_overlay", "recovery_pixel_diff_mask"] as const;
 
 export function requiredAcceptedArtifactRoles(diff: Pick<DiffRecord, "classificationSource" | "scopeKind">): readonly UiArtifact["role"][] {
   if (diff.classificationSource === "target_recovery") return RECOVERY_ROLES;

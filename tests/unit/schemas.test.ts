@@ -217,6 +217,13 @@ describe("core schemas", () => {
     })).toMatchObject({ role: "actual_comparison_space" });
   });
 
+  it("accepts the recovery actual comparison crop artifact role", () => {
+    expect(UiArtifactSchema.parse({
+      role: "recovery_actual_comparison_crop",
+      path: "C:/run/recovery-actual-comparison.png"
+    })).toMatchObject({ role: "recovery_actual_comparison_crop" });
+  });
+
   it("accepts exact LocateAnything input payload images as run artifacts", () => {
     expect(UiArtifactSchema.parse({
       role: "locator_input_expected",

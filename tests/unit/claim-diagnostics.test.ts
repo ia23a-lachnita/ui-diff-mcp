@@ -29,6 +29,7 @@ function makeComponent(x: number, y: number, w: number, h: number, pixelCount = 
 const RECOVERY_ROLES: UiArtifact["role"][] = [
   "recovery_expected_crop",
   "recovery_actual_crop",
+  "recovery_actual_comparison_crop",
   "recovery_directional_overlay",
   "recovery_pixel_diff_mask"
 ];
@@ -86,6 +87,15 @@ describe("ClaimDiagnostics schema", () => {
     };
     expect(diag.code).toBe("unsupported_crop_boundary");
     expect(diag.offendingExcerpt).toBeDefined();
+  });
+
+  it("accepts an unsupported_exact_color diagnostic", () => {
+    const diag: ClaimDiagnostics = {
+      code: "unsupported_exact_color",
+      message: "Unsupported exact hex color claim",
+      offendingExcerpt: "The panel is #1A1A1A"
+    };
+    expect(diag.code).toBe("unsupported_exact_color");
   });
 
   it("backward compatible: ClaimValidationResult without diagnostics still valid", () => {
@@ -166,6 +176,45 @@ describe("validateClaim structured diagnostics", () => {
     const result = validateClaim(makeDiff({ title: "Button shifted" }));
     expect(result.valid).toBe(true);
     expect(result.diagnostics).toBeUndefined();
+  });
+
+  it("rejects an exact hex color literal without a deterministic supporting measurement", () => {
+    const result = validateClaim(makeDiff({
+      title: "Panel color changed to #1A1A1A",
+      evidence: ["The expected panel is #fff and the actual panel is #1A1A1A"]
+    }));
+    expect(result).toMatchObject({
+      valid: false,
+      diagnostics: {
+        code: "unsupported_exact_color",
+        offendingExcerpt: expect.stringContaining("#1A1A1A")
+      }
+    });
+  });
+
+  it("allows an exact hex color literal when a deterministic measurement contains that literal", () => {
+    const result = validateClaim(makeDiff({
+      title: "Panel color changed to #1A1A1A",
+      measurements: [{ name: "actual_fill", value: "#1A1A1A", unit: "hex" }]
+    }));
+    expect(result).toEqual({ valid: true });
+  });
+
+  it("does not parse #1A1A1A as an unqualified layout number", () => {
+    const result = validateClaim(makeDiff({
+      title: "Panel shifted #1A1A1A",
+      evidence: ["The panel remains visible"]
+    }));
+    expect(result).not.toMatchObject({ diagnostics: { code: "unsupported_quantitative", quantitative: { offendingValue: 1 } } });
+  });
+
+  it("continues rejecting unsupported percentage claims", () => {
+    const result = validateClaim(makeDiff({
+      title: "Progress is 100%",
+      evidence: ["The deterministic progress is 86.95%"],
+      measurements: [{ name: "progress_percent", value: 86.95, unit: "%" }]
+    }));
+    expect(result).toMatchObject({ valid: false, diagnostics: { code: "unsupported_quantitative" } });
   });
 
   it("offending excerpt is capped at 200 characters", () => {
@@ -737,13 +786,13 @@ describe("ledger: unresolvedRegionsFromLedger emits blocking unsupported outcome
     expect(r1.reason).toBe("unsupported_recovery_claim");
     expect(r1.diagnostics?.code).toBe("unsupported_quantitative");
     expect(r1.diagnostics?.quantitative?.offendingValue).toBe(2107);
-    expect(r1.artifactPaths).toHaveLength(4);
+    expect(r1.artifactPaths).toHaveLength(5);
     expect(r1.artifactPaths.map(a => a.role).sort()).toEqual(RECOVERY_ROLES.sort());
 
     const r2 = unresolved.find(r => r.id === "region-0002")!;
     expect(r2.reason).toBe("unsupported_recovery_claim");
     expect(r2.diagnostics?.code).toBe("unsupported_absence");
-    expect(r2.artifactPaths).toHaveLength(4);
+    expect(r2.artifactPaths).toHaveLength(5);
   });
 
   it("omits superseded blocking outcomes from unresolved output", () => {
@@ -854,9 +903,9 @@ describe("pipeline/report regression: two unsupported outcomes traceable or expl
       expect(["unsupported_quantitative", "unsupported_absence"]).toContain(region.diagnostics?.code);
     }
 
-    // Both have all four recovery artifacts
+    // Both have all five persisted recovery artifacts
     for (const region of unresolved) {
-      expect(region.artifactPaths).toHaveLength(4);
+      expect(region.artifactPaths).toHaveLength(5);
       const roles = region.artifactPaths.map(a => a.role).sort();
       expect(roles).toEqual(RECOVERY_ROLES.sort());
     }
@@ -930,8 +979,8 @@ describe("pipeline/report regression: two unsupported outcomes traceable or expl
   });
 });
 
-describe("recovery trace: unsupported entries have all four recovery roles", () => {
-  it("each non-superseded unsupported trace entry has diagnostics and four recovery artifacts", () => {
+describe("recovery trace: unsupported entries have all five persisted recovery roles", () => {
+  it("each non-superseded unsupported trace entry has diagnostics and five persisted recovery artifacts", () => {
     const traces: Partial<RecoveryComponentTrace>[] = [
       {
         componentId: "region-0001",
@@ -969,7 +1018,7 @@ describe("recovery trace: unsupported entries have all four recovery roles", () 
       const parsed = RecoveryComponentTraceSchema.parse(trace);
       expect(parsed.status).toBe("unsupported_recovery_claim");
       expect(parsed.claimValidationDiagnostics).toBeDefined();
-      expect(parsed.artifactPaths).toHaveLength(4);
+      expect(parsed.artifactPaths).toHaveLength(5);
       const roles = parsed.artifactPaths.map(a => a.role).sort();
       expect(roles).toEqual(RECOVERY_ROLES.sort());
       expect(parsed.candidateTitle).toBeDefined();

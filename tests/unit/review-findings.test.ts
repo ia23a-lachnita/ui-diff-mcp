@@ -275,7 +275,7 @@ describe("requiredAcceptedArtifactRoles", () => {
 
   it("returns recovery roles for target_recovery diffs", () => {
     const roles = requiredAcceptedArtifactRoles({ classificationSource: "target_recovery", scopeKind: "target" });
-    expect(roles).toEqual(["recovery_expected_crop", "recovery_actual_crop", "recovery_directional_overlay", "recovery_pixel_diff_mask"]);
+    expect(roles).toEqual(["recovery_expected_crop", "recovery_actual_crop", "recovery_actual_comparison_crop", "recovery_directional_overlay", "recovery_pixel_diff_mask"]);
   });
 
   it("returns target audit roles for diffs with no classificationSource", () => {

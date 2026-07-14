@@ -14,7 +14,7 @@ const CLASSIFIABLE_CRITERIA = [
 ] as const;
 
 const NO_SPECULATION_RULE = `- Do NOT speculate about causality or design intent.`;
-const NAMED_MEASUREMENT_RULE = `- Exact percentages, pixels, sizes, angles, and coordinates are allowed only when citing a listed deterministic measurement by name.`;
+const NAMED_MEASUREMENT_RULE = `- Exact percentages, pixels, sizes, angles, coordinates, and color values (hex/RGB) are allowed only when citing a listed deterministic measurement by name.`;
 
 export function buildRecoveryPrompt(pixelCount: number, componentArea: number, measurements: DeterministicMeasurement[] = []): string {
   const criteriaList = CLASSIFIABLE_CRITERIA.join(" | ");
@@ -37,7 +37,7 @@ export function buildRecoveryPrompt(pixelCount: number, componentArea: number, m
     ``,
     `EVIDENCE IMAGES (in order):`,
     `  1. EXPECTED crop — expected image cropped to the changed region`,
-    `  2. ACTUAL crop — actual screenshot cropped to the changed region`,
+    `  2. ACTUAL comparison crop — actual source crop resized with Lanczos to the expected crop dimensions`,
     `  3. Directional diff overlay — cyan where expected differs, magenta where actual differs, yellow at region outlines`,
     `  4. Pixel-diff mask — white pixels mark changed regions`,
     ``,
@@ -166,6 +166,49 @@ export function buildReviewerPrompt(
     `- Accept crop-boundary evidence only when the record explicitly calls it a crop/position mismatch.`,
     `- Reject unsupported quantitative layout claims. Exact dimensions, positions, spacing, font sizes, percentages, and angles are valid only when they cite a deterministic measurement listed above.`,
     `- Reject any title or evidence that violates these rules, including causality, design-intent, or uncited exact-quantity claims.`,
+    ``,
+    `Respond with JSON only: { "decision": "accepted" | "rejected" | "needs_escalation", "reason": "<one sentence>" }`
+  ].join("\n");
+}
+
+export function buildRecoveryReviewerPrompt(
+  criterion: UiCriterion,
+  elementLabel: string,
+  auditorTitle: string,
+  evidence: string[],
+  measurements: DeterministicMeasurement[] = []
+): string {
+  const evidenceLines = evidence.map(e => `  - ${e}`).join("\n");
+  const measurementLines = measurements.length > 0
+    ? measurements.map(m => `  - ${m.name}: ${m.value}${m.unit ? " " + m.unit : ""}`).join("\n")
+    : "  (none)";
+
+  return [
+    `You are a UI diff recovery reviewer. Evaluate whether the reported diff is valid based solely on the supplied recovery evidence.`,
+    ``,
+    `ELEMENT: "${elementLabel}"`,
+    `CRITERION: ${criterion}`,
+    `REPORTED TITLE: ${auditorTitle}`,
+    ``,
+    `EVIDENCE:`,
+    evidenceLines,
+    `DETERMINISTIC MEASUREMENTS:`,
+    measurementLines,
+    ``,
+    `EVIDENCE IMAGES (exactly 4 images, in order):`,
+    `  1. EXPECTED crop — expected image cropped to the changed region`,
+    `  2. ACTUAL comparison crop — actual source crop resized with Lanczos to the expected crop dimensions`,
+    `  3. Directional diff overlay — cyan where expected differs, magenta where actual differs, yellow at region outlines`,
+    `  4. Pixel-diff mask — white pixels mark changed regions`,
+    ``,
+    `STRICT RULES:`,
+    `- Accept the diff ONLY if the evidence is visually verifiable in the four supplied images.`,
+    `- Reject the diff if the evidence is vague, unverifiable, or contradicted by the images.`,
+    `- Mark needs_escalation if the images are ambiguous or the diff requires deeper analysis.`,
+    `- Do NOT explain causality. Do NOT suggest code changes. Do NOT judge correctness.`,
+    NO_SPECULATION_RULE,
+    NAMED_MEASUREMENT_RULE,
+    `- Reject unsupported quantitative layout claims. Exact dimensions, positions, spacing, font sizes, percentages, and angles are valid only when they cite a deterministic measurement listed above.`,
     ``,
     `Respond with JSON only: { "decision": "accepted" | "rejected" | "needs_escalation", "reason": "<one sentence>" }`
   ].join("\n");

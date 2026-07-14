@@ -388,6 +388,7 @@ export const UiArtifactSchema = z.object({
     "context_crop",
     "recovery_expected_crop",
     "recovery_actual_crop",
+    "recovery_actual_comparison_crop",
     "recovery_directional_overlay",
     "recovery_pixel_diff_mask",
     "projected_expected_crop",
@@ -424,7 +425,8 @@ export const ClaimDiagnosticsSchema = z.object({
     "unsupported_absence",
     "unsupported_crop_boundary",
     "unsupported_quantitative",
-    "invalid_palette"
+    "invalid_palette",
+    "unsupported_exact_color"
   ]),
   message: z.string().max(200),
   offendingExcerpt: z.string().max(200).optional(),
@@ -470,6 +472,7 @@ export const UnassignedVisualEvidenceSchema = z.object({
   componentArea: z.number().int().positive(),
   expectedCropArtifact: UiArtifactSchema,
   actualCropArtifact: UiArtifactSchema,
+  actualComparisonCropArtifact: UiArtifactSchema,
   directionalOverlayArtifact: UiArtifactSchema,
   pixelDiffMaskArtifact: UiArtifactSchema
 });
@@ -798,9 +801,14 @@ export const RecoveryRegionOutcomeSchema = z.object({
   findingId: z.string().optional(),
   rejectionReason: z.string().optional(),
   criterion: UiCriterionSchema.exclude(["unclassified_visual_change"]).optional(),
+  model: z.string().optional(),
+  reviewerModel: z.string().optional(),
+  recoveryDurationMs: z.number().int().min(0).optional(),
+  reviewerDurationMs: z.number().int().min(0).optional(),
   diagnostics: ClaimDiagnosticsSchema.optional(),
   candidateTitle: z.string().max(200).optional(),
-  candidateEvidence: z.array(z.string().max(200)).max(10).optional()
+  candidateEvidence: z.array(z.string().max(200)).max(10).optional(),
+  candidateMeasurements: z.array(DeterministicMeasurementSchema).max(10).optional()
 }).strict();
 export type RecoveryRegionOutcome = z.infer<typeof RecoveryRegionOutcomeSchema>;
 

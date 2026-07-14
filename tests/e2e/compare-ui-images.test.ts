@@ -371,6 +371,7 @@ describe("runUiDiff end-to-end (deterministic_only mode)", () => {
     const thinRegion = report.unresolvedRegions.find(region => region.location.width === 1 && region.location.height === 50);
     expect(thinRegion).toMatchObject({ reason: "not_classified", location: { x: 20, y: 20, width: 1, height: 50 } });
     expect(thinRegion?.artifactPaths.map(artifact => artifact.role).sort()).toEqual([
+      "recovery_actual_comparison_crop",
       "recovery_actual_crop",
       "recovery_directional_overlay",
       "recovery_expected_crop",
@@ -465,7 +466,7 @@ describe("runUiDiff end-to-end (deterministic_only mode)", () => {
     expect(report.runId).toBe(result.runId);
     expect(report.visualClassificationStatus).toBe("not_run");
     expect(report.unresolvedRegions.length).toBeGreaterThan(0);
-    expect(report.unresolvedRegions.every(region => region.artifactPaths.length === 4)).toBe(true);
+    expect(report.unresolvedRegions.every(region => region.artifactPaths.length === 5)).toBe(true);
     const artifactRoles = (report as unknown as { runArtifacts: Array<{ role: string }> }).runArtifacts.map(artifact => artifact.role);
     expect(artifactRoles).toEqual(expect.arrayContaining([
       "region_context_overlay",

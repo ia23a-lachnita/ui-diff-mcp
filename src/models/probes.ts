@@ -244,7 +244,7 @@ export async function probeRecoveryCapability(
   config: VisionProviderConfig,
   traceSink?: ProviderTraceSink
 ): Promise<ProbeResult> {
-  // Recovery sends 4 images: expected crop, actual crop, overlay, mask
+  // Recovery sends 4 model images: expected crop, actual comparison crop, overlay, mask.
   return runRoleProbe(entry, "target_recovery", 4, config, traceSink);
 }
 

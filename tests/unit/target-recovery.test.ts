@@ -142,8 +142,35 @@ describe("runTargetRecovery", () => {
     });
     const expectedArtifact = result.recovered[0]!.artifactPaths.find(artifact => artifact.role === "recovery_expected_crop")!;
     const actualArtifact = result.recovered[0]!.artifactPaths.find(artifact => artifact.role === "recovery_actual_crop")!;
+    const comparisonArtifact = result.recovered[0]!.artifactPaths.find(artifact => artifact.role === "recovery_actual_comparison_crop")!;
     await expect(sharp(expectedArtifact.path).metadata()).resolves.toMatchObject({ width: 2, height: 100 });
     await expect(sharp(actualArtifact.path).metadata()).resolves.toMatchObject({ width: 2, height: 50 });
+    await expect(sharp(comparisonArtifact.path).metadata()).resolves.toMatchObject({ width: 2, height: 100 });
+  });
+
+  it("preserves source actual dimensions while sending an expected-sized comparison crop", async () => {
+    const captured: { images: string[] }[] = [];
+    const recoveryCaller: VisionJsonCaller = vi.fn().mockImplementation(async request => {
+      captured.push({ images: request.images });
+      return { parsed: { classified: false }, rawContent: "", model: "test-model", provider: "openrouter" };
+    });
+    const result = await runTargetRecovery([component], makeCtx({
+      recoveryCaller,
+      actualRgba: makeRgba(100, 100),
+      imagePairTransform: createImagePairTransform({ width: 200, height: 200 }, { width: 100, height: 100 })
+    }), unlimitedBudget);
+
+    const artifacts = result.trace[0]!.artifactPaths;
+    const sourceActual = artifacts.find(artifact => artifact.role === "recovery_actual_crop")!;
+    const comparisonActual = artifacts.find(artifact => artifact.role === "recovery_actual_comparison_crop")!;
+    await expect(sharp(sourceActual.path).metadata()).resolves.toMatchObject({ width: 40, height: 30 });
+    await expect(sharp(comparisonActual.path).metadata()).resolves.toMatchObject({ width: 80, height: 60 });
+    const imageMetadata = await Promise.all(captured[0]!.images.slice(0, 2).map(async dataUrl => {
+      const buffer = Buffer.from(dataUrl.split(",")[1]!, "base64");
+      return sharp(buffer).metadata();
+    }));
+    expect(imageMetadata[0]).toMatchObject({ width: 80, height: 60 });
+    expect(imageMetadata[1]).toMatchObject({ width: 80, height: 60 });
   });
 
   it("returns empty when no components are provided", async () => {
@@ -371,7 +398,7 @@ describe("runTargetRecovery", () => {
     expect(unclassifiedCount).toBe(0);
   });
 
-  it("writes 4 artifact PNG files for each component", async () => {
+  it("writes 5 artifact PNG files for each component", async () => {
     const recoveryCaller: VisionJsonCaller = vi.fn().mockResolvedValue({
       parsed: { classified: false },
       rawContent: "",
@@ -384,7 +411,7 @@ describe("runTargetRecovery", () => {
 
     const files = await fs.readdir(tmpDir);
     const recoveryFiles = files.filter(f => f.startsWith("recovery-") && f.endsWith(".png"));
-    expect(recoveryFiles.length).toBeGreaterThanOrEqual(4);
+    expect(recoveryFiles.length).toBeGreaterThanOrEqual(5);
   });
 
   it("sends 4 images to recovery VLM", async () => {
@@ -428,14 +455,40 @@ describe("runTargetRecovery", () => {
       status: "recovery_rejected",
       model: "recovery-model",
       reviewerModel: "review-model",
-      rejectionReason: "not supported"
+      rejectionReason: "not supported",
+      candidateTitle: "geometry in recovered region: Button",
+      candidateEvidence: ["visible"],
+      candidateMeasurements: expect.arrayContaining([
+        { name: "changed_pixel_count", value: 500, unit: "pixels" }
+      ]),
+      recoveryDurationMs: expect.any(Number),
+      reviewerDurationMs: expect.any(Number),
+      artifactPaths: expect.arrayContaining([
+        expect.objectContaining({ role: "recovery_actual_crop" }),
+        expect.objectContaining({ role: "recovery_actual_comparison_crop" })
+      ])
     });
     expect(result.regionOutcomes[0]).toMatchObject({
       regionId: "component-0001",
       state: "unresolved",
       reason: "reviewer_rejected: not supported",
-      rejectionReason: "not supported"
+      rejectionReason: "not supported",
+      candidateTitle: "geometry in recovered region: Button",
+      candidateEvidence: ["visible"],
+      candidateMeasurements: expect.arrayContaining([
+        { name: "changed_pixel_count", value: 500, unit: "pixels" }
+      ]),
+      model: "recovery-model",
+      reviewerModel: "review-model",
+      recoveryDurationMs: expect.any(Number),
+      reviewerDurationMs: expect.any(Number),
+      artifactPaths: expect.arrayContaining([
+        expect.objectContaining({ role: "recovery_actual_crop" }),
+        expect.objectContaining({ role: "recovery_actual_comparison_crop" })
+      ])
     });
+    expect(result.trace[0]!.artifactPaths).toHaveLength(5);
+    expect(result.regionOutcomes[0]!.artifactPaths).toHaveLength(5);
   });
 
   it("uses maxComponents as a batch size instead of skipping later components", async () => {
@@ -458,7 +511,7 @@ describe("runTargetRecovery", () => {
     });
     expect(result.stoppedReason).toBe("deadline_exceeded");
     expect(result.trace[0]?.status).toBe("skipped_deadline");
-    expect(result.trace[0]?.artifactPaths).toHaveLength(4);
+    expect(result.trace[0]?.artifactPaths).toHaveLength(5);
     expect(result.regionOutcomes[0]).toMatchObject({ state: "unresolved", reason: "deadline_exceeded" });
   });
 

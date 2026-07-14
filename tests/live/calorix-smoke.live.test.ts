@@ -165,6 +165,7 @@ async function assertRecoveryTraceSupersessionIntegrity(report: UiDiffReport): P
     for (const role of [
       "recovery_expected_crop",
       "recovery_actual_crop",
+      "recovery_actual_comparison_crop",
       "recovery_directional_overlay",
       "recovery_pixel_diff_mask"
     ] as const) {
