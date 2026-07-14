@@ -762,7 +762,12 @@ export const RecoveryDecisionStatusSchema = z.enum([
   "missing_required_fields",
   "evidence_crop_rejected",
   "box_out_of_bounds",
-  "box_no_component_overlap"
+  "box_no_component_overlap",
+  "repair_provider_failure",
+  "repair_schema_failure",
+  "repair_classified_false",
+  "repair_criterion_change",
+  "still_invalid"
 ]);
 
 export const RecoveryComponentTraceSchema = z.object({
@@ -789,7 +794,18 @@ export const RecoveryComponentTraceSchema = z.object({
   claimValidationDiagnostics: ClaimDiagnosticsSchema.optional(),
   supersededByFindingId: z.string().optional(),
   supersessionReason: z.enum(["same_criterion_acceptance_overlap"]).optional(),
-  supersessionOverlapRatio: z.number().min(0).max(1).optional()
+  supersessionOverlapRatio: z.number().min(0).max(1).optional(),
+  repairAttempted: z.boolean().optional(),
+  repairModel: z.string().optional(),
+  repairDurationMs: z.number().int().min(0).optional(),
+  originalCandidateTitle: z.string().max(200).optional(),
+  originalCandidateEvidence: z.array(z.string().max(200)).max(10).optional(),
+  originalCandidateMeasurements: z.array(DeterministicMeasurementSchema).max(10).optional(),
+  originalCandidateDiagnostics: ClaimDiagnosticsSchema.optional(),
+  repairedCandidateTitle: z.string().max(200).optional(),
+  repairedCandidateEvidence: z.array(z.string().max(200)).max(10).optional(),
+  repairedCandidateMeasurements: z.array(DeterministicMeasurementSchema).max(10).optional(),
+  repairedCandidateDiagnostics: ClaimDiagnosticsSchema.optional()
 });
 export type RecoveryComponentTrace = z.infer<typeof RecoveryComponentTraceSchema>;
 
@@ -808,7 +824,16 @@ export const RecoveryRegionOutcomeSchema = z.object({
   diagnostics: ClaimDiagnosticsSchema.optional(),
   candidateTitle: z.string().max(200).optional(),
   candidateEvidence: z.array(z.string().max(200)).max(10).optional(),
-  candidateMeasurements: z.array(DeterministicMeasurementSchema).max(10).optional()
+  candidateMeasurements: z.array(DeterministicMeasurementSchema).max(10).optional(),
+  repairAttempted: z.boolean().optional(),
+  repairModel: z.string().optional(),
+  repairDurationMs: z.number().int().min(0).optional(),
+  originalCandidateTitle: z.string().max(200).optional(),
+  originalCandidateEvidence: z.array(z.string().max(200)).max(10).optional(),
+  originalCandidateDiagnostics: ClaimDiagnosticsSchema.optional(),
+  repairedCandidateTitle: z.string().max(200).optional(),
+  repairedCandidateEvidence: z.array(z.string().max(200)).max(10).optional(),
+  repairedCandidateDiagnostics: ClaimDiagnosticsSchema.optional()
 }).strict();
 export type RecoveryRegionOutcome = z.infer<typeof RecoveryRegionOutcomeSchema>;
 

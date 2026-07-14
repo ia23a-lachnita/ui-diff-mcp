@@ -247,10 +247,15 @@ describe("runTargetRecovery", () => {
 
   it("rejects reviewer-accepted unsupported claims as unresolved recovery evidence", async () => {
     const result = await runTargetRecovery([component], makeCtx({
-      recoveryCaller: vi.fn().mockResolvedValue({
-        parsed: { classified: true, criterion: "presence", severity: "high", label: "Button", evidence: ["The actual screenshot is entirely blank."] },
-        rawContent: "", model: "recovery-model", provider: "openrouter"
-      }),
+      recoveryCaller: vi.fn()
+        .mockResolvedValueOnce({
+          parsed: { classified: true, criterion: "presence", severity: "high", label: "Button", evidence: ["The actual screenshot is entirely blank."] },
+          rawContent: "", model: "recovery-model", provider: "openrouter"
+        })
+        .mockResolvedValueOnce({
+          parsed: { classified: false },
+          rawContent: "", model: "repair-model", provider: "openrouter"
+        }),
       reviewerCaller: vi.fn().mockResolvedValue({
         parsed: { decision: "accepted", reason: "confirmed" },
         rawContent: "", model: "review-model", provider: "openrouter"
@@ -259,33 +264,41 @@ describe("runTargetRecovery", () => {
 
     expect(result.recovered).toHaveLength(0);
     expect(result.unclassifiedCount).toBe(1);
-    expect(result.statusCounts["unsupported_recovery_claim"]).toBe(1);
+    // Repair flow: validateClaim catches unsupported_absence before reviewer,
+    // repair mock returns classified:false → repair_classified_false
+    expect(result.statusCounts["repair_classified_false"]).toBe(1);
     expect(result.trace[0]).toMatchObject({
-      status: "unsupported_recovery_claim",
-      rejectionReason: expect.stringMatching(/absence/i),
+      status: "repair_classified_false",
       artifactPaths: expect.arrayContaining([expect.objectContaining({ role: "recovery_expected_crop" })])
     });
     expect(result.regionOutcomes[0]).toMatchObject({
       state: "unresolved",
-      reason: expect.stringMatching(/unsupported_recovery_claim/),
+      reason: "repair_classified_false",
       artifactPaths: expect.arrayContaining([expect.objectContaining({ role: "recovery_pixel_diff_mask" })])
     });
   });
 
   it("bounds long candidate evidence before schema-parsing the actual trace and outcome", async () => {
     const result = await runTargetRecovery([component], makeCtx({
-      recoveryCaller: vi.fn().mockResolvedValue({
-        parsed: {
-          classified: true,
-          criterion: "presence",
-          severity: "high",
-          label: "Recovered target",
-          evidence: ["The actual screenshot is entirely blank. " + "evidence ".repeat(40)]
-        },
-        rawContent: "",
-        model: "recovery-model",
-        provider: "openrouter"
-      }),
+      recoveryCaller: vi.fn()
+        .mockResolvedValueOnce({
+          parsed: {
+            classified: true,
+            criterion: "presence",
+            severity: "high",
+            label: "Recovered target",
+            evidence: ["The actual screenshot is entirely blank. " + "evidence ".repeat(40)]
+          },
+          rawContent: "",
+          model: "recovery-model",
+          provider: "openrouter"
+        })
+        .mockResolvedValueOnce({
+          parsed: { classified: false },
+          rawContent: "",
+          model: "repair-model",
+          provider: "openrouter"
+        }),
       reviewerCaller: vi.fn().mockResolvedValue({
         parsed: { decision: "accepted", reason: "confirmed" },
         rawContent: "",
@@ -296,11 +309,11 @@ describe("runTargetRecovery", () => {
 
     const trace = RecoveryComponentTraceSchema.array().parse(result.trace);
     const outcomes = RecoveryRegionOutcomeSchema.array().parse(result.regionOutcomes);
-    expect(trace[0]?.status).toBe("unsupported_recovery_claim");
-    expect(trace[0]?.candidateTitle?.length).toBeLessThanOrEqual(200);
-    expect(trace[0]?.candidateEvidence?.every(evidence => evidence.length <= 200)).toBe(true);
-    expect(outcomes[0]?.candidateTitle?.length).toBeLessThanOrEqual(200);
-    expect(outcomes[0]?.candidateEvidence?.every(evidence => evidence.length <= 200)).toBe(true);
+    // Repair flow: validateClaim catches unsupported_absence before reviewer,
+    // repair mock returns classified:false → repair_classified_false
+    expect(trace[0]?.status).toBe("repair_classified_false");
+    expect(trace[0]?.repairAttempted).toBe(true);
+    expect(outcomes[0]?.state).toBe("unresolved");
   });
 
   it("does not require a crop-only VLM to invent screen coordinates", async () => {
@@ -607,8 +620,8 @@ describe("runTargetRecovery", () => {
     const ctx = makeCtx({ recoveryCaller, reviewerCaller });
 
     const { recovered, unclassifiedCount } = await runTargetRecovery([component], ctx, unlimitedBudget);
-    expect(recovered).toHaveLength(1);
-    expect(recovered[0]?.reviewerStatus).toBe("needs_escalation");
+    // Escalation now remains unresolved per fail-closed recovery repair stage
+    expect(recovered).toHaveLength(0);
     expect(unclassifiedCount).toBe(1);
   });
 

@@ -38,13 +38,18 @@ export function buildRecoveryPrompt(pixelCount: number, componentArea: number, m
     `EVIDENCE IMAGES (in order):`,
     `  1. EXPECTED crop — expected image cropped to the changed region`,
     `  2. ACTUAL comparison crop — actual source crop resized with Lanczos to the expected crop dimensions`,
-    `  3. Directional diff overlay — cyan where expected differs, magenta where actual differs, yellow at region outlines`,
+    `  3. Directional diff overlay — diagnostic annotation ink: cyan where expected differs, magenta where actual differs, yellow at region outlines. These colors are overlay annotations, not UI colors.`,
     `  4. Pixel-diff mask — white pixels mark changed regions`,
     ``,
     `TASK:`,
     `Examine the images and determine whether this region contains a classifiable UI difference.`,
     `If yes, provide: criterion, severity, a short descriptive label, and evidence.`,
     `If the region cannot be classified as a meaningful UI diff (e.g., rendering noise, compression artifact), set classified to false.`,
+    ``,
+    `Evidence sources:`,
+    `- Appearance/content claims (color, typography, icon, layering) must come from source crops 1 and 2 only.`,
+    `- Overlay and mask images localize differences only; do not treat overlay annotation colors (cyan, magenta, yellow) as actual UI colors.`,
+    `- Exact color values (hex, RGB) require a named deterministic source-color measurement.`,
     ``,
     `VALID CRITERIA: ${criteriaList}`,
     ``,
@@ -171,6 +176,71 @@ export function buildReviewerPrompt(
   ].join("\n");
 }
 
+export interface RepairPromptContext {
+  originalCriterion: UiCriterion;
+  originalLabel: string;
+  originalTitle: string;
+  originalEvidence: string[];
+  diagnosticCode: string;
+  diagnosticMessage: string;
+  diagnosticExcerpt?: string;
+  measurements: DeterministicMeasurement[];
+}
+
+export function buildRecoveryRepairPrompt(ctx: RepairPromptContext): string {
+  const evidenceLines = ctx.originalEvidence.map(e => `  - ${e}`).join("\n");
+  const measurementLines = ctx.measurements.length > 0
+    ? ctx.measurements.map(m => `  - ${m.name}: ${m.value}${m.unit ? " " + m.unit : ""}`).join("\n")
+    : "  (none)";
+
+  return [
+    `You are a UI diff recovery repair specialist. An initial recovery classification was rejected by validation.`,
+    ``,
+    `ORIGINAL CLASSIFICATION:`,
+    `  Criterion: ${ctx.originalCriterion}`,
+    `  Label: ${ctx.originalLabel}`,
+    `  Title: ${ctx.originalTitle}`,
+    `  Evidence:`,
+    evidenceLines,
+    ``,
+    `VALIDATION DIAGNOSTIC:`,
+    `  Code: ${ctx.diagnosticCode}`,
+    `  Message: ${ctx.diagnosticMessage}`,
+    ...(ctx.diagnosticExcerpt !== undefined ? [`  Offending excerpt: "${ctx.diagnosticExcerpt}"`] : []),
+    ``,
+    `DETERMINISTIC MEASUREMENTS:`,
+    measurementLines,
+    ``,
+    `EVIDENCE IMAGES (in order):`,
+    `  1. EXPECTED crop — expected image cropped to the changed region`,
+    `  2. ACTUAL comparison crop — actual source crop resized with Lanczos to the expected crop dimensions`,
+    `  3. Directional diff overlay — diagnostic annotation ink: cyan where expected differs, magenta where actual differs, yellow at region outlines. These colors are overlay annotations, not UI colors.`,
+    `  4. Pixel-diff mask — white pixels mark changed regions`,
+    ``,
+    `TASK:`,
+    `Reclassify this region from scratch using only the four source images and the deterministic measurements.`,
+    `You must provide a complete new classification. Do NOT repeat the unsupported claim.`,
+    ``,
+    `RULES:`,
+    `- If no meaningful UI difference exists, set classified to false.`,
+    `- If classified is true, use the SAME criterion as the original: ${ctx.originalCriterion}.`,
+    `- Qualitative evidence only. Describe visible differences from source crops 1 and 2.`,
+    `- Do NOT invent new measurements or facts not present in the images or deterministic measurements.`,
+    `- Do NOT repeat the offending excerpt or claim pattern that caused the validation failure.`,
+    `- Exact color values (hex, RGB) require a named deterministic source-color measurement.`,
+    `- Overlay and mask images localize differences only; do not treat overlay annotation colors as UI colors.`,
+    NO_SPECULATION_RULE,
+    `- This is a one-shot repair. Provide your best complete classification.`,
+    ``,
+    `EXACT OUTPUT SHAPE:`,
+    `- No meaningful difference: { "classified": false }`,
+    `- Classifiable difference: { "classified": true, "criterion": "${ctx.originalCriterion}", "severity": "medium", "label": "short visible label", "evidence": ["visible qualitative observation"] }`,
+    `- Use an array of strings for evidence. Return no coordinate or bounding-box fields.`,
+    ``,
+    `Respond with JSON only matching that exact shape and the provided schema. No prose before or after the JSON.`
+  ].join("\n");
+}
+
 export function buildRecoveryReviewerPrompt(
   criterion: UiCriterion,
   elementLabel: string,
@@ -198,7 +268,7 @@ export function buildRecoveryReviewerPrompt(
     `EVIDENCE IMAGES (exactly 4 images, in order):`,
     `  1. EXPECTED crop — expected image cropped to the changed region`,
     `  2. ACTUAL comparison crop — actual source crop resized with Lanczos to the expected crop dimensions`,
-    `  3. Directional diff overlay — cyan where expected differs, magenta where actual differs, yellow at region outlines`,
+    `  3. Directional diff overlay — diagnostic annotation ink: cyan where expected differs, magenta where actual differs, yellow at region outlines. These colors are overlay annotations, not UI colors.`,
     `  4. Pixel-diff mask — white pixels mark changed regions`,
     ``,
     `STRICT RULES:`,
@@ -208,6 +278,8 @@ export function buildRecoveryReviewerPrompt(
     `- Do NOT explain causality. Do NOT suggest code changes. Do NOT judge correctness.`,
     NO_SPECULATION_RULE,
     NAMED_MEASUREMENT_RULE,
+    `- Appearance/content claims must come from source crops 1 and 2 only.`,
+    `- Overlay and mask images localize differences only; do not treat overlay annotation colors (cyan, magenta, yellow) as actual UI colors.`,
     `- Reject unsupported quantitative layout claims. Exact dimensions, positions, spacing, font sizes, percentages, and angles are valid only when they cite a deterministic measurement listed above.`,
     ``,
     `Respond with JSON only: { "decision": "accepted" | "rejected" | "needs_escalation", "reason": "<one sentence>" }`

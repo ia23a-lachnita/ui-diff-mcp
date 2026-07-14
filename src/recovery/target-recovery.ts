@@ -7,7 +7,7 @@ import type { Box, DiffRecord, UiArtifact, UnassignedVisualEvidence, RecoveryCom
 import { UiCriterionSchema } from "../schemas/core.js";
 import type { PixelComponent } from "../signals/pixel-diff.js";
 import type { VisionJsonCaller } from "../models/vision-json.js";
-import { buildRecoveryPrompt, buildRecoveryReviewerPrompt } from "../audit/prompts.js";
+import { buildRecoveryPrompt, buildRecoveryReviewerPrompt, buildRecoveryRepairPrompt, type RepairPromptContext } from "../audit/prompts.js";
 import { validateClaim } from "../audit/review-findings.js";
 import { type ImagePairTransform, projectExpectedBoxToActualSource } from "../images/coordinates.js";
 import { extractImageCropFromBounds, resizeRgbaForComparison } from "../images/crop.js";
@@ -524,11 +524,269 @@ export async function runTargetRecovery(
       ...baseMeasurements
     ].slice(0, 10);
 
+    // Validate candidate BEFORE reviewer
+    const candidateForValidation: Pick<DiffRecord, "title" | "evidence" | "measurements"> = {
+      title: candidateTitle,
+      evidence: candidateEvidence,
+      measurements: candidateMeasurements
+    };
+    const initialValidation = validateClaim(candidateForValidation);
+
+    // Repair logic: if initial validation fails, attempt one repair call
+    let activeCandidate = {
+      criterion: vlmResponse.criterion,
+      label: vlmResponse.label,
+      title: candidateTitle,
+      evidence: candidateEvidence,
+      measurements: candidateMeasurements,
+      validation: initialValidation,
+      isRepaired: false,
+      repairModel: undefined as string | undefined,
+      repairDurationMs: undefined as number | undefined
+    };
+
+    if (!initialValidation.valid) {
+      const repairStarted = Date.now();
+      const repairContext: RepairPromptContext = {
+        originalCriterion: vlmResponse.criterion,
+        originalLabel: vlmResponse.label,
+        originalTitle: candidateTitle,
+        originalEvidence: candidateEvidence,
+        diagnosticCode: initialValidation.diagnostics?.code ?? "unknown",
+        diagnosticMessage: initialValidation.diagnostics?.message ?? initialValidation.reason ?? "Validation failed",
+        ...(initialValidation.diagnostics?.offendingExcerpt !== undefined ? { diagnosticExcerpt: initialValidation.diagnostics.offendingExcerpt } : {}),
+        measurements: deterministicMeasurements
+      };
+      const repairPrompt = buildRecoveryRepairPrompt(repairContext);
+
+      try {
+        const repairRes = await ctx.recoveryCaller({
+          prompt: repairPrompt,
+          images,
+          jsonSchema: { name: "recovery_classification", schema: RECOVERY_JSON_SCHEMA },
+          timeoutMs: 60000
+        });
+        modelCallsUsed++;
+        const repairDurationMs = Date.now() - repairStarted;
+        const repairResponse = RecoveryVlmResponseSchema.parse(repairRes.parsed);
+
+        if (!repairResponse.classified) {
+          // Repair determined no regression — remain unresolved
+          countStatus("repair_classified_false");
+          trace.push({
+            ...baseTrace,
+            status: "repair_classified_false",
+            model: componentRecoveryModel,
+            repairModel: repairRes.model,
+            recoveryDurationMs,
+            repairDurationMs,
+            criterion: vlmResponse.criterion,
+            repairAttempted: true,
+            originalCandidateTitle: candidateTitle,
+            originalCandidateEvidence: candidateEvidence,
+            originalCandidateMeasurements: candidateMeasurements,
+            ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {})
+          });
+          regionOutcomes.push({
+            regionId: componentId,
+            state: "unresolved",
+            reason: "repair_classified_false",
+            artifactPaths: artifacts,
+            repairAttempted: true,
+            repairModel: repairRes.model,
+            repairDurationMs,
+            originalCandidateTitle: candidateTitle,
+            originalCandidateEvidence: candidateEvidence,
+            ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {})
+          });
+          unclassifiedCount++;
+          continue;
+        }
+
+        if (!repairResponse.criterion || !repairResponse.label || !repairResponse.evidence) {
+          countStatus("repair_schema_failure");
+          trace.push({
+            ...baseTrace,
+            status: "repair_schema_failure",
+            model: componentRecoveryModel,
+            repairModel: repairRes.model,
+            recoveryDurationMs,
+            repairDurationMs,
+            errorKind: "schema",
+            errorMessage: "Repair response missing required fields",
+            repairAttempted: true,
+            originalCandidateTitle: candidateTitle,
+            originalCandidateEvidence: candidateEvidence,
+            originalCandidateMeasurements: candidateMeasurements,
+            ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {})
+          });
+          regionOutcomes.push({
+            regionId: componentId,
+            state: "unresolved",
+            reason: "repair_schema_failure",
+            artifactPaths: artifacts,
+            repairAttempted: true,
+            repairModel: repairRes.model,
+            repairDurationMs,
+            originalCandidateTitle: candidateTitle,
+            originalCandidateEvidence: candidateEvidence,
+            ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {})
+          });
+          unclassifiedCount++;
+          continue;
+        }
+
+        // Enforce same criterion when classified true
+        if (repairResponse.criterion !== vlmResponse.criterion) {
+          countStatus("repair_criterion_change");
+          const repairedTitle = `${repairResponse.criterion} in recovered region: ${repairResponse.label}`.slice(0, 200);
+          const repairedEvidence = repairResponse.evidence.slice(0, 10).map(e => e.slice(0, 200));
+          trace.push({
+            ...baseTrace,
+            status: "repair_criterion_change",
+            model: componentRecoveryModel,
+            repairModel: repairRes.model,
+            recoveryDurationMs,
+            repairDurationMs,
+            criterion: repairResponse.criterion,
+            repairAttempted: true,
+            originalCandidateTitle: candidateTitle,
+            originalCandidateEvidence: candidateEvidence,
+            originalCandidateMeasurements: candidateMeasurements,
+            ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {}),
+            repairedCandidateTitle: repairedTitle,
+            repairedCandidateEvidence: repairedEvidence
+          });
+          regionOutcomes.push({
+            regionId: componentId,
+            state: "unresolved",
+            reason: "repair_criterion_change",
+            artifactPaths: artifacts,
+            repairAttempted: true,
+            repairModel: repairRes.model,
+            repairDurationMs,
+            originalCandidateTitle: candidateTitle,
+            originalCandidateEvidence: candidateEvidence,
+            ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {}),
+            repairedCandidateTitle: repairedTitle,
+            repairedCandidateEvidence: repairedEvidence
+          });
+          unclassifiedCount++;
+          continue;
+        }
+
+        // Build repaired candidate and validate
+        const repairedBaseMeasurements = (repairResponse.measurements ?? []).map(m => ({
+          name: m.name,
+          value: m.value as string | number | boolean,
+          ...(m.unit !== undefined ? { unit: m.unit } : {})
+        }));
+        const repairedTitle = `${repairResponse.criterion} in recovered region: ${repairResponse.label}`.slice(0, 200);
+        const repairedEvidence = repairResponse.evidence.slice(0, 10).map(e => e.slice(0, 200));
+        const repairedMeasurements = [
+          ...deterministicMeasurements,
+          ...repairedBaseMeasurements
+        ].slice(0, 10);
+
+        const repairedValidation = validateClaim({
+          title: repairedTitle,
+          evidence: repairedEvidence,
+          measurements: repairedMeasurements
+        });
+
+        if (!repairedValidation.valid) {
+          // Still invalid after repair — remain unresolved
+          countStatus("still_invalid");
+          trace.push({
+            ...baseTrace,
+            status: "still_invalid",
+            model: componentRecoveryModel,
+            repairModel: repairRes.model,
+            recoveryDurationMs,
+            repairDurationMs,
+            criterion: vlmResponse.criterion,
+            repairAttempted: true,
+            rejectionReason: repairedValidation.reason ?? "Still invalid after repair",
+            originalCandidateTitle: candidateTitle,
+            originalCandidateEvidence: candidateEvidence,
+            originalCandidateMeasurements: candidateMeasurements,
+            ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {}),
+            repairedCandidateTitle: repairedTitle,
+            repairedCandidateEvidence: repairedEvidence,
+            repairedCandidateMeasurements: repairedMeasurements,
+            ...(repairedValidation.diagnostics !== undefined ? { repairedCandidateDiagnostics: repairedValidation.diagnostics } : {})
+          });
+          regionOutcomes.push({
+            regionId: componentId,
+            state: "unresolved",
+            reason: "still_invalid",
+            rejectionReason: repairedValidation.reason ?? "Still invalid after repair",
+            artifactPaths: artifacts,
+            repairAttempted: true,
+            repairModel: repairRes.model,
+            repairDurationMs,
+            originalCandidateTitle: candidateTitle,
+            originalCandidateEvidence: candidateEvidence,
+            ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {}),
+            repairedCandidateTitle: repairedTitle,
+            repairedCandidateEvidence: repairedEvidence,
+            ...(repairedValidation.diagnostics !== undefined ? { repairedCandidateDiagnostics: repairedValidation.diagnostics } : {})
+          });
+          unclassifiedCount++;
+          continue;
+        }
+
+        // Repair succeeded and passes validation — use repaired candidate for reviewer
+        activeCandidate = {
+          criterion: repairResponse.criterion,
+          label: repairResponse.label,
+          title: repairedTitle,
+          evidence: repairedEvidence,
+          measurements: repairedMeasurements,
+          validation: repairedValidation,
+          isRepaired: true,
+          repairModel: repairRes.model,
+          repairDurationMs
+        };
+      } catch (err) {
+        const repairDurationMs = Date.now() - repairStarted;
+        const traceStatus = err instanceof z.ZodError ? "repair_schema_failure" as const : "repair_provider_failure" as const;
+        countStatus(traceStatus);
+        trace.push({
+          ...baseTrace,
+          status: traceStatus,
+          model: componentRecoveryModel,
+          repairDurationMs,
+          errorKind: err instanceof z.ZodError ? "schema" as const : "provider",
+          errorMessage: err instanceof Error ? err.message.slice(0, 500) : String(err).slice(0, 500),
+          recoveryDurationMs,
+          repairAttempted: true,
+          originalCandidateTitle: candidateTitle,
+          originalCandidateEvidence: candidateEvidence,
+          originalCandidateMeasurements: candidateMeasurements,
+          ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {})
+        });
+        regionOutcomes.push({
+          regionId: componentId,
+          state: "unresolved",
+          reason: traceStatus,
+          artifactPaths: artifacts,
+          repairAttempted: true,
+          repairDurationMs,
+          originalCandidateTitle: candidateTitle,
+          originalCandidateEvidence: candidateEvidence,
+          ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {})
+        });
+        unclassifiedCount++;
+        continue;
+      }
+    }
+
     const reviewerPrompt = buildRecoveryReviewerPrompt(
-      vlmResponse.criterion,
-      vlmResponse.label,
-      candidateTitle,
-      vlmResponse.evidence,
+      activeCandidate.criterion,
+      activeCandidate.label,
+      activeCandidate.title,
+      activeCandidate.evidence,
       deterministicMeasurements
     );
 
@@ -575,11 +833,20 @@ export async function runTargetRecovery(
         reviewerModel,
         recoveryDurationMs,
         reviewerDurationMs,
-        criterion: vlmResponse.criterion,
+        criterion: activeCandidate.criterion,
         ...(reviewReason !== undefined ? { rejectionReason: reviewReason } : {}),
-        candidateTitle,
-        candidateEvidence,
-        candidateMeasurements
+        candidateTitle: activeCandidate.title,
+        candidateEvidence: activeCandidate.evidence,
+        candidateMeasurements: activeCandidate.measurements,
+        ...(activeCandidate.isRepaired ? {
+          repairAttempted: true,
+          repairModel: activeCandidate.repairModel,
+          repairDurationMs: activeCandidate.repairDurationMs,
+          originalCandidateTitle: candidateTitle,
+          originalCandidateEvidence: candidateEvidence,
+          originalCandidateMeasurements: candidateMeasurements,
+          ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {})
+        } : {})
       });
       unclassifiedCount++;
       regionOutcomes.push({
@@ -588,30 +855,35 @@ export async function runTargetRecovery(
         reason: `reviewer_rejected${reviewReason ? `: ${reviewReason.slice(0, 150)}` : ""}`,
         artifactPaths: artifacts,
         ...(reviewReason !== undefined ? { rejectionReason: reviewReason } : {}),
-        criterion: vlmResponse.criterion,
+        criterion: activeCandidate.criterion,
         model: componentRecoveryModel,
         reviewerModel,
         recoveryDurationMs,
         reviewerDurationMs,
-        candidateTitle,
-        candidateEvidence,
-        candidateMeasurements
+        candidateTitle: activeCandidate.title,
+        candidateEvidence: activeCandidate.evidence,
+        candidateMeasurements: activeCandidate.measurements,
+        ...(activeCandidate.isRepaired ? {
+          repairAttempted: true,
+          repairModel: activeCandidate.repairModel,
+          repairDurationMs: activeCandidate.repairDurationMs,
+          originalCandidateTitle: candidateTitle,
+          originalCandidateEvidence: candidateEvidence,
+          ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {})
+        } : {})
       });
       continue;
     }
 
     const diffId = crypto.randomBytes(6).toString("hex");
-    if (reviewDecision === "needs_escalation") {
-      unclassifiedCount++;
-    }
     const record: DiffRecord = {
       id: diffId,
-      criterion: vlmResponse.criterion,
+      criterion: activeCandidate.criterion,
       severity: vlmResponse.severity ?? "medium",
-      title: candidateTitle,
+      title: activeCandidate.title,
       location: recoveredBox,
-      evidence: candidateEvidence,
-      measurements: candidateMeasurements,
+      evidence: activeCandidate.evidence,
+      measurements: activeCandidate.measurements,
       artifactPaths: artifacts,
       reviewerStatus: reviewDecision === "needs_escalation" ? "needs_escalation" : "accepted",
       model: componentRecoveryModel,
@@ -632,12 +904,21 @@ export async function runTargetRecovery(
           reviewerModel,
           recoveryDurationMs,
           reviewerDurationMs,
-          criterion: vlmResponse.criterion,
+          criterion: activeCandidate.criterion,
           rejectionReason: reason,
-          candidateTitle,
-          candidateEvidence,
-          candidateMeasurements,
-          ...(validation.diagnostics !== undefined ? { claimValidationDiagnostics: validation.diagnostics } : {})
+          candidateTitle: activeCandidate.title,
+          candidateEvidence: activeCandidate.evidence,
+          candidateMeasurements: activeCandidate.measurements,
+          ...(validation.diagnostics !== undefined ? { claimValidationDiagnostics: validation.diagnostics } : {}),
+          ...(activeCandidate.isRepaired ? {
+            repairAttempted: true,
+            repairModel: activeCandidate.repairModel,
+            repairDurationMs: activeCandidate.repairDurationMs,
+            originalCandidateTitle: candidateTitle,
+            originalCandidateEvidence: candidateEvidence,
+            originalCandidateMeasurements: candidateMeasurements,
+            ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {})
+          } : {})
         });
         regionOutcomes.push({
           regionId: componentId,
@@ -645,22 +926,83 @@ export async function runTargetRecovery(
           reason: `unsupported_recovery_claim: ${reason}`,
           rejectionReason: reason,
           artifactPaths: artifacts,
-          criterion: vlmResponse.criterion,
+          criterion: activeCandidate.criterion,
           ...(validation.diagnostics !== undefined ? { diagnostics: validation.diagnostics } : {}),
-          candidateTitle,
-          candidateEvidence,
-          candidateMeasurements,
+          candidateTitle: activeCandidate.title,
+          candidateEvidence: activeCandidate.evidence,
+          candidateMeasurements: activeCandidate.measurements,
           model: componentRecoveryModel,
           reviewerModel,
           recoveryDurationMs,
-          reviewerDurationMs
+          reviewerDurationMs,
+          ...(activeCandidate.isRepaired ? {
+            repairAttempted: true,
+            repairModel: activeCandidate.repairModel,
+            repairDurationMs: activeCandidate.repairDurationMs,
+            originalCandidateTitle: candidateTitle,
+            originalCandidateEvidence: candidateEvidence,
+            ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {})
+          } : {})
         });
         continue;
       }
     }
 
+    if (reviewDecision === "needs_escalation") {
+      // Escalation remains unresolved — only accepted+valid becomes final
+      unclassifiedCount++;
+      countStatus("recovery_needs_escalation");
+      trace.push({
+        ...baseTrace,
+        status: "recovery_needs_escalation",
+        model: componentRecoveryModel,
+        reviewerModel,
+        recoveryDurationMs,
+        reviewerDurationMs,
+        criterion: activeCandidate.criterion,
+        candidateTitle: activeCandidate.title,
+        candidateEvidence: activeCandidate.evidence,
+        candidateMeasurements: activeCandidate.measurements,
+        ...(reviewReason !== undefined ? { rejectionReason: reviewReason } : {}),
+        ...(activeCandidate.isRepaired ? {
+          repairAttempted: true,
+          repairModel: activeCandidate.repairModel,
+          repairDurationMs: activeCandidate.repairDurationMs,
+          originalCandidateTitle: candidateTitle,
+          originalCandidateEvidence: candidateEvidence,
+          originalCandidateMeasurements: candidateMeasurements,
+          ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {})
+        } : {})
+      });
+      regionOutcomes.push({
+        regionId: componentId,
+        state: "unresolved",
+        reason: "needs_escalation",
+        artifactPaths: artifacts,
+        criterion: activeCandidate.criterion,
+        model: componentRecoveryModel,
+        reviewerModel,
+        recoveryDurationMs,
+        reviewerDurationMs,
+        candidateTitle: activeCandidate.title,
+        candidateEvidence: activeCandidate.evidence,
+        candidateMeasurements: activeCandidate.measurements,
+        ...(reviewReason !== undefined ? { rejectionReason: reviewReason } : {}),
+        ...(activeCandidate.isRepaired ? {
+          repairAttempted: true,
+          repairModel: activeCandidate.repairModel,
+          repairDurationMs: activeCandidate.repairDurationMs,
+          originalCandidateTitle: candidateTitle,
+          originalCandidateEvidence: candidateEvidence,
+          ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {})
+        } : {})
+      });
+      continue;
+    }
+
+    // Only reviewer-accepted + validateClaim-valid candidates become final
     recovered.push(record);
-    const finalStatus = reviewDecision === "needs_escalation" ? "recovery_needs_escalation" as const : "recovery_accepted" as const;
+    const finalStatus = "recovery_accepted" as const;
     countStatus(finalStatus);
     trace.push({
       ...baseTrace,
@@ -669,23 +1011,42 @@ export async function runTargetRecovery(
       reviewerModel,
       recoveryDurationMs,
       reviewerDurationMs,
-      criterion: vlmResponse.criterion,
-      diffId: record.id
+      criterion: activeCandidate.criterion,
+      diffId: record.id,
+      ...(activeCandidate.isRepaired ? {
+        repairAttempted: true,
+        repairModel: activeCandidate.repairModel,
+        repairDurationMs: activeCandidate.repairDurationMs,
+        originalCandidateTitle: candidateTitle,
+        originalCandidateEvidence: candidateEvidence,
+        originalCandidateMeasurements: candidateMeasurements,
+        ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {}),
+        repairedCandidateTitle: activeCandidate.title,
+        repairedCandidateEvidence: activeCandidate.evidence
+      } : {})
     });
     regionOutcomes.push({
       regionId: componentId,
-      state: reviewDecision === "needs_escalation" ? "unresolved" : "recovered",
-      reason: reviewDecision === "needs_escalation" ? "needs_escalation" : "recovery_accepted",
+      state: "recovered",
+      reason: "recovery_accepted",
       artifactPaths: artifacts,
       findingId: record.id,
-      criterion: vlmResponse.criterion,
+      criterion: activeCandidate.criterion,
       model: componentRecoveryModel,
       reviewerModel,
       recoveryDurationMs,
       reviewerDurationMs,
-      candidateTitle,
-      candidateEvidence,
-      candidateMeasurements
+      candidateTitle: activeCandidate.title,
+      candidateEvidence: activeCandidate.evidence,
+      candidateMeasurements: activeCandidate.measurements,
+      ...(activeCandidate.isRepaired ? {
+        repairAttempted: true,
+        repairModel: activeCandidate.repairModel,
+        repairDurationMs: activeCandidate.repairDurationMs,
+        originalCandidateTitle: candidateTitle,
+        originalCandidateEvidence: candidateEvidence,
+        ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {})
+      } : {})
     });
     void evidence; // evidence artifact metadata is captured in record.artifactPaths
   }
