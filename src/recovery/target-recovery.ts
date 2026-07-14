@@ -7,7 +7,7 @@ import type { Box, DiffRecord, UiArtifact, UnassignedVisualEvidence, RecoveryCom
 import { UiCriterionSchema } from "../schemas/core.js";
 import type { PixelComponent } from "../signals/pixel-diff.js";
 import type { VisionJsonCaller } from "../models/vision-json.js";
-import { buildRecoveryPrompt, buildRecoveryReviewerPrompt, buildRecoveryRepairPrompt, type RepairPromptContext } from "../audit/prompts.js";
+import { buildRecoveryPrompt, buildRecoveryReviewerPrompt, buildRecoveryRepairPrompt, type RepairPromptContext, type RecoveryReviewerContext } from "../audit/prompts.js";
 import { validateClaim } from "../audit/review-findings.js";
 import { type ImagePairTransform, projectExpectedBoxToActualSource } from "../images/coordinates.js";
 import { extractImageCropFromBounds, resizeRgbaForComparison } from "../images/crop.js";
@@ -85,6 +85,7 @@ export interface RecoveryContext {
   artifactDir: string;
   recoveryCaller: VisionJsonCaller;
   reviewerCaller: VisionJsonCaller;
+  reviewerResolver?: (recoveryProvider: string, recoveryModel: string) => VisionJsonCaller | undefined;
 }
 
 function extractRgbaCrop(
@@ -456,6 +457,7 @@ export async function runTargetRecovery(
 
     let vlmResponse: z.infer<typeof RecoveryVlmResponseSchema>;
     let componentRecoveryModel = "unknown";
+    let componentRecoveryProvider = "unknown";
     const recoveryStarted = Date.now();
     try {
       const res = await ctx.recoveryCaller({
@@ -466,6 +468,7 @@ export async function runTargetRecovery(
       });
       modelCallsUsed++;
       componentRecoveryModel = res.model;
+      componentRecoveryProvider = res.provider;
       if (!recoveryModel) {
         recoveryModel = res.model;
       }
@@ -477,6 +480,7 @@ export async function runTargetRecovery(
         ...baseTrace,
         status: traceStatus,
         model: componentRecoveryModel,
+        provider: componentRecoveryProvider,
         recoveryDurationMs: Date.now() - recoveryStarted,
         errorKind: err instanceof z.ZodError ? "schema" as const : "provider" as const,
         errorMessage: err instanceof Error ? err.message.slice(0, 500) : String(err).slice(0, 500)
@@ -484,10 +488,15 @@ export async function runTargetRecovery(
       console.error(`Recovery VLM call failed for component ${evidenceId}:`, err);
       modelCallsUsed++;
       unclassifiedCount++;
-      regionOutcomes.push({ regionId: componentId, state: "unresolved", reason: traceStatus, artifactPaths: artifacts });
+      regionOutcomes.push({ regionId: componentId, state: "unresolved", reason: traceStatus, artifactPaths: artifacts, provider: componentRecoveryProvider });
       continue;
     }
     const recoveryDurationMs = Date.now() - recoveryStarted;
+
+    // Resolve independent reviewer based on actual recovery provider/model
+    const resolvedReviewer = ctx.reviewerResolver
+      ? ctx.reviewerResolver(componentRecoveryProvider, componentRecoveryModel)
+      : ctx.reviewerCaller;
 
     // VLM explicitly determined no regression in this region — valid verdict, not a failure.
     if (!vlmResponse.classified) {
@@ -533,6 +542,7 @@ export async function runTargetRecovery(
     const initialValidation = validateClaim(candidateForValidation);
 
     // Repair logic: if initial validation fails, attempt one repair call
+    let repairedBaseMeasurements: { name: string; value: string | number | boolean; unit?: string }[] = [];
     let activeCandidate = {
       criterion: vlmResponse.criterion,
       label: vlmResponse.label,
@@ -542,10 +552,50 @@ export async function runTargetRecovery(
       validation: initialValidation,
       isRepaired: false,
       repairModel: undefined as string | undefined,
+      repairProvider: undefined as string | undefined,
       repairDurationMs: undefined as number | undefined
     };
 
     if (!initialValidation.valid) {
+      // Budget-awareness: skip repair if budget cannot cover repair + reviewer
+      const remainingAfterInitial = budget.maxModelCalls - modelCallsUsed;
+      const hasTimeForRepairAndReviewer = Date.now() < budget.deadlineMs;
+      if (remainingAfterInitial < 2 || !hasTimeForRepairAndReviewer) {
+        countStatus("budget_exhausted_before_repair");
+        trace.push({
+          ...baseTrace,
+          status: "budget_exhausted_before_repair",
+          model: componentRecoveryModel,
+          provider: componentRecoveryProvider,
+          recoveryDurationMs,
+          criterion: vlmResponse.criterion,
+          repairAttempted: false,
+          rejectionReason: initialValidation.reason ?? "Validation failed",
+          originalCandidateTitle: candidateTitle,
+          originalCandidateEvidence: candidateEvidence,
+          originalCandidateMeasurements: candidateMeasurements,
+          rawModelProposedMeasurements: baseMeasurements,
+          originalCandidateRawMeasurements: baseMeasurements,
+          ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {})
+        });
+        regionOutcomes.push({
+          regionId: componentId,
+          state: "unresolved",
+          reason: remainingAfterInitial < 2 ? "budget_exhausted_before_repair" : "deadline_exceeded",
+          artifactPaths: artifacts,
+          repairAttempted: false,
+          originalCandidateTitle: candidateTitle,
+          originalCandidateEvidence: candidateEvidence,
+          originalCandidateMeasurements: candidateMeasurements,
+          rawModelProposedMeasurements: baseMeasurements,
+          originalCandidateRawMeasurements: baseMeasurements,
+          provider: componentRecoveryProvider,
+          ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {})
+        });
+        unclassifiedCount++;
+        continue;
+      }
+
       const repairStarted = Date.now();
       const repairContext: RepairPromptContext = {
         originalCriterion: vlmResponse.criterion,
@@ -569,6 +619,11 @@ export async function runTargetRecovery(
         modelCallsUsed++;
         const repairDurationMs = Date.now() - repairStarted;
         const repairResponse = RecoveryVlmResponseSchema.parse(repairRes.parsed);
+        repairedBaseMeasurements = (repairResponse.measurements ?? []).map(m => ({
+          name: m.name,
+          value: m.value as string | number | boolean,
+          ...(m.unit !== undefined ? { unit: m.unit } : {})
+        }));
 
         if (!repairResponse.classified) {
           // Repair determined no regression — remain unresolved
@@ -645,7 +700,9 @@ export async function runTargetRecovery(
             ...baseTrace,
             status: "repair_criterion_change",
             model: componentRecoveryModel,
+            provider: componentRecoveryProvider,
             repairModel: repairRes.model,
+            repairProvider: repairRes.provider,
             recoveryDurationMs,
             repairDurationMs,
             criterion: repairResponse.criterion,
@@ -653,6 +710,9 @@ export async function runTargetRecovery(
             originalCandidateTitle: candidateTitle,
             originalCandidateEvidence: candidateEvidence,
             originalCandidateMeasurements: candidateMeasurements,
+            rawModelProposedMeasurements: baseMeasurements,
+            originalCandidateRawMeasurements: baseMeasurements,
+            repairedCandidateRawMeasurements: repairedBaseMeasurements,
             ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {}),
             repairedCandidateTitle: repairedTitle,
             repairedCandidateEvidence: repairedEvidence
@@ -664,9 +724,67 @@ export async function runTargetRecovery(
             artifactPaths: artifacts,
             repairAttempted: true,
             repairModel: repairRes.model,
+            repairProvider: repairRes.provider,
             repairDurationMs,
             originalCandidateTitle: candidateTitle,
             originalCandidateEvidence: candidateEvidence,
+            originalCandidateMeasurements: candidateMeasurements,
+            rawModelProposedMeasurements: baseMeasurements,
+            originalCandidateRawMeasurements: baseMeasurements,
+            repairedCandidateRawMeasurements: repairedBaseMeasurements,
+            provider: componentRecoveryProvider,
+            ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {}),
+            repairedCandidateTitle: repairedTitle,
+            repairedCandidateEvidence: repairedEvidence
+          });
+          unclassifiedCount++;
+          continue;
+        }
+
+        // Enforce severity continuity: repair must match original severity
+        const canonicalOriginalSeverity = vlmResponse.severity ?? "medium";
+        const repairedSeverity = repairResponse.severity ?? "medium";
+        if (repairedSeverity !== canonicalOriginalSeverity) {
+          countStatus("repair_severity_change");
+          const repairedTitle = `${repairResponse.criterion} in recovered region: ${repairResponse.label}`.slice(0, 200);
+          const repairedEvidence = repairResponse.evidence.slice(0, 10).map(e => e.slice(0, 200));
+          trace.push({
+            ...baseTrace,
+            status: "repair_severity_change",
+            model: componentRecoveryModel,
+            provider: componentRecoveryProvider,
+            repairModel: repairRes.model,
+            repairProvider: repairRes.provider,
+            recoveryDurationMs,
+            repairDurationMs,
+            criterion: vlmResponse.criterion,
+            repairAttempted: true,
+            originalCandidateTitle: candidateTitle,
+            originalCandidateEvidence: candidateEvidence,
+            originalCandidateMeasurements: candidateMeasurements,
+            rawModelProposedMeasurements: baseMeasurements,
+            originalCandidateRawMeasurements: baseMeasurements,
+            repairedCandidateRawMeasurements: repairedBaseMeasurements,
+            ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {}),
+            repairedCandidateTitle: repairedTitle,
+            repairedCandidateEvidence: repairedEvidence
+          });
+          regionOutcomes.push({
+            regionId: componentId,
+            state: "unresolved",
+            reason: "repair_severity_change",
+            artifactPaths: artifacts,
+            repairAttempted: true,
+            repairModel: repairRes.model,
+            repairProvider: repairRes.provider,
+            repairDurationMs,
+            originalCandidateTitle: candidateTitle,
+            originalCandidateEvidence: candidateEvidence,
+            originalCandidateMeasurements: candidateMeasurements,
+            rawModelProposedMeasurements: baseMeasurements,
+            originalCandidateRawMeasurements: baseMeasurements,
+            repairedCandidateRawMeasurements: repairedBaseMeasurements,
+            provider: componentRecoveryProvider,
             ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {}),
             repairedCandidateTitle: repairedTitle,
             repairedCandidateEvidence: repairedEvidence
@@ -676,11 +794,6 @@ export async function runTargetRecovery(
         }
 
         // Build repaired candidate and validate
-        const repairedBaseMeasurements = (repairResponse.measurements ?? []).map(m => ({
-          name: m.name,
-          value: m.value as string | number | boolean,
-          ...(m.unit !== undefined ? { unit: m.unit } : {})
-        }));
         const repairedTitle = `${repairResponse.criterion} in recovered region: ${repairResponse.label}`.slice(0, 200);
         const repairedEvidence = repairResponse.evidence.slice(0, 10).map(e => e.slice(0, 200));
         const repairedMeasurements = [
@@ -746,6 +859,7 @@ export async function runTargetRecovery(
           validation: repairedValidation,
           isRepaired: true,
           repairModel: repairRes.model,
+          repairProvider: repairRes.provider,
           repairDurationMs
         };
       } catch (err) {
@@ -782,20 +896,126 @@ export async function runTargetRecovery(
       }
     }
 
+    // Budget-awareness: check if we have budget for reviewer
+    const remainingBeforeReviewer = budget.maxModelCalls - modelCallsUsed;
+    const hasTimeForReviewer = Date.now() < budget.deadlineMs;
+    if (remainingBeforeReviewer < 1 || !hasTimeForReviewer) {
+      countStatus("budget_exhausted_before_reviewer");
+      trace.push({
+        ...baseTrace,
+        status: "budget_exhausted_before_reviewer",
+        model: componentRecoveryModel,
+        provider: componentRecoveryProvider,
+        recoveryDurationMs,
+        criterion: activeCandidate.criterion,
+        ...(activeCandidate.isRepaired ? {
+          repairAttempted: true,
+          repairModel: activeCandidate.repairModel,
+          repairProvider: activeCandidate.repairProvider,
+          repairDurationMs: activeCandidate.repairDurationMs,
+          originalCandidateTitle: candidateTitle,
+          originalCandidateEvidence: candidateEvidence,
+          originalCandidateMeasurements: candidateMeasurements,
+          rawModelProposedMeasurements: baseMeasurements,
+          originalCandidateRawMeasurements: baseMeasurements,
+          ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {})
+        } : { rawModelProposedMeasurements: baseMeasurements })
+      });
+      unclassifiedCount++;
+      regionOutcomes.push({
+        regionId: componentId,
+        state: "unresolved",
+        reason: remainingBeforeReviewer < 1 ? "budget_exhausted_before_reviewer" : "deadline_exceeded",
+        artifactPaths: artifacts,
+        ...(activeCandidate.isRepaired ? {
+          repairAttempted: true,
+          repairModel: activeCandidate.repairModel,
+          repairProvider: activeCandidate.repairProvider,
+          repairDurationMs: activeCandidate.repairDurationMs,
+          originalCandidateTitle: candidateTitle,
+          originalCandidateEvidence: candidateEvidence,
+          originalCandidateMeasurements: candidateMeasurements,
+          rawModelProposedMeasurements: baseMeasurements,
+          originalCandidateRawMeasurements: baseMeasurements,
+          ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {})
+        } : { rawModelProposedMeasurements: baseMeasurements }),
+        provider: componentRecoveryProvider
+      });
+      continue;
+    }
+
+    // Check if resolver returned undefined (no independent route available)
+    if (ctx.reviewerResolver && resolvedReviewer === undefined) {
+      countStatus("independent_reviewer_unavailable");
+      trace.push({
+        ...baseTrace,
+        status: "independent_reviewer_unavailable",
+        model: componentRecoveryModel,
+        provider: componentRecoveryProvider,
+        recoveryDurationMs,
+        criterion: activeCandidate.criterion,
+        ...(activeCandidate.isRepaired ? {
+          repairAttempted: true,
+          repairModel: activeCandidate.repairModel,
+          repairProvider: activeCandidate.repairProvider,
+          repairDurationMs: activeCandidate.repairDurationMs,
+          originalCandidateTitle: candidateTitle,
+          originalCandidateEvidence: candidateEvidence,
+          originalCandidateMeasurements: candidateMeasurements,
+          rawModelProposedMeasurements: baseMeasurements,
+          originalCandidateRawMeasurements: baseMeasurements,
+          ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {})
+        } : { rawModelProposedMeasurements: baseMeasurements })
+      });
+      regionOutcomes.push({
+        regionId: componentId,
+        state: "unresolved",
+        reason: "independent_reviewer_unavailable",
+        artifactPaths: artifacts,
+        provider: componentRecoveryProvider,
+        ...(activeCandidate.isRepaired ? {
+          repairAttempted: true,
+          repairModel: activeCandidate.repairModel,
+          repairProvider: activeCandidate.repairProvider,
+          repairDurationMs: activeCandidate.repairDurationMs,
+          originalCandidateTitle: candidateTitle,
+          originalCandidateEvidence: candidateEvidence,
+          originalCandidateMeasurements: candidateMeasurements,
+          rawModelProposedMeasurements: baseMeasurements,
+          originalCandidateRawMeasurements: baseMeasurements,
+          ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {})
+        } : { rawModelProposedMeasurements: baseMeasurements })
+      });
+      unclassifiedCount++;
+      continue;
+    }
+
+    // Build reviewer prompt with repair context when available
+    const reviewerRepairContext: RecoveryReviewerContext | undefined = activeCandidate.isRepaired ? {
+      originalCandidateTitle: candidateTitle,
+      originalCandidateEvidence: candidateEvidence,
+      diagnosticCode: initialValidation.diagnostics?.code ?? "unknown",
+      diagnosticMessage: initialValidation.diagnostics?.message ?? initialValidation.reason ?? "Validation failed",
+      repairedCandidateTitle: activeCandidate.title,
+      repairedCandidateEvidence: activeCandidate.evidence
+    } : undefined;
+
     const reviewerPrompt = buildRecoveryReviewerPrompt(
       activeCandidate.criterion,
       activeCandidate.label,
       activeCandidate.title,
       activeCandidate.evidence,
-      deterministicMeasurements
+      deterministicMeasurements,
+      reviewerRepairContext
     );
 
     let reviewDecision: "accepted" | "rejected" | "needs_escalation" = "accepted";
     const reviewerStarted = Date.now();
     let reviewerModel = "unknown";
+    let reviewerProvider: string | undefined;
     let reviewReason: string | undefined;
     try {
-      const reviewRes = await ctx.reviewerCaller({
+      const reviewRes = await resolvedReviewer!({
         prompt: reviewerPrompt,
         images,
         jsonSchema: {
@@ -817,6 +1037,7 @@ export async function runTargetRecovery(
       reviewDecision = parsed.decision;
       reviewReason = parsed.reason;
       reviewerModel = reviewRes.model;
+      reviewerProvider = reviewRes.provider;
     } catch (err) {
       console.error(`Recovery reviewer call failed for component ${evidenceId}:`, err);
       modelCallsUsed++;
@@ -824,29 +1045,89 @@ export async function runTargetRecovery(
     }
     const reviewerDurationMs = Date.now() - reviewerStarted;
 
+    // Independence check: reviewer must not use same provider+model as recovery
+    if (reviewerProvider === componentRecoveryProvider && reviewerModel === componentRecoveryModel) {
+      countStatus("independent_reviewer_unavailable");
+      trace.push({
+        ...baseTrace,
+        status: "independent_reviewer_unavailable",
+        model: componentRecoveryModel,
+        provider: componentRecoveryProvider,
+        reviewerModel,
+        reviewerProvider,
+        recoveryDurationMs,
+        reviewerDurationMs,
+        criterion: activeCandidate.criterion,
+        ...(activeCandidate.isRepaired ? {
+          repairAttempted: true,
+          repairModel: activeCandidate.repairModel,
+          repairProvider: activeCandidate.repairProvider,
+          repairDurationMs: activeCandidate.repairDurationMs,
+          originalCandidateTitle: candidateTitle,
+          originalCandidateEvidence: candidateEvidence,
+          originalCandidateMeasurements: candidateMeasurements,
+          rawModelProposedMeasurements: baseMeasurements,
+          originalCandidateRawMeasurements: baseMeasurements,
+          ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {})
+        } : { rawModelProposedMeasurements: baseMeasurements })
+      });
+      regionOutcomes.push({
+        regionId: componentId,
+        state: "unresolved",
+        reason: "independent_reviewer_unavailable",
+        artifactPaths: artifacts,
+        provider: componentRecoveryProvider,
+        reviewerProvider,
+        reviewerModel,
+        ...(activeCandidate.isRepaired ? {
+          repairAttempted: true,
+          repairModel: activeCandidate.repairModel,
+          repairProvider: activeCandidate.repairProvider,
+          repairDurationMs: activeCandidate.repairDurationMs,
+          originalCandidateTitle: candidateTitle,
+          originalCandidateEvidence: candidateEvidence,
+          originalCandidateMeasurements: candidateMeasurements,
+          rawModelProposedMeasurements: baseMeasurements,
+          originalCandidateRawMeasurements: baseMeasurements,
+          ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {})
+        } : { rawModelProposedMeasurements: baseMeasurements })
+      });
+      unclassifiedCount++;
+      continue;
+    }
+
+    // Continuity review result for repaired candidates
+    const continuityReviewResult = activeCandidate.isRepaired && reviewDecision === "rejected" ? "rejected" as const : undefined;
+
     if (reviewDecision === "rejected") {
       countStatus("recovery_rejected");
       trace.push({
         ...baseTrace,
         status: "recovery_rejected",
         model: componentRecoveryModel,
+        provider: componentRecoveryProvider,
         reviewerModel,
+        reviewerProvider,
         recoveryDurationMs,
         reviewerDurationMs,
         criterion: activeCandidate.criterion,
         ...(reviewReason !== undefined ? { rejectionReason: reviewReason } : {}),
+        ...(continuityReviewResult !== undefined ? { continuityReviewResult } : {}),
         candidateTitle: activeCandidate.title,
         candidateEvidence: activeCandidate.evidence,
         candidateMeasurements: activeCandidate.measurements,
         ...(activeCandidate.isRepaired ? {
           repairAttempted: true,
           repairModel: activeCandidate.repairModel,
+          repairProvider: activeCandidate.repairProvider,
           repairDurationMs: activeCandidate.repairDurationMs,
           originalCandidateTitle: candidateTitle,
           originalCandidateEvidence: candidateEvidence,
           originalCandidateMeasurements: candidateMeasurements,
+          rawModelProposedMeasurements: baseMeasurements,
+          originalCandidateRawMeasurements: baseMeasurements,
           ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {})
-        } : {})
+        } : { rawModelProposedMeasurements: baseMeasurements })
       });
       unclassifiedCount++;
       regionOutcomes.push({
@@ -855,9 +1136,12 @@ export async function runTargetRecovery(
         reason: `reviewer_rejected${reviewReason ? `: ${reviewReason.slice(0, 150)}` : ""}`,
         artifactPaths: artifacts,
         ...(reviewReason !== undefined ? { rejectionReason: reviewReason } : {}),
+        ...(continuityReviewResult !== undefined ? { continuityReviewResult } : {}),
         criterion: activeCandidate.criterion,
         model: componentRecoveryModel,
+        provider: componentRecoveryProvider,
         reviewerModel,
+        reviewerProvider,
         recoveryDurationMs,
         reviewerDurationMs,
         candidateTitle: activeCandidate.title,
@@ -866,11 +1150,15 @@ export async function runTargetRecovery(
         ...(activeCandidate.isRepaired ? {
           repairAttempted: true,
           repairModel: activeCandidate.repairModel,
+          repairProvider: activeCandidate.repairProvider,
           repairDurationMs: activeCandidate.repairDurationMs,
           originalCandidateTitle: candidateTitle,
           originalCandidateEvidence: candidateEvidence,
+          originalCandidateMeasurements: candidateMeasurements,
+          rawModelProposedMeasurements: baseMeasurements,
+          originalCandidateRawMeasurements: baseMeasurements,
           ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {})
-        } : {})
+        } : { rawModelProposedMeasurements: baseMeasurements })
       });
       continue;
     }
@@ -883,7 +1171,7 @@ export async function runTargetRecovery(
       title: activeCandidate.title,
       location: recoveredBox,
       evidence: activeCandidate.evidence,
-      measurements: activeCandidate.measurements,
+      measurements: deterministicMeasurements,
       artifactPaths: artifacts,
       reviewerStatus: reviewDecision === "needs_escalation" ? "needs_escalation" : "accepted",
       model: componentRecoveryModel,
@@ -1008,21 +1296,28 @@ export async function runTargetRecovery(
       ...baseTrace,
       status: finalStatus,
       model: componentRecoveryModel,
+      provider: componentRecoveryProvider,
       reviewerModel,
+      reviewerProvider,
       recoveryDurationMs,
       reviewerDurationMs,
       criterion: activeCandidate.criterion,
       diffId: record.id,
+      rawModelProposedMeasurements: activeCandidate.isRepaired ? repairedBaseMeasurements : baseMeasurements,
       ...(activeCandidate.isRepaired ? {
         repairAttempted: true,
         repairModel: activeCandidate.repairModel,
+        repairProvider: activeCandidate.repairProvider,
         repairDurationMs: activeCandidate.repairDurationMs,
         originalCandidateTitle: candidateTitle,
         originalCandidateEvidence: candidateEvidence,
         originalCandidateMeasurements: candidateMeasurements,
+        originalCandidateRawMeasurements: baseMeasurements,
+        repairedCandidateRawMeasurements: repairedBaseMeasurements,
         ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {}),
         repairedCandidateTitle: activeCandidate.title,
-        repairedCandidateEvidence: activeCandidate.evidence
+        repairedCandidateEvidence: activeCandidate.evidence,
+        repairedCandidateMeasurements: activeCandidate.measurements
       } : {})
     });
     regionOutcomes.push({
@@ -1033,19 +1328,29 @@ export async function runTargetRecovery(
       findingId: record.id,
       criterion: activeCandidate.criterion,
       model: componentRecoveryModel,
+      provider: componentRecoveryProvider,
       reviewerModel,
+      reviewerProvider,
       recoveryDurationMs,
       reviewerDurationMs,
       candidateTitle: activeCandidate.title,
       candidateEvidence: activeCandidate.evidence,
       candidateMeasurements: activeCandidate.measurements,
+      rawModelProposedMeasurements: activeCandidate.isRepaired ? repairedBaseMeasurements : baseMeasurements,
       ...(activeCandidate.isRepaired ? {
         repairAttempted: true,
         repairModel: activeCandidate.repairModel,
+        repairProvider: activeCandidate.repairProvider,
         repairDurationMs: activeCandidate.repairDurationMs,
         originalCandidateTitle: candidateTitle,
         originalCandidateEvidence: candidateEvidence,
-        ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {})
+        originalCandidateMeasurements: candidateMeasurements,
+        originalCandidateRawMeasurements: baseMeasurements,
+        repairedCandidateRawMeasurements: repairedBaseMeasurements,
+        ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {}),
+        repairedCandidateTitle: activeCandidate.title,
+        repairedCandidateEvidence: activeCandidate.evidence,
+        repairedCandidateMeasurements: activeCandidate.measurements
       } : {})
     });
     void evidence; // evidence artifact metadata is captured in record.artifactPaths

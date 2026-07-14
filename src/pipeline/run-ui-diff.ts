@@ -21,7 +21,7 @@ import { buildElementMap, computeLocatorMetadata, projectElementsToActual, merge
 import { computeImageLocatorCoverage, type ImageLocatorCoverage } from "../locator/coverage.js";
 import { buildTargetMapJson } from "../locator/diagnostics.js";
 import { pairElements } from "../pairing/pair-elements.js";
-import { selectModelForMode, selectFallbackModelsForMode, resolveMode, CANONICAL_MODEL_RANKING, freeProviderPhaseOrderForMode, type ModelEntry } from "../models/model-registry.js";
+import { selectModelForMode, selectFallbackModelsForMode, resolveMode, CANONICAL_MODEL_RANKING, freeProviderPhaseOrderForMode, modelFamilyKey, type ModelEntry } from "../models/model-registry.js";
 import { makeFallbackVisionCaller, RouteExhaustedError } from "../models/fallback-caller.js";
 import { probeRequiredModels, type ProbeResult } from "../models/probes.js";
 import { estimateFreeRunBudget, lookupOpenRouterQuota, checkFreeQuotaSufficiency } from "../models/free-quota.js";
@@ -945,6 +945,27 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
             )
           : undefined;
 
+        // Build independent recovery reviewer resolver based on actual recovery route
+        const recoveryReviewerResolver = recoveryCandidates.length > 1
+          ? (recoveryProvider: string, recoveryModel: string) => {
+              const recoveryFamily = modelFamilyKey(recoveryModel);
+              // Prefer different provider, then different family same provider, exclude exact route and same family
+              const independentCandidates = recoveryCandidates
+                .filter(e => !(e.provider === recoveryProvider && e.model === recoveryModel))
+                .sort((a, b) => {
+                  const aDifferentProvider = a.provider !== recoveryProvider ? 0 : 1;
+                  const bDifferentProvider = b.provider !== recoveryProvider ? 0 : 1;
+                  if (aDifferentProvider !== bDifferentProvider) return aDifferentProvider - bDifferentProvider;
+                  const aDifferentFamily = modelFamilyKey(a.model) !== recoveryFamily ? 0 : 1;
+                  const bDifferentFamily = modelFamilyKey(b.model) !== recoveryFamily ? 0 : 1;
+                  return aDifferentFamily - bDifferentFamily;
+                });
+              if (independentCandidates.length === 0) return undefined;
+              const selected = independentCandidates[0]!;
+              return makeVisionCaller(selected, providerConfig);
+            }
+          : undefined;
+
         visualClassificationStatus = "incomplete";
         const auditedDiffs: DiffRecord[] = [];
         if (diffScope.kind !== "target") {
@@ -1188,7 +1209,8 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
             directionalOverlayPath,
             artifactDir: artifactRoot,
             recoveryCaller,
-            reviewerCaller
+            reviewerCaller,
+            ...(recoveryReviewerResolver !== undefined ? { reviewerResolver: recoveryReviewerResolver } : {})
           });
           debugTrace.recovery.push(...recoveryResult.trace);
           for (const entry of recoveryResult.trace) {

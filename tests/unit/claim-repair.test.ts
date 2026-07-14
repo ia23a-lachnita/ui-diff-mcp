@@ -624,7 +624,7 @@ describe("claim-repair: call budget accounting includes repair", () => {
 });
 
 describe("claim-repair: reviewer receives repaired candidate", () => {
-  it("reviewer prompt contains repaired evidence, not original unsupported evidence", async () => {
+  it("reviewer prompt contains repaired evidence and original candidate context for semantic substitution detection", async () => {
     const recoveryCaller: VisionJsonCaller = vi.fn()
       .mockResolvedValueOnce({
         parsed: {
@@ -660,7 +660,10 @@ describe("claim-repair: reviewer receives repaired candidate", () => {
     await runTargetRecovery([component], ctx, unlimitedBudget);
     const reviewerPrompt = vi.mocked(reviewerCaller).mock.calls[0]?.[0].prompt ?? "";
     expect(reviewerPrompt).toContain("background color changed from light to dark");
-    expect(reviewerPrompt).not.toContain("#FF0000");
+    // Original evidence is included in ORIGINAL CANDIDATE section for semantic substitution detection
+    expect(reviewerPrompt).toContain("#FF0000");
+    expect(reviewerPrompt).toContain("ORIGINAL CANDIDATE");
+    expect(reviewerPrompt).toContain("REPAIRED CANDIDATE");
   });
 });
 

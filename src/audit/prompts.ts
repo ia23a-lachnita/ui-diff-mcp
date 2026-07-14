@@ -241,17 +241,50 @@ export function buildRecoveryRepairPrompt(ctx: RepairPromptContext): string {
   ].join("\n");
 }
 
+export interface RecoveryReviewerContext {
+  originalCandidateTitle?: string;
+  originalCandidateEvidence?: string[];
+  diagnosticCode?: string;
+  diagnosticMessage?: string;
+  repairedCandidateTitle?: string;
+  repairedCandidateEvidence?: string[];
+}
+
 export function buildRecoveryReviewerPrompt(
   criterion: UiCriterion,
   elementLabel: string,
   auditorTitle: string,
   evidence: string[],
-  measurements: DeterministicMeasurement[] = []
+  measurements: DeterministicMeasurement[] = [],
+  repairContext?: RecoveryReviewerContext
 ): string {
   const evidenceLines = evidence.map(e => `  - ${e}`).join("\n");
   const measurementLines = measurements.length > 0
     ? measurements.map(m => `  - ${m.name}: ${m.value}${m.unit ? " " + m.unit : ""}`).join("\n")
     : "  (none)";
+
+  const hasRepair = repairContext?.originalCandidateTitle !== undefined;
+  const repairSections: string[] = [];
+  if (hasRepair) {
+    const origEvidenceLines = (repairContext!.originalCandidateEvidence ?? []).map(e => `  - ${e}`).join("\n");
+    const repairedEvidenceLines = (repairContext!.repairedCandidateEvidence ?? []).map(e => `  - ${e}`).join("\n");
+    repairSections.push(
+      ``,
+      `ORIGINAL CANDIDATE (before repair):`,
+      `  Title: ${repairContext!.originalCandidateTitle}`,
+      `  Evidence:`,
+      origEvidenceLines || "  (none)",
+      ``,
+      `VALIDATION DIAGNOSTIC:`,
+      `  Code: ${repairContext!.diagnosticCode ?? "unknown"}`,
+      `  Message: ${repairContext!.diagnosticMessage ?? "unknown"}`,
+      ``,
+      `REPAIRED CANDIDATE (after repair — this is what you are reviewing):`,
+      `  Title: ${repairContext!.repairedCandidateTitle}`,
+      `  Evidence:`,
+      repairedEvidenceLines || "  (none)",
+    );
+  }
 
   return [
     `You are a UI diff recovery reviewer. Evaluate whether the reported diff is valid based solely on the supplied recovery evidence.`,
@@ -259,6 +292,7 @@ export function buildRecoveryReviewerPrompt(
     `ELEMENT: "${elementLabel}"`,
     `CRITERION: ${criterion}`,
     `REPORTED TITLE: ${auditorTitle}`,
+    ...repairSections,
     ``,
     `EVIDENCE:`,
     evidenceLines,
@@ -281,6 +315,9 @@ export function buildRecoveryReviewerPrompt(
     `- Appearance/content claims must come from source crops 1 and 2 only.`,
     `- Overlay and mask images localize differences only; do not treat overlay annotation colors (cyan, magenta, yellow) as actual UI colors.`,
     `- Reject unsupported quantitative layout claims. Exact dimensions, positions, spacing, font sizes, percentages, and angles are valid only when they cite a deterministic measurement listed above.`,
+    ...(hasRepair ? [
+      `- When reviewing a repaired candidate, compare the ORIGINAL candidate against the REPAIRED candidate. If the repair describes a different visual observation than the original (semantic substitution), reject it.`
+    ] : []),
     ``,
     `Respond with JSON only: { "decision": "accepted" | "rejected" | "needs_escalation", "reason": "<one sentence>" }`
   ].join("\n");

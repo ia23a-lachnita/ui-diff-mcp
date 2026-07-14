@@ -767,7 +767,11 @@ export const RecoveryDecisionStatusSchema = z.enum([
   "repair_schema_failure",
   "repair_classified_false",
   "repair_criterion_change",
-  "still_invalid"
+  "repair_severity_change",
+  "still_invalid",
+  "budget_exhausted_before_repair",
+  "budget_exhausted_before_reviewer",
+  "independent_reviewer_unavailable"
 ]);
 
 export const RecoveryComponentTraceSchema = z.object({
@@ -805,7 +809,14 @@ export const RecoveryComponentTraceSchema = z.object({
   repairedCandidateTitle: z.string().max(200).optional(),
   repairedCandidateEvidence: z.array(z.string().max(200)).max(10).optional(),
   repairedCandidateMeasurements: z.array(DeterministicMeasurementSchema).max(10).optional(),
-  repairedCandidateDiagnostics: ClaimDiagnosticsSchema.optional()
+  repairedCandidateDiagnostics: ClaimDiagnosticsSchema.optional(),
+  rawModelProposedMeasurements: z.array(DeterministicMeasurementSchema).optional(),
+  originalCandidateRawMeasurements: z.array(DeterministicMeasurementSchema).optional(),
+  repairedCandidateRawMeasurements: z.array(DeterministicMeasurementSchema).optional(),
+  continuityReviewResult: z.string().optional(),
+  provider: z.string().optional(),
+  repairProvider: z.string().optional(),
+  reviewerProvider: z.string().optional()
 });
 export type RecoveryComponentTrace = z.infer<typeof RecoveryComponentTraceSchema>;
 
@@ -833,7 +844,16 @@ export const RecoveryRegionOutcomeSchema = z.object({
   originalCandidateDiagnostics: ClaimDiagnosticsSchema.optional(),
   repairedCandidateTitle: z.string().max(200).optional(),
   repairedCandidateEvidence: z.array(z.string().max(200)).max(10).optional(),
-  repairedCandidateDiagnostics: ClaimDiagnosticsSchema.optional()
+  repairedCandidateMeasurements: z.array(DeterministicMeasurementSchema).max(10).optional(),
+  repairedCandidateDiagnostics: ClaimDiagnosticsSchema.optional(),
+  rawModelProposedMeasurements: z.array(DeterministicMeasurementSchema).optional(),
+  originalCandidateRawMeasurements: z.array(DeterministicMeasurementSchema).optional(),
+  repairedCandidateRawMeasurements: z.array(DeterministicMeasurementSchema).optional(),
+  originalCandidateMeasurements: z.array(DeterministicMeasurementSchema).max(10).optional(),
+  continuityReviewResult: z.string().optional(),
+  provider: z.string().optional(),
+  repairProvider: z.string().optional(),
+  reviewerProvider: z.string().optional()
 }).strict();
 export type RecoveryRegionOutcome = z.infer<typeof RecoveryRegionOutcomeSchema>;
 
