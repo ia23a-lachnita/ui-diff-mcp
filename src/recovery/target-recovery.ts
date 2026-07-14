@@ -496,7 +496,13 @@ export async function runTargetRecovery(
       }
       vlmResponse = RecoveryVlmResponseSchema.parse(res.parsed);
     } catch (err) {
-      const traceStatus = err instanceof z.ZodError ? "recovery_schema_error" as const : "recovery_error" as const;
+      const isDeadlineExceeded = Date.now() >= budget.deadlineMs;
+      const traceStatus = isDeadlineExceeded ? "deadline_exceeded" as const
+        : err instanceof z.ZodError ? "recovery_schema_error" as const
+        : "recovery_error" as const;
+      if (isDeadlineExceeded) {
+        stoppedReason = "deadline_exceeded";
+      }
       countStatus(traceStatus);
       trace.push({
         ...baseTrace,
@@ -504,13 +510,19 @@ export async function runTargetRecovery(
         model: componentRecoveryModel,
         provider: componentRecoveryProvider,
         recoveryDurationMs: Date.now() - recoveryStarted,
-        errorKind: err instanceof z.ZodError ? "schema" as const : "provider" as const,
-        errorMessage: err instanceof Error ? err.message.slice(0, 500) : String(err).slice(0, 500)
+        ...(isDeadlineExceeded ? {} : {
+          errorKind: err instanceof z.ZodError ? "schema" as const : "provider" as const,
+          errorMessage: err instanceof Error ? err.message.slice(0, 500) : String(err).slice(0, 500)
+        })
       });
       console.error(`Recovery VLM call failed for component ${evidenceId}:`, err);
       modelCallsUsed++;
       unclassifiedCount++;
       regionOutcomes.push({ regionId: componentId, state: "unresolved", reason: traceStatus, artifactPaths: artifacts, provider: componentRecoveryProvider });
+      if (isDeadlineExceeded) {
+        loopStoppedAt = rankIndex + 1;
+        break;
+      }
       continue;
     }
     const recoveryDurationMs = Date.now() - recoveryStarted;
@@ -551,10 +563,7 @@ export async function runTargetRecovery(
     const recoveredBox = component.box;
     const candidateTitle = `${vlmResponse.criterion} in recovered region: ${vlmResponse.label}`.slice(0, 200);
     const candidateEvidence = vlmResponse.evidence.slice(0, 10).map(evidence => evidence.slice(0, 200));
-    const candidateMeasurements = [
-      ...deterministicMeasurements,
-      ...baseMeasurements
-    ].slice(0, 10);
+    const candidateMeasurements = [...deterministicMeasurements].slice(0, 10);
 
     // Validate candidate BEFORE reviewer — only deterministic measurements
     const candidateForValidation: Pick<DiffRecord, "title" | "evidence" | "measurements"> = {
@@ -675,7 +684,9 @@ export async function runTargetRecovery(
             ...baseTrace,
             status: "repair_classified_false",
             model: componentRecoveryModel,
+            provider: componentRecoveryProvider,
             repairModel: repairRes.model,
+            repairProvider: repairRes.provider,
             recoveryDurationMs,
             repairDurationMs,
             criterion: vlmResponse.criterion,
@@ -683,6 +694,8 @@ export async function runTargetRecovery(
             originalCandidateTitle: candidateTitle,
             originalCandidateEvidence: candidateEvidence,
             originalCandidateMeasurements: candidateMeasurements,
+            rawModelProposedMeasurements: baseMeasurements,
+            originalCandidateRawMeasurements: baseMeasurements,
             ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {})
           });
           regionOutcomes.push({
@@ -692,9 +705,14 @@ export async function runTargetRecovery(
             artifactPaths: artifacts,
             repairAttempted: true,
             repairModel: repairRes.model,
+            repairProvider: repairRes.provider,
             repairDurationMs,
+            provider: componentRecoveryProvider,
             originalCandidateTitle: candidateTitle,
             originalCandidateEvidence: candidateEvidence,
+            originalCandidateMeasurements: candidateMeasurements,
+            rawModelProposedMeasurements: baseMeasurements,
+            originalCandidateRawMeasurements: baseMeasurements,
             ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {})
           });
           unclassifiedCount++;
@@ -707,7 +725,9 @@ export async function runTargetRecovery(
             ...baseTrace,
             status: "repair_schema_failure",
             model: componentRecoveryModel,
+            provider: componentRecoveryProvider,
             repairModel: repairRes.model,
+            repairProvider: repairRes.provider,
             recoveryDurationMs,
             repairDurationMs,
             errorKind: "schema",
@@ -716,6 +736,8 @@ export async function runTargetRecovery(
             originalCandidateTitle: candidateTitle,
             originalCandidateEvidence: candidateEvidence,
             originalCandidateMeasurements: candidateMeasurements,
+            rawModelProposedMeasurements: baseMeasurements,
+            originalCandidateRawMeasurements: baseMeasurements,
             ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {})
           });
           regionOutcomes.push({
@@ -725,9 +747,14 @@ export async function runTargetRecovery(
             artifactPaths: artifacts,
             repairAttempted: true,
             repairModel: repairRes.model,
+            repairProvider: repairRes.provider,
             repairDurationMs,
+            provider: componentRecoveryProvider,
             originalCandidateTitle: candidateTitle,
             originalCandidateEvidence: candidateEvidence,
+            originalCandidateMeasurements: candidateMeasurements,
+            rawModelProposedMeasurements: baseMeasurements,
+            originalCandidateRawMeasurements: baseMeasurements,
             ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {})
           });
           unclassifiedCount++;
@@ -839,10 +866,7 @@ export async function runTargetRecovery(
         // Build repaired candidate and validate
         const repairedTitle = `${repairResponse.criterion} in recovered region: ${repairResponse.label}`.slice(0, 200);
         const repairedEvidence = repairResponse.evidence.slice(0, 10).map(e => e.slice(0, 200));
-        const repairedMeasurements = [
-          ...deterministicMeasurements,
-          ...repairedBaseMeasurements
-        ].slice(0, 10);
+        const repairedMeasurements = [...deterministicMeasurements].slice(0, 10);
 
         const repairedValidation = validateClaim({
           title: repairedTitle,
@@ -857,7 +881,9 @@ export async function runTargetRecovery(
             ...baseTrace,
             status: "still_invalid",
             model: componentRecoveryModel,
+            provider: componentRecoveryProvider,
             repairModel: repairRes.model,
+            repairProvider: repairRes.provider,
             recoveryDurationMs,
             repairDurationMs,
             criterion: vlmResponse.criterion,
@@ -866,10 +892,13 @@ export async function runTargetRecovery(
             originalCandidateTitle: candidateTitle,
             originalCandidateEvidence: candidateEvidence,
             originalCandidateMeasurements: candidateMeasurements,
+            rawModelProposedMeasurements: baseMeasurements,
+            originalCandidateRawMeasurements: baseMeasurements,
             ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {}),
             repairedCandidateTitle: repairedTitle,
             repairedCandidateEvidence: repairedEvidence,
             repairedCandidateMeasurements: repairedMeasurements,
+            repairedCandidateRawMeasurements: repairedBaseMeasurements,
             ...(repairedValidation.diagnostics !== undefined ? { repairedCandidateDiagnostics: repairedValidation.diagnostics } : {})
           });
           regionOutcomes.push({
@@ -880,9 +909,16 @@ export async function runTargetRecovery(
             artifactPaths: artifacts,
             repairAttempted: true,
             repairModel: repairRes.model,
+            repairProvider: repairRes.provider,
             repairDurationMs,
+            provider: componentRecoveryProvider,
             originalCandidateTitle: candidateTitle,
             originalCandidateEvidence: candidateEvidence,
+            originalCandidateMeasurements: candidateMeasurements,
+            rawModelProposedMeasurements: baseMeasurements,
+            originalCandidateRawMeasurements: baseMeasurements,
+            repairedCandidateMeasurements: repairedMeasurements,
+            repairedCandidateRawMeasurements: repairedBaseMeasurements,
             ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {}),
             repairedCandidateTitle: repairedTitle,
             repairedCandidateEvidence: repairedEvidence,
@@ -907,12 +943,23 @@ export async function runTargetRecovery(
         };
       } catch (err) {
         const repairDurationMs = Date.now() - repairStarted;
+        const isDeadlineExceeded = Date.now() >= budget.deadlineMs;
+        if (isDeadlineExceeded) {
+          stoppedReason = "deadline_exceeded";
+          countStatus("deadline_exceeded");
+          trace.push({ ...baseTrace, status: "deadline_exceeded", model: componentRecoveryModel, provider: componentRecoveryProvider, recoveryDurationMs, repairDurationMs, repairAttempted: true, originalCandidateTitle: candidateTitle, originalCandidateEvidence: candidateEvidence, originalCandidateMeasurements: candidateMeasurements, ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {}) });
+          regionOutcomes.push({ regionId: componentId, state: "unresolved", reason: "deadline_exceeded", artifactPaths: artifacts, repairAttempted: true, provider: componentRecoveryProvider, recoveryDurationMs, repairDurationMs, ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {}) });
+          unclassifiedCount++;
+          loopStoppedAt = rankIndex + 1;
+          break;
+        }
         const traceStatus = err instanceof z.ZodError ? "repair_schema_failure" as const : "repair_provider_failure" as const;
         countStatus(traceStatus);
         trace.push({
           ...baseTrace,
           status: traceStatus,
           model: componentRecoveryModel,
+          provider: componentRecoveryProvider,
           repairDurationMs,
           errorKind: err instanceof z.ZodError ? "schema" as const : "provider",
           errorMessage: err instanceof Error ? err.message.slice(0, 500) : String(err).slice(0, 500),
@@ -921,6 +968,8 @@ export async function runTargetRecovery(
           originalCandidateTitle: candidateTitle,
           originalCandidateEvidence: candidateEvidence,
           originalCandidateMeasurements: candidateMeasurements,
+          rawModelProposedMeasurements: baseMeasurements,
+          originalCandidateRawMeasurements: baseMeasurements,
           ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {})
         });
         regionOutcomes.push({
@@ -930,8 +979,12 @@ export async function runTargetRecovery(
           artifactPaths: artifacts,
           repairAttempted: true,
           repairDurationMs,
+          provider: componentRecoveryProvider,
           originalCandidateTitle: candidateTitle,
           originalCandidateEvidence: candidateEvidence,
+          originalCandidateMeasurements: candidateMeasurements,
+          rawModelProposedMeasurements: baseMeasurements,
+          originalCandidateRawMeasurements: baseMeasurements,
           ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {})
         });
         unclassifiedCount++;
@@ -1104,6 +1157,16 @@ export async function runTargetRecovery(
     } catch (err) {
       console.error(`Recovery reviewer call failed for component ${evidenceId}:`, err);
       modelCallsUsed++;
+      const isDeadlineExceeded = Date.now() >= budget.deadlineMs;
+      if (isDeadlineExceeded) {
+        stoppedReason = "deadline_exceeded";
+        countStatus("deadline_exceeded");
+        trace.push({ ...baseTrace, status: "deadline_exceeded", model: componentRecoveryModel, provider: componentRecoveryProvider, reviewerModel, reviewerProvider, recoveryDurationMs, reviewerDurationMs: Date.now() - reviewerStarted, criterion: activeCandidate.criterion, ...(activeCandidate.isRepaired ? { repairAttempted: true, repairModel: activeCandidate.repairModel, repairProvider: activeCandidate.repairProvider, repairDurationMs: activeCandidate.repairDurationMs, originalCandidateTitle: candidateTitle, originalCandidateEvidence: candidateEvidence, originalCandidateMeasurements: candidateMeasurements, rawModelProposedMeasurements: baseMeasurements, originalCandidateRawMeasurements: baseMeasurements, ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {}) } : { rawModelProposedMeasurements: baseMeasurements }) });
+        regionOutcomes.push({ regionId: componentId, state: "unresolved", reason: "deadline_exceeded", artifactPaths: artifacts, provider: componentRecoveryProvider, ...(activeCandidate.isRepaired ? { repairAttempted: true, repairModel: activeCandidate.repairModel, repairProvider: activeCandidate.repairProvider, repairDurationMs: activeCandidate.repairDurationMs, originalCandidateTitle: candidateTitle, originalCandidateEvidence: candidateEvidence, originalCandidateMeasurements: candidateMeasurements, rawModelProposedMeasurements: baseMeasurements, originalCandidateRawMeasurements: baseMeasurements, ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {}) } : { rawModelProposedMeasurements: baseMeasurements }) });
+        unclassifiedCount++;
+        loopStoppedAt = rankIndex + 1;
+        break;
+      }
       reviewDecision = "needs_escalation";
     }
     const reviewerDurationMs = Date.now() - reviewerStarted;

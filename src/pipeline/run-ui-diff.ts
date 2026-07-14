@@ -21,7 +21,7 @@ import { buildElementMap, computeLocatorMetadata, projectElementsToActual, merge
 import { computeImageLocatorCoverage, type ImageLocatorCoverage } from "../locator/coverage.js";
 import { buildTargetMapJson } from "../locator/diagnostics.js";
 import { pairElements } from "../pairing/pair-elements.js";
-import { selectModelForMode, selectFallbackModelsForMode, resolveMode, CANONICAL_MODEL_RANKING, freeProviderPhaseOrderForMode, modelFamilyKey, type ModelEntry } from "../models/model-registry.js";
+import { selectModelForMode, selectFallbackModelsForMode, resolveMode, CANONICAL_MODEL_RANKING, freeProviderPhaseOrderForMode, modelFamilyKey, orderIndependentReviewerCandidates, type ModelEntry } from "../models/model-registry.js";
 import { makeFallbackVisionCaller, RouteExhaustedError } from "../models/fallback-caller.js";
 import { probeRequiredModels, type ProbeResult } from "../models/probes.js";
 import { estimateFreeRunBudget, lookupOpenRouterQuota, checkFreeQuotaSufficiency } from "../models/free-quota.js";
@@ -948,20 +948,15 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
         // Build independent recovery reviewer resolver from REVIEWER candidates.
         // Always provided — returns undefined (fail-closed) when no independent route exists.
         const recoveryReviewerResolver = (recoveryProvider: string, recoveryModel: string) => {
-          const recoveryFamily = modelFamilyKey(recoveryModel);
-          const independentCandidates = reviewerCandidates
-            .filter(e => !(e.provider === recoveryProvider && e.model === recoveryModel))
-            .filter(e => modelFamilyKey(e.model) !== recoveryFamily)
-            .sort((a, b) => {
-              const aDiffProvider = a.provider !== recoveryProvider ? 0 : 1;
-              const bDiffProvider = b.provider !== recoveryProvider ? 0 : 1;
-              if (aDiffProvider !== bDiffProvider) return aDiffProvider - bDiffProvider;
-              return 0;
-            });
+          const independentCandidates = orderIndependentReviewerCandidates(
+            reviewerCandidates,
+            recoveryProvider,
+            recoveryModel
+          );
           if (independentCandidates.length === 0) return undefined;
           return makeFallbackVisionCaller(
             independentCandidates.map(e => ({
-              caller: makeVisionCaller(e, providerConfig),
+              caller: makeVisionCaller(e as ModelEntry, providerConfig),
               provider: e.provider,
               model: e.model,
               phase: "reviewer" as const

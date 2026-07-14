@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CANONICAL_MODEL_RANKING, FREE_PROVIDER_PHASE_ORDER, getModelByRole, getRequiredModels, selectModelForMode, selectFallbackModelsForMode, resolveMode, requiredImagesForRole, modelFamilyKey, candidateSupportsLogicalRole, selectIndependentReviewer } from "../../src/models/model-registry.js";
+import { CANONICAL_MODEL_RANKING, FREE_PROVIDER_PHASE_ORDER, getModelByRole, getRequiredModels, selectModelForMode, selectFallbackModelsForMode, resolveMode, requiredImagesForRole, modelFamilyKey, candidateSupportsLogicalRole, selectIndependentReviewer, orderIndependentReviewerCandidates } from "../../src/models/model-registry.js";
 import type { ProbeResult } from "../../src/models/probes.js";
 
 const NOW = new Date().toISOString();
@@ -597,5 +597,85 @@ describe("selectIndependentReviewer", () => {
     const result = selectIndependentReviewer(reviewers, "opencode", "mimo-v2.5-free");
     expect(result).toBeDefined();
     expect(result?.provider).not.toBe("opencode");
+  });
+});
+
+describe("orderIndependentReviewerCandidates", () => {
+  const reviewers = [
+    { provider: "mistral", model: "ministral-14b-2512" },
+    { provider: "opencode", model: "mimo-v2.5-free" },
+    { provider: "nvidia", model: "moonshotai/kimi-k2.6" },
+    { provider: "nvidia", model: "minimaxai/minimax-m3" },
+    { provider: "openrouter", model: "nex-agi/nex-n2-pro:free" },
+  ];
+
+  it("returns [] for empty candidates", () => {
+    expect(orderIndependentReviewerCandidates([], "mistral", "ministral-14b-2512")).toEqual([]);
+  });
+
+  it("preserves all independent fallbacks excluding exact route and same family", () => {
+    const result = orderIndependentReviewerCandidates(reviewers, "mistral", "ministral-14b-2512");
+    // ministral-14b-2512 is excluded (exact + family)
+    expect(result.every(c => c.model !== "ministral-14b-2512")).toBe(true);
+    expect(result.every(c => !(c.provider === "mistral" && c.model === "ministral-14b-2512"))).toBe(true);
+    // All remaining independent candidates present
+    expect(result.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("excludes all same-family aliases", () => {
+    const candidates = [
+      { provider: "openrouter", model: "ministral-14b-2512:free" },
+      { provider: "mistral", model: "ministral-14b-2512" },
+      { provider: "opencode", model: "mimo-v2.5-free" },
+    ];
+    const result = orderIndependentReviewerCandidates(candidates, "mistral", "ministral-14b-2512");
+    // Both ministral aliases excluded (same family)
+    expect(result.every(c => !c.model.includes("ministral-14b"))).toBe(true);
+    expect(result).toHaveLength(1);
+    expect(result[0]?.model).toBe("mimo-v2.5-free");
+  });
+
+  it("prefers different-provider candidates while preserving original rank within group", () => {
+    const result = orderIndependentReviewerCandidates(reviewers, "mistral", "ministral-14b-2512");
+    // Different-provider candidates (opencode, nvidia, openrouter) come first
+    const firstDiffProviderIdx = result.findIndex(c => c.provider !== "mistral");
+    const lastDiffProviderIdx = result.map((c, i) => c.provider !== "mistral" ? i : -1).filter(i => i >= 0).pop() ?? -1;
+    // Since all remaining candidates have different providers (mistral was the only one excluded),
+    // they should all be in the "different provider" group
+    expect(firstDiffProviderIdx).toBe(0);
+  });
+
+  it("reacts to actual recovery fallback model", () => {
+    // When recovery uses opencode/mimo, that gets excluded
+    const result = orderIndependentReviewerCandidates(reviewers, "opencode", "mimo-v2.5-free");
+    expect(result.every(c => c.model !== "mimo-v2.5-free")).toBe(true);
+    // Mistral and nvidia should remain
+    expect(result.some(c => c.provider === "mistral")).toBe(true);
+    expect(result.some(c => c.provider === "nvidia")).toBe(true);
+  });
+
+  it("returns [] when all candidates are same family as recovery", () => {
+    const allMistral = [
+      { provider: "mistral", model: "ministral-14b-2512" },
+      { provider: "openrouter", model: "ministral-14b-2512:free" },
+    ];
+    expect(orderIndependentReviewerCandidates(allMistral, "mistral", "ministral-14b-2512")).toEqual([]);
+  });
+
+  it("preserves stable rank within each provider-preference group", () => {
+    // Two nvidia candidates in original order, both different provider from mistral
+    const result = orderIndependentReviewerCandidates(reviewers, "mistral", "ministral-14b-2512");
+    const nvidiaCandidates = result.filter(c => c.provider === "nvidia");
+    // Original order: kimi-k2.6 before minimax-m3
+    expect(nvidiaCandidates[0]?.model).toBe("moonshotai/kimi-k2.6");
+    expect(nvidiaCandidates[1]?.model).toBe("minimaxai/minimax-m3");
+  });
+
+  it("same-provider candidates stay in original rank when recovery is different provider", () => {
+    // Recovery is mistral; opencode candidates (only 1) should come before nvidia
+    const result = orderIndependentReviewerCandidates(reviewers, "mistral", "ministral-14b-2512");
+    const opencodeIdx = result.findIndex(c => c.provider === "opencode");
+    const nvidiaIdx = result.findIndex(c => c.provider === "nvidia");
+    expect(opencodeIdx).toBeLessThan(nvidiaIdx);
   });
 });

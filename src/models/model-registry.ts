@@ -756,8 +756,16 @@ export function selectIndependentReviewer(
   recoveryProvider: string,
   recoveryModel: string
 ): IndependentReviewerCandidate | undefined {
+  return orderIndependentReviewerCandidates(reviewerCandidates, recoveryProvider, recoveryModel)[0];
+}
+
+export function orderIndependentReviewerCandidates(
+  reviewerCandidates: IndependentReviewerCandidate[],
+  recoveryProvider: string,
+  recoveryModel: string
+): IndependentReviewerCandidate[] {
   const recoveryFamily = modelFamilyKey(recoveryModel);
-  const independent = reviewerCandidates
+  return reviewerCandidates
     .filter(c => !(c.provider === recoveryProvider && c.model === recoveryModel))
     .filter(c => modelFamilyKey(c.model) !== recoveryFamily)
     .sort((a, b) => {
@@ -766,7 +774,6 @@ export function selectIndependentReviewer(
       if (aDiffProvider !== bDiffProvider) return aDiffProvider - bDiffProvider;
       return 0;
     });
-  return independent[0];
 }
 
 export function resolveMode(rawMode: string | undefined): VisionMode {

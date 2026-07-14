@@ -939,3 +939,335 @@ const unlimitedBudget: RecoveryBudget = {
   deadlineMs: Date.now() + 300000,
   minComponentPixels: 1
 };
+
+// ── P0: Measurement trust — deterministic-only in all candidate fields ──
+
+describe("recovery-corrections: measurement trust completeness", () => {
+  it("accepted branch: candidateMeasurements, originalCandidateMeasurements, repairedCandidateMeasurements are deterministic-only", async () => {
+    const recoveryCaller: VisionJsonCaller = vi.fn()
+      .mockResolvedValueOnce({
+        parsed: {
+          classified: true, criterion: "color_appearance", severity: "medium",
+          label: "Background", evidence: ["color is #FF0000"],
+          measurements: [{ name: "invented_width", value: 150, unit: "px" }]
+        },
+        rawContent: "", model: "recovery-model", provider: "mistral"
+      })
+      .mockResolvedValueOnce({
+        parsed: {
+          classified: true, criterion: "color_appearance", severity: "medium",
+          label: "Background", evidence: ["background color changed"],
+          measurements: [{ name: "invented_repair_val", value: 42 }]
+        },
+        rawContent: "", model: "repair-model", provider: "mistral"
+      });
+    const reviewerCaller: VisionJsonCaller = vi.fn().mockResolvedValue(acceptedReviewerResponse());
+    const result = await runTargetRecovery([invalidComponent], makeCtx({ recoveryCaller, reviewerCaller }), unlimitedBudget);
+    expect(result.recovered).toHaveLength(1);
+    const trace = result.trace[0]!;
+    const outcome = result.regionOutcomes[0]!;
+    const deterministicNames = ["changed_pixel_count", "region_area_pixels", "changed_pixel_percent", "coordinateSource"];
+    // candidateMeasurements (trace) must be deterministic-only
+    expect(trace.originalCandidateMeasurements!.every(m => deterministicNames.includes(m.name))).toBe(true);
+    expect(trace.originalCandidateMeasurements!.every(m => !m.name.startsWith("invented_"))).toBe(true);
+    // repairedCandidateMeasurements (trace) must be deterministic-only
+    expect(trace.repairedCandidateMeasurements!.every(m => deterministicNames.includes(m.name))).toBe(true);
+    expect(trace.repairedCandidateMeasurements!.every(m => !m.name.startsWith("invented_"))).toBe(true);
+    // Raw model measurements must be preserved separately
+    expect(trace.originalCandidateRawMeasurements).toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: "invented_width" })])
+    );
+    expect(trace.repairedCandidateRawMeasurements).toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: "invented_repair_val" })])
+    );
+    // outcome must match
+    expect(outcome.originalCandidateMeasurements!.every(m => deterministicNames.includes(m.name))).toBe(true);
+    expect(outcome.repairedCandidateMeasurements!.every(m => deterministicNames.includes(m.name))).toBe(true);
+  });
+
+  it("rejected branch: candidateMeasurements is deterministic-only", async () => {
+    const recoveryCaller: VisionJsonCaller = vi.fn().mockResolvedValue({
+      parsed: { classified: true, criterion: "geometry", severity: "medium", label: "Button", evidence: ["shifted"] },
+      rawContent: "", model: "recovery-model", provider: "mistral"
+    });
+    const reviewerCaller: VisionJsonCaller = vi.fn().mockResolvedValue({
+      parsed: { decision: "rejected", reason: "not confirmed" },
+      rawContent: "", model: "reviewer-model", provider: "opencode"
+    });
+    const result = await runTargetRecovery([component], makeCtx({ recoveryCaller, reviewerCaller }), unlimitedBudget);
+    expect(result.recovered).toHaveLength(0);
+    const trace = result.trace[0]!;
+    const deterministicNames = ["changed_pixel_count", "region_area_pixels", "changed_pixel_percent", "coordinateSource"];
+    expect(trace.candidateMeasurements!.every(m => deterministicNames.includes(m.name))).toBe(true);
+  });
+
+  it("budget_exhausted_before_repair branch: originalCandidateMeasurements is deterministic-only", async () => {
+    const recoveryCaller: VisionJsonCaller = vi.fn().mockResolvedValue(invalidRecoveryResponse());
+    const result = await runTargetRecovery([invalidComponent], makeCtx({ recoveryCaller }), {
+      maxComponents: 100, maxModelCalls: 1, deadlineMs: Date.now() + 300000, minComponentPixels: 1
+    });
+    const trace = result.trace[0]!;
+    const deterministicNames = ["changed_pixel_count", "region_area_pixels", "changed_pixel_percent", "coordinateSource"];
+    expect(trace.originalCandidateMeasurements!.every(m => deterministicNames.includes(m.name))).toBe(true);
+  });
+
+  it("repair_classified_false branch: originalCandidateMeasurements is deterministic-only", async () => {
+    const recoveryCaller: VisionJsonCaller = vi.fn()
+      .mockResolvedValueOnce(invalidRecoveryResponse())
+      .mockResolvedValueOnce({
+        parsed: { classified: false },
+        rawContent: "", model: "repair-model", provider: "mistral"
+      });
+    const result = await runTargetRecovery([invalidComponent], makeCtx({ recoveryCaller }), unlimitedBudget);
+    const trace = result.trace[0]!;
+    const deterministicNames = ["changed_pixel_count", "region_area_pixels", "changed_pixel_percent", "coordinateSource"];
+    expect(trace.originalCandidateMeasurements!.every(m => deterministicNames.includes(m.name))).toBe(true);
+  });
+
+  it("repair_criterion_change branch: originalCandidateMeasurements and repairedCandidateRawMeasurements are deterministic-only", async () => {
+    const recoveryCaller: VisionJsonCaller = vi.fn()
+      .mockResolvedValueOnce(invalidRecoveryResponse())
+      .mockResolvedValueOnce({
+        parsed: { classified: true, criterion: "geometry", severity: "medium", label: "Other", evidence: ["different"] },
+        rawContent: "", model: "repair-model", provider: "mistral"
+      });
+    const result = await runTargetRecovery([invalidComponent], makeCtx({ recoveryCaller }), unlimitedBudget);
+    const trace = result.trace[0]!;
+    const deterministicNames = ["changed_pixel_count", "region_area_pixels", "changed_pixel_percent", "coordinateSource"];
+    expect(trace.originalCandidateMeasurements!.every(m => deterministicNames.includes(m.name))).toBe(true);
+    expect(trace.repairedCandidateRawMeasurements).toBeDefined();
+  });
+
+  it("repair_severity_change branch: originalCandidateMeasurements is deterministic-only", async () => {
+    const recoveryCaller: VisionJsonCaller = vi.fn()
+      .mockResolvedValueOnce({ parsed: { classified: true, criterion: "color_appearance", severity: "high", label: "BG", evidence: ["color is #FF0000"] }, rawContent: "", model: "m", provider: "p" })
+      .mockResolvedValueOnce({ parsed: { classified: true, criterion: "color_appearance", severity: "low", label: "BG", evidence: ["changed"] }, rawContent: "", model: "m2", provider: "p" });
+    const result = await runTargetRecovery([invalidComponent], makeCtx({ recoveryCaller }), unlimitedBudget);
+    expect(result.statusCounts["repair_severity_change"]).toBe(1);
+    const trace = result.trace[0]!;
+    const deterministicNames = ["changed_pixel_count", "region_area_pixels", "changed_pixel_percent", "coordinateSource"];
+    expect(trace.originalCandidateMeasurements!.every(m => deterministicNames.includes(m.name))).toBe(true);
+  });
+
+  it("still_invalid branch: originalCandidateMeasurements and repairedCandidateMeasurements are deterministic-only", async () => {
+    const recoveryCaller: VisionJsonCaller = vi.fn()
+      .mockResolvedValueOnce({
+        parsed: { classified: true, criterion: "color_appearance", severity: "medium", label: "BG", evidence: ["color is 999px wide"] },
+        rawContent: "", model: "m", provider: "p"
+      })
+      .mockResolvedValueOnce({
+        parsed: { classified: true, criterion: "color_appearance", severity: "medium", label: "BG", evidence: ["width is 999px"] },
+        rawContent: "", model: "m2", provider: "p"
+      });
+    const result = await runTargetRecovery([invalidComponent], makeCtx({ recoveryCaller }), unlimitedBudget);
+    const trace = result.trace[0]!;
+    const deterministicNames = ["changed_pixel_count", "region_area_pixels", "changed_pixel_percent", "coordinateSource"];
+    expect(trace.originalCandidateMeasurements!.every(m => deterministicNames.includes(m.name))).toBe(true);
+    expect(trace.repairedCandidateMeasurements!.every(m => deterministicNames.includes(m.name))).toBe(true);
+  });
+
+  it("needs_escalation branch: candidateMeasurements is deterministic-only", async () => {
+    const recoveryCaller: VisionJsonCaller = vi.fn().mockResolvedValue({
+      parsed: { classified: true, criterion: "geometry", severity: "medium", label: "Button", evidence: ["shifted"] },
+      rawContent: "", model: "recovery-model", provider: "mistral"
+    });
+    const reviewerCaller: VisionJsonCaller = vi.fn().mockResolvedValue({
+      parsed: { decision: "needs_escalation", reason: "uncertain" },
+      rawContent: "", model: "reviewer-model", provider: "opencode"
+    });
+    const result = await runTargetRecovery([component], makeCtx({ recoveryCaller, reviewerCaller }), unlimitedBudget);
+    expect(result.recovered).toHaveLength(0);
+    const trace = result.trace[0]!;
+    const deterministicNames = ["changed_pixel_count", "region_area_pixels", "changed_pixel_percent", "coordinateSource"];
+    expect(trace.candidateMeasurements!.every(m => deterministicNames.includes(m.name))).toBe(true);
+  });
+
+  it("recovery_accepted branch: DiffRecord.measurements is deterministic-only", async () => {
+    const recoveryCaller: VisionJsonCaller = vi.fn().mockResolvedValue({
+      parsed: { classified: true, criterion: "geometry", severity: "medium", label: "Button", evidence: ["shifted"], measurements: [{ name: "invented", value: 123 }] },
+      rawContent: "", model: "recovery-model", provider: "mistral"
+    });
+    const reviewerCaller: VisionJsonCaller = vi.fn().mockResolvedValue(acceptedReviewerResponse());
+    const result = await runTargetRecovery([component], makeCtx({ recoveryCaller, reviewerCaller }), unlimitedBudget);
+    expect(result.recovered).toHaveLength(1);
+    const record = result.recovered[0]!;
+    const deterministicNames = ["changed_pixel_count", "region_area_pixels", "changed_pixel_percent", "coordinateSource"];
+    expect(record.measurements.every(m => deterministicNames.includes(m.name))).toBe(true);
+    expect(record.measurements.every(m => !m.name.startsWith("invented"))).toBe(true);
+  });
+});
+
+// ── P1: Fake-clock deadline tests ──
+
+describe("recovery-corrections: deadline truth with fake clock", () => {
+  it("throw-at-deadline for initial call records deadline_exceeded not recovery_error", async () => {
+    let fakeNow = Date.now();
+    vi.spyOn(Date, "now").mockImplementation(() => fakeNow);
+    const deadline = fakeNow + 1000;
+    const recoveryCaller: VisionJsonCaller = vi.fn().mockImplementation(async () => {
+      fakeNow = deadline + 1;
+      throw new Error("timeout after deadline");
+    });
+    const reviewerCaller: VisionJsonCaller = vi.fn();
+    const result = await runTargetRecovery([component], makeCtx({ recoveryCaller, reviewerCaller }), {
+      maxComponents: 100, maxModelCalls: 200, deadlineMs: deadline, minComponentPixels: 1
+    });
+    expect(result.statusCounts["deadline_exceeded"]).toBeGreaterThanOrEqual(1);
+    expect(result.statusCounts["recovery_error"]).toBeUndefined();
+    expect(result.stoppedReason).toBe("deadline_exceeded");
+    expect(result.recovered).toHaveLength(0);
+  });
+
+  it("throw-at-deadline for repair call records deadline_exceeded not repair_provider_failure", async () => {
+    let fakeNow = Date.now();
+    vi.spyOn(Date, "now").mockImplementation(() => fakeNow);
+    const deadline = fakeNow + 1000;
+    let callCount = 0;
+    const recoveryCaller: VisionJsonCaller = vi.fn().mockImplementation(async () => {
+      callCount++;
+      if (callCount === 1) {
+        return {
+          parsed: { classified: true, criterion: "color_appearance", severity: "medium", label: "BG", evidence: ["color is #FF0000"] },
+          rawContent: "", model: "recovery-model", provider: "mistral"
+        };
+      }
+      fakeNow = deadline + 1;
+      throw new Error("timeout");
+    });
+    const reviewerCaller: VisionJsonCaller = vi.fn();
+    const result = await runTargetRecovery([invalidComponent], makeCtx({ recoveryCaller, reviewerCaller }), {
+      maxComponents: 100, maxModelCalls: 200, deadlineMs: deadline, minComponentPixels: 1
+    });
+    expect(result.statusCounts["deadline_exceeded"]).toBeGreaterThanOrEqual(1);
+    expect(result.statusCounts["repair_provider_failure"]).toBeUndefined();
+    expect(result.stoppedReason).toBe("deadline_exceeded");
+  });
+
+  it("success-after-deadline: post-call expiry records deadline_exceeded", async () => {
+    let fakeNow = Date.now();
+    vi.spyOn(Date, "now").mockImplementation(() => fakeNow);
+    const deadline = fakeNow + 1000;
+    const recoveryCaller: VisionJsonCaller = vi.fn().mockImplementation(async () => {
+      fakeNow = deadline + 1;
+      return {
+        parsed: { classified: true, criterion: "geometry", severity: "medium", label: "Button", evidence: ["shifted"] },
+        rawContent: "", model: "m", provider: "p"
+      };
+    });
+    const reviewerCaller: VisionJsonCaller = vi.fn();
+    const result = await runTargetRecovery([component], makeCtx({ recoveryCaller, reviewerCaller }), {
+      maxComponents: 100, maxModelCalls: 200, deadlineMs: deadline, minComponentPixels: 1
+    });
+    expect(result.statusCounts["deadline_exceeded"]).toBeGreaterThanOrEqual(1);
+    expect(result.recovered).toHaveLength(0);
+  });
+
+  it("throw-at-deadline for reviewer records deadline_exceeded not needs_escalation", async () => {
+    let fakeNow = Date.now();
+    vi.spyOn(Date, "now").mockImplementation(() => fakeNow);
+    const deadline = fakeNow + 1000;
+    const recoveryCaller: VisionJsonCaller = vi.fn().mockResolvedValue({
+      parsed: { classified: true, criterion: "geometry", severity: "medium", label: "Button", evidence: ["shifted"] },
+      rawContent: "", model: "recovery-model", provider: "mistral"
+    });
+    const reviewerCaller: VisionJsonCaller = vi.fn().mockImplementation(async () => {
+      fakeNow = deadline + 1;
+      throw new Error("timeout");
+    });
+    const result = await runTargetRecovery([component], makeCtx({ recoveryCaller, reviewerCaller }), {
+      maxComponents: 100, maxModelCalls: 200, deadlineMs: deadline, minComponentPixels: 1
+    });
+    expect(result.statusCounts["deadline_exceeded"]).toBeGreaterThanOrEqual(1);
+    expect(result.statusCounts["recovery_needs_escalation"]).toBeUndefined();
+    expect(result.stoppedReason).toBe("deadline_exceeded");
+  });
+});
+
+// ── P1: Trace/outcome completeness table-driven tests ──
+
+describe("recovery-corrections: trace/outcome completeness", () => {
+  const deterministicNames = ["changed_pixel_count", "region_area_pixels", "changed_pixel_percent", "coordinateSource"];
+
+  it.each([
+    ["repair_classified_false", async () => {
+      return [invalidRecoveryResponse(), { parsed: { classified: false }, rawContent: "", model: "repair-model", provider: "mistral" }] as const;
+    }],
+    ["repair_schema_failure", async () => {
+      return [invalidRecoveryResponse(), { parsed: { classified: true, /* missing criterion */ label: "BG", evidence: ["x"] }, rawContent: "", model: "repair-model", provider: "mistral" }] as const;
+    }],
+    ["repair_criterion_change", async () => {
+      return [invalidRecoveryResponse(), { parsed: { classified: true, criterion: "geometry", severity: "medium", label: "Other", evidence: ["different"] }, rawContent: "", model: "repair-model", provider: "mistral" }] as const;
+    }],
+    ["repair_severity_change", async () => {
+      return [invalidRecoveryResponse(), { parsed: { classified: true, criterion: "color_appearance", severity: "low", label: "BG", evidence: ["changed"] }, rawContent: "", model: "repair-model", provider: "mistral" }] as const;
+    }],
+    ["repair_provider_failure", async () => {
+      return [invalidRecoveryResponse(), "throw"] as const;
+    }],
+  ])("%s: trace and outcome preserve provider/model/duration and deterministic measurements", async (status, setup) => {
+    const responses = await setup();
+    const recoveryCaller: VisionJsonCaller = vi.fn()
+      .mockResolvedValueOnce(responses[0])
+      .mockImplementationOnce(async () => {
+        if (responses[1] === "throw") throw new Error("provider failure");
+        return responses[1];
+      });
+    const result = await runTargetRecovery([invalidComponent], makeCtx({ recoveryCaller }), unlimitedBudget);
+    expect(result.statusCounts[status]).toBe(1);
+    const trace = result.trace[0]!;
+    const outcome = result.regionOutcomes[0]!;
+    // Provider/model/duration fields present
+    expect(trace.provider).toBeDefined();
+    expect(trace.recoveryDurationMs).toBeGreaterThanOrEqual(0);
+    expect(trace.repairDurationMs).toBeGreaterThanOrEqual(0);
+    // originalCandidateMeasurements is deterministic-only
+    expect(trace.originalCandidateMeasurements!.every(m => deterministicNames.includes(m.name))).toBe(true);
+    // rawModelProposedMeasurements preserved
+    expect(trace.rawModelProposedMeasurements).toBeDefined();
+    expect(trace.originalCandidateRawMeasurements).toBeDefined();
+    // outcome matches
+    expect(outcome.state).toBe("unresolved");
+    expect(outcome.reason).toContain(status.replace("repair_", ""));
+  });
+
+  it("deadline_exceeded: trace and outcome preserve provider/model and deterministic measurements", async () => {
+    let fakeNow = Date.now();
+    const origNow = Date.now.bind(Date);
+    vi.spyOn(Date, "now").mockImplementation(() => fakeNow);
+    const deadline = fakeNow + 1000;
+    const recoveryCaller: VisionJsonCaller = vi.fn().mockImplementation(async () => {
+      fakeNow = deadline + 1;
+      return {
+        parsed: { classified: true, criterion: "geometry", severity: "medium", label: "Button", evidence: ["shifted"] },
+        rawContent: "", model: "recovery-model", provider: "mistral"
+      };
+    });
+    const result = await runTargetRecovery([component], makeCtx({ recoveryCaller }), {
+      maxComponents: 100, maxModelCalls: 200, deadlineMs: deadline, minComponentPixels: 1
+    });
+    const trace = result.trace[0]!;
+    expect(trace.status).toBe("deadline_exceeded");
+    expect(trace.provider).toBe("mistral");
+    expect(trace.model).toBe("recovery-model");
+    expect(trace.recoveryDurationMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it("independent_reviewer_unavailable: runtime family guard fires when reviewerResolver returns same-family route", async () => {
+    const recoveryCaller: VisionJsonCaller = vi.fn().mockResolvedValue({
+      parsed: { classified: true, criterion: "geometry", severity: "medium", label: "Button", evidence: ["shifted"] },
+      rawContent: "", model: "ministral-14b-2512", provider: "mistral"
+    });
+    const reviewerCaller: VisionJsonCaller = vi.fn().mockResolvedValue({
+      parsed: { decision: "accepted", reason: "ok" },
+      rawContent: "", model: "ministral-14b-2512:free", provider: "openrouter"
+    });
+    const reviewerResolver = vi.fn().mockReturnValue(reviewerCaller);
+    const result = await runTargetRecovery([component], makeCtx({ recoveryCaller, reviewerCaller, reviewerResolver }), unlimitedBudget);
+    const trace = result.trace[0]!;
+    expect(trace.status).toBe("independent_reviewer_unavailable");
+    expect(trace.provider).toBe("mistral");
+    expect(trace.reviewerProvider).toBe("openrouter");
+    expect(trace.reviewerModel).toBe("ministral-14b-2512:free");
+    expect(trace.rawModelProposedMeasurements).toBeDefined();
+  });
+});
