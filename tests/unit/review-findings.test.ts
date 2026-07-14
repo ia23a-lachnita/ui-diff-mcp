@@ -108,9 +108,27 @@ describe("validateClaim", () => {
   it.each([
     "The element is missing within the supplied crop.",
     "The element is absent at the expected position.",
-    "The projected expected position has no visible content."
-  ])("allows crop-grounded absence claim: %s", statement => {
+    "The projected expected position has no visible content.",
+    "The evidence does not support a missing or misplaced element.",
+    "There is no missing or misplaced element.",
+    "The evidence is without a missing element.",
+    "The triangular arrow is never missing."
+  ])("allows qualified or explicitly negated absence statement: %s", statement => {
     expect(validateClaim(makeDiff({ title: "Presence difference", evidence: [statement] }))).toEqual({ valid: true });
+  });
+
+  it("rejects a partially missing element as a real absence claim", () => {
+    expect(validateClaim(makeDiff({
+      title: "Partially missing triangular arrow",
+      evidence: ["The triangular arrow is partially missing."]
+    }))).toMatchObject({ valid: false, reason: expect.stringMatching(/absence|blank/i) });
+  });
+
+  it("continues to reject a global blank assertion", () => {
+    expect(validateClaim(makeDiff({ title: "The actual image is blank." }))).toMatchObject({
+      valid: false,
+      reason: expect.stringMatching(/absence|blank/i)
+    });
   });
 
   it.each([

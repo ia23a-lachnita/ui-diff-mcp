@@ -105,8 +105,9 @@ export function applyFindingCoverage(ledger: RegionLedger, findings: DiffRecord[
     const covering = findings.filter(finding => overlapRatio(region.box, finding) >= 0.1);
     if (covering.length === 0) continue;
 
-    if (region.blockingRecoveryOutcome?.state === "unresolved" && region.blockingRecoveryOutcome.criterion) {
+    if (region.blockingRecoveryOutcome?.state === "unresolved") {
       const blockingCriterion = region.blockingRecoveryOutcome.criterion;
+      if (!blockingCriterion) continue;
       const supersedingFinding = covering.find(finding =>
         finding.criterion === blockingCriterion
         && overlapRatio(region.box, finding) >= 0.9
@@ -140,7 +141,6 @@ export function annotateRecoveryTraceSupersessions(
       .map(region => [region.id, region.supersessionDetail!] as const)
   );
   return trace.map(entry => {
-    if (entry.status !== "unsupported_recovery_claim") return entry;
     const supersession = supersessions.get(entry.componentId);
     if (!supersession) return entry;
     return {
@@ -157,13 +157,10 @@ export function markBroadVlmEvidence(ledger: RegionLedger, findings: DiffRecord[
     if (region.state !== "unresolved") continue;
     const related = findings.filter(finding => overlapRatio(region.box, finding) >= 0.1).map(finding => finding.id).sort();
     if (related.length === 0) continue;
-    if (region.unresolvedDetail?.startsWith("unsupported_recovery_claim:")) {
-      region.unresolvedDetail = `${region.unresolvedDetail}; broad_vlm_evidence: ${related.join(",")}`;
-    } else {
-      region.unresolvedDetail = region.unresolvedDetail?.startsWith("evidence_crop_rejected:")
-        ? `${region.unresolvedDetail}; broad_vlm_evidence: ${related.join(",")}`
-        : `broad_vlm_evidence: ${related.join(",")}`;
-    }
+    const broadEvidence = `broad_vlm_evidence: ${related.join(",")}`;
+    region.unresolvedDetail = region.unresolvedDetail
+      ? `${region.unresolvedDetail}; ${broadEvidence}`
+      : broadEvidence;
     region.coveringFindingIds = related;
   }
 }
@@ -177,8 +174,10 @@ export function applyRecoveryOutcomes(ledger: RegionLedger, outcomes: RecoveryRe
     region.state = outcome.state;
     region.unresolvedDetail = outcome.reason;
     if (outcome.findingId) region.coveringFindingIds = [outcome.findingId];
-    if (outcome.state === "unresolved" && outcome.reason.startsWith("unsupported_recovery_claim:")) {
+    if (outcome.state === "unresolved") {
       region.blockingRecoveryOutcome = outcome;
+    } else {
+      delete region.blockingRecoveryOutcome;
     }
   }
 }
@@ -194,10 +193,10 @@ export function unresolvedRegionsFromLedger(
       const detail = fullDetail ? emittedUnresolvedDetail(fullDetail) : undefined;
       const resolvedReason = fullDetail?.startsWith("evidence_crop_rejected:")
         ? "evidence_crop_rejected"
-        : fullDetail?.startsWith("broad_vlm_evidence:")
-          ? "broad_vlm_evidence"
-          : fullDetail?.startsWith("unsupported_recovery_claim:")
+        : fullDetail?.startsWith("unsupported_recovery_claim:")
             ? "unsupported_recovery_claim"
+          : fullDetail?.startsWith("broad_vlm_evidence:")
+            ? "broad_vlm_evidence"
             : reason;
       return {
         id: region.id,

@@ -13,6 +13,9 @@ const CLASSIFIABLE_CRITERIA = [
   "chart_special_geometry"
 ] as const;
 
+const NO_SPECULATION_RULE = `- Do NOT speculate about causality or design intent.`;
+const NAMED_MEASUREMENT_RULE = `- Exact percentages, pixels, sizes, angles, and coordinates are allowed only when citing a listed deterministic measurement by name.`;
+
 export function buildRecoveryPrompt(pixelCount: number, componentArea: number, measurements: DeterministicMeasurement[] = []): string {
   const criteriaList = CLASSIFIABLE_CRITERIA.join(" | ");
   const deterministicMeasurements = measurements.length > 0 ? measurements : [
@@ -48,6 +51,8 @@ export function buildRecoveryPrompt(pixelCount: number, componentArea: number, m
     `STRICT RULES:`,
     `- Report ONLY observable visual differences visible in the images.`,
     `- Do NOT suggest code fixes or root causes.`,
+    NO_SPECULATION_RULE,
+    NAMED_MEASUREMENT_RULE,
     `- The deterministic region already provides the screen location; do not return coordinates or a bounding box.`,
     `- Evidence must be specific (e.g., "background color changed from dark to light").`,
     ``,
@@ -97,6 +102,8 @@ export function buildAuditorPrompt(ctx: AuditorPromptContext): string {
     `- Do NOT suggest how to resolve the difference in code or design.`,
     `- Do NOT comment on correctness or acceptability of the UI.`,
     `- Do NOT speculate about implementation details.`,
+    NO_SPECULATION_RULE,
+    NAMED_MEASUREMENT_RULE,
     `- Evidence must be visually specific but qualitative unless it cites a deterministic measurement listed above by name.`,
     `- Do not invent pixel, spacing, font-size, percentage, or angle measurements.`,
     ``,
@@ -153,9 +160,12 @@ export function buildReviewerPrompt(
     `- Reject the diff if the evidence is vague, unverifiable, or contradicted by the images.`,
     `- Mark needs_escalation if the images are ambiguous or the diff requires deeper analysis.`,
     `- Do NOT explain causality. Do NOT suggest code changes. Do NOT judge correctness.`,
+    NO_SPECULATION_RULE,
+    NAMED_MEASUREMENT_RULE,
     `- Reject the diff if its title or evidence claims content that is not visible in the supplied images.`,
     `- Accept crop-boundary evidence only when the record explicitly calls it a crop/position mismatch.`,
     `- Reject unsupported quantitative layout claims. Exact dimensions, positions, spacing, font sizes, percentages, and angles are valid only when they cite a deterministic measurement listed above.`,
+    `- Reject any title or evidence that violates these rules, including causality, design-intent, or uncited exact-quantity claims.`,
     ``,
     `Respond with JSON only: { "decision": "accepted" | "rejected" | "needs_escalation", "reason": "<one sentence>" }`
   ].join("\n");

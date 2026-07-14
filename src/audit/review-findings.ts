@@ -6,6 +6,7 @@ const ABSENCE_PHRASES = /\b(absent|missing|does\s+not\s+exist|doesn't\s+exist|no
 const GLOBAL_BLANK_IMAGE_PHRASES = /\b(?:actual|expected)?\s*(?:screenshot|image|screen|page)\b[^.!?;\n]{0,80}\b(?:blank|empty)\b/i;
 const GLOBAL_BLACK_IMAGE_PHRASES = /\b(?:actual|expected)?\s*(?:screenshot|image|screen|page)\b[^.!?;\n]{0,80}\b(?:(?:entirely|completely|totally|solid)\s+black|all[-\s]?black)\b/i;
 const ABSENCE_QUALIFIER = /\b(?:crop|projected\s+expected\s+position|expected\s+position|within\s+(?:the\s+)?supplied\s+crop)\b/i;
+const NEGATED_ABSENCE_PHRASE = /\b(?:not|isn't|is\s+not|doesn't|does\s+not|cannot|can't|no|without|never)\b[^.!?;\n]{0,60}\b(?:absent|missing|misplaced|gone|no\s+(?:visible\s+)?content|no\s+element|blank|empty|black)\b/i;
 
 export function hasUnsupportedCropBoundaryClaim(diff: Pick<DiffRecord, "title" | "evidence">): boolean {
   const searchable = [diff.title, ...diff.evidence].join(" ");
@@ -27,6 +28,7 @@ function isOrdinaryBlackElementStatement(statement: string): boolean {
 }
 
 function isUnsupportedAbsenceStatement(statement: string): boolean {
+  if (NEGATED_ABSENCE_PHRASE.test(statement)) return false;
   if (isOrdinaryBlackElementStatement(statement)) return false;
   const isGlobalBlankImage = GLOBAL_BLANK_IMAGE_PHRASES.test(statement);
   const isGlobalBlackImage = GLOBAL_BLACK_IMAGE_PHRASES.test(statement) && !isOrdinaryBlackElementStatement(statement);

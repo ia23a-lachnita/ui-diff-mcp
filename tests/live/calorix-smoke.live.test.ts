@@ -613,6 +613,23 @@ describe.skipIf(!calorixReleaseLive)("Calorix release sign-off gate", () => {
 
       expect(report.status, "release gate requires report status=complete").toBe("complete");
       expect(report.isCheckpoint, "release gate requires a durable final report, not a checkpoint").toBe(false);
+      const unresolvedSummary = report.unresolvedRegions
+        .map(region => `${region.id}/${region.reason}/${region.detail ?? "no detail"}`)
+        .join("; ");
+      expect(
+        report.unresolvedRegions,
+        `release gate requires zero unresolved canonical regions; ${unresolvedSummary || "none"}`
+      ).toHaveLength(0);
+      expect(
+        report.recoverySummary?.unclassifiedCount ?? 0,
+        "release gate requires zero unclassified recovery leftovers"
+      ).toBe(0);
+      expect(
+        report.recoverySummary?.remainingComponents ?? 0,
+        "release gate requires zero remaining recovery components"
+      ).toBe(0);
+      await assertRecoveryTraceSupersessionIntegrity(report);
+
       expect(
         report.visualClassificationStatus,
         "release gate requires complete visual classification; inspect audit and recovery stage outcomes for the exact blocker"
@@ -623,7 +640,6 @@ describe.skipIf(!calorixReleaseLive)("Calorix release sign-off gate", () => {
         "release gate requires auditLimited=false"
       ).toBe(false);
 
-      expect(report.unresolvedRegions, "release gate requires zero unresolved canonical regions").toHaveLength(0);
       expect(report.auditScope?.stoppedReason ?? "none", "release gate must not have terminal route exhaustion").toBe("none");
       expect(report.auditScope?.remainingPairs ?? 0, "release gate requires zero remaining audit pairs").toBe(0);
       const selectedPairs = report.auditScope?.selectedPairs ?? report.auditScope?.auditedPairs ?? 0;
@@ -656,13 +672,6 @@ describe.skipIf(!calorixReleaseLive)("Calorix release sign-off gate", () => {
         "release gate must not pass with accepted diffs missing classificationSource"
       ).toBe(0);
       assertFinalFindingIntegrity(report);
-      await assertRecoveryTraceSupersessionIntegrity(report);
-
-      // Unclassified recovery leftovers must be zero for production release.
-      expect(
-        report.recoverySummary?.unclassifiedCount ?? 0,
-        "release gate requires zero unclassified recovery leftovers"
-      ).toBe(0);
 
       // If viewport is mismatch, source crops must preserve original pixels and all accepted
       // diffs must be VLM-reviewed/recovered or explicitly labeled as projected-location evidence.

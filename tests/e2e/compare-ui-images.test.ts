@@ -1213,7 +1213,7 @@ describe("runUiDiff with mock sidecar and models (full mode)", () => {
     expect(sidecar.requests[0]?.queries).toHaveLength(8);
   });
 
-  it("removes broad accepted VLM evidence from final coverage and reports it unresolved", async () => {
+  it("removes broad accepted VLM evidence while preserving the unresolved classification", async () => {
     const expected = await writeSolidPng(tmpDir, "broad-vlm-expected.png", 200, 400, 255, 255, 255);
     const actual = await writeSolidPng(tmpDir, "broad-vlm-actual.png", 200, 400, 0, 0, 0);
     sidecar = await startMockSidecar({ imageWidth: 200, imageHeight: 400 });
@@ -1249,7 +1249,8 @@ describe("runUiDiff with mock sidecar and models (full mode)", () => {
 
     expect(report.diffs.some(diff => diff.classificationSource === "vlm_reviewed")).toBe(false);
     expect(report.unresolvedRegions).toContainEqual(expect.objectContaining({
-      reason: "broad_vlm_evidence",
+      reason: "not_classified",
+      detail: "not_classified; broad_vlm_evidence: broad-vlm",
       relatedFindingIds: ["broad-vlm"]
     }));
     expect(report.visualClassificationStatus).toBe("incomplete");

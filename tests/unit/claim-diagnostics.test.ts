@@ -377,6 +377,20 @@ describe("ledger: applyRecoveryOutcomes sets blockingRecoveryOutcome for unsuppo
     }]);
     expect(ledger.regions[0]!.blockingRecoveryOutcome).toBeUndefined();
   });
+
+  it("sets blockingRecoveryOutcome for every unresolved outcome, including reviewer rejection without a criterion", () => {
+    const ledger = makeLedgerWithRegion("region-0001");
+    const outcome: RecoveryRegionOutcome = {
+      regionId: "region-0001",
+      state: "unresolved",
+      reason: "reviewer_rejected: evidence was not visually supported",
+      artifactPaths: makeRecoveryArtifacts("region-0001")
+    };
+
+    applyRecoveryOutcomes(ledger, [outcome]);
+
+    expect(ledger.regions[0]!.blockingRecoveryOutcome).toEqual(outcome);
+  });
 });
 
 describe("ledger: applyFindingCoverage cannot hide unsupported_recovery_claim at 10% overlap", () => {
@@ -478,6 +492,35 @@ describe("ledger: applyFindingCoverage cannot hide unsupported_recovery_claim at
     expect(region.blockingRecoveryOutcome).toBeDefined();
   });
 
+  it("does not cover an unresolved blocker without a criterion at 10% overlap", () => {
+    const ledger: RegionLedger = {
+      rawComponentCount: 1,
+      belowThresholdCount: 0,
+      regions: [{
+        id: "region-0001",
+        box: { x: 10, y: 10, width: 80, height: 60 },
+        pixelCount: 500,
+        sourceComponentIds: ["component-0001"],
+        state: "unresolved",
+        coveringFindingIds: [],
+        artifactPaths: [],
+        unresolvedDetail: "reviewer_rejected: evidence was not visually supported",
+        blockingRecoveryOutcome: {
+          regionId: "region-0001",
+          state: "unresolved",
+          reason: "reviewer_rejected: evidence was not visually supported",
+          artifactPaths: makeRecoveryArtifacts("region-0001")
+        }
+      }],
+      coverageTrace: []
+    };
+    const broadFinding = makeDiff({ id: "diff-broad", location: { x: 0, y: 0, width: 100, height: 100 } });
+
+    applyFindingCoverage(ledger, [broadFinding]);
+
+    expect(ledger.regions[0]!.state).toBe("unresolved");
+  });
+
   it("does NOT supersede at >=90% overlap with different criterion", () => {
     const ledger: RegionLedger = {
       rawComponentCount: 1,
@@ -574,6 +617,62 @@ describe("ledger: markBroadVlmEvidence cannot overwrite blocking reason/diagnost
     // blocking reason/diagnostics preserved
     expect(region.blockingRecoveryOutcome).toBeDefined();
     expect(region.blockingRecoveryOutcome?.diagnostics?.code).toBe("unsupported_quantitative");
+    const [unresolved] = unresolvedRegionsFromLedger(ledger, "not_classified");
+    expect(unresolved).toMatchObject({
+      reason: "unsupported_recovery_claim",
+      diagnostics: { code: "unsupported_quantitative" }
+    });
+  });
+
+  it("appends broad evidence while preserving a reviewer rejection reason", () => {
+    const ledger: RegionLedger = {
+      rawComponentCount: 1,
+      belowThresholdCount: 0,
+      regions: [{
+        id: "region-0001",
+        box: { x: 10, y: 10, width: 80, height: 60 },
+        pixelCount: 500,
+        sourceComponentIds: ["component-0001"],
+        state: "unresolved",
+        coveringFindingIds: [],
+        artifactPaths: [],
+        unresolvedDetail: "reviewer_rejected: evidence was not visually supported",
+        blockingRecoveryOutcome: {
+          regionId: "region-0001",
+          state: "unresolved",
+          reason: "reviewer_rejected: evidence was not visually supported",
+          artifactPaths: []
+        }
+      }],
+      coverageTrace: []
+    };
+
+    markBroadVlmEvidence(ledger, [makeDiff({ id: "diff-broad", location: { x: 0, y: 0, width: 100, height: 100 } })]);
+
+    expect(ledger.regions[0]!.unresolvedDetail).toBe(
+      "reviewer_rejected: evidence was not visually supported; broad_vlm_evidence: diff-broad"
+    );
+    expect(unresolvedRegionsFromLedger(ledger, "not_classified")[0]).toMatchObject({
+      reason: "not_classified",
+      detail: "reviewer_rejected: evidence was not visually supported; broad_vlm_evidence: diff-broad"
+    });
+  });
+
+  it("categorizes pure broad evidence as broad_vlm_evidence", () => {
+    const ledger = buildRegionLedger([makeComponent(10, 10, 80, 60, 500)], [], {
+      minPixelCount: 1,
+      maxGapPx: 5,
+      maxClusterAreaRatio: 0.5,
+      imageWidth: 200,
+      imageHeight: 200
+    });
+
+    markBroadVlmEvidence(ledger, [makeDiff({ id: "diff-broad", location: { x: 0, y: 0, width: 100, height: 100 } })]);
+
+    expect(unresolvedRegionsFromLedger(ledger, "not_classified")[0]).toMatchObject({
+      reason: "broad_vlm_evidence",
+      detail: "broad_vlm_evidence: diff-broad"
+    });
   });
 });
 
@@ -1093,7 +1192,7 @@ describe("release gate: recovery accounting with supersession metadata", () => {
 });
 
 describe("annotateRecoveryTraceSupersessions", () => {
-  it("annotates only the matching unsupported recovery trace without mutating inputs", () => {
+  it("annotates matching rejected and unsupported recovery traces without mutating inputs", () => {
     const ledger: RegionLedger = {
       rawComponentCount: 1,
       belowThresholdCount: 0,
@@ -1128,7 +1227,7 @@ describe("annotateRecoveryTraceSupersessions", () => {
         rank: 1,
         componentBox: { x: 10, y: 10, width: 80, height: 60 },
         pixelCount: 500,
-        status: "recovery_accepted",
+        status: "recovery_rejected",
         criterion: "geometry",
         artifactPaths: []
       },
@@ -1151,8 +1250,13 @@ describe("annotateRecoveryTraceSupersessions", () => {
       supersessionReason: "same_criterion_acceptance_overlap",
       supersessionOverlapRatio: 0.95
     });
-    expect(annotated[1]?.supersededByFindingId).toBeUndefined();
+    expect(annotated[1]).toMatchObject({
+      supersededByFindingId: "diff-accepted",
+      supersessionReason: "same_criterion_acceptance_overlap",
+      supersessionOverlapRatio: 0.95
+    });
     expect(annotated[2]?.supersededByFindingId).toBeUndefined();
     expect(trace[0]?.supersededByFindingId).toBeUndefined();
+    expect(trace[1]?.supersededByFindingId).toBeUndefined();
   });
 });
