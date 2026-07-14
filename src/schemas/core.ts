@@ -771,7 +771,8 @@ export const RecoveryDecisionStatusSchema = z.enum([
   "still_invalid",
   "budget_exhausted_before_repair",
   "budget_exhausted_before_reviewer",
-  "independent_reviewer_unavailable"
+  "independent_reviewer_unavailable",
+  "deadline_exceeded"
 ]);
 
 export const RecoveryComponentTraceSchema = z.object({

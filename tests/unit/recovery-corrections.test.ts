@@ -7,7 +7,8 @@ import type { RecoveryBudget, RecoveryContext } from "../../src/recovery/target-
 import { writeSolidPng } from "../../src/testing/fixture-images.js";
 import type { PixelComponent } from "../../src/signals/pixel-diff.js";
 import type { VisionJsonCaller } from "../../src/models/vision-json.js";
-import { RecoveryComponentTraceSchema, RecoveryRegionOutcomeSchema } from "../../src/schemas/core.js";
+import { RecoveryComponentTraceSchema, RecoveryRegionOutcomeSchema, type DeterministicMeasurement } from "../../src/schemas/core.js";
+import { validateClaim } from "../../src/audit/review-findings.js";
 
 let tmpDir: string;
 let overlayPath: string;
@@ -760,6 +761,175 @@ describe("recovery-corrections: outcome truth", () => {
     const result = await runTargetRecovery([invalidComponent], ctx, unlimitedBudget);
     expect(() => RecoveryComponentTraceSchema.array().parse(result.trace)).not.toThrow();
     expect(() => RecoveryRegionOutcomeSchema.array().parse(result.regionOutcomes)).not.toThrow();
+  });
+});
+
+// ── P1: Hard deadline enforcement ──
+
+describe("recovery-corrections: deadline enforcement", () => {
+  it("initial call timeout capped to remaining deadline", async () => {
+    let capturedTimeout: number | undefined;
+    const recoveryCaller: VisionJsonCaller = vi.fn().mockImplementation(async (req) => {
+      capturedTimeout = req.timeoutMs;
+      return { parsed: { classified: false }, rawContent: "", model: "m", provider: "p" };
+    });
+    const reviewerCaller: VisionJsonCaller = vi.fn();
+    await runTargetRecovery([component], makeCtx({ recoveryCaller, reviewerCaller }), {
+      maxComponents: 100, maxModelCalls: 200, deadlineMs: Date.now() + 5000, minComponentPixels: 1
+    });
+    expect(capturedTimeout).toBeLessThanOrEqual(5000);
+    expect(capturedTimeout).toBeGreaterThan(0);
+  });
+
+  it("repair call timeout capped to remaining deadline", async () => {
+    let capturedTimeouts: number[] = [];
+    const recoveryCaller: VisionJsonCaller = vi.fn().mockImplementation(async (req) => {
+      capturedTimeouts.push(req.timeoutMs ?? 0);
+      if (capturedTimeouts.length === 1) {
+        // First call (initial): invalid candidate triggers repair
+        return {
+          parsed: { classified: true, criterion: "color_appearance", severity: "medium", label: "Background", evidence: ["color is #FF0000"] },
+          rawContent: "", model: "recovery-model", provider: "mistral"
+        };
+      }
+      // Second call (repair)
+      return {
+        parsed: { classified: true, criterion: "color_appearance", severity: "medium", label: "Background", evidence: ["background color changed from light to dark"] },
+        rawContent: "", model: "repair-model", provider: "mistral"
+      };
+    });
+    const reviewerCaller: VisionJsonCaller = vi.fn().mockResolvedValue(acceptedReviewerResponse());
+    await runTargetRecovery([invalidComponent], makeCtx({ recoveryCaller, reviewerCaller }), {
+      maxComponents: 100, maxModelCalls: 200, deadlineMs: Date.now() + 10000, minComponentPixels: 1
+    });
+    expect(capturedTimeouts.length).toBeGreaterThanOrEqual(2);
+    expect(capturedTimeouts[1]).toBeLessThanOrEqual(10000);
+  });
+
+  it("post-call expiry after initial emits deadline status and stops", async () => {
+    const recoveryCaller: VisionJsonCaller = vi.fn().mockImplementation(async () => {
+      await new Promise(r => setTimeout(r, 100));
+      return {
+        parsed: { classified: true, criterion: "geometry", severity: "medium", label: "Button", evidence: ["shifted"] },
+        rawContent: "", model: "m", provider: "p"
+      };
+    });
+    const reviewerCaller: VisionJsonCaller = vi.fn();
+    const result = await runTargetRecovery([component], makeCtx({ recoveryCaller, reviewerCaller }), {
+      maxComponents: 100, maxModelCalls: 200, deadlineMs: Date.now() + 30, minComponentPixels: 1
+    });
+    expect(result.stoppedReason).toBe("deadline_exceeded");
+    expect(result.recovered).toHaveLength(0);
+    expect(result.statusCounts["deadline_exceeded"]).toBeGreaterThanOrEqual(1);
+  });
+});
+
+// ── P2: Schema compatibility ──
+
+describe("recovery-corrections: schema compatibility", () => {
+  it("parses old-report trace without new optional fields", () => {
+    const oldTrace = {
+      componentId: "component-0001",
+      rank: 0,
+      componentBox: { x: 10, y: 10, width: 80, height: 60 },
+      pixelCount: 500,
+      status: "classified_false" as const,
+      model: "some-model",
+      recoveryDurationMs: 100,
+      artifactPaths: []
+    };
+    expect(() => RecoveryComponentTraceSchema.parse(oldTrace)).not.toThrow();
+  });
+
+  it("parses old-report outcome without new optional fields", () => {
+    const oldOutcome = {
+      regionId: "component-0001",
+      state: "noise" as const,
+      reason: "classified_false",
+      artifactPaths: []
+    };
+    expect(() => RecoveryRegionOutcomeSchema.parse(oldOutcome)).not.toThrow();
+  });
+
+  it("parses trace with deadline_exceeded status", () => {
+    const trace = {
+      componentId: "component-0001",
+      rank: 0,
+      componentBox: { x: 10, y: 10, width: 80, height: 60 },
+      pixelCount: 500,
+      status: "deadline_exceeded" as const,
+      model: "some-model",
+      provider: "some-provider",
+      recoveryDurationMs: 0,
+      artifactPaths: []
+    };
+    expect(() => RecoveryComponentTraceSchema.parse(trace)).not.toThrow();
+  });
+});
+
+// ── P1: Model-proposed measurements rejected from validateClaim ──
+
+describe("recovery-corrections: model measurements rejected from validation", () => {
+  it("initial validateClaim only sees deterministic measurements, not model-proposed", async () => {
+    const recoveryCaller: VisionJsonCaller = vi.fn().mockImplementation(async () => ({
+      parsed: {
+        classified: true,
+        criterion: "color_appearance",
+        severity: "medium",
+        label: "Button color",
+        evidence: ["Button changed from red to blue"],
+        measurements: [{ name: "exact_color", value: "0x1F456C", unit: "hex" }]
+      },
+      rawContent: "", model: "recovery-model", provider: "mistral"
+    }));
+    const reviewerCaller: VisionJsonCaller = vi.fn().mockResolvedValue(acceptedReviewerResponse());
+    const result = await runTargetRecovery([component], makeCtx({ recoveryCaller, reviewerCaller }), unlimitedBudget);
+    expect(result.recovered.length).toBeGreaterThanOrEqual(1);
+    const recovered = result.recovered.find(r => r.title.includes("Button color"));
+    if (recovered) {
+      const names = recovered.measurements.map((m: DeterministicMeasurement) => m.name);
+      expect(names).toContain("changed_pixel_count");
+      expect(names).toContain("region_area_pixels");
+      expect(names).not.toContain("exact_color");
+    }
+  });
+
+  it("negative: evidence claims 150px deterministic + model proposes 150px → initial validateClaim fails", async () => {
+    const recovered = {
+      title: "geometry in recovered region: Button shifted",
+      evidence: ["Button is shifted 150px to the right"],
+      measurements: [
+        { name: "shift_distance_px", value: 150, unit: "px" },
+        { name: "changed_pixel_count", value: 1200, unit: "pixels" }
+      ]
+    };
+    const validation = validateClaim(recovered);
+    expect(validation.valid).toBe(false);
+    expect(validation.reason).toBeDefined();
+  });
+
+  it("negative: repaired evidence + repaired model measurement: second validateClaim fails and reviewer not called", async () => {
+    const recoveryCaller: VisionJsonCaller = vi.fn()
+      .mockResolvedValueOnce({
+        parsed: {
+          classified: true, criterion: "color_appearance", severity: "medium",
+          label: "Background", evidence: ["color is 150px wide"],
+          measurements: [{ name: "exact_width", value: 150, unit: "px" }]
+        },
+        rawContent: "", model: "recovery-model", provider: "mistral"
+      })
+      .mockResolvedValueOnce({
+        parsed: {
+          classified: true, criterion: "geometry", severity: "medium",
+          label: "Background element", evidence: ["Background shifted 150px right"],
+          measurements: [{ name: "exact_shift", value: 150, unit: "px" }]
+        },
+        rawContent: "", model: "repair-model", provider: "mistral"
+      });
+    const reviewerCaller: VisionJsonCaller = vi.fn();
+    const result = await runTargetRecovery([invalidComponent], makeCtx({ recoveryCaller, reviewerCaller }), unlimitedBudget);
+    expect(result.recovered.length).toBe(0);
+    expect(reviewerCaller).not.toHaveBeenCalled();
   });
 });
 

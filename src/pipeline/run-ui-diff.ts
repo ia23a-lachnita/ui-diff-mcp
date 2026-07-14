@@ -945,26 +945,31 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
             )
           : undefined;
 
-        // Build independent recovery reviewer resolver based on actual recovery route
-        const recoveryReviewerResolver = recoveryCandidates.length > 1
-          ? (recoveryProvider: string, recoveryModel: string) => {
-              const recoveryFamily = modelFamilyKey(recoveryModel);
-              // Prefer different provider, then different family same provider, exclude exact route and same family
-              const independentCandidates = recoveryCandidates
-                .filter(e => !(e.provider === recoveryProvider && e.model === recoveryModel))
-                .sort((a, b) => {
-                  const aDifferentProvider = a.provider !== recoveryProvider ? 0 : 1;
-                  const bDifferentProvider = b.provider !== recoveryProvider ? 0 : 1;
-                  if (aDifferentProvider !== bDifferentProvider) return aDifferentProvider - bDifferentProvider;
-                  const aDifferentFamily = modelFamilyKey(a.model) !== recoveryFamily ? 0 : 1;
-                  const bDifferentFamily = modelFamilyKey(b.model) !== recoveryFamily ? 0 : 1;
-                  return aDifferentFamily - bDifferentFamily;
-                });
-              if (independentCandidates.length === 0) return undefined;
-              const selected = independentCandidates[0]!;
-              return makeVisionCaller(selected, providerConfig);
-            }
-          : undefined;
+        // Build independent recovery reviewer resolver from REVIEWER candidates.
+        // Always provided — returns undefined (fail-closed) when no independent route exists.
+        const recoveryReviewerResolver = (recoveryProvider: string, recoveryModel: string) => {
+          const recoveryFamily = modelFamilyKey(recoveryModel);
+          const independentCandidates = reviewerCandidates
+            .filter(e => !(e.provider === recoveryProvider && e.model === recoveryModel))
+            .filter(e => modelFamilyKey(e.model) !== recoveryFamily)
+            .sort((a, b) => {
+              const aDiffProvider = a.provider !== recoveryProvider ? 0 : 1;
+              const bDiffProvider = b.provider !== recoveryProvider ? 0 : 1;
+              if (aDiffProvider !== bDiffProvider) return aDiffProvider - bDiffProvider;
+              return 0;
+            });
+          if (independentCandidates.length === 0) return undefined;
+          return makeFallbackVisionCaller(
+            independentCandidates.map(e => ({
+              caller: makeVisionCaller(e, providerConfig),
+              provider: e.provider,
+              model: e.model,
+              phase: "reviewer" as const
+            })),
+            makeFallbackWarning("recovery_reviewer"),
+            providerTrace.sink
+          );
+        };
 
         visualClassificationStatus = "incomplete";
         const auditedDiffs: DiffRecord[] = [];
@@ -1210,7 +1215,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
             artifactDir: artifactRoot,
             recoveryCaller,
             reviewerCaller,
-            ...(recoveryReviewerResolver !== undefined ? { reviewerResolver: recoveryReviewerResolver } : {})
+            reviewerResolver: recoveryReviewerResolver
           });
           debugTrace.recovery.push(...recoveryResult.trace);
           for (const entry of recoveryResult.trace) {

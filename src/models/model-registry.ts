@@ -746,6 +746,29 @@ export function selectFallbackModelsForMode(
   return results;
 }
 
+export interface IndependentReviewerCandidate {
+  provider: string;
+  model: string;
+}
+
+export function selectIndependentReviewer(
+  reviewerCandidates: IndependentReviewerCandidate[],
+  recoveryProvider: string,
+  recoveryModel: string
+): IndependentReviewerCandidate | undefined {
+  const recoveryFamily = modelFamilyKey(recoveryModel);
+  const independent = reviewerCandidates
+    .filter(c => !(c.provider === recoveryProvider && c.model === recoveryModel))
+    .filter(c => modelFamilyKey(c.model) !== recoveryFamily)
+    .sort((a, b) => {
+      const aDiffProvider = a.provider !== recoveryProvider ? 0 : 1;
+      const bDiffProvider = b.provider !== recoveryProvider ? 0 : 1;
+      if (aDiffProvider !== bDiffProvider) return aDiffProvider - bDiffProvider;
+      return 0;
+    });
+  return independent[0];
+}
+
 export function resolveMode(rawMode: string | undefined): VisionMode {
   // 'free_only' is deprecated and now treated as 'free'
   if (rawMode === "free_only") {

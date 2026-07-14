@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CANONICAL_MODEL_RANKING, FREE_PROVIDER_PHASE_ORDER, getModelByRole, getRequiredModels, selectModelForMode, selectFallbackModelsForMode, resolveMode, requiredImagesForRole, modelFamilyKey, candidateSupportsLogicalRole } from "../../src/models/model-registry.js";
+import { CANONICAL_MODEL_RANKING, FREE_PROVIDER_PHASE_ORDER, getModelByRole, getRequiredModels, selectModelForMode, selectFallbackModelsForMode, resolveMode, requiredImagesForRole, modelFamilyKey, candidateSupportsLogicalRole, selectIndependentReviewer } from "../../src/models/model-registry.js";
 import type { ProbeResult } from "../../src/models/probes.js";
 
 const NOW = new Date().toISOString();
@@ -502,6 +502,8 @@ describe("resolveMode", () => {
     expect(resolveMode("nonsense")).toBe("free");
   });
 });
+
+describe("selectModelForMode free variants", () => {
   it("free mode prefers OpenCode MiMo when its visual probe passes", () => {
     const probes = [makeProbe("opencode", "mimo-v2.5-free", "auditor")];
     expect(selectModelForMode("auditor", "free", probes, {})).toMatchObject({
@@ -541,3 +543,59 @@ describe("resolveMode", () => {
       model: "gemini-3.1-pro-preview"
     });
   });
+});
+
+describe("selectIndependentReviewer", () => {
+  const reviewers = [
+    { provider: "mistral", model: "ministral-14b-2512" },
+    { provider: "opencode", model: "mimo-v2.5-free" },
+    { provider: "nvidia", model: "moonshotai/kimi-k2.6" },
+  ];
+
+  it("returns undefined when no candidates", () => {
+    expect(selectIndependentReviewer([], "mistral", "ministral-14b-2512")).toBeUndefined();
+  });
+
+  it("excludes exact provider+model route", () => {
+    const result = selectIndependentReviewer(reviewers, "mistral", "ministral-14b-2512");
+    expect(result).toBeDefined();
+    expect(result?.provider).not.toBe("mistral");
+    expect(result?.model).not.toBe("ministral-14b-2512");
+  });
+
+  it("excludes same model family across providers/suffixes", () => {
+    const candidates = [
+      { provider: "openrouter", model: "ministral-14b-2512:free" }, // same family as ministral-14b-2512
+      { provider: "opencode", model: "mimo-v2.5-free" },
+    ];
+    const result = selectIndependentReviewer(candidates, "mistral", "ministral-14b-2512");
+    expect(result?.provider).toBe("opencode");
+    expect(result?.model).toBe("mimo-v2.5-free");
+  });
+
+  it("Mistral recovery => prefers MiMo (opencode) first", () => {
+    const result = selectIndependentReviewer(reviewers, "mistral", "ministral-14b-2512");
+    expect(result?.provider).toBe("opencode");
+    expect(result?.model).toBe("mimo-v2.5-free");
+  });
+
+  it("returns undefined when all candidates same family", () => {
+    const allMistral14 = [
+      { provider: "mistral", model: "ministral-14b-2512" },
+      { provider: "openrouter", model: "ministral-14b-2512:free" },
+    ];
+    const result = selectIndependentReviewer(allMistral14, "mistral", "ministral-14b-2512");
+    expect(result).toBeUndefined();
+  });
+
+  it("stable rank when multiple independent candidates", () => {
+    const result = selectIndependentReviewer(reviewers, "mistral", "ministral-14b-2512");
+    expect(result?.provider).toBe("opencode");
+  });
+
+  it("different recovery model selects from remaining candidates", () => {
+    const result = selectIndependentReviewer(reviewers, "opencode", "mimo-v2.5-free");
+    expect(result).toBeDefined();
+    expect(result?.provider).not.toBe("opencode");
+  });
+});

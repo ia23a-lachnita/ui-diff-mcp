@@ -12,6 +12,7 @@ import { validateClaim } from "../audit/review-findings.js";
 import { type ImagePairTransform, projectExpectedBoxToActualSource } from "../images/coordinates.js";
 import { extractImageCropFromBounds, resizeRgbaForComparison } from "../images/crop.js";
 import { resolveComparisonExtraction, type ComparisonExtractionBounds } from "../images/comparison-geometry.js";
+import { modelFamilyKey } from "../models/model-registry.js";
 
 const CLASSIFIABLE_CRITERIA = UiCriterionSchema.exclude(["unclassified_visual_change"]);
 const MIN_RECOVERY_EVIDENCE_SIZE = 2;
@@ -396,6 +397,7 @@ export async function runTargetRecovery(
 
     if (Date.now() >= budget.deadlineMs) {
       stoppedReason = "deadline_exceeded";
+      countStatus("deadline_exceeded");
       loopStoppedAt = rankIndex;
       break;
     }
@@ -460,13 +462,33 @@ export async function runTargetRecovery(
     let componentRecoveryProvider = "unknown";
     const recoveryStarted = Date.now();
     try {
+      const remainingDeadlineMs = budget.deadlineMs - Date.now();
+      if (remainingDeadlineMs <= 0) {
+        stoppedReason = "deadline_exceeded";
+        countStatus("deadline_exceeded");
+        trace.push({ ...baseTrace, status: "deadline_exceeded", model: componentRecoveryModel, recoveryDurationMs: 0 });
+        regionOutcomes.push({ regionId: componentId, state: "unresolved", reason: "deadline_exceeded", artifactPaths: artifacts });
+        unclassifiedCount++;
+        loopStoppedAt = rankIndex;
+        break;
+      }
+      const timeoutMs = Math.min(60000, remainingDeadlineMs);
       const res = await ctx.recoveryCaller({
         prompt: recoveryPrompt,
         images,
         jsonSchema: { name: "recovery_classification", schema: RECOVERY_JSON_SCHEMA },
-        timeoutMs: 60000
+        timeoutMs
       });
       modelCallsUsed++;
+      if (Date.now() >= budget.deadlineMs) {
+        stoppedReason = "deadline_exceeded";
+        countStatus("deadline_exceeded");
+        trace.push({ ...baseTrace, status: "deadline_exceeded", model: res.model, provider: res.provider, recoveryDurationMs: Date.now() - recoveryStarted });
+        regionOutcomes.push({ regionId: componentId, state: "unresolved", reason: "deadline_exceeded", artifactPaths: artifacts });
+        unclassifiedCount++;
+        loopStoppedAt = rankIndex + 1;
+        break;
+      }
       componentRecoveryModel = res.model;
       componentRecoveryProvider = res.provider;
       if (!recoveryModel) {
@@ -498,11 +520,17 @@ export async function runTargetRecovery(
       ? ctx.reviewerResolver(componentRecoveryProvider, componentRecoveryModel)
       : ctx.reviewerCaller;
 
+    const baseMeasurements = (vlmResponse.measurements ?? []).map(m => ({
+      name: m.name,
+      value: m.value as string | number | boolean,
+      ...(m.unit !== undefined ? { unit: m.unit } : {})
+    }));
+
     // VLM explicitly determined no regression in this region — valid verdict, not a failure.
     if (!vlmResponse.classified) {
       countStatus("classified_false");
-      trace.push({ ...baseTrace, status: "classified_false", model: componentRecoveryModel, recoveryDurationMs });
-      regionOutcomes.push({ regionId: componentId, state: "noise", reason: "classified_false", artifactPaths: artifacts });
+      trace.push({ ...baseTrace, status: "classified_false", model: componentRecoveryModel, provider: componentRecoveryProvider, recoveryDurationMs, rawModelProposedMeasurements: baseMeasurements });
+      regionOutcomes.push({ regionId: componentId, state: "noise", reason: "classified_false", artifactPaths: artifacts, provider: componentRecoveryProvider, rawModelProposedMeasurements: baseMeasurements });
       continue;
     }
 
@@ -512,20 +540,15 @@ export async function runTargetRecovery(
       !vlmResponse.evidence
     ) {
       countStatus("missing_required_fields");
-      trace.push({ ...baseTrace, status: "missing_required_fields", model: componentRecoveryModel, recoveryDurationMs });
+      trace.push({ ...baseTrace, status: "missing_required_fields", model: componentRecoveryModel, provider: componentRecoveryProvider, recoveryDurationMs, rawModelProposedMeasurements: baseMeasurements });
       unclassifiedCount++;
-      regionOutcomes.push({ regionId: componentId, state: "unresolved", reason: "missing_required_fields", artifactPaths: artifacts });
+      regionOutcomes.push({ regionId: componentId, state: "unresolved", reason: "missing_required_fields", artifactPaths: artifacts, provider: componentRecoveryProvider, rawModelProposedMeasurements: baseMeasurements });
       continue;
     }
 
     // The VLM supplies semantic classification only. The deterministic pixel
     // component is the authoritative full-screen location for this crop.
     const recoveredBox = component.box;
-    const baseMeasurements = (vlmResponse.measurements ?? []).map(m => ({
-      name: m.name,
-      value: m.value as string | number | boolean,
-      ...(m.unit !== undefined ? { unit: m.unit } : {})
-    }));
     const candidateTitle = `${vlmResponse.criterion} in recovered region: ${vlmResponse.label}`.slice(0, 200);
     const candidateEvidence = vlmResponse.evidence.slice(0, 10).map(evidence => evidence.slice(0, 200));
     const candidateMeasurements = [
@@ -533,11 +556,11 @@ export async function runTargetRecovery(
       ...baseMeasurements
     ].slice(0, 10);
 
-    // Validate candidate BEFORE reviewer
+    // Validate candidate BEFORE reviewer — only deterministic measurements
     const candidateForValidation: Pick<DiffRecord, "title" | "evidence" | "measurements"> = {
       title: candidateTitle,
       evidence: candidateEvidence,
-      measurements: candidateMeasurements
+      measurements: deterministicMeasurements
     };
     const initialValidation = validateClaim(candidateForValidation);
 
@@ -610,13 +633,33 @@ export async function runTargetRecovery(
       const repairPrompt = buildRecoveryRepairPrompt(repairContext);
 
       try {
+        const repairRemainingMs = budget.deadlineMs - Date.now();
+        if (repairRemainingMs <= 0) {
+          stoppedReason = "deadline_exceeded";
+          countStatus("deadline_exceeded");
+          trace.push({ ...baseTrace, status: "deadline_exceeded", model: componentRecoveryModel, provider: componentRecoveryProvider, recoveryDurationMs, repairAttempted: true, originalCandidateTitle: candidateTitle, originalCandidateEvidence: candidateEvidence, originalCandidateMeasurements: candidateMeasurements, ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {}) });
+          regionOutcomes.push({ regionId: componentId, state: "unresolved", reason: "deadline_exceeded", artifactPaths: artifacts, repairAttempted: true, originalCandidateTitle: candidateTitle, originalCandidateEvidence: candidateEvidence, provider: componentRecoveryProvider, ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {}) });
+          unclassifiedCount++;
+          loopStoppedAt = rankIndex + 1;
+          break;
+        }
+        const repairTimeoutMs = Math.min(60000, repairRemainingMs);
         const repairRes = await ctx.recoveryCaller({
           prompt: repairPrompt,
           images,
           jsonSchema: { name: "recovery_classification", schema: RECOVERY_JSON_SCHEMA },
-          timeoutMs: 60000
+          timeoutMs: repairTimeoutMs
         });
         modelCallsUsed++;
+        if (Date.now() >= budget.deadlineMs) {
+          stoppedReason = "deadline_exceeded";
+          countStatus("deadline_exceeded");
+          trace.push({ ...baseTrace, status: "deadline_exceeded", model: componentRecoveryModel, provider: componentRecoveryProvider, repairModel: repairRes.model, repairProvider: repairRes.provider, recoveryDurationMs, repairDurationMs: Date.now() - repairStarted, repairAttempted: true, originalCandidateTitle: candidateTitle, originalCandidateEvidence: candidateEvidence, originalCandidateMeasurements: candidateMeasurements, ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {}) });
+          regionOutcomes.push({ regionId: componentId, state: "unresolved", reason: "deadline_exceeded", artifactPaths: artifacts, repairAttempted: true, repairModel: repairRes.model, repairProvider: repairRes.provider, repairDurationMs: Date.now() - repairStarted, provider: componentRecoveryProvider, ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {}) });
+          unclassifiedCount++;
+          loopStoppedAt = rankIndex + 1;
+          break;
+        }
         const repairDurationMs = Date.now() - repairStarted;
         const repairResponse = RecoveryVlmResponseSchema.parse(repairRes.parsed);
         repairedBaseMeasurements = (repairResponse.measurements ?? []).map(m => ({
@@ -804,7 +847,7 @@ export async function runTargetRecovery(
         const repairedValidation = validateClaim({
           title: repairedTitle,
           evidence: repairedEvidence,
-          measurements: repairedMeasurements
+          measurements: deterministicMeasurements
         });
 
         if (!repairedValidation.valid) {
@@ -1015,6 +1058,17 @@ export async function runTargetRecovery(
     let reviewerProvider: string | undefined;
     let reviewReason: string | undefined;
     try {
+      const reviewerRemainingMs = budget.deadlineMs - Date.now();
+      if (reviewerRemainingMs <= 0) {
+        stoppedReason = "deadline_exceeded";
+        countStatus("deadline_exceeded");
+        trace.push({ ...baseTrace, status: "deadline_exceeded", model: componentRecoveryModel, provider: componentRecoveryProvider, recoveryDurationMs, reviewerDurationMs: 0, criterion: activeCandidate.criterion, ...(activeCandidate.isRepaired ? { repairAttempted: true, repairModel: activeCandidate.repairModel, repairProvider: activeCandidate.repairProvider, repairDurationMs: activeCandidate.repairDurationMs, originalCandidateTitle: candidateTitle, originalCandidateEvidence: candidateEvidence, originalCandidateMeasurements: candidateMeasurements, rawModelProposedMeasurements: baseMeasurements, originalCandidateRawMeasurements: baseMeasurements, ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {}) } : { rawModelProposedMeasurements: baseMeasurements }) });
+        regionOutcomes.push({ regionId: componentId, state: "unresolved", reason: "deadline_exceeded", artifactPaths: artifacts, provider: componentRecoveryProvider, ...(activeCandidate.isRepaired ? { repairAttempted: true, repairModel: activeCandidate.repairModel, repairProvider: activeCandidate.repairProvider, repairDurationMs: activeCandidate.repairDurationMs, originalCandidateTitle: candidateTitle, originalCandidateEvidence: candidateEvidence, originalCandidateMeasurements: candidateMeasurements, rawModelProposedMeasurements: baseMeasurements, originalCandidateRawMeasurements: baseMeasurements, ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {}) } : { rawModelProposedMeasurements: baseMeasurements }) });
+        unclassifiedCount++;
+        loopStoppedAt = rankIndex + 1;
+        break;
+      }
+      const reviewerTimeoutMs = Math.min(30000, reviewerRemainingMs);
       const reviewRes = await resolvedReviewer!({
         prompt: reviewerPrompt,
         images,
@@ -1030,9 +1084,18 @@ export async function runTargetRecovery(
             additionalProperties: false
           }
         },
-        timeoutMs: 30000
+        timeoutMs: reviewerTimeoutMs
       });
       modelCallsUsed++;
+      if (Date.now() >= budget.deadlineMs) {
+        stoppedReason = "deadline_exceeded";
+        countStatus("deadline_exceeded");
+        trace.push({ ...baseTrace, status: "deadline_exceeded", model: componentRecoveryModel, provider: componentRecoveryProvider, reviewerModel: reviewRes.model, reviewerProvider: reviewRes.provider, recoveryDurationMs, reviewerDurationMs: Date.now() - reviewerStarted, criterion: activeCandidate.criterion, ...(activeCandidate.isRepaired ? { repairAttempted: true, repairModel: activeCandidate.repairModel, repairProvider: activeCandidate.repairProvider, repairDurationMs: activeCandidate.repairDurationMs, originalCandidateTitle: candidateTitle, originalCandidateEvidence: candidateEvidence, originalCandidateMeasurements: candidateMeasurements, rawModelProposedMeasurements: baseMeasurements, originalCandidateRawMeasurements: baseMeasurements, ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {}) } : { rawModelProposedMeasurements: baseMeasurements }) });
+        regionOutcomes.push({ regionId: componentId, state: "unresolved", reason: "deadline_exceeded", artifactPaths: artifacts, provider: componentRecoveryProvider, reviewerProvider: reviewRes.provider, reviewerModel: reviewRes.model, ...(activeCandidate.isRepaired ? { repairAttempted: true, repairModel: activeCandidate.repairModel, repairProvider: activeCandidate.repairProvider, repairDurationMs: activeCandidate.repairDurationMs, originalCandidateTitle: candidateTitle, originalCandidateEvidence: candidateEvidence, originalCandidateMeasurements: candidateMeasurements, rawModelProposedMeasurements: baseMeasurements, originalCandidateRawMeasurements: baseMeasurements, ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {}) } : { rawModelProposedMeasurements: baseMeasurements }) });
+        unclassifiedCount++;
+        loopStoppedAt = rankIndex + 1;
+        break;
+      }
       const parsed = ReviewDecisionSchema.parse(reviewRes.parsed);
       reviewDecision = parsed.decision;
       reviewReason = parsed.reason;
@@ -1045,8 +1108,11 @@ export async function runTargetRecovery(
     }
     const reviewerDurationMs = Date.now() - reviewerStarted;
 
-    // Independence check: reviewer must not use same provider+model as recovery
-    if (reviewerProvider === componentRecoveryProvider && reviewerModel === componentRecoveryModel) {
+    // Independence check: reviewer must not use same provider+model or same model family as recovery
+    const reviewerFamily = modelFamilyKey(reviewerModel);
+    const recoveryFamilyActual = modelFamilyKey(componentRecoveryModel);
+    if ((reviewerProvider === componentRecoveryProvider && reviewerModel === componentRecoveryModel)
+        || reviewerFamily === recoveryFamilyActual) {
       countStatus("independent_reviewer_unavailable");
       trace.push({
         ...baseTrace,
