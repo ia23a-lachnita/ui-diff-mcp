@@ -7,6 +7,8 @@ import type { Box, DiffRecord, UiArtifact, UnassignedVisualEvidence, RecoveryCom
 import { UiCriterionSchema } from "../schemas/core.js";
 import type { PixelComponent } from "../signals/pixel-diff.js";
 import type { VisionJsonCaller } from "../models/vision-json.js";
+import { BudgetExhaustedError } from "../models/fallback-caller.js";
+import type { BudgetedAttemptHook } from "../models/fallback-caller.js";
 import { buildRecoveryPrompt, buildRecoveryReviewerPrompt, buildRecoveryRepairPrompt, type RepairPromptContext, type RecoveryReviewerContext } from "../audit/prompts.js";
 import { validateClaim } from "../audit/review-findings.js";
 import { type ImagePairTransform, projectExpectedBoxToActualSource } from "../images/coordinates.js";
@@ -75,6 +77,37 @@ function makeDefaultBudget(): RecoveryBudget {
     deadlineMs: Date.now() + parseInt(process.env["UI_DIFF_RECOVERY_BUDGET_MS"] ?? "900000", 10),
     minComponentPixels: parseInt(process.env["UI_DIFF_MIN_RECOVERY_PIXELS"] ?? "80", 10)
   };
+}
+
+function createReserveCallHook(
+  budget: RecoveryBudget,
+  modelCallsUsedRef: { value: number },
+  deadlineMs: number,
+  nowFn: () => number = Date.now
+): BudgetedAttemptHook {
+  return {
+    async reserveAttempt(_attemptIndex: number, currentTimeoutMs: number) {
+      if (modelCallsUsedRef.value >= budget.maxModelCalls) {
+        throw new BudgetExhaustedError('model_call_cap');
+      }
+      const remainingMs = deadlineMs - nowFn();
+      if (remainingMs <= 0) {
+        throw new BudgetExhaustedError('deadline_exceeded');
+      }
+      modelCallsUsedRef.value++;
+      return {
+        proceed: true,
+        timeoutMs: Math.min(currentTimeoutMs, remainingMs)
+      };
+    }
+  };
+}
+
+function resolveReservedTimeout(result: Awaited<ReturnType<BudgetedAttemptHook["reserveAttempt"]>>, fallbackMs: number): number {
+  if (!result.proceed) {
+    throw new BudgetExhaustedError(result.reason);
+  }
+  return result.timeoutMs ?? fallbackMs;
 }
 
 export interface RecoveryContext {
@@ -461,6 +494,8 @@ export async function runTargetRecovery(
     let componentRecoveryModel = "unknown";
     let componentRecoveryProvider = "unknown";
     const recoveryStarted = Date.now();
+    const modelCallsUsedRef = { value: modelCallsUsed };
+    const reserveHook = createReserveCallHook(budget, modelCallsUsedRef, budget.deadlineMs);
     try {
       const remainingDeadlineMs = budget.deadlineMs - Date.now();
       if (remainingDeadlineMs <= 0) {
@@ -469,33 +504,84 @@ export async function runTargetRecovery(
         trace.push({ ...baseTrace, status: "deadline_exceeded", model: componentRecoveryModel, recoveryDurationMs: 0 });
         regionOutcomes.push({ regionId: componentId, state: "unresolved", reason: "deadline_exceeded", artifactPaths: artifacts });
         unclassifiedCount++;
-        loopStoppedAt = rankIndex;
+        loopStoppedAt = rankIndex + 1;
         break;
       }
       const timeoutMs = Math.min(60000, remainingDeadlineMs);
+      const initialReservation = await reserveHook.reserveAttempt(0, timeoutMs);
       const res = await ctx.recoveryCaller({
         prompt: recoveryPrompt,
         images,
         jsonSchema: { name: "recovery_classification", schema: RECOVERY_JSON_SCHEMA },
-        timeoutMs
+        timeoutMs: resolveReservedTimeout(initialReservation, timeoutMs),
+        reserveCall: reserveHook,
+        initialAttemptReserved: true
       });
-      modelCallsUsed++;
-      if (Date.now() >= budget.deadlineMs) {
-        stoppedReason = "deadline_exceeded";
-        countStatus("deadline_exceeded");
-        trace.push({ ...baseTrace, status: "deadline_exceeded", model: res.model, provider: res.provider, recoveryDurationMs: Date.now() - recoveryStarted });
-        regionOutcomes.push({ regionId: componentId, state: "unresolved", reason: "deadline_exceeded", artifactPaths: artifacts });
-        unclassifiedCount++;
-        loopStoppedAt = rankIndex + 1;
-        break;
-      }
+      modelCallsUsed = modelCallsUsedRef.value;
       componentRecoveryModel = res.model;
       componentRecoveryProvider = res.provider;
       if (!recoveryModel) {
         recoveryModel = res.model;
       }
       vlmResponse = RecoveryVlmResponseSchema.parse(res.parsed);
+      if (Date.now() >= budget.deadlineMs) {
+        const lateRawMeasurements = (vlmResponse.measurements ?? []).map(m => ({
+          name: m.name,
+          value: m.value as string | number | boolean,
+          ...(m.unit !== undefined ? { unit: m.unit } : {})
+        }));
+        const lateCandidateTitle = vlmResponse.classified && vlmResponse.criterion && vlmResponse.label
+          ? `${vlmResponse.criterion} in recovered region: ${vlmResponse.label}`.slice(0, 200)
+          : undefined;
+        const lateCandidateEvidence = vlmResponse.classified && vlmResponse.evidence
+          ? vlmResponse.evidence.slice(0, 10).map(item => item.slice(0, 200))
+          : undefined;
+        stoppedReason = "deadline_exceeded";
+        countStatus("deadline_exceeded");
+        trace.push({
+          ...baseTrace,
+          status: "deadline_exceeded",
+          model: res.model,
+          provider: res.provider,
+          recoveryDurationMs: Date.now() - recoveryStarted,
+          repairAttempted: false,
+          rawModelProposedMeasurements: lateRawMeasurements,
+          originalCandidateRawMeasurements: lateRawMeasurements,
+          ...(vlmResponse.criterion !== undefined ? { criterion: vlmResponse.criterion } : {}),
+          ...(lateCandidateTitle !== undefined ? { originalCandidateTitle: lateCandidateTitle } : {}),
+          ...(lateCandidateEvidence !== undefined ? { originalCandidateEvidence: lateCandidateEvidence } : {})
+        });
+        regionOutcomes.push({
+          regionId: componentId,
+          state: "unresolved",
+          reason: "deadline_exceeded",
+          artifactPaths: artifacts,
+          model: res.model,
+          provider: res.provider,
+          recoveryDurationMs: Date.now() - recoveryStarted,
+          repairAttempted: false,
+          rawModelProposedMeasurements: lateRawMeasurements,
+          originalCandidateRawMeasurements: lateRawMeasurements,
+          ...(lateCandidateTitle !== undefined ? { originalCandidateTitle: lateCandidateTitle } : {}),
+          ...(lateCandidateEvidence !== undefined ? { originalCandidateEvidence: lateCandidateEvidence } : {})
+        });
+        unclassifiedCount++;
+        loopStoppedAt = rankIndex + 1;
+        break;
+      }
     } catch (err) {
+      modelCallsUsed = modelCallsUsedRef.value;
+      if (err instanceof BudgetExhaustedError) {
+        const isDeadline = err.reason.includes('deadline');
+        stoppedReason = isDeadline ? 'deadline_exceeded' : 'model_call_cap';
+        const traceStatus = isDeadline ? 'deadline_exceeded' : 'skipped_model_call_cap';
+        countStatus(traceStatus);
+        trace.push({ ...baseTrace, status: traceStatus, model: componentRecoveryModel, provider: componentRecoveryProvider, recoveryDurationMs: Date.now() - recoveryStarted });
+        regionOutcomes.push({ regionId: componentId, state: "unresolved", reason: traceStatus, artifactPaths: artifacts });
+        unclassifiedCount++;
+        loopStoppedAt = rankIndex + 1;
+        break;
+      }
       const isDeadlineExceeded = Date.now() >= budget.deadlineMs;
       const traceStatus = isDeadlineExceeded ? "deadline_exceeded" as const
         : err instanceof z.ZodError ? "recovery_schema_error" as const
@@ -516,7 +602,6 @@ export async function runTargetRecovery(
         })
       });
       console.error(`Recovery VLM call failed for component ${evidenceId}:`, err);
-      modelCallsUsed++;
       unclassifiedCount++;
       regionOutcomes.push({ regionId: componentId, state: "unresolved", reason: traceStatus, artifactPaths: artifacts, provider: componentRecoveryProvider });
       if (isDeadlineExceeded) {
@@ -592,7 +677,44 @@ export async function runTargetRecovery(
       // Budget-awareness: skip repair if budget cannot cover repair + reviewer
       const remainingAfterInitial = budget.maxModelCalls - modelCallsUsed;
       const hasTimeForRepairAndReviewer = Date.now() < budget.deadlineMs;
-      if (remainingAfterInitial < 2 || !hasTimeForRepairAndReviewer) {
+      if (!hasTimeForRepairAndReviewer) {
+        stoppedReason = "deadline_exceeded";
+        countStatus("deadline_exceeded");
+        trace.push({
+          ...baseTrace,
+          status: "deadline_exceeded",
+          model: componentRecoveryModel,
+          provider: componentRecoveryProvider,
+          recoveryDurationMs,
+          criterion: vlmResponse.criterion,
+          repairAttempted: false,
+          rejectionReason: initialValidation.reason ?? "Validation failed",
+          originalCandidateTitle: candidateTitle,
+          originalCandidateEvidence: candidateEvidence,
+          originalCandidateMeasurements: candidateMeasurements,
+          rawModelProposedMeasurements: baseMeasurements,
+          originalCandidateRawMeasurements: baseMeasurements,
+          ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {})
+        });
+        regionOutcomes.push({
+          regionId: componentId,
+          state: "unresolved",
+          reason: "deadline_exceeded",
+          artifactPaths: artifacts,
+          repairAttempted: false,
+          originalCandidateTitle: candidateTitle,
+          originalCandidateEvidence: candidateEvidence,
+          originalCandidateMeasurements: candidateMeasurements,
+          rawModelProposedMeasurements: baseMeasurements,
+          originalCandidateRawMeasurements: baseMeasurements,
+          provider: componentRecoveryProvider,
+          ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {})
+        });
+        unclassifiedCount++;
+        loopStoppedAt = rankIndex + 1;
+        break;
+      }
+      if (remainingAfterInitial < 2) {
         countStatus("budget_exhausted_before_repair");
         trace.push({
           ...baseTrace,
@@ -613,7 +735,7 @@ export async function runTargetRecovery(
         regionOutcomes.push({
           regionId: componentId,
           state: "unresolved",
-          reason: remainingAfterInitial < 2 ? "budget_exhausted_before_repair" : "deadline_exceeded",
+          reason: "budget_exhausted_before_repair",
           artifactPaths: artifacts,
           repairAttempted: false,
           originalCandidateTitle: candidateTitle,
@@ -640,31 +762,37 @@ export async function runTargetRecovery(
         measurements: deterministicMeasurements
       };
       const repairPrompt = buildRecoveryRepairPrompt(repairContext);
+      let repairCallStarted = false;
 
       try {
         const repairRemainingMs = budget.deadlineMs - Date.now();
         if (repairRemainingMs <= 0) {
           stoppedReason = "deadline_exceeded";
           countStatus("deadline_exceeded");
-          trace.push({ ...baseTrace, status: "deadline_exceeded", model: componentRecoveryModel, provider: componentRecoveryProvider, recoveryDurationMs, repairAttempted: true, originalCandidateTitle: candidateTitle, originalCandidateEvidence: candidateEvidence, originalCandidateMeasurements: candidateMeasurements, ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {}) });
-          regionOutcomes.push({ regionId: componentId, state: "unresolved", reason: "deadline_exceeded", artifactPaths: artifacts, repairAttempted: true, originalCandidateTitle: candidateTitle, originalCandidateEvidence: candidateEvidence, provider: componentRecoveryProvider, ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {}) });
+          trace.push({ ...baseTrace, status: "deadline_exceeded", model: componentRecoveryModel, provider: componentRecoveryProvider, recoveryDurationMs, repairAttempted: false, originalCandidateTitle: candidateTitle, originalCandidateEvidence: candidateEvidence, originalCandidateMeasurements: candidateMeasurements, rawModelProposedMeasurements: baseMeasurements, originalCandidateRawMeasurements: baseMeasurements, ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {}) });
+          regionOutcomes.push({ regionId: componentId, state: "unresolved", reason: "deadline_exceeded", artifactPaths: artifacts, repairAttempted: false, originalCandidateTitle: candidateTitle, originalCandidateEvidence: candidateEvidence, provider: componentRecoveryProvider, rawModelProposedMeasurements: baseMeasurements, originalCandidateRawMeasurements: baseMeasurements, ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {}) });
           unclassifiedCount++;
           loopStoppedAt = rankIndex + 1;
           break;
         }
         const repairTimeoutMs = Math.min(60000, repairRemainingMs);
+        const initialReservation = await reserveHook.reserveAttempt(0, repairTimeoutMs);
+        const reservedRepairTimeoutMs = resolveReservedTimeout(initialReservation, repairTimeoutMs);
+        repairCallStarted = true;
         const repairRes = await ctx.recoveryCaller({
           prompt: repairPrompt,
           images,
           jsonSchema: { name: "recovery_classification", schema: RECOVERY_JSON_SCHEMA },
-          timeoutMs: repairTimeoutMs
+          timeoutMs: reservedRepairTimeoutMs,
+          reserveCall: reserveHook,
+          initialAttemptReserved: true
         });
-        modelCallsUsed++;
+        modelCallsUsed = modelCallsUsedRef.value;
         if (Date.now() >= budget.deadlineMs) {
           stoppedReason = "deadline_exceeded";
           countStatus("deadline_exceeded");
-          trace.push({ ...baseTrace, status: "deadline_exceeded", model: componentRecoveryModel, provider: componentRecoveryProvider, repairModel: repairRes.model, repairProvider: repairRes.provider, recoveryDurationMs, repairDurationMs: Date.now() - repairStarted, repairAttempted: true, originalCandidateTitle: candidateTitle, originalCandidateEvidence: candidateEvidence, originalCandidateMeasurements: candidateMeasurements, ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {}) });
-          regionOutcomes.push({ regionId: componentId, state: "unresolved", reason: "deadline_exceeded", artifactPaths: artifacts, repairAttempted: true, repairModel: repairRes.model, repairProvider: repairRes.provider, repairDurationMs: Date.now() - repairStarted, provider: componentRecoveryProvider, ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {}) });
+          trace.push({ ...baseTrace, status: "deadline_exceeded", model: componentRecoveryModel, provider: componentRecoveryProvider, repairModel: repairRes.model, repairProvider: repairRes.provider, recoveryDurationMs, repairDurationMs: Date.now() - repairStarted, repairAttempted: true, originalCandidateTitle: candidateTitle, originalCandidateEvidence: candidateEvidence, originalCandidateMeasurements: candidateMeasurements, rawModelProposedMeasurements: baseMeasurements, originalCandidateRawMeasurements: baseMeasurements, ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {}) });
+          regionOutcomes.push({ regionId: componentId, state: "unresolved", reason: "deadline_exceeded", artifactPaths: artifacts, repairAttempted: true, model: componentRecoveryModel, repairModel: repairRes.model, repairProvider: repairRes.provider, recoveryDurationMs, repairDurationMs: Date.now() - repairStarted, provider: componentRecoveryProvider, rawModelProposedMeasurements: baseMeasurements, originalCandidateRawMeasurements: baseMeasurements, ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {}) });
           unclassifiedCount++;
           loopStoppedAt = rankIndex + 1;
           break;
@@ -942,6 +1070,18 @@ export async function runTargetRecovery(
           repairDurationMs
         };
       } catch (err) {
+        modelCallsUsed = modelCallsUsedRef.value;
+        if (err instanceof BudgetExhaustedError) {
+          const isDeadline = err.reason.includes('deadline');
+          stoppedReason = isDeadline ? 'deadline_exceeded' : 'model_call_cap';
+          const traceStatus = isDeadline ? 'deadline_exceeded' : 'skipped_model_call_cap';
+          countStatus(traceStatus);
+          trace.push({ ...baseTrace, status: traceStatus, model: componentRecoveryModel, provider: componentRecoveryProvider, recoveryDurationMs: Date.now() - recoveryStarted, ...(repairCallStarted ? { repairDurationMs: Date.now() - repairStarted } : {}), repairAttempted: repairCallStarted, originalCandidateTitle: candidateTitle, originalCandidateEvidence: candidateEvidence, originalCandidateMeasurements: candidateMeasurements, rawModelProposedMeasurements: baseMeasurements, originalCandidateRawMeasurements: baseMeasurements, ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {}) });
+          regionOutcomes.push({ regionId: componentId, state: "unresolved", reason: traceStatus, artifactPaths: artifacts, repairAttempted: repairCallStarted, model: componentRecoveryModel, provider: componentRecoveryProvider, recoveryDurationMs: Date.now() - recoveryStarted, ...(repairCallStarted ? { repairDurationMs: Date.now() - repairStarted } : {}), originalCandidateTitle: candidateTitle, originalCandidateEvidence: candidateEvidence, originalCandidateMeasurements: candidateMeasurements, rawModelProposedMeasurements: baseMeasurements, originalCandidateRawMeasurements: baseMeasurements, ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {}) });
+          unclassifiedCount++;
+          loopStoppedAt = rankIndex + 1;
+          break;
+        }
         const repairDurationMs = Date.now() - repairStarted;
         const isDeadlineExceeded = Date.now() >= budget.deadlineMs;
         if (isDeadlineExceeded) {
@@ -1116,12 +1256,13 @@ export async function runTargetRecovery(
         stoppedReason = "deadline_exceeded";
         countStatus("deadline_exceeded");
         trace.push({ ...baseTrace, status: "deadline_exceeded", model: componentRecoveryModel, provider: componentRecoveryProvider, recoveryDurationMs, reviewerDurationMs: 0, criterion: activeCandidate.criterion, ...(activeCandidate.isRepaired ? { repairAttempted: true, repairModel: activeCandidate.repairModel, repairProvider: activeCandidate.repairProvider, repairDurationMs: activeCandidate.repairDurationMs, originalCandidateTitle: candidateTitle, originalCandidateEvidence: candidateEvidence, originalCandidateMeasurements: candidateMeasurements, rawModelProposedMeasurements: baseMeasurements, originalCandidateRawMeasurements: baseMeasurements, ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {}) } : { rawModelProposedMeasurements: baseMeasurements }) });
-        regionOutcomes.push({ regionId: componentId, state: "unresolved", reason: "deadline_exceeded", artifactPaths: artifacts, provider: componentRecoveryProvider, ...(activeCandidate.isRepaired ? { repairAttempted: true, repairModel: activeCandidate.repairModel, repairProvider: activeCandidate.repairProvider, repairDurationMs: activeCandidate.repairDurationMs, originalCandidateTitle: candidateTitle, originalCandidateEvidence: candidateEvidence, originalCandidateMeasurements: candidateMeasurements, rawModelProposedMeasurements: baseMeasurements, originalCandidateRawMeasurements: baseMeasurements, ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {}) } : { rawModelProposedMeasurements: baseMeasurements }) });
+        regionOutcomes.push({ regionId: componentId, state: "unresolved", reason: "deadline_exceeded", artifactPaths: artifacts, model: componentRecoveryModel, provider: componentRecoveryProvider, recoveryDurationMs, reviewerDurationMs: 0, criterion: activeCandidate.criterion, ...(activeCandidate.isRepaired ? { repairAttempted: true, repairModel: activeCandidate.repairModel, repairProvider: activeCandidate.repairProvider, repairDurationMs: activeCandidate.repairDurationMs, originalCandidateTitle: candidateTitle, originalCandidateEvidence: candidateEvidence, originalCandidateMeasurements: candidateMeasurements, rawModelProposedMeasurements: baseMeasurements, originalCandidateRawMeasurements: baseMeasurements, ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {}) } : { rawModelProposedMeasurements: baseMeasurements }) });
         unclassifiedCount++;
         loopStoppedAt = rankIndex + 1;
         break;
       }
       const reviewerTimeoutMs = Math.min(30000, reviewerRemainingMs);
+      const initialReservation = await reserveHook.reserveAttempt(0, reviewerTimeoutMs);
       const reviewRes = await resolvedReviewer!({
         prompt: reviewerPrompt,
         images,
@@ -1137,14 +1278,16 @@ export async function runTargetRecovery(
             additionalProperties: false
           }
         },
-        timeoutMs: reviewerTimeoutMs
+        timeoutMs: resolveReservedTimeout(initialReservation, reviewerTimeoutMs),
+        reserveCall: reserveHook,
+        initialAttemptReserved: true
       });
-      modelCallsUsed++;
+      modelCallsUsed = modelCallsUsedRef.value;
       if (Date.now() >= budget.deadlineMs) {
         stoppedReason = "deadline_exceeded";
         countStatus("deadline_exceeded");
         trace.push({ ...baseTrace, status: "deadline_exceeded", model: componentRecoveryModel, provider: componentRecoveryProvider, reviewerModel: reviewRes.model, reviewerProvider: reviewRes.provider, recoveryDurationMs, reviewerDurationMs: Date.now() - reviewerStarted, criterion: activeCandidate.criterion, ...(activeCandidate.isRepaired ? { repairAttempted: true, repairModel: activeCandidate.repairModel, repairProvider: activeCandidate.repairProvider, repairDurationMs: activeCandidate.repairDurationMs, originalCandidateTitle: candidateTitle, originalCandidateEvidence: candidateEvidence, originalCandidateMeasurements: candidateMeasurements, rawModelProposedMeasurements: baseMeasurements, originalCandidateRawMeasurements: baseMeasurements, ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {}) } : { rawModelProposedMeasurements: baseMeasurements }) });
-        regionOutcomes.push({ regionId: componentId, state: "unresolved", reason: "deadline_exceeded", artifactPaths: artifacts, provider: componentRecoveryProvider, reviewerProvider: reviewRes.provider, reviewerModel: reviewRes.model, ...(activeCandidate.isRepaired ? { repairAttempted: true, repairModel: activeCandidate.repairModel, repairProvider: activeCandidate.repairProvider, repairDurationMs: activeCandidate.repairDurationMs, originalCandidateTitle: candidateTitle, originalCandidateEvidence: candidateEvidence, originalCandidateMeasurements: candidateMeasurements, rawModelProposedMeasurements: baseMeasurements, originalCandidateRawMeasurements: baseMeasurements, ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {}) } : { rawModelProposedMeasurements: baseMeasurements }) });
+        regionOutcomes.push({ regionId: componentId, state: "unresolved", reason: "deadline_exceeded", artifactPaths: artifacts, model: componentRecoveryModel, provider: componentRecoveryProvider, reviewerProvider: reviewRes.provider, reviewerModel: reviewRes.model, recoveryDurationMs, reviewerDurationMs: Date.now() - reviewerStarted, criterion: activeCandidate.criterion, ...(activeCandidate.isRepaired ? { repairAttempted: true, repairModel: activeCandidate.repairModel, repairProvider: activeCandidate.repairProvider, repairDurationMs: activeCandidate.repairDurationMs, originalCandidateTitle: candidateTitle, originalCandidateEvidence: candidateEvidence, originalCandidateMeasurements: candidateMeasurements, rawModelProposedMeasurements: baseMeasurements, originalCandidateRawMeasurements: baseMeasurements, ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {}) } : { rawModelProposedMeasurements: baseMeasurements }) });
         unclassifiedCount++;
         loopStoppedAt = rankIndex + 1;
         break;
@@ -1155,14 +1298,25 @@ export async function runTargetRecovery(
       reviewerModel = reviewRes.model;
       reviewerProvider = reviewRes.provider;
     } catch (err) {
+      modelCallsUsed = modelCallsUsedRef.value;
+      if (err instanceof BudgetExhaustedError) {
+        const isDeadline = err.reason.includes('deadline');
+        stoppedReason = isDeadline ? 'deadline_exceeded' : 'model_call_cap';
+        const traceStatus = isDeadline ? 'deadline_exceeded' : 'skipped_model_call_cap';
+        countStatus(traceStatus);
+        trace.push({ ...baseTrace, status: traceStatus, model: componentRecoveryModel, provider: componentRecoveryProvider, recoveryDurationMs: Date.now() - recoveryStarted, reviewerDurationMs: Date.now() - reviewerStarted, criterion: activeCandidate.criterion, ...(activeCandidate.isRepaired ? { repairAttempted: true, repairModel: activeCandidate.repairModel, repairProvider: activeCandidate.repairProvider, repairDurationMs: activeCandidate.repairDurationMs, originalCandidateTitle: candidateTitle, originalCandidateEvidence: candidateEvidence, originalCandidateMeasurements: candidateMeasurements, rawModelProposedMeasurements: baseMeasurements, originalCandidateRawMeasurements: baseMeasurements, ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {}) } : { rawModelProposedMeasurements: baseMeasurements }) });
+        regionOutcomes.push({ regionId: componentId, state: "unresolved", reason: traceStatus, artifactPaths: artifacts, model: componentRecoveryModel, provider: componentRecoveryProvider, recoveryDurationMs: Date.now() - recoveryStarted, reviewerDurationMs: Date.now() - reviewerStarted, criterion: activeCandidate.criterion, ...(activeCandidate.isRepaired ? { repairAttempted: true, repairModel: activeCandidate.repairModel, repairProvider: activeCandidate.repairProvider, repairDurationMs: activeCandidate.repairDurationMs, originalCandidateTitle: candidateTitle, originalCandidateEvidence: candidateEvidence, originalCandidateMeasurements: candidateMeasurements, rawModelProposedMeasurements: baseMeasurements, originalCandidateRawMeasurements: baseMeasurements, ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {}) } : { rawModelProposedMeasurements: baseMeasurements }) });
+        unclassifiedCount++;
+        loopStoppedAt = rankIndex + 1;
+        break;
+      }
       console.error(`Recovery reviewer call failed for component ${evidenceId}:`, err);
-      modelCallsUsed++;
       const isDeadlineExceeded = Date.now() >= budget.deadlineMs;
       if (isDeadlineExceeded) {
         stoppedReason = "deadline_exceeded";
         countStatus("deadline_exceeded");
         trace.push({ ...baseTrace, status: "deadline_exceeded", model: componentRecoveryModel, provider: componentRecoveryProvider, reviewerModel, reviewerProvider, recoveryDurationMs, reviewerDurationMs: Date.now() - reviewerStarted, criterion: activeCandidate.criterion, ...(activeCandidate.isRepaired ? { repairAttempted: true, repairModel: activeCandidate.repairModel, repairProvider: activeCandidate.repairProvider, repairDurationMs: activeCandidate.repairDurationMs, originalCandidateTitle: candidateTitle, originalCandidateEvidence: candidateEvidence, originalCandidateMeasurements: candidateMeasurements, rawModelProposedMeasurements: baseMeasurements, originalCandidateRawMeasurements: baseMeasurements, ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {}) } : { rawModelProposedMeasurements: baseMeasurements }) });
-        regionOutcomes.push({ regionId: componentId, state: "unresolved", reason: "deadline_exceeded", artifactPaths: artifacts, provider: componentRecoveryProvider, ...(activeCandidate.isRepaired ? { repairAttempted: true, repairModel: activeCandidate.repairModel, repairProvider: activeCandidate.repairProvider, repairDurationMs: activeCandidate.repairDurationMs, originalCandidateTitle: candidateTitle, originalCandidateEvidence: candidateEvidence, originalCandidateMeasurements: candidateMeasurements, rawModelProposedMeasurements: baseMeasurements, originalCandidateRawMeasurements: baseMeasurements, ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {}) } : { rawModelProposedMeasurements: baseMeasurements }) });
+        regionOutcomes.push({ regionId: componentId, state: "unresolved", reason: "deadline_exceeded", artifactPaths: artifacts, model: componentRecoveryModel, provider: componentRecoveryProvider, recoveryDurationMs, reviewerDurationMs: Date.now() - reviewerStarted, criterion: activeCandidate.criterion, ...(activeCandidate.isRepaired ? { repairAttempted: true, repairModel: activeCandidate.repairModel, repairProvider: activeCandidate.repairProvider, repairDurationMs: activeCandidate.repairDurationMs, originalCandidateTitle: candidateTitle, originalCandidateEvidence: candidateEvidence, originalCandidateMeasurements: candidateMeasurements, rawModelProposedMeasurements: baseMeasurements, originalCandidateRawMeasurements: baseMeasurements, ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {}) } : { rawModelProposedMeasurements: baseMeasurements }) });
         unclassifiedCount++;
         loopStoppedAt = rankIndex + 1;
         break;
@@ -1255,6 +1409,7 @@ export async function runTargetRecovery(
           originalCandidateMeasurements: candidateMeasurements,
           rawModelProposedMeasurements: baseMeasurements,
           originalCandidateRawMeasurements: baseMeasurements,
+          repairedCandidateRawMeasurements: repairedBaseMeasurements,
           ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {})
         } : { rawModelProposedMeasurements: baseMeasurements })
       });
@@ -1286,6 +1441,7 @@ export async function runTargetRecovery(
           originalCandidateMeasurements: candidateMeasurements,
           rawModelProposedMeasurements: baseMeasurements,
           originalCandidateRawMeasurements: baseMeasurements,
+          repairedCandidateRawMeasurements: repairedBaseMeasurements,
           ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {})
         } : { rawModelProposedMeasurements: baseMeasurements })
       });
@@ -1373,21 +1529,28 @@ export async function runTargetRecovery(
         ...baseTrace,
         status: "recovery_needs_escalation",
         model: componentRecoveryModel,
+        provider: componentRecoveryProvider,
         reviewerModel,
+        reviewerProvider,
         recoveryDurationMs,
         reviewerDurationMs,
         criterion: activeCandidate.criterion,
         candidateTitle: activeCandidate.title,
         candidateEvidence: activeCandidate.evidence,
         candidateMeasurements: activeCandidate.measurements,
+        rawModelProposedMeasurements: baseMeasurements,
         ...(reviewReason !== undefined ? { rejectionReason: reviewReason } : {}),
         ...(activeCandidate.isRepaired ? {
           repairAttempted: true,
           repairModel: activeCandidate.repairModel,
+          repairProvider: activeCandidate.repairProvider,
           repairDurationMs: activeCandidate.repairDurationMs,
           originalCandidateTitle: candidateTitle,
           originalCandidateEvidence: candidateEvidence,
           originalCandidateMeasurements: candidateMeasurements,
+          rawModelProposedMeasurements: baseMeasurements,
+          originalCandidateRawMeasurements: baseMeasurements,
+          repairedCandidateRawMeasurements: repairedBaseMeasurements,
           ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {})
         } : {})
       });
@@ -1398,19 +1561,26 @@ export async function runTargetRecovery(
         artifactPaths: artifacts,
         criterion: activeCandidate.criterion,
         model: componentRecoveryModel,
+        provider: componentRecoveryProvider,
         reviewerModel,
+        reviewerProvider,
         recoveryDurationMs,
         reviewerDurationMs,
         candidateTitle: activeCandidate.title,
         candidateEvidence: activeCandidate.evidence,
         candidateMeasurements: activeCandidate.measurements,
+        rawModelProposedMeasurements: baseMeasurements,
         ...(reviewReason !== undefined ? { rejectionReason: reviewReason } : {}),
         ...(activeCandidate.isRepaired ? {
           repairAttempted: true,
           repairModel: activeCandidate.repairModel,
+          repairProvider: activeCandidate.repairProvider,
           repairDurationMs: activeCandidate.repairDurationMs,
           originalCandidateTitle: candidateTitle,
           originalCandidateEvidence: candidateEvidence,
+          rawModelProposedMeasurements: baseMeasurements,
+          originalCandidateRawMeasurements: baseMeasurements,
+          repairedCandidateRawMeasurements: repairedBaseMeasurements,
           ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {})
         } : {})
       });

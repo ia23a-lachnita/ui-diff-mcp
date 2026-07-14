@@ -7,6 +7,7 @@ import type { RecoveryBudget, RecoveryContext } from "../../src/recovery/target-
 import { writeSolidPng } from "../../src/testing/fixture-images.js";
 import type { PixelComponent } from "../../src/signals/pixel-diff.js";
 import type { VisionJsonCaller } from "../../src/models/vision-json.js";
+import { makeFallbackVisionCaller } from "../../src/models/fallback-caller.js";
 import { RecoveryComponentTraceSchema, RecoveryRegionOutcomeSchema, type DeterministicMeasurement } from "../../src/schemas/core.js";
 import { validateClaim } from "../../src/audit/review-findings.js";
 
@@ -116,6 +117,31 @@ function acceptedReviewerResponse() {
 // ── P1: Budget-aware repair+reviewer calls ──
 
 describe("recovery-corrections: budget-aware repair", () => {
+  it("records a fallback-exhausted current region exactly once", async () => {
+    const first = vi.fn().mockRejectedValue(new Error("HTTP 429"));
+    const second = vi.fn().mockResolvedValue(invalidRecoveryResponse());
+    const recoveryCaller = makeFallbackVisionCaller([
+      { caller: first, provider: "nvidia", model: "first", phase: "recovery" },
+      { caller: second, provider: "mistral", model: "second", phase: "recovery" }
+    ]);
+    const result = await runTargetRecovery([invalidComponent], makeCtx({ recoveryCaller }), {
+      maxComponents: 100,
+      maxModelCalls: 1,
+      deadlineMs: Date.now() + 300000,
+      minComponentPixels: 1
+    });
+
+    expect(first).toHaveBeenCalledOnce();
+    expect(second).not.toHaveBeenCalled();
+    expect(result.stoppedReason).toBe("model_call_cap");
+    expect(result.unclassifiedCount).toBe(1);
+    expect(result.trace).toHaveLength(1);
+    expect(result.regionOutcomes).toHaveLength(1);
+    expect(result.cursor.nextRegionIndex).toBe(1);
+    expect(result.cursor.remainingModelCalls).toBe(0);
+    expect(result.cursor.remainingRegionIds).toHaveLength(1);
+  });
+
   it("maxModelCalls=1: invalid candidate does not reach repair or reviewer (only initial call)", async () => {
     const recoveryCaller: VisionJsonCaller = vi.fn().mockResolvedValue(invalidRecoveryResponse());
     const reviewerCaller: VisionJsonCaller = vi.fn().mockResolvedValue(acceptedReviewerResponse());
@@ -1160,6 +1186,131 @@ describe("recovery-corrections: deadline truth with fake clock", () => {
     });
     expect(result.statusCounts["deadline_exceeded"]).toBeGreaterThanOrEqual(1);
     expect(result.recovered).toHaveLength(0);
+    expect(result.trace[0]).toMatchObject({
+      model: "m",
+      provider: "p",
+      repairAttempted: false
+    });
+    expect(result.regionOutcomes[0]).toMatchObject({
+      model: "m",
+      provider: "p",
+      repairAttempted: false
+    });
+    expect(result.regionOutcomes[0]?.recoveryDurationMs).toBeTypeOf("number");
+  });
+
+  it("deadline race at repair reservation reports that no repair call began", async () => {
+    const start = Date.now();
+    const deadline = start + 1000;
+    let afterInitialNowCalls = 0;
+    let initialReturned = false;
+    vi.spyOn(Date, "now").mockImplementation(() => {
+      if (!initialReturned) return start;
+      afterInitialNowCalls++;
+      return afterInitialNowCalls >= 6 ? deadline + 1 : start;
+    });
+    const recoveryCaller: VisionJsonCaller = vi.fn().mockImplementation(async () => {
+      initialReturned = true;
+      return invalidRecoveryResponse();
+    });
+    const result = await runTargetRecovery([invalidComponent], makeCtx({ recoveryCaller }), {
+      maxComponents: 100,
+      maxModelCalls: 200,
+      deadlineMs: deadline,
+      minComponentPixels: 1
+    });
+
+    expect(recoveryCaller).toHaveBeenCalledOnce();
+    expect(result.stoppedReason).toBe("deadline_exceeded");
+    expect(result.trace[0]?.repairAttempted).toBe(false);
+    expect(result.regionOutcomes[0]?.repairAttempted).toBe(false);
+  });
+
+  it("successful repair returned after deadline preserves both route durations", async () => {
+    let fakeNow = Date.now();
+    vi.spyOn(Date, "now").mockImplementation(() => fakeNow);
+    const deadline = fakeNow + 1000;
+    const recoveryCaller: VisionJsonCaller = vi.fn()
+      .mockResolvedValueOnce(invalidRecoveryResponse())
+      .mockImplementationOnce(async () => {
+        fakeNow = deadline + 1;
+        return validRepairResponse();
+      });
+    const result = await runTargetRecovery([invalidComponent], makeCtx({ recoveryCaller }), {
+      maxComponents: 100,
+      maxModelCalls: 200,
+      deadlineMs: deadline,
+      minComponentPixels: 1
+    });
+
+    expect(result.regionOutcomes[0]).toMatchObject({
+      model: "recovery-model",
+      provider: "mistral",
+      repairModel: "repair-model",
+      repairProvider: "mistral",
+      repairAttempted: true
+    });
+    expect(result.regionOutcomes[0]?.recoveryDurationMs).toBeTypeOf("number");
+    expect(result.regionOutcomes[0]?.repairDurationMs).toBeTypeOf("number");
+  });
+
+  it("successful reviewer returned after deadline preserves recovery and reviewer metadata", async () => {
+    let fakeNow = Date.now();
+    vi.spyOn(Date, "now").mockImplementation(() => fakeNow);
+    const deadline = fakeNow + 1000;
+    const recoveryCaller: VisionJsonCaller = vi.fn().mockResolvedValue({
+      parsed: { classified: true, criterion: "geometry", severity: "medium", label: "Button", evidence: ["shifted"] },
+      rawContent: "", model: "recovery-model", provider: "mistral"
+    });
+    const reviewerCaller: VisionJsonCaller = vi.fn().mockImplementation(async () => {
+      fakeNow = deadline + 1;
+      return acceptedReviewerResponse();
+    });
+    const result = await runTargetRecovery([component], makeCtx({ recoveryCaller, reviewerCaller }), {
+      maxComponents: 100,
+      maxModelCalls: 200,
+      deadlineMs: deadline,
+      minComponentPixels: 1
+    });
+
+    expect(result.regionOutcomes[0]).toMatchObject({
+      model: "recovery-model",
+      provider: "mistral",
+      reviewerModel: "reviewer-model",
+      reviewerProvider: "opencode",
+      criterion: "geometry"
+    });
+    expect(result.regionOutcomes[0]?.recoveryDurationMs).toBeTypeOf("number");
+    expect(result.regionOutcomes[0]?.reviewerDurationMs).toBeTypeOf("number");
+  });
+
+  it("reviewer fallback cap outcome preserves known recovery metadata", async () => {
+    const recoveryCaller: VisionJsonCaller = vi.fn().mockResolvedValue({
+      parsed: { classified: true, criterion: "geometry", severity: "medium", label: "Button", evidence: ["shifted"] },
+      rawContent: "", model: "recovery-model", provider: "mistral"
+    });
+    const reviewerFirst = vi.fn().mockRejectedValue(new Error("HTTP 429"));
+    const reviewerSecond = vi.fn().mockResolvedValue(acceptedReviewerResponse());
+    const reviewerCaller = makeFallbackVisionCaller([
+      { caller: reviewerFirst, provider: "nvidia", model: "reviewer-first", phase: "reviewer" },
+      { caller: reviewerSecond, provider: "opencode", model: "reviewer-second", phase: "reviewer" }
+    ]);
+    const result = await runTargetRecovery([component], makeCtx({ recoveryCaller, reviewerCaller }), {
+      maxComponents: 100,
+      maxModelCalls: 2,
+      deadlineMs: Date.now() + 300000,
+      minComponentPixels: 1
+    });
+
+    expect(reviewerFirst).toHaveBeenCalledOnce();
+    expect(reviewerSecond).not.toHaveBeenCalled();
+    expect(result.regionOutcomes[0]).toMatchObject({
+      model: "recovery-model",
+      provider: "mistral",
+      criterion: "geometry"
+    });
+    expect(result.regionOutcomes[0]?.recoveryDurationMs).toBeTypeOf("number");
+    expect(result.regionOutcomes[0]?.reviewerDurationMs).toBeTypeOf("number");
   });
 
   it("throw-at-deadline for reviewer records deadline_exceeded not needs_escalation", async () => {
@@ -1269,5 +1420,164 @@ describe("recovery-corrections: trace/outcome completeness", () => {
     expect(trace.reviewerProvider).toBe("openrouter");
     expect(trace.reviewerModel).toBe("ministral-14b-2512:free");
     expect(trace.rawModelProposedMeasurements).toBeDefined();
+  });
+});
+
+// ── Recovery pipeline corrective tests ──
+
+describe("recovery-corrections: thrown initial call is charged and cursor is exact", () => {
+  it("recoveryCaller throws, verify recovery_error status and cursor", async () => {
+    const recoveryCaller: VisionJsonCaller = vi.fn().mockRejectedValue(new Error("provider down"));
+    const reviewerCaller: VisionJsonCaller = vi.fn();
+    const result = await runTargetRecovery([component], makeCtx({ recoveryCaller, reviewerCaller }), {
+      maxComponents: 100,
+      maxModelCalls: 200,
+      deadlineMs: Date.now() + 300000,
+      minComponentPixels: 1
+    });
+    expect(result.statusCounts["recovery_error"]).toBe(1);
+    expect(result.cursor.remainingModelCalls).toBe(199);
+    expect(result.recovered).toHaveLength(0);
+  });
+});
+
+describe("recovery-corrections: thrown repair call is charged and cursor is exact", () => {
+  it("first call invalid, second throws, verify repair_provider_failure and cursor", async () => {
+    const recoveryCaller: VisionJsonCaller = vi.fn()
+      .mockResolvedValueOnce(invalidRecoveryResponse())
+      .mockRejectedValueOnce(new Error("repair provider down"));
+    const reviewerCaller: VisionJsonCaller = vi.fn();
+    const result = await runTargetRecovery([invalidComponent], makeCtx({ recoveryCaller, reviewerCaller }), {
+      maxComponents: 100,
+      maxModelCalls: 200,
+      deadlineMs: Date.now() + 300000,
+      minComponentPixels: 1
+    });
+    expect(result.statusCounts["repair_provider_failure"]).toBe(1);
+    expect(result.cursor.remainingModelCalls).toBe(198);
+    expect(result.recovered).toHaveLength(0);
+  });
+});
+
+describe("recovery-corrections: thrown reviewer call is charged and cursor is exact", () => {
+  it("recovery succeeds, reviewer throws, verify needs_escalation and cursor", async () => {
+    const recoveryCaller: VisionJsonCaller = vi.fn().mockResolvedValue({
+      parsed: { classified: true, criterion: "geometry", severity: "medium", label: "Button", evidence: ["shifted"] },
+      rawContent: "", model: "recovery-model", provider: "mistral"
+    });
+    const reviewerCaller: VisionJsonCaller = vi.fn().mockRejectedValue(new Error("reviewer down"));
+    const result = await runTargetRecovery([component], makeCtx({ recoveryCaller, reviewerCaller }), {
+      maxComponents: 100,
+      maxModelCalls: 200,
+      deadlineMs: Date.now() + 300000,
+      minComponentPixels: 1
+    });
+    expect(result.statusCounts["recovery_needs_escalation"]).toBe(1);
+    // One successful recovery attempt plus one thrown reviewer attempt are both charged.
+    expect(result.cursor.remainingModelCalls).toBe(198);
+    expect(result.recovered).toHaveLength(0);
+  });
+});
+
+describe("recovery-corrections: needs_escalation trace preserves provider/reviewerProvider/raw fields", () => {
+  it("verify all fields present", async () => {
+    const recoveryCaller: VisionJsonCaller = vi.fn().mockResolvedValue({
+      parsed: { classified: true, criterion: "geometry", severity: "medium", label: "Button", evidence: ["shifted"], measurements: [{ name: "model_val", value: 42 }] },
+      rawContent: "", model: "recovery-model", provider: "mistral"
+    });
+    const reviewerCaller: VisionJsonCaller = vi.fn().mockResolvedValue({
+      parsed: { decision: "needs_escalation", reason: "uncertain" },
+      rawContent: "", model: "reviewer-model", provider: "opencode"
+    });
+    const result = await runTargetRecovery([component], makeCtx({ recoveryCaller, reviewerCaller }), unlimitedBudget);
+    const trace = result.trace[0]!;
+    expect(trace.provider).toBe("mistral");
+    expect(trace.reviewerProvider).toBe("opencode");
+    expect(trace.rawModelProposedMeasurements).toBeDefined();
+    expect(trace.rawModelProposedMeasurements).toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: "model_val", value: 42 })])
+    );
+  });
+});
+
+describe("recovery-corrections: repaired needs_escalation preserves repairedCandidateRawMeasurements", () => {
+  it("verify both raw measurement fields", async () => {
+    const recoveryCaller: VisionJsonCaller = vi.fn()
+      .mockResolvedValueOnce({
+        parsed: { classified: true, criterion: "color_appearance", severity: "medium", label: "BG", evidence: ["color is #FF0000"], measurements: [{ name: "initial_raw", value: 10 }] },
+        rawContent: "", model: "recovery-model", provider: "mistral"
+      })
+      .mockResolvedValueOnce({
+        parsed: { classified: true, criterion: "color_appearance", severity: "medium", label: "BG", evidence: ["background color changed"], measurements: [{ name: "repair_raw", value: 20 }] },
+        rawContent: "", model: "repair-model", provider: "mistral"
+      });
+    const reviewerCaller: VisionJsonCaller = vi.fn().mockResolvedValue({
+      parsed: { decision: "needs_escalation", reason: "uncertain" },
+      rawContent: "", model: "reviewer-model", provider: "opencode"
+    });
+    const result = await runTargetRecovery([invalidComponent], makeCtx({ recoveryCaller, reviewerCaller }), unlimitedBudget);
+    const trace = result.trace[0]!;
+    expect(trace.originalCandidateRawMeasurements).toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: "initial_raw", value: 10 })])
+    );
+    expect(trace.repairedCandidateRawMeasurements).toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: "repair_raw", value: 20 })])
+    );
+  });
+});
+
+describe("recovery-corrections: pre-repair deadline sets repairAttempted:false", () => {
+  it("fast-forward clock past deadline, verify repairAttempted is false", async () => {
+    let fakeNow = Date.now();
+    vi.spyOn(Date, "now").mockImplementation(() => fakeNow);
+    const deadline = fakeNow + 1000;
+    // First call succeeds with invalid candidate, then deadline expires before repair starts
+    let callCount = 0;
+    const recoveryCaller: VisionJsonCaller = vi.fn().mockImplementation(async () => {
+      callCount++;
+      if (callCount === 1) {
+        fakeNow = deadline + 1;
+        return invalidRecoveryResponse();
+      }
+      // Should never reach repair call
+      throw new Error("repair should not be called");
+    });
+    const reviewerCaller: VisionJsonCaller = vi.fn();
+    const result = await runTargetRecovery([invalidComponent], makeCtx({ recoveryCaller, reviewerCaller }), {
+      maxComponents: 100,
+      maxModelCalls: 200,
+      deadlineMs: deadline,
+      minComponentPixels: 1
+    });
+    const trace = result.trace[0]!;
+    expect(trace.repairAttempted).toBe(false);
+    expect(result.stoppedReason).toBe("deadline_exceeded");
+  });
+});
+
+describe("recovery-corrections: recovery_rejected repaired fields", () => {
+  it("verify repairedCandidateRawMeasurements present on rejected trace", async () => {
+    const recoveryCaller: VisionJsonCaller = vi.fn()
+      .mockResolvedValueOnce({
+        parsed: { classified: true, criterion: "color_appearance", severity: "medium", label: "BG", evidence: ["color is #FF0000"], measurements: [{ name: "initial_raw", value: 10 }] },
+        rawContent: "", model: "recovery-model", provider: "mistral"
+      })
+      .mockResolvedValueOnce({
+        parsed: { classified: true, criterion: "color_appearance", severity: "medium", label: "Sidebar", evidence: ["sidebar has different color"], measurements: [{ name: "repair_raw", value: 20 }] },
+        rawContent: "", model: "repair-model", provider: "mistral"
+      });
+    const reviewerCaller: VisionJsonCaller = vi.fn().mockResolvedValue({
+      parsed: { decision: "rejected", reason: "different visual observation" },
+      rawContent: "", model: "reviewer-model", provider: "opencode"
+    });
+    const result = await runTargetRecovery([invalidComponent], makeCtx({ recoveryCaller, reviewerCaller }), unlimitedBudget);
+    const trace = result.trace[0]!;
+    expect(trace.status).toBe("recovery_rejected");
+    expect(trace.repairedCandidateRawMeasurements).toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: "repair_raw", value: 20 })])
+    );
+    expect(trace.originalCandidateRawMeasurements).toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: "initial_raw", value: 10 })])
+    );
   });
 });

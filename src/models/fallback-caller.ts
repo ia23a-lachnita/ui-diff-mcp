@@ -15,6 +15,21 @@ export class RouteExhaustedError extends Error {
   }
 }
 
+export type BudgetedAttemptResult =
+  | { proceed: true; timeoutMs?: number }
+  | { proceed: false; reason: "model_call_cap" | "deadline_exceeded" };
+
+export interface BudgetedAttemptHook {
+  reserveAttempt(attemptIndex: number, currentTimeoutMs: number): BudgetedAttemptResult | Promise<BudgetedAttemptResult>;
+}
+
+export class BudgetExhaustedError extends Error {
+  constructor(public readonly reason: string) {
+    super(reason);
+    this.name = "BudgetExhaustedError";
+  }
+}
+
 export type FallbackVisionCaller = VisionJsonCaller & { isExhausted(): boolean };
 
 export interface FallbackCandidate {
@@ -71,13 +86,25 @@ export function makeFallbackVisionCaller(
       throw new RouteExhaustedError(persistedLastErr, true);
     }
     let lastErr: unknown;
+    let requestAttemptIndex = 0;
     for (let i = healthyStartIndex; i < candidates.length; i++) {
       const candidate = candidates[i]!;
       const phase = candidate.phase ?? "audit";
       const role = phase === "reviewer" ? "reviewer" as const : phase === "recovery" ? "target_recovery" as const : "auditor" as const;
       try {
-        return await candidate.caller(traceSink === undefined ? req : {
-          ...req,
+        const budgetHook = req.reserveCall;
+        let attemptRequest = req;
+        const initialReservationApplies = req.initialAttemptReserved === true && requestAttemptIndex === 0;
+        if (budgetHook && !initialReservationApplies) {
+          const hookResult = await budgetHook.reserveAttempt(requestAttemptIndex, req.timeoutMs ?? 60000);
+          if (!hookResult.proceed) {
+            throw new BudgetExhaustedError(hookResult.reason);
+          }
+          attemptRequest = { ...req, timeoutMs: hookResult.timeoutMs ?? req.timeoutMs };
+        }
+        requestAttemptIndex++;
+        return await candidate.caller(traceSink === undefined ? attemptRequest : {
+          ...attemptRequest,
           lifecycle: {
             traceSink,
             phase,

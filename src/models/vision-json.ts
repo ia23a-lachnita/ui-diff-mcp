@@ -113,6 +113,8 @@ export interface VisionJsonRequest {
   jsonMode?: "json_schema" | "json_object" | "parser_only";
   maxOutputTokens?: number;
   attempt?: number;
+  reserveCall?: import('./fallback-caller.js').BudgetedAttemptHook;
+  initialAttemptReserved?: boolean;
   lifecycle?: {
     traceSink: ProviderTraceSink;
     phase: ProviderTraceEvent["phase"];

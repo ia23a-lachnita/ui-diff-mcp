@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { makeFallbackVisionCaller, isRetryableProviderError, RouteExhaustedError, type FallbackCandidate, type FallbackEvent } from "../../src/models/fallback-caller.js";
+import { makeFallbackVisionCaller, isRetryableProviderError, RouteExhaustedError, BudgetExhaustedError, type FallbackCandidate, type FallbackEvent } from "../../src/models/fallback-caller.js";
 import { ProviderJsonParseError } from "../../src/models/vision-json.js";
 import type { ProviderTraceEvent } from "../../src/schemas/core.js";
 
@@ -196,6 +196,109 @@ describe("makeFallbackVisionCaller", () => {
     await callerA(dummyReq); // callerA switches to m2
     await callerB(dummyReq); // callerB switches independently; failFn called again
     expect(failFn).toHaveBeenCalledTimes(2); // each caller tried m1 once
+  });
+
+  it("budgeted attempt hook: 2 failed + 1 success consume 3 calls", async () => {
+    let hookCallCount = 0;
+    const hook = {
+      async reserveAttempt(_attemptIndex: number, _currentTimeoutMs: number) {
+        hookCallCount++;
+        return { proceed: true, timeoutMs: 5000 };
+      }
+    };
+    const c1 = cand(vi.fn().mockRejectedValue(new Error("HTTP 429")), "nvidia", "m1");
+    const c2 = cand(vi.fn().mockRejectedValue(new Error("HTTP 429")), "openrouter", "m2");
+    const c3 = cand(vi.fn().mockResolvedValue(ok2), "nvidia", "m3");
+    const result = await makeFallbackVisionCaller([c1, c2, c3])({ ...dummyReq, reserveCall: hook } as any);
+    expect(result.model).toBe("m2");
+    expect(hookCallCount).toBe(3);
+  });
+
+  it("budgeted attempt hook: cap=2 prevents third invocation", async () => {
+    let hookCallCount = 0;
+    const hook = {
+      async reserveAttempt(_attemptIndex: number, _currentTimeoutMs: number) {
+        hookCallCount++;
+        if (hookCallCount >= 3) {
+          throw new BudgetExhaustedError("model_call_cap");
+        }
+        return { proceed: true, timeoutMs: 5000 };
+      }
+    };
+    const c1 = cand(vi.fn().mockRejectedValue(new Error("HTTP 429")), "nvidia", "m1");
+    const c2 = cand(vi.fn().mockRejectedValue(new Error("HTTP 429")), "openrouter", "m2");
+    const c3 = cand(vi.fn().mockResolvedValue(ok2), "nvidia", "m3");
+    await expect(makeFallbackVisionCaller([c1, c2, c3])({ ...dummyReq, reserveCall: hook } as any))
+      .rejects.toBeInstanceOf(BudgetExhaustedError);
+    expect(hookCallCount).toBe(3);
+  });
+
+  it("budgeted attempt hook: deadline shrinks timeout for candidate 2", async () => {
+    const timeouts: number[] = [];
+    const candidateTimeouts: number[] = [];
+    const hook = {
+      async reserveAttempt(_attemptIndex: number, currentTimeoutMs: number) {
+        timeouts.push(currentTimeoutMs);
+        const shrunk = _attemptIndex === 0 ? currentTimeoutMs : 1000;
+        return { proceed: true, timeoutMs: shrunk };
+      }
+    };
+    const c1 = cand(vi.fn().mockRejectedValue(new Error("HTTP 429")), "nvidia", "m1");
+    const c2 = cand(vi.fn().mockImplementation(async request => {
+      candidateTimeouts.push(request.timeoutMs ?? 0);
+      return ok2;
+    }), "openrouter", "m2");
+    await makeFallbackVisionCaller([c1, c2])({ ...dummyReq, timeoutMs: 5000, reserveCall: hook } as any);
+    expect(timeouts).toHaveLength(2);
+    expect(timeouts[0]).toBe(5000);
+    expect(timeouts[1]).toBe(5000);
+    expect(candidateTimeouts).toEqual([1000]);
+  });
+
+  it("budgeted attempt hook: expired deadline prevents candidate 2", async () => {
+    const hook = {
+      async reserveAttempt(_attemptIndex: number, _currentTimeoutMs: number) {
+        if (_attemptIndex >= 1) {
+          throw new BudgetExhaustedError("deadline_exceeded");
+        }
+        return { proceed: true, timeoutMs: 5000 };
+      }
+    };
+    const c1 = cand(vi.fn().mockRejectedValue(new Error("HTTP 429")), "nvidia", "m1");
+    const c2 = cand(vi.fn().mockResolvedValue(ok2), "openrouter", "m2");
+    await expect(makeFallbackVisionCaller([c1, c2])({ ...dummyReq, reserveCall: hook } as any))
+      .rejects.toBeInstanceOf(BudgetExhaustedError);
+    expect(c2.caller).not.toHaveBeenCalled();
+  });
+
+  it("budgeted attempt hook preserves a declined attempt's exhaustion reason", async () => {
+    const hook = {
+      async reserveAttempt() {
+        return { proceed: false as const, reason: "deadline_exceeded" as const };
+      }
+    };
+    const candidate = cand(vi.fn().mockResolvedValue(ok1));
+    await expect(makeFallbackVisionCaller([candidate])({ ...dummyReq, reserveCall: hook }))
+      .rejects.toMatchObject({ name: "BudgetExhaustedError", reason: "deadline_exceeded" });
+    expect(candidate.caller).not.toHaveBeenCalled();
+  });
+
+  it("sticky healthyStart counts first actual attempt exactly once", async () => {
+    let hookCallCount = 0;
+    const hook = {
+      async reserveAttempt(_attemptIndex: number, _currentTimeoutMs: number) {
+        hookCallCount++;
+        return { proceed: true, timeoutMs: 5000 };
+      }
+    };
+    const failFn = vi.fn().mockRejectedValue(new Error("HTTP 429"));
+    const okFn = vi.fn().mockResolvedValue(ok2);
+    const caller = makeFallbackVisionCaller([cand(failFn, "nvidia", "m1"), cand(okFn, "openrouter", "m2")]);
+    await caller({ ...dummyReq, reserveCall: hook } as any);
+    await caller({ ...dummyReq, reserveCall: hook } as any);
+    // call 1: hook reserves for m1 (attempt 0), fails, reserves for m2 (attempt 1), succeeds = 2 hook calls
+    // call 2: sticky skip m1, hook reserves for m2 (attempt 0) = 1 hook call
+    expect(hookCallCount).toBe(3);
   });
 });
 
