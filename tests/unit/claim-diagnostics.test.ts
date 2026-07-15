@@ -1379,3 +1379,86 @@ describe("validateClaim: px² area measurement aliased to pixels in prose", () =
     expect(result).toEqual({ valid: true });
   });
 });
+
+describe("validateClaim: approximate qualifier rounding (regression run-1784120538636-00ab5b)", () => {
+  it("accepts 'approximately 46%' when changed_pixel_percent=45.96", () => {
+    const diff = makeDiff({
+      evidence: ["The pixel-diff mask confirms substantial visual changes across approximately 46% of the region"],
+      measurements: [{ name: "changed_pixel_percent", value: 45.96, unit: "%" }]
+    });
+    const result = validateClaim(diff);
+    expect(result).toEqual({ valid: true });
+  });
+
+  it("rejects bare '46%' with 45.96% (no qualifier means exact match required)", () => {
+    const diff = makeDiff({
+      evidence: ["Visual changes across 46% of the region"],
+      measurements: [{ name: "changed_pixel_percent", value: 45.96, unit: "%" }]
+    });
+    const result = validateClaim(diff);
+    expect(result).toMatchObject({ valid: false, diagnostics: { code: "unsupported_quantitative" } });
+  });
+
+  it("rejects 'approximately 47%' with 45.96% (rounded mismatch)", () => {
+    const diff = makeDiff({
+      evidence: ["Visual changes across approximately 47% of the region"],
+      measurements: [{ name: "changed_pixel_percent", value: 45.96, unit: "%" }]
+    });
+    const result = validateClaim(diff);
+    expect(result).toMatchObject({ valid: false, diagnostics: { code: "unsupported_quantitative" } });
+  });
+
+  it("rejects approximate qualifier when units differ", () => {
+    const diff = makeDiff({
+      evidence: ["The region measures approximately 46px wide"],
+      measurements: [{ name: "changed_pixel_percent", value: 45.96, unit: "%" }]
+    });
+    const result = validateClaim(diff);
+    expect(result).toMatchObject({ valid: false, diagnostics: { code: "unsupported_quantitative" } });
+  });
+
+  it("accepts 'approximately 46.0%' with 45.96% (decimal precision controls rounding)", () => {
+    const diff = makeDiff({
+      evidence: ["Visual changes across approximately 46.0% of the region"],
+      measurements: [{ name: "changed_pixel_percent", value: 45.96, unit: "%" }]
+    });
+    const result = validateClaim(diff);
+    expect(result).toEqual({ valid: true });
+  });
+
+  it("rejects 'approximately 45.9%' with 45.96% (rounds to 46.0, not 45.9)", () => {
+    const diff = makeDiff({
+      evidence: ["Visual changes across approximately 45.9% of the region"],
+      measurements: [{ name: "changed_pixel_percent", value: 45.96, unit: "%" }]
+    });
+    const result = validateClaim(diff);
+    expect(result).toMatchObject({ valid: false, diagnostics: { code: "unsupported_quantitative" } });
+  });
+
+  it("qualifier does not bless a later unrelated number in a different sentence", () => {
+    const diff = makeDiff({
+      evidence: ["Changes across approximately 46% of the region. The button is 100px wide."],
+      measurements: [{ name: "changed_pixel_percent", value: 45.96, unit: "%" }]
+    });
+    const result = validateClaim(diff);
+    expect(result).toMatchObject({ valid: false, diagnostics: { code: "unsupported_quantitative" } });
+  });
+
+  it("accepts 'about 46%' with 45.96%", () => {
+    const diff = makeDiff({
+      evidence: ["Visual changes across about 46% of the region"],
+      measurements: [{ name: "changed_pixel_percent", value: 45.96, unit: "%" }]
+    });
+    const result = validateClaim(diff);
+    expect(result).toEqual({ valid: true });
+  });
+
+  it("accepts '~46%' with 45.96%", () => {
+    const diff = makeDiff({
+      evidence: ["Visual changes across ~46% of the region"],
+      measurements: [{ name: "changed_pixel_percent", value: 45.96, unit: "%" }]
+    });
+    const result = validateClaim(diff);
+    expect(result).toEqual({ valid: true });
+  });
+});

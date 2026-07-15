@@ -125,17 +125,24 @@ function analyzeQuantitativeClaims(
     }
     return entries;
   });
-  const unitClaim = /(-?\d+(?:\.\d+)?)\s*(px²|px\^2|square\s+pixels|pixels\s+squared|pixel[-\s]?count|pixels?|px|dp|pt|degrees?|°|%|percent)(?![\w])/gi;
+  const unitClaim = /(?:([\w\s,;:(-]{0,40})(?:\b(?:approximately|about|around|roughly)\b|~)\s*)?(-?\d+(?:\.\d+)?)\s*(px²|px\^2|square\s+pixels|pixels\s+squared|pixel[-\s]?count|pixels?|px|dp|pt|degrees?|°|%|percent)(?![\w])/gi;
   for (const match of searchable.matchAll(unitClaim)) {
-    const value = Math.abs(Number(match[1]));
-    const unit = normalizedUnit(match[2]);
-    if (!supported.some(item => item.value === value && item.unit === unit)) {
-      return {
-        offendingValue: value,
-        offendingUnit: unit,
-        excerpt: extractContext(searchable, match.index, match[0].length)
-      };
+    const hasQualifier = match[1] !== undefined;
+    const value = Math.abs(Number(match[2]));
+    const unit = normalizedUnit(match[3]);
+    if (supported.some(item => item.value === value && item.unit === unit)) continue;
+    if (hasQualifier) {
+      const decimalStr = match[2]!;
+      const dotIndex = decimalStr.indexOf(".");
+      const decimals = dotIndex >= 0 ? decimalStr.length - dotIndex - 1 : 0;
+      const factor = 10 ** decimals;
+      if (supported.some(item => item.unit === unit && Math.round(item.value * factor) / factor === value)) continue;
     }
+    return {
+      offendingValue: value,
+      offendingUnit: unit,
+      excerpt: extractContext(searchable, match.index, match[0].length)
+    };
   }
   const pixelCountClaim = /\bpixel[-\s]?count\b\s*(?:is|of|=|:)?\s*(-?\d+(?:\.\d+)?)/gi;
   for (const match of searchable.matchAll(pixelCountClaim)) {
