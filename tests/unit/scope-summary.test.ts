@@ -54,9 +54,10 @@ describe("scope summary", () => {
       }
     ];
 
-    const summary = buildDiffSummary(diffs, 3, []);
+    const summary = buildDiffSummary(diffs, 3, [], 1);
 
     expect(summary.finalDiffCount).toBe(2);
+    expect(summary.finalGroupCount).toBe(1);
     expect(summary.unresolvedRegionCount).toBe(3);
     expect(summary.bySeverity.high).toBe(1);
     expect(summary.byCriterion.geometry).toBe(1);

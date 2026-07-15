@@ -37,7 +37,24 @@ function pair(id: string, expectedId: string): ElementPair {
   return { id, expectedId, status: "matched", score: 1, reasons: [] };
 }
 
+function expectMergedChildIds(record: DiffRecord, sourceIds: string[]): void {
+  const expectedChildren = sourceIds.filter(id => id !== record.id);
+  expect(record.childFindingIds).toEqual(expect.arrayContaining(expectedChildren));
+  expect(record.childFindingIds).not.toContain(record.id);
+}
+
 describe("consolidateFindings", () => {
+  it("removes self references from childFindingIds while retaining real descendants", () => {
+    const self = finding("self", undefined, "geometry", 10, 10, 20, 20);
+    self.childFindingIds = ["self", "real-child", "real-child"];
+
+    const result = consolidateFindings([self], [], []);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]?.childFindingIds).toEqual(["real-child"]);
+    expect(result[0]?.childFindingIds).not.toContain(result[0]?.id);
+  });
+
   it("consolidates chart child fragments under their semantic chart parent", () => {
     const chart = element("chart", "chart", 0, 0, 200, 150);
     const children = [
@@ -78,7 +95,7 @@ describe("consolidateFindings", () => {
     ], [card, label], [pair("pair-label", label.id)]);
 
     expect(result).toHaveLength(1);
-    expect(result[0]?.childFindingIds).toEqual(expect.arrayContaining(["audited", "recovered"]));
+    expectMergedChildIds(result[0]!, ["audited", "recovered"]);
     expect(result[0]?.evidence).toEqual(expect.arrayContaining(["evidence for audited", "evidence for recovered"]));
   });
 
@@ -151,7 +168,8 @@ describe("consolidateFindings", () => {
 
     expect(result).toHaveLength(1);
     expect(result[0]?.title).toBe("Nutrition summary displaced from expected position");
-    expect(result[0]?.childFindingIds).toHaveLength(6);
+    expectMergedChildIds(result[0]!, diffs.map(diff => diff.id));
+    expect(result[0]?.childFindingIds).toHaveLength(5);
   });
 
   it("keeps different explicit displacement groups separate under one generic parent", () => {
@@ -191,7 +209,7 @@ describe("consolidateFindings", () => {
     const result = consolidateFindings([scopeFinding, childFinding], [card, label], [pair("pair-label", label.id)]);
 
     expect(result).toHaveLength(1);
-    expect(result[0]?.childFindingIds).toEqual(expect.arrayContaining(["region-layout", "label-layout"]));
+    expectMergedChildIds(result[0]!, ["region-layout", "label-layout"]);
   });
 
   it("folds explicit projected structural groups into an overlapping scope finding for the same target and criterion", () => {
@@ -222,7 +240,7 @@ describe("consolidateFindings", () => {
     const result = consolidateFindings([projected, scopeFinding], [nav, tab], [pair("pair-tab", tab.id)]);
 
     expect(result).toHaveLength(1);
-    expect(result[0]?.childFindingIds).toEqual(expect.arrayContaining(["nav-layout", "projected-tab"]));
+    expectMergedChildIds(result[0]!, ["nav-layout", "projected-tab"]);
   });
 
   it("does not fold projected groups into a screen-sized final finding created by child consolidation", () => {
@@ -316,7 +334,7 @@ describe("consolidateFindings", () => {
 
     expect(result).toHaveLength(1);
     expect(result[0]?.targetIds).toContain(button.id);
-    expect(result[0]?.childFindingIds).toEqual(expect.arrayContaining(["today-text-geometry", "today-button-geometry"]));
+    expectMergedChildIds(result[0]!, ["today-text-geometry", "today-button-geometry"]);
   });
 
   it("folds child layout diffs under a containing parent layout displacement across layout criteria", () => {
@@ -338,7 +356,7 @@ describe("consolidateFindings", () => {
     );
 
     expect(result).toHaveLength(2);
-    expect(result.find(item => item.criterion === "geometry")?.childFindingIds).toEqual(expect.arrayContaining(["card-geometry", "bar-geometry"]));
+    expectMergedChildIds(result.find(item => item.criterion === "geometry")!, ["card-geometry", "bar-geometry"]);
   });
 
   it("keeps child color and typography findings separate from parent layout displacement", () => {
@@ -461,7 +479,7 @@ describe("consolidateFindings", () => {
     expect(result).toHaveLength(1);
     expect(result[0]?.findingGroupId).toBe("same-explicit-group");
     expect(result[0]?.location).toEqual({ x: 20, y: 20, width: 30, height: 310 });
-    expect(result[0]?.childFindingIds).toEqual(expect.arrayContaining(["first", "second"]));
+    expectMergedChildIds(result[0]!, ["first", "second"]);
   });
 
   it("consolidates nearby semantic children that share the real coherent displacement group shape", () => {
@@ -496,7 +514,7 @@ describe("consolidateFindings", () => {
       location: { x: 325, y: 435, width: 26, height: 114 }
     });
     expect(result[0]?.artifactPaths).toEqual([{ role: "projected_group_directional_overlay", path: "shared-group-overlay.png" }]);
-    expect(result[0]?.childFindingIds).toEqual(expect.arrayContaining(["first-diff", "second-diff"]));
+    expectMergedChildIds(result[0]!, ["first-diff", "second-diff"]);
     expect(result[0]?.targetIds).toEqual(expect.arrayContaining([buttons.id, firstChild.id, secondChild.id]));
   });
 
@@ -713,7 +731,7 @@ describe("consolidateFindings", () => {
     const result = consolidateFindings([parent, childFinding], [card, child], [pair("pair-card", card.id), pair("pair-child", child.id)]);
 
     expect(result).toHaveLength(1);
-    expect(result[0]?.childFindingIds).toEqual(expect.arrayContaining(["child", "parent"]));
+    expectMergedChildIds(result[0]!, ["child", "parent"]);
   });
 
   it("preserves independent child evidence while consolidating an overlapping ancestry duplicate", () => {
@@ -773,7 +791,7 @@ describe("consolidateFindings", () => {
       { role: "expected_crop", path: "header-diff-expected.png" },
       { role: "expected_crop", path: "component-diff-expected.png" }
     ]));
-    expect(result[0]?.childFindingIds).toEqual(expect.arrayContaining(["header-diff", "component-diff"]));
+    expectMergedChildIds(result[0]!, ["header-diff", "component-diff"]);
     expect(result[0]?.suppression).toEqual({
       reason: "duplicate_child_of_group",
       retainedFindingIds: [expect.stringMatching(/^(header|component)-diff$/)]

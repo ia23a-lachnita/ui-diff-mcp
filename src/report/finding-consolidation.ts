@@ -208,7 +208,9 @@ function mergeGroup(group: OwnedFinding[]): DiffRecord {
   const reviewerStatus = allFindings.reduce((best, finding) =>
     reviewRank[finding.reviewerStatus] > reviewRank[best] ? finding.reviewerStatus : best,
   allFindings[0]!.reviewerStatus);
-  const childFindingIds = [...new Set(allFindings.flatMap(finding => [finding.id, ...(finding.childFindingIds ?? [])]))];
+  const childFindingIds = [...new Set(allFindings.flatMap(finding => [finding.id, ...(finding.childFindingIds ?? [])]))]
+    .filter(id => id !== primary.finding.id)
+    .sort((a, b) => a.localeCompare(b));
   const targetIds = [...new Set(group.flatMap(entry => [...entry.targetIds, ...(entry.finding.targetIds ?? [])]))];
   const criterionLabel = primary.finding.criterion.replaceAll("_", " ");
   const coverageLocations = new Map<string, Box>();
@@ -372,7 +374,9 @@ function mergeChildIntoParent(parent: DiffRecord, children: DiffRecord[]): DiffR
     coverageLocations.set(JSON.stringify(location), location);
   }
   const targetIds = [...new Set(allFindings.flatMap(finding => finding.targetIds ?? []))];
-  const childFindingIds = [...new Set(allFindings.flatMap(finding => [finding.id, ...(finding.childFindingIds ?? [])]))];
+  const childFindingIds = [...new Set(allFindings.flatMap(finding => [finding.id, ...(finding.childFindingIds ?? [])]))]
+    .filter(id => id !== parent.id)
+    .sort((a, b) => a.localeCompare(b));
   const reviewRank = { rejected: 0, not_reviewed: 1, accepted: 2, needs_escalation: 3 } as const;
   const reviewerStatus: DiffRecord["reviewerStatus"] = parent.reviewerStatus === "rejected"
     ? "rejected"
@@ -492,6 +496,12 @@ export function consolidateFindings(
   const initiallyMerged = mergeOverlappingOwnedGroups([...groups.values()]).map(mergeGroup);
   const finalMerged = mergeFinalDuplicateFindings(initiallyMerged);
   return suppressLayoutChildrenCoveredByParent(finalMerged, ownershipElements, pairs, viewportArea)
+    .map(finding => ({
+      ...finding,
+      childFindingIds: [...new Set(finding.childFindingIds ?? [])]
+        .filter(id => id !== finding.id)
+        .sort((a, b) => a.localeCompare(b))
+    }))
     .sort((a, b) => a.location.y - b.location.y || a.location.x - b.location.x || a.id.localeCompare(b.id));
 }
 

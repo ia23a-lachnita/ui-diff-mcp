@@ -438,6 +438,7 @@ describe("runUiDiff end-to-end (deterministic_only mode)", () => {
       tmpDir, "expected.png", "actual.png"
     );
 
+    vi.mocked(buildFindingGroups).mockClear();
     const result = await runUiDiff({
       expectedImagePath: expected,
       actualImagePath: actual,
@@ -458,6 +459,8 @@ describe("runUiDiff end-to-end (deterministic_only mode)", () => {
       status: string;
       visualClassificationStatus: string;
       runArtifacts: Array<{ role: string }>;
+      diffs: Array<{ id: string; childFindingIds?: string[] }>;
+      diffSummary?: { finalDiffCount: number; finalGroupCount?: number };
       stages: Array<{ name: string; status: string; outcome: string }>;
       unresolvedRegions: Array<{ artifactPaths: unknown[] }>;
     };
@@ -466,6 +469,14 @@ describe("runUiDiff end-to-end (deterministic_only mode)", () => {
     expect(report.runId).toBe(result.runId);
     expect(report.visualClassificationStatus).toBe("not_run");
     expect(report.unresolvedRegions.length).toBeGreaterThan(0);
+    expect(buildFindingGroups).toHaveBeenCalledTimes(1);
+    expect(report.diffs.every(diff => !(diff.childFindingIds ?? []).includes(diff.id))).toBe(true);
+    const groupLegendArtifact = (report as unknown as { runArtifacts: Array<{ role: string; path: string }> }).runArtifacts
+      .find(artifact => artifact.role === "final_diff_groups_legend");
+    expect(groupLegendArtifact).toBeDefined();
+    const groupLegend = JSON.parse(await fs.readFile(groupLegendArtifact!.path, "utf8")) as FinalGroupLegend;
+    expect(report.diffSummary?.finalGroupCount).toBe(groupLegend.groups.length);
+    expect(report.diffSummary?.finalGroupCount).toBeLessThanOrEqual(report.diffSummary?.finalDiffCount ?? 0);
     expect(report.unresolvedRegions.every(region => region.artifactPaths.length === 5)).toBe(true);
     const artifactRoles = (report as unknown as { runArtifacts: Array<{ role: string }> }).runArtifacts.map(artifact => artifact.role);
     expect(artifactRoles).toEqual(expect.arrayContaining([

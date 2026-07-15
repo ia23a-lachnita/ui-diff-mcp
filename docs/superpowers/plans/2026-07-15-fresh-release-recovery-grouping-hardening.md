@@ -44,13 +44,13 @@
 
 ### Task 4: TDD Repair-Group Output
 
-- [ ] `buildFindingGroups` must merge geometrically equivalent local boxes regardless of missing/different semantic target IDs when overlap >=0.9 and area ratio <=1.25; retain all criterion-level diff IDs/details.
-- [ ] Do not merge merely nearby/parent-child boxes without semantic ownership or coherent displacement.
-- [ ] Overlay labels become compact `G<number>` only; legend retains criteria/counts.
-- [ ] Remove self IDs from `childFindingIds` while preserving real merged/suppressed child lineage.
-- [ ] Add `finalGroupCount` to `DiffSummary`; compute groups once in pipeline; use same groups for summary/overlay.
-- [ ] Add schema/hydration/backward-compat tests.
-- [ ] Files likely touched: `src/report/finding-consolidation.ts`, `src/report/context-overlays.ts`, `src/diff/scope-summary.ts`, `src/schemas/core.ts`, `src/report/report-parts.ts`, `tests/unit/finding-consolidation.test.ts`, `tests/unit/context-overlays.test.ts`, `tests/unit/schemas.test.ts`, `tests/e2e/compare-ui-images.test.ts`.
+- [x] `buildFindingGroups` must merge geometrically equivalent local boxes regardless of missing/different semantic target IDs when overlap >=0.9 and area ratio <=1.25; retain all criterion-level diff IDs/details.
+- [x] Do not merge merely nearby/parent-child boxes without semantic ownership or coherent displacement.
+- [x] Overlay labels become compact `G<number>` only; legend retains criteria/counts.
+- [x] Remove self IDs from `childFindingIds` while preserving real merged/suppressed child lineage.
+- [x] Add `finalGroupCount` to `DiffSummary`; compute groups once in pipeline; use same groups for summary/overlay.
+- [x] Add schema/hydration/backward-compat tests.
+- [x] Files likely touched: `src/report/finding-consolidation.ts`, `src/report/context-overlays.ts`, `src/diff/scope-summary.ts`, `src/schemas/core.ts`, `src/report/report-parts.ts`, `tests/unit/finding-consolidation.test.ts`, `tests/unit/context-overlays.test.ts`, `tests/unit/schemas.test.ts`, `tests/e2e/compare-ui-images.test.ts`.
 
 ### Task 5: Release Gate / Report Truth
 

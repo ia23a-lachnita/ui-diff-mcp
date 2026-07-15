@@ -123,10 +123,12 @@ function countBy<T extends string>(values: T[]): Record<string, number> {
 export function buildDiffSummary(
   diffs: DiffRecord[],
   unresolvedRegionCount: number,
-  scopeSummaries: ScopeDiffSummary[]
+  scopeSummaries: ScopeDiffSummary[],
+  finalGroupCount?: number
 ): DiffSummary {
   return {
     finalDiffCount: diffs.length,
+    ...(finalGroupCount !== undefined ? { finalGroupCount } : {}),
     unresolvedRegionCount,
     bySeverity: countBy(diffs.map(diff => diff.severity)),
     byCriterion: countBy(diffs.map(diff => diff.criterion)),

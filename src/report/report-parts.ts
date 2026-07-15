@@ -202,6 +202,9 @@ export async function hydrateReportParts(
       ...hydrated,
       diffSummary: {
         finalDiffCount: hydrated.diffSummary?.finalDiffCount ?? hydrated.diffs.length,
+        ...(hydrated.diffSummary?.finalGroupCount !== undefined
+          ? { finalGroupCount: hydrated.diffSummary.finalGroupCount }
+          : {}),
         unresolvedRegionCount: hydrated.diffSummary?.unresolvedRegionCount ?? hydrated.unresolvedRegions.length,
         bySeverity: hydrated.diffSummary?.bySeverity ?? {},
         byCriterion: hydrated.diffSummary?.byCriterion ?? {},

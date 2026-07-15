@@ -551,4 +551,31 @@ describe("core schemas", () => {
     expect(parsed.reportParts?.[0]?.path).toBe("parts/usage-summary.json");
     expect(parsed.diffSummary?.scopeSummaries[0]?.triggeredCriteria).toContain("geometry");
   });
+
+  it("accepts legacy diff summaries without finalGroupCount", () => {
+    const parsed = schemas.DiffSummarySchema.parse({
+      finalDiffCount: 2,
+      unresolvedRegionCount: 0,
+      bySeverity: {},
+      byCriterion: {},
+      byClassificationSource: {},
+      scopeSummaries: []
+    });
+
+    expect(parsed.finalGroupCount).toBeUndefined();
+  });
+
+  it("preserves finalGroupCount in new diff summaries", () => {
+    const parsed = schemas.DiffSummarySchema.parse({
+      finalDiffCount: 2,
+      finalGroupCount: 1,
+      unresolvedRegionCount: 0,
+      bySeverity: {},
+      byCriterion: {},
+      byClassificationSource: {},
+      scopeSummaries: []
+    });
+
+    expect(parsed.finalGroupCount).toBe(1);
+  });
 });

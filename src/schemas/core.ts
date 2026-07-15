@@ -901,6 +901,7 @@ export type ScopeDiffSummary = z.infer<typeof ScopeDiffSummarySchema>;
 
 export const DiffSummarySchema = z.object({
   finalDiffCount: z.number().int().nonnegative(),
+  finalGroupCount: z.number().int().nonnegative().optional(),
   unresolvedRegionCount: z.number().int().nonnegative(),
   bySeverity: z.record(z.string(), z.number().int().nonnegative()),
   byCriterion: z.record(z.string(), z.number().int().nonnegative()),

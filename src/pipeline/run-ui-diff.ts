@@ -1370,14 +1370,15 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     ...(recoverySummary !== undefined ? { recoverySummary } : {}),
     unresolvedRegionCount: unresolvedRegions.length
   });
-  const diffSummary = buildDiffSummary(finalDiffs, unresolvedRegions.length, scopeSummaries);
+  const findingGroups = buildFindingGroups(finalDiffs, { width: expectedImg.width, height: expectedImg.height });
+  const diffSummary = buildDiffSummary(finalDiffs, unresolvedRegions.length, scopeSummaries, findingGroups.length);
 
   const contextArtifacts = await writeRegionContextOverlays({
     actualComparisonPath,
     directionalOverlayPath,
     artifactDir: artifactRoot,
     diffs: finalDiffs,
-    findingGroups: buildFindingGroups(finalDiffs, { width: expectedImg.width, height: expectedImg.height }),
+    findingGroups,
     unresolvedRegions,
     elements: expectedElements,
     actualElements,

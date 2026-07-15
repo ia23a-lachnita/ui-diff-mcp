@@ -84,6 +84,44 @@ describe("writeRegionContextOverlays", () => {
     expect(style.diffFillOpacity).toBeLessThanOrEqual(0.06);
   });
 
+  it("groups equivalent local geometry across different or missing target IDs", () => {
+    const geometry = { ...diff("geometry"), targetIds: ["card-a"] };
+    const color = {
+      ...diff("color"),
+      criterion: "color_appearance" as const,
+      targetIds: undefined,
+      location: { x: 21, y: 40, width: 79, height: 50 }
+    };
+
+    const groups = buildFindingGroups([geometry, color], { width: 200, height: 400 });
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.diffIds).toEqual(["color", "geometry"]);
+    expect(groups[0]?.criteria).toEqual(["color_appearance", "geometry"]);
+    expect(groups[0]?.label).toBe("G1");
+  });
+
+  it("does not group merely nested nearby boxes without ownership or displacement", () => {
+    const parent = { ...diff("parent"), targetIds: [], location: { x: 20, y: 40, width: 80, height: 50 } };
+    const child = { ...diff("child"), targetIds: [], location: { x: 25, y: 45, width: 60, height: 30 } };
+
+    expect(buildFindingGroups([parent, child], { width: 200, height: 400 })).toHaveLength(2);
+  });
+
+  it("builds equivalent-geometry groups stably under input permutations", () => {
+    const findings = [
+      { ...diff("b"), targetIds: ["target-b"] },
+      { ...diff("a"), targetIds: undefined, criterion: "color_appearance" as const },
+      { ...diff("c"), targetIds: ["target-c"], criterion: "spacing_alignment" as const }
+    ];
+
+    const forward = buildFindingGroups(findings, { width: 200, height: 400 });
+    const reversed = buildFindingGroups([...findings].reverse(), { width: 200, height: 400 });
+
+    expect(reversed).toEqual(forward);
+    expect(forward[0]?.diffIds).toEqual(["a", "b", "c"]);
+  });
+
   it("does not let screen-wide findings swallow localized finding groups", () => {
     const screen = {
       ...diff("screen"),

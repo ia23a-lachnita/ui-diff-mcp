@@ -151,6 +151,8 @@ function groupShouldAbsorb(group: FindingGroup, diff: DiffRecord, canvas?: { wid
   const smaller = Math.max(1, Math.min(boxArea(group.box), boxArea(diff.location)));
   const larger = Math.max(boxArea(group.box), boxArea(diff.location));
   if (larger / smaller > 8) return false;
+  const equivalentLocalGeometry = larger / smaller <= 1.25 && overlapRatio(group.box, diff.location) >= 0.9;
+  if (equivalentLocalGeometry) return true;
   if (overlapRatio(group.box, diff.location) < 0.35 && centerDistanceRatio(group.box, diff.location) > 1.5) return false;
   if (!sharedSemanticContainer(group, diff) && !coherentSameDirection(group, diff)) return false;
   const union = unionBox(group.box, diff.location);
@@ -202,7 +204,10 @@ export function buildFindingGroups(diffs: DiffRecord[], canvas?: { width: number
     if (severityRank(diff.severity) > severityRank(group.severity)) group.severity = diff.severity;
   }
 
-  return groups;
+  return groups.map(group => ({
+    ...group,
+    diffIds: [...group.diffIds].sort((a, b) => a.localeCompare(b))
+  }));
 }
 
 export function selectZoomGroups(findingGroups: FindingGroup[], maxZooms: number): FindingGroup[] {
@@ -525,7 +530,7 @@ async function writeZoomPanel(
   };
   const svg = svgForAnnotations(crop.width, crop.height, [{
     box: localBox,
-    label: `${group.label} ${group.criteria.join(",")}`.slice(0, 52),
+    label: group.label,
     kind: "diff"
   }]);
   await sharp(baseImagePath)
@@ -561,7 +566,7 @@ export async function writeRegionContextOverlays(input: RegionContextOverlayInpu
   const findingGroups = input.findingGroups ?? buildFindingGroups(input.diffs, canvas);
   const diffBoxes: Annotation[] = findingGroups.map(group => ({
     box: group.box,
-    label: `${group.label} ${group.diffIds.length} ${group.criteria.join(",")}`.slice(0, 52),
+    label: group.label,
     kind: "diff"
   }));
   const unresolvedBoxes = unresolvedAnnotations(input.unresolvedRegions, canvas, input.geometryRejections);
