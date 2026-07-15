@@ -64,6 +64,16 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+function isRasterPixelAreaMeasurement(name: string): boolean {
+  const normalized = name.toLowerCase().replace(/[^a-z0-9]/g, "");
+  return (
+    normalized === "regionarea" ||
+    normalized === "regionareapixels" ||
+    normalized === "componentarea" ||
+    normalized === "componentareapixels"
+  );
+}
+
 function normalizedUnit(unit: string | undefined): string {
   const lower = (unit ?? "").toLowerCase();
   if (lower === "%" || lower === "percent") return "%";
@@ -108,7 +118,12 @@ function analyzeQuantitativeClaims(
   }
   const supported = measurements.flatMap(measurement => {
     if (typeof measurement.value !== "number") return [];
-    return [{ value: Math.abs(measurement.value), unit: normalizedUnit(measurement.unit) }];
+    const unit = normalizedUnit(measurement.unit);
+    const entries: { value: number; unit: string }[] = [{ value: Math.abs(measurement.value), unit }];
+    if (unit === "px²" && isRasterPixelAreaMeasurement(measurement.name)) {
+      entries.push({ value: Math.abs(measurement.value), unit: "pixels" });
+    }
+    return entries;
   });
   const unitClaim = /(-?\d+(?:\.\d+)?)\s*(px²|px\^2|square\s+pixels|pixels\s+squared|pixel[-\s]?count|pixels?|px|dp|pt|degrees?|°|%|percent)(?![\w])/gi;
   for (const match of searchable.matchAll(unitClaim)) {

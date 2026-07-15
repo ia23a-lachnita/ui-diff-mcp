@@ -1314,3 +1314,68 @@ describe("annotateRecoveryTraceSupersessions", () => {
     expect(trace[1]?.supersededByFindingId).toBeUndefined();
   });
 });
+
+describe("validateClaim: px² area measurement aliased to pixels in prose", () => {
+  it("accepts prose '7614 pixels' when region_area_pixels=7614 px²", () => {
+    const diff = makeDiff({
+      evidence: ["2809/7614 pixels (36.89%) differ"],
+      measurements: [
+        { name: "changed_pixel_count", value: 2809, unit: "pixels" },
+        { name: "region_area_pixels", value: 7614, unit: "px²" },
+        { name: "changed_pixel_percent", value: 36.89, unit: "%" }
+      ]
+    });
+    const result = validateClaim(diff);
+    expect(result).toEqual({ valid: true });
+  });
+
+  it("rejects a different area value stated as pixels even with a px² measurement present", () => {
+    const diff = makeDiff({
+      evidence: ["9999 pixels differ"],
+      measurements: [
+        { name: "changed_pixel_count", value: 2809, unit: "pixels" },
+        { name: "region_area_pixels", value: 7614, unit: "px²" }
+      ]
+    });
+    const result = validateClaim(diff);
+    expect(result.valid).toBe(false);
+    expect(result.diagnostics!.code).toBe("unsupported_quantitative");
+  });
+
+  it("does NOT alias retry_count with px² to pixels in prose", () => {
+    const diff = makeDiff({
+      evidence: ["7614 pixels differ"],
+      measurements: [
+        { name: "retry_count", value: 7614, unit: "px²" }
+      ]
+    });
+    const result = validateClaim(diff);
+    expect(result.valid).toBe(false);
+    expect(result.diagnostics!.code).toBe("unsupported_quantitative");
+    expect(result.diagnostics!.quantitative!.offendingValue).toBe(7614);
+    expect(result.diagnostics!.quantitative!.offendingUnit).toBe("pixels");
+  });
+
+  it("does NOT alias sample_count with px² to pixels in prose", () => {
+    const diff = makeDiff({
+      evidence: ["7614 pixels differ"],
+      measurements: [
+        { name: "sample_count", value: 7614, unit: "px²" }
+      ]
+    });
+    const result = validateClaim(diff);
+    expect(result.valid).toBe(false);
+    expect(result.diagnostics!.code).toBe("unsupported_quantitative");
+  });
+
+  it("accepts prose '7614 pixels' when componentArea=7614 px²", () => {
+    const diff = makeDiff({
+      evidence: ["7614 pixels differ in the component"],
+      measurements: [
+        { name: "componentArea", value: 7614, unit: "px²" }
+      ]
+    });
+    const result = validateClaim(diff);
+    expect(result).toEqual({ valid: true });
+  });
+});
