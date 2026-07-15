@@ -407,7 +407,41 @@ describe("calorix-device helpers", () => {
     expect(immersiveOverlay.reason).toContain("immersive_overlay");
   });
 
-  it("matches the known local spinner and Today screenshots when those artifacts exist", async () => {
+  it("rejects a detailed Today screen when Android system bars are visible", async () => {
+    const root = await makeProject();
+    const statusBarPath = path.join(root, "today-with-system-bars.png");
+
+    await sharp(Buffer.from(`<svg width="360" height="800">
+      <rect width="360" height="800" fill="#0E1117"/>
+      <text x="16" y="22" fill="#F4F6F8" font-size="14">07:05</text>
+      <circle cx="280" cy="17" r="5" fill="#F4F6F8"/>
+      <rect x="302" y="12" width="18" height="10" rx="2" fill="#F4F6F8"/>
+      <text x="24" y="76" fill="#F4F6F8" font-size="28">Today</text>
+      <rect x="20" y="112" width="320" height="210" rx="24" fill="#161B22" stroke="#2B3340"/>
+      <circle cx="180" cy="210" r="64" fill="none" stroke="#19D3D9" stroke-width="18"/>
+      <text x="132" y="218" fill="#F4F6F8" font-size="26">1420</text>
+      <rect x="20" y="350" width="320" height="112" rx="18" fill="#161B22" stroke="#2B3340"/>
+      <rect x="38" y="372" width="72" height="72" rx="16" fill="#A46C3F"/>
+      <text x="126" y="398" fill="#F4F6F8" font-size="18">Chicken Rice Bowl</text>
+      <text x="126" y="430" fill="#8B95A1" font-size="16">620 kcal</text>
+      <rect x="20" y="482" width="320" height="112" rx="18" fill="#161B22" stroke="#2B3340"/>
+      <rect x="38" y="504" width="72" height="72" rx="16" fill="#EAD8B5"/>
+      <text x="126" y="530" fill="#F4F6F8" font-size="18">Protein Yogurt</text>
+      <text x="126" y="562" fill="#8B95A1" font-size="16">180 kcal</text>
+      <rect x="0" y="690" width="360" height="110" fill="#11161D" stroke="#28303A"/>
+      <circle cx="56" cy="730" r="13" fill="#3B5BFF"/>
+      <circle cx="180" cy="730" r="18" fill="#19D3D9"/>
+      <circle cx="304" cy="730" r="13" fill="#1ED07B"/>
+      <rect x="126" y="784" width="108" height="5" rx="3" fill="#8B8F94"/>
+    </svg>`)).png().toFile(statusBarPath);
+
+    const result = await validateCalorixTodayScreenshotForReadiness(statusBarPath, undefined);
+
+    expect(result.ok).toBe(false);
+    expect(result.reason).toContain("system_bars_visible");
+  });
+
+  it("matches the known local spinner, system-bar, and ready Today screenshots when those artifacts exist", async () => {
     const spinnerPath = "C:/Users/xursc/projects/calorix/.ui-diff/captures/today-2026-07-04T19-09-08-413Z.png";
     const todayPath = "C:/Users/xursc/projects/calorix/.ui-diff/captures/manual-current-check.png";
     const immersiveOverlayPath = "C:/Users/xursc/projects/calorix/.ui-diff/captures/today-2026-07-04T19-39-03-893Z.png";
@@ -430,7 +464,8 @@ describe("calorix-device helpers", () => {
     const loadedRecent = await validateCalorixTodayScreenshotForReadiness(loadedRecentPath, undefined);
 
     expect(spinner.ok).toBe(false);
-    expect(today.ok).toBe(true);
+    expect(today.ok).toBe(false);
+    expect(today.reason).toContain("system_bars_visible");
     expect(loadedRecent.ok).toBe(true);
     expect(immersiveOverlay.ok).toBe(false);
     expect(immersiveOverlay.reason).toContain("immersive_overlay");

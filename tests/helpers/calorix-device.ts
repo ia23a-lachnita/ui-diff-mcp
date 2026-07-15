@@ -404,6 +404,58 @@ export async function validateCalorixTodayScreenshotForReadiness(
   const recentAccentHeightRatio = recentAccentPixels > 0 ? (recentAccentMaxY - recentAccentMinY + 1) / info.height : 0;
   const recentAccentCenterXRatio = recentAccentPixels > 0 ? ((recentAccentMinX + recentAccentMaxX) / 2) / info.width : 0;
 
+  let statusSignatureRows = 0;
+  const statusBandEnd = Math.max(1, Math.ceil(info.height * 0.04));
+  for (let y = 0; y < statusBandEnd; y++) {
+    let brightNeutralPixels = 0;
+    for (let x = 0; x < info.width; x++) {
+      const offset = (y * info.width + x) * 4;
+      const r = data[offset] ?? 0;
+      const g = data[offset + 1] ?? 0;
+      const b = data[offset + 2] ?? 0;
+      if (Math.min(r, g, b) >= 150 && Math.max(r, g, b) - Math.min(r, g, b) <= 55) {
+        brightNeutralPixels++;
+      }
+    }
+    const rowRatio = brightNeutralPixels / info.width;
+    if (rowRatio >= 0.02 && rowRatio <= 0.45) statusSignatureRows++;
+  }
+  const topSystemBarLikely = statusSignatureRows >= Math.max(2, Math.floor(info.height * 0.003));
+
+  let gestureSignatureRows = 0;
+  const gestureBandStart = Math.floor(info.height * 0.96);
+  for (let y = gestureBandStart; y < info.height; y++) {
+    let longestStart = 0;
+    let longestLength = 0;
+    let currentStart = 0;
+    let currentLength = 0;
+    for (let x = 0; x < info.width; x++) {
+      const offset = (y * info.width + x) * 4;
+      const r = data[offset] ?? 0;
+      const g = data[offset + 1] ?? 0;
+      const b = data[offset + 2] ?? 0;
+      const luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      const isNeutralPillPixel = luma >= 55 && luma <= 190 && Math.max(r, g, b) - Math.min(r, g, b) <= 24;
+      if (isNeutralPillPixel) {
+        if (currentLength === 0) currentStart = x;
+        currentLength++;
+        if (currentLength > longestLength) {
+          longestStart = currentStart;
+          longestLength = currentLength;
+        }
+      } else {
+        currentLength = 0;
+      }
+    }
+    const widthRatio = longestLength / info.width;
+    const centerRatio = (longestStart + longestLength / 2) / info.width;
+    if (widthRatio >= 0.18 && widthRatio <= 0.6 && centerRatio >= 0.42 && centerRatio <= 0.58) {
+      gestureSignatureRows++;
+    }
+  }
+  const bottomSystemBarLikely = gestureSignatureRows >= Math.max(2, Math.floor(info.height * 0.002));
+  const systemBarsVisible = topSystemBarLikely || bottomSystemBarLikely;
+
   let changedRatio = 0;
   if (firstPixelBuffer) {
     let changedPixels = 0;
@@ -434,10 +486,11 @@ export async function validateCalorixTodayScreenshotForReadiness(
     && edgeRatio >= 0.01
     && nonBackgroundRatio >= 0.03
     && !immersiveEducationOverlayLikely
-    && !partialLoadingLikely;
+    && !partialLoadingLikely
+    && !systemBarsVisible;
   const reason = detailOk
     ? `ready: variance=${variance.toFixed(1)} entropy=${entropy.toFixed(3)} edgeRatio=${edgeRatio.toFixed(4)} nonBackgroundRatio=${nonBackgroundRatio.toFixed(4)} topBrightRatio=${topBrightRatio.toFixed(4)} lowerWhiteRatio=${lowerWhiteRatio.toFixed(4)} lowerCyanRatio=${lowerCyanRatio.toFixed(4)} lowerDetailRatio=${lowerDetailRatio.toFixed(4)} recentAccentRatio=${recentAccentRatio.toFixed(4)} recentAccentBox=${recentAccentWidthRatio.toFixed(4)}x${recentAccentHeightRatio.toFixed(4)} changedRatio=${changedRatio.toFixed(4)}`
-    : `not_ready: variance=${variance.toFixed(1)} entropy=${entropy.toFixed(3)} edgeRatio=${edgeRatio.toFixed(4)} nonBackgroundRatio=${nonBackgroundRatio.toFixed(4)} topBrightRatio=${topBrightRatio.toFixed(4)} lowerWhiteRatio=${lowerWhiteRatio.toFixed(4)} lowerCyanRatio=${lowerCyanRatio.toFixed(4)} lowerDetailRatio=${lowerDetailRatio.toFixed(4)} recentAccentRatio=${recentAccentRatio.toFixed(4)} recentAccentBox=${recentAccentWidthRatio.toFixed(4)}x${recentAccentHeightRatio.toFixed(4)} changedRatio=${changedRatio.toFixed(4)}${immersiveEducationOverlayLikely ? " immersive_overlay" : ""}${partialLoadingLikely ? " partial_loading" : ""}`;
+    : `not_ready: variance=${variance.toFixed(1)} entropy=${entropy.toFixed(3)} edgeRatio=${edgeRatio.toFixed(4)} nonBackgroundRatio=${nonBackgroundRatio.toFixed(4)} topBrightRatio=${topBrightRatio.toFixed(4)} lowerWhiteRatio=${lowerWhiteRatio.toFixed(4)} lowerCyanRatio=${lowerCyanRatio.toFixed(4)} lowerDetailRatio=${lowerDetailRatio.toFixed(4)} recentAccentRatio=${recentAccentRatio.toFixed(4)} recentAccentBox=${recentAccentWidthRatio.toFixed(4)}x${recentAccentHeightRatio.toFixed(4)} changedRatio=${changedRatio.toFixed(4)}${immersiveEducationOverlayLikely ? " immersive_overlay" : ""}${partialLoadingLikely ? " partial_loading" : ""}${systemBarsVisible ? ` system_bars_visible(top=${topSystemBarLikely},bottom=${bottomSystemBarLikely})` : ""}`;
 
   return {
     ok: detailOk,
