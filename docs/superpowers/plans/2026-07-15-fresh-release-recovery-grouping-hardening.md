@@ -63,20 +63,20 @@
 
 ### Task 6: Verification
 
-- [ ] Focused tests per task.
-- [ ] `npm run typecheck`.
-- [ ] `npm run verify`.
-- [ ] Relevant provider/MCP gates permitted by credentials.
-- [ ] Bounded Calorix diagnostic, full Calorix, then strict auto-capture release.
-- [ ] Inspect all unresolved/final-group artifacts.
-- [ ] Report exact run IDs, providers, models, counts, input-output tokens, errors, fallbacks.
-- [ ] Do not claim production ready unless strict release passes with `visualClassificationStatus` complete, `auditLimited` false, zero unresolved/escalated final diffs.
+- [x] Focused tests per task.
+- [x] `npm run typecheck`.
+- [x] `npm run verify`.
+- [x] Relevant provider/MCP gates permitted by credentials.
+- [x] Bounded Calorix diagnostic, full Calorix, then strict auto-capture release.
+- [x] Inspect all unresolved/final-group artifacts.
+- [x] Report exact run IDs, providers, models, counts, input-output tokens, errors, fallbacks.
+- [x] Do not claim production ready unless strict release passes with `visualClassificationStatus` complete, `auditLimited` false, zero unresolved/escalated final diffs.
 
 ### Task 7: Tracking / Commit Stages
 
-- [ ] Update `docs/implementation-status.md` and plan checkboxes per task.
-- [ ] Main agent commits/pushes after each meaningful stage.
-- [ ] OpenCode workers never commit/push.
+- [x] Update `docs/implementation-status.md` and plan checkboxes per task.
+- [x] Main agent commits/pushes after each meaningful stage.
+- [x] OpenCode workers never commit/push.
 
 ## Verification Record
 
@@ -84,3 +84,5 @@
 - Calorix base: `b09892b`
 - Expected 402x874, actual 1080x2400, 2.16% aspect delta
 - Antigravity pre-review unavailable: conversation `fresh-release-recovery-hierarchy-20260715` failed before analysis (`gemini-3.1-pro-preview` rewritten to invalid `gemini-3.1-pro`)
+- Strict release: `run-1784139601195-22f9d9` PASS; full details in `docs/release/2026-07-15-fresh-release-recovery-hardening-results.md`.
+- Antigravity post-review unavailable in the same conversation for the same model-rewrite error; no substitute and no repository mutation.
