@@ -19,10 +19,10 @@
 
 ### Task 1: TDD Exhaustive Recovery Semantics
 
-- [ ] In unbounded / `auditLimited=false` runs, broad VLM evidence must never prevent canonical regions from entering recovery. Broad-fragment deferral may only apply to explicitly limited diagnostics (`auditLimited=true`), which stay incomplete.
-- [ ] Add focused tests in `tests/unit/target-recovery.test.ts` asserting selected recovery IDs and exact summary/accounting, not implementation-private flags.
-- [ ] Assert zero `deferred_broad_evidence_fragment` statuses in uncapped run summaries.
-- [ ] Files likely touched: `src/recovery/target-recovery.ts`, `src/diff/scope-summary.ts`, `src/schemas/core.ts`, `tests/unit/target-recovery.test.ts`.
+- [x] In unbounded / `auditLimited=false` runs, broad VLM evidence must never prevent canonical regions from entering recovery. Broad-fragment deferral may only apply to explicitly limited diagnostics (`auditLimited=true`), which stay incomplete.
+- [x] Add focused tests in `tests/unit/target-recovery.test.ts` asserting selected recovery IDs and exact summary/accounting, not implementation-private flags.
+- [x] Assert zero `deferred_broad_evidence_fragment` statuses in uncapped run summaries.
+- [x] Files likely touched: `src/recovery/target-recovery.ts`, `src/diff/scope-summary.ts`, `src/schemas/core.ts`, `tests/unit/target-recovery.test.ts`.
 
 ### Task 2: TDD Recovery Evidence Context
 

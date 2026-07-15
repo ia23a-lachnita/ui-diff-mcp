@@ -1119,10 +1119,12 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
         });
         markBroadVlmEvidence(regionLedger, broadVlmEvidence);
         applyResidualSuppression(regionLedger, preRecoveryCoverage);
-        applyBroadEvidenceFragmentDeferrals(
-          regionLedger,
-          classifyBroadEvidenceFragmentDeferrals(regionLedger.regions, broadVlmEvidence, residualFragmentOptions)
-        );
+        if (auditSelection.limited) {
+          applyBroadEvidenceFragmentDeferrals(
+            regionLedger,
+            classifyBroadEvidenceFragmentDeferrals(regionLedger.regions, broadVlmEvidence, residualFragmentOptions)
+          );
+        }
         if (broadVlmEvidence.length > 0) visualClassificationStatus = "incomplete";
         debugTrace.coverage = regionLedger.coverageTrace;
         const allUncoveredComponents = regionLedger.regions

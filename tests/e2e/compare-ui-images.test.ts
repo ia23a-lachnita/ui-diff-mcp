@@ -1261,7 +1261,7 @@ describe("runUiDiff with mock sidecar and models (full mode)", () => {
     await expectFinalArtifactManifest(report as unknown as FinalArtifactReport);
   });
 
-  it("defers a thin broad-evidence fragment before target recovery and accounts for it", async () => {
+  it("runs uncapped recovery that classifies a broad-backed component as noise without unresolved region", async () => {
     const expected = await writeSolidPng(tmpDir, "broad-thin-expected.png", 200, 400, 255, 255, 255);
     const actual = await writeRectPng(tmpDir, "broad-thin-actual.png", 200, 400, 255, 255, 255, 100, 100, 2, 80, 0, 0, 0);
     sidecar = await startMockSidecar({ imageWidth: 200, imageHeight: 400 });
@@ -1293,20 +1293,61 @@ describe("runUiDiff with mock sidecar and models (full mode)", () => {
     const result = await runUiDiff({ expectedImagePath: expected, actualImagePath: actual, projectRoot: tmpDir, mode: "full" }, { probeOverride });
     const raw = JSON.parse(await fs.readFile(result.reportPath, "utf8")) as {
       unresolvedRegions: Array<{ reason: string; pixelCount: number }>;
-      recoverySummary?: { totalUncoveredComponents: number; eligibleComponents: number; skippedComponents: number; unclassifiedCount: number; statusCounts: Record<string, number> };
+      recoverySummary?: { totalUncoveredComponents: number; eligibleComponents: number; attemptedComponents: number; completedComponents: number; skippedComponents: number; unclassifiedCount: number; statusCounts: Record<string, number> };
+      visualClassificationStatus: string;
     };
     const report = await hydrateReportParts(raw as Parameters<typeof hydrateReportParts>[0], result.reportPath) as typeof raw;
     expect(report.recoverySummary).toMatchObject({
       totalUncoveredComponents: 1,
-      eligibleComponents: 0,
-      skippedComponents: 1,
-      unclassifiedCount: 1,
-      statusCounts: { deferred_broad_evidence_fragment: 1 }
+      eligibleComponents: 1,
+      attemptedComponents: 1,
+      completedComponents: 1,
+      skippedComponents: 0,
+      unclassifiedCount: 0,
+      statusCounts: { classified_false: 1 }
     });
-    expect(report.unresolvedRegions).toContainEqual(expect.objectContaining({
-      reason: "deferred_broad_evidence_fragment",
-      pixelCount: 160
+    expect(report.recoverySummary?.statusCounts["deferred_broad_evidence_fragment"] ?? 0).toBe(0);
+    expect(report.unresolvedRegions).not.toContainEqual(expect.objectContaining({
+      reason: "classified_false"
     }));
+    expect(report.visualClassificationStatus).toBe("complete");
+  });
+
+  it("defers a thin broad-evidence fragment in a bounded audit and marks incomplete", async () => {
+    const expected = await writeSolidPng(tmpDir, "broad-thin-bounded-expected.png", 200, 400, 255, 255, 255);
+    const actual = await writeRectPng(tmpDir, "broad-thin-bounded-actual.png", 200, 400, 255, 255, 255, 100, 100, 2, 80, 0, 0, 0);
+    sidecar = await startMockSidecar({ imageWidth: 200, imageHeight: 400 });
+    vi.stubEnv("LOCATEANYTHING_SIDECAR_URL", sidecar.url);
+    vi.stubEnv("OPENROUTER_API_KEY", "sk-test-broad-thin-bounded");
+    vi.stubEnv("UI_DIFF_MAX_AUDIT_PAIRS", "1");
+    const mockFetch = makeMockFetch([
+      { criterion: "geometry" as const, hasDiff: true, severity: "high" as const, title: "Broad geometry", evidence: ["screen-level geometry differs"], reviewerDecision: "accepted" as const },
+      { criterion: "geometry" as const, hasDiff: false, reviewerDecision: "accepted" as const },
+      { criterion: "geometry" as const, hasDiff: false, reviewerDecision: "accepted" as const },
+      { criterion: "geometry" as const, hasDiff: false, reviewerDecision: "accepted" as const },
+      { criterion: "geometry" as const, hasDiff: false, reviewerDecision: "accepted" as const },
+      { criterion: "geometry" as const, hasDiff: false, reviewerDecision: "accepted" as const }
+    ], { sidecarImageWidth: 200, sidecarImageHeight: 400 });
+    vi.stubGlobal("fetch", mockFetch);
+    vi.mocked(buildDeterministicDiffs).mockImplementation(() => []);
+    const probeOverride = async () => [
+      { role: "auditor", provider: "openrouter", model: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free", status: "pass" as const, checkedAt: new Date().toISOString(), schemaValid: true, contentAccurate: true, maxImagesSupported: 5 },
+      { role: "reviewer", provider: "openrouter", model: "nex-agi/nex-n2-pro:free", status: "pass" as const, checkedAt: new Date().toISOString(), schemaValid: true, contentAccurate: true, maxImagesSupported: 5 },
+      { role: "target_recovery", provider: "openrouter", model: "nex-agi/nex-n2-pro:free", status: "pass" as const, checkedAt: new Date().toISOString(), schemaValid: true, contentAccurate: true, maxImagesSupported: 5 }
+    ];
+
+    const result = await runUiDiff({ expectedImagePath: expected, actualImagePath: actual, projectRoot: tmpDir, mode: "full" }, { probeOverride });
+    const raw = JSON.parse(await fs.readFile(result.reportPath, "utf8")) as {
+      unresolvedRegions: Array<{ reason: string; pixelCount: number }>;
+      recoverySummary?: { totalUncoveredComponents: number; eligibleComponents: number; skippedComponents: number; statusCounts: Record<string, number> };
+      visualClassificationStatus: string;
+    };
+    const report = await hydrateReportParts(raw as Parameters<typeof hydrateReportParts>[0], result.reportPath) as typeof raw;
+    expect(report.unresolvedRegions).toContainEqual(expect.objectContaining({
+      reason: "deferred_broad_evidence_fragment"
+    }));
+    expect(report.visualClassificationStatus).toBe("incomplete");
+    delete process.env.UI_DIFF_MAX_AUDIT_PAIRS;
   });
 
   it("completes when a broad raw finding is fully superseded by local coverage", async () => {

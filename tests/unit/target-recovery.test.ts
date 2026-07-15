@@ -666,4 +666,68 @@ describe("runTargetRecovery", () => {
     expect(result.statusCounts["classified_false"]).toBe(1);
     expect(result.statusCounts["missing_required_fields"]).toBe(1);
   });
+
+  it("propagates explicit component IDs into trace and regionOutcomes for accepted regions", async () => {
+    const components = [
+      { id: "alpha-region", box: { x: 10, y: 10, width: 40, height: 40 }, pixelCount: 400 },
+      { id: "beta-region", box: { x: 60, y: 60, width: 40, height: 40 }, pixelCount: 300 }
+    ];
+    const recoveryCaller: VisionJsonCaller = vi.fn()
+      .mockResolvedValueOnce({
+        parsed: { classified: true, criterion: "geometry", severity: "medium", label: "A", evidence: ["a"] },
+        rawContent: "", model: "m1", provider: "p1"
+      })
+      .mockResolvedValueOnce({
+        parsed: { classified: true, criterion: "color_appearance", severity: "low", label: "B", evidence: ["b"] },
+        rawContent: "", model: "m1", provider: "p1"
+      });
+    const reviewerCaller: VisionJsonCaller = vi.fn()
+      .mockResolvedValue({ parsed: { decision: "accepted", reason: "ok" }, rawContent: "", model: "r1", provider: "p1" });
+
+    const result = await runTargetRecovery(components, makeCtx({ recoveryCaller, reviewerCaller }), unlimitedBudget);
+
+    expect(result.recovered).toHaveLength(2);
+    expect(result.eligibleComponents).toBe(2);
+    expect(result.completedComponents).toBe(2);
+    expect(result.attemptedComponents).toBe(2);
+    expect(result.skippedComponents).toBe(0);
+    expect(result.remainingComponents).toBe(0);
+    expect(result.unclassifiedCount).toBe(0);
+    expect(result.stoppedReason).toBe("none");
+    expect(result.statusCounts["recovery_accepted"]).toBe(2);
+    expect(result.statusCounts["deferred_broad_evidence_fragment"] ?? 0).toBe(0);
+
+    expect(result.trace[0]!.componentId).toBe("alpha-region");
+    expect(result.trace[1]!.componentId).toBe("beta-region");
+    expect(result.regionOutcomes[0]!.regionId).toBe("alpha-region");
+    expect(result.regionOutcomes[1]!.regionId).toBe("beta-region");
+
+    expect(result.regionOutcomes[0]!.findingId).toBe(result.recovered[0]!.id);
+    expect(result.regionOutcomes[1]!.findingId).toBe(result.recovered[1]!.id);
+
+    expect(result.recovered[0]!.id).toBeTruthy();
+    expect(result.recovered[1]!.id).toBeTruthy();
+    expect(result.recovered[0]!.id).not.toBe(result.recovered[1]!.id);
+  });
+
+  it("preserves exact summary counts when no deferred regions are present", async () => {
+    const belowComponent: PixelComponent = { box: { x: 0, y: 0, width: 5, height: 5 }, pixelCount: 2 };
+    const validComponent: PixelComponent = { box: { x: 10, y: 10, width: 80, height: 60 }, pixelCount: 500 };
+    const recoveryCaller: VisionJsonCaller = vi.fn().mockResolvedValue({
+      parsed: { classified: false },
+      rawContent: "", model: "m1", provider: "p1"
+    });
+
+    const budget: RecoveryBudget = { maxComponents: 100, maxModelCalls: 100, deadlineMs: Date.now() + 60000, minComponentPixels: 10 };
+    const result = await runTargetRecovery([belowComponent, validComponent], makeCtx({ recoveryCaller }), budget);
+
+    expect(result.statusCounts["below_threshold"]).toBe(1);
+    expect(result.statusCounts["classified_false"]).toBe(1);
+    expect(result.statusCounts["deferred_broad_evidence_fragment"] ?? 0).toBe(0);
+    expect(result.eligibleComponents).toBe(1);
+    expect(result.completedComponents).toBe(1);
+    expect(result.attemptedComponents).toBe(1);
+    expect(result.recovered.length).toBe(0);
+    expect(result.unclassifiedCount).toBe(0);
+  });
 });

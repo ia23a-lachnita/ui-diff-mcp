@@ -271,6 +271,61 @@ describe("unresolvedRegionsFromLedger", () => {
   });
 });
 
+describe("exhaustive recovery semantics", () => {
+  const thinDeferralOptions = {
+    maxDistancePx: 24,
+    maxResidualPixels: 120,
+    maxThinSidePx: 4,
+    minAreaMultiplier: 8
+  };
+
+  it("defers thin fragments supported by broad evidence when invoked", () => {
+    const ledger = buildRegionLedger([makeComponent(544, 2241, 3, 28, 80)], [], {
+      minPixelCount: 50,
+      maxGapPx: 12,
+      maxClusterAreaRatio: 0.5,
+      imageWidth: 1200,
+      imageHeight: 2600
+    });
+    const broadFinding = {
+      ...makeDiff(0, 0, 1200, 2600),
+      id: "broad-screen-evidence",
+      classificationSource: "vlm_reviewed" as const,
+      reviewerStatus: "accepted" as const
+    };
+
+    const decisions = classifyBroadEvidenceFragmentDeferrals(ledger.regions, [broadFinding], thinDeferralOptions);
+    applyBroadEvidenceFragmentDeferrals(ledger, decisions);
+
+    expect(decisions).toHaveLength(1);
+    expect(ledger.regions[0]).toMatchObject({
+      state: "unresolved",
+      pixelCount: 80,
+      recoveryDeferredReason: "deferred_broad_evidence_fragment"
+    });
+    const unresolved = unresolvedRegionsFromLedger(ledger, "not_classified");
+    expect(unresolved[0]?.reason).toBe("deferred_broad_evidence_fragment");
+  });
+
+  it("does not defer a substantial residual region", () => {
+    const ledger = buildRegionLedger([makeComponent(100, 100, 80, 60, 1000)], [], {
+      minPixelCount: 50,
+      maxGapPx: 12,
+      maxClusterAreaRatio: 0.5,
+      imageWidth: 1200,
+      imageHeight: 2600
+    });
+    const broadFinding = {
+      ...makeDiff(0, 0, 1200, 2600),
+      id: "broad-screen-evidence",
+      classificationSource: "vlm_reviewed" as const,
+      reviewerStatus: "accepted" as const
+    };
+
+    expect(classifyBroadEvidenceFragmentDeferrals(ledger.regions, [broadFinding], thinDeferralOptions)).toEqual([]);
+  });
+});
+
 describe("residual fragment classification", () => {
   it("defers a thin fragment supported only by broad evidence without hiding its pixels", () => {
     const ledger = buildRegionLedger([makeComponent(544, 2241, 3, 28, 80)], [], {
