@@ -36,11 +36,11 @@
 
 ### Task 3: TDD Repair Decontamination and Continuity
 
-- [ ] Repair prompt must not echo invalid original title/evidence/offending exact excerpt for unsupported-claim diagnostics.
-- [ ] It should include criterion, diagnostic code/message, deterministic measurements, and clean images.
-- [ ] Reviewer prompt must say removal of unsupported specificity and label wording changes are expected (not semantic substitution) if criterion/core qualitative observation remain; true visual substitution still rejects.
-- [ ] Add exact regression prompts for region-0085 repeated hex and region-0090 gradient-vs-flat wording.
-- [ ] Files likely touched: `src/audit/prompts.ts`, `src/audit/review-findings.ts`, `tests/unit/target-recovery.test.ts`, `tests/unit/review-findings.test.ts`.
+- [x] Repair prompt must not echo invalid original title/evidence/offending exact excerpt for unsupported-claim diagnostics.
+- [x] It should include criterion, diagnostic code/message, deterministic measurements, and clean images.
+- [x] Reviewer prompt must say removal of unsupported specificity and label wording changes are expected (not semantic substitution) if criterion/core qualitative observation remain; true visual substitution still rejects.
+- [x] Add exact regression prompts for region-0085 repeated hex and region-0090 gradient-vs-flat wording.
+- [x] Files likely touched: `src/audit/prompts.ts`, `src/audit/review-findings.ts`, `tests/unit/target-recovery.test.ts`, `tests/unit/review-findings.test.ts`.
 
 ### Task 4: TDD Repair-Group Output
 

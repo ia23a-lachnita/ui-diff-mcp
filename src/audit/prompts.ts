@@ -16,6 +16,93 @@ const CLASSIFIABLE_CRITERIA = [
 const NO_SPECULATION_RULE = `- Do NOT speculate about causality or design intent.`;
 const NAMED_MEASUREMENT_RULE = `- Exact percentages, pixels, sizes, angles, coordinates, and color values (hex/RGB) are allowed only when citing a listed deterministic measurement by name.`;
 
+const HEX_COLOR_RE = /#[0-9a-fA-F]{3,8}\b/g;
+const RGB_RE = /\brgba?\s*\(\s*\d+\s*,\s*\d+\s*,\s*\d+(?:\s*,\s*[\d.]+)?\s*\)/gi;
+const EXACT_PX_RE = /\b\d+(?:\.\d+)?\s*px\b/gi;
+
+function stripHexColors(s: string): string {
+  return s.replace(HEX_COLOR_RE, "").replace(/\s{2,}/g, " ").trim();
+}
+
+function stripRgbStrings(s: string): string {
+  return s.replace(RGB_RE, "").replace(/\s{2,}/g, " ").trim();
+}
+
+function stripExactPixelClaims(s: string): string {
+  return s.replace(EXACT_PX_RE, "").replace(/\s{2,}/g, " ").trim();
+}
+
+function sanitizeString(s: string): string {
+  let result = s;
+  result = stripHexColors(result);
+  result = stripRgbStrings(result);
+  result = stripExactPixelClaims(result);
+  return result;
+}
+
+export interface SanitizedRepairPromptInput {
+  originalCriterion: UiCriterion;
+  originalLabel: string;
+  originalTitle: string;
+  originalEvidence: string[];
+  diagnosticCode: string;
+  diagnosticMessage: string;
+  diagnosticExcerpt?: string;
+  measurements: DeterministicMeasurement[];
+}
+
+const UNSUPPORTED_DIAGNOSTIC_CODES = new Set([
+  "unsupported_exact_color",
+  "unsupported_quantitative",
+  "unsupported_absence",
+  "unsupported_crop_boundary"
+]);
+
+function sanitizeLabel(label: string): string {
+  return sanitizeString(label);
+}
+
+const UNSUPPORTED_REMEDIATION_MESSAGES: Record<string, string> = {
+  unsupported_exact_color: "Use qualitative color wording unless a named deterministic source-color measurement supports an exact value.",
+  unsupported_quantitative: "Use qualitative wording unless a named deterministic measurement supports the quantity.",
+  unsupported_absence: "Describe only visible content in supplied crops; no global absence inference.",
+  unsupported_crop_boundary: "Describe crop/position mismatch only when visually supported."
+};
+
+export function sanitizeRepairPromptInput(ctx: RepairPromptContext): SanitizedRepairPromptInput {
+  const isUnsupported = UNSUPPORTED_DIAGNOSTIC_CODES.has(ctx.diagnosticCode);
+  if (!isUnsupported) {
+    const result: SanitizedRepairPromptInput = {
+      originalCriterion: ctx.originalCriterion,
+      originalLabel: ctx.originalLabel,
+      originalTitle: ctx.originalTitle,
+      originalEvidence: ctx.originalEvidence,
+      diagnosticCode: ctx.diagnosticCode,
+      diagnosticMessage: ctx.diagnosticMessage,
+      measurements: ctx.measurements
+    };
+    if (ctx.diagnosticExcerpt !== undefined) {
+      result.diagnosticExcerpt = ctx.diagnosticExcerpt;
+    }
+    return result;
+  }
+
+  const sanitizedLabel = sanitizeLabel(ctx.originalLabel);
+  const safeLabel = sanitizedLabel.length > 0 ? sanitizedLabel : "Changed region";
+  const remediationMessage = UNSUPPORTED_REMEDIATION_MESSAGES[ctx.diagnosticCode]
+    ?? "Rephrase without unsupported specificity.";
+
+  return {
+    originalCriterion: ctx.originalCriterion,
+    originalLabel: safeLabel,
+    originalTitle: "",
+    originalEvidence: [],
+    diagnosticCode: ctx.diagnosticCode,
+    diagnosticMessage: remediationMessage,
+    measurements: ctx.measurements
+  };
+}
+
 export function buildRecoveryPrompt(pixelCount: number, componentArea: number, measurements: DeterministicMeasurement[] = []): string {
   const criteriaList = CLASSIFIABLE_CRITERIA.join(" | ");
   const deterministicMeasurements = measurements.length > 0 ? measurements : [
@@ -191,25 +278,36 @@ export interface RepairPromptContext {
 }
 
 export function buildRecoveryRepairPrompt(ctx: RepairPromptContext): string {
-  const evidenceLines = ctx.originalEvidence.map(e => `  - ${e}`).join("\n");
+  const isUnsupported = UNSUPPORTED_DIAGNOSTIC_CODES.has(ctx.diagnosticCode);
+  const sanitized = isUnsupported ? sanitizeRepairPromptInput(ctx) : null;
+  const evidenceLines = (sanitized ? sanitized.originalEvidence : ctx.originalEvidence).map(e => `  - ${e}`).join("\n");
   const measurementLines = ctx.measurements.length > 0
     ? ctx.measurements.map(m => `  - ${m.name}: ${m.value}${m.unit ? " " + m.unit : ""}`).join("\n")
     : "  (none)";
+
+  const label = sanitized ? sanitized.originalLabel : ctx.originalLabel;
+  const titleLine = sanitized
+    ? (sanitized.originalTitle ? `  Title: ${sanitized.originalTitle}` : ``)
+    : `  Title: ${ctx.originalTitle}`;
+  const evidenceSection = evidenceLines
+    ? [`  Evidence:`, evidenceLines]
+    : [];
 
   return [
     `You are a UI diff recovery repair specialist. An initial recovery classification was rejected by validation.`,
     ``,
     `ORIGINAL CLASSIFICATION:`,
     `  Criterion: ${ctx.originalCriterion}`,
-    `  Label: ${ctx.originalLabel}`,
-    `  Title: ${ctx.originalTitle}`,
-    `  Evidence:`,
-    evidenceLines,
+    `  Label: ${label}`,
+    titleLine,
+    ...evidenceSection,
     ``,
     `VALIDATION DIAGNOSTIC:`,
     `  Code: ${ctx.diagnosticCode}`,
-    `  Message: ${ctx.diagnosticMessage}`,
-    ...(ctx.diagnosticExcerpt !== undefined ? [`  Offending excerpt: "${ctx.diagnosticExcerpt}"`] : []),
+    `  Message: ${sanitized ? sanitized.diagnosticMessage : ctx.diagnosticMessage}`,
+    ...(!sanitized && ctx.diagnosticExcerpt !== undefined
+      ? [`  Offending excerpt: "${ctx.diagnosticExcerpt}"`]
+      : []),
     ``,
     `DETERMINISTIC MEASUREMENTS:`,
     measurementLines,
@@ -322,7 +420,8 @@ export function buildRecoveryReviewerPrompt(
     `- Overlay and mask images localize differences only; do not treat overlay annotation colors (cyan, magenta, yellow) as actual UI colors.`,
     `- Reject unsupported quantitative layout claims. Exact dimensions, positions, spacing, font sizes, percentages, and angles are valid only when they cite a deterministic measurement listed above.`,
     ...(hasRepair ? [
-      `- When reviewing a repaired candidate, compare the ORIGINAL candidate against the REPAIRED candidate. If the repair describes a different visual observation than the original (semantic substitution), reject it.`
+      `- When reviewing a repaired candidate, compare the ORIGINAL candidate against the REPAIRED candidate. The following are EXPECTED repair behavior when the criterion and core qualitative visual observation remain the same: removing unsupported specificity (e.g. exact hex values, pixel claims), replacing invalid exact values with qualitative wording, and renaming an equivalent label/title.`,
+      `- Reject only when the repaired candidate describes a genuinely different visual observation, criterion, or content. A lexical or wording change alone that preserves the same visual meaning is NOT grounds for rejection.`
     ] : []),
     ``,
     `Respond with JSON only: { "decision": "accepted" | "rejected" | "needs_escalation", "reason": "<one sentence>" }`

@@ -759,7 +759,7 @@ describe("claim-repair: repair prompt contains diagnostic information", () => {
     const repairPrompt = capturedPrompts[1] ?? "";
     expect(repairPrompt).toContain("repair");
     expect(repairPrompt).toContain("unsupported_exact_color");
-    expect(repairPrompt).toContain("#FF0000");
+    expect(repairPrompt).not.toContain("#FF0000");
     expect(repairPrompt).toContain("changed_pixel_count");
   });
 });
@@ -904,5 +904,179 @@ describe("claim-repair: reviewer escalation after repair remains unresolved", ()
     const result = await runTargetRecovery([component], ctx, unlimitedBudget);
     expect(result.recovered).toHaveLength(0);
     expect(result.unclassifiedCount).toBe(1);
+  });
+});
+
+describe("claim-repair: repair prompt decontamination for unsupported_exact_color (region-0085 style)", () => {
+  it("repair prompt must not contain hex colors, original title, or evidence excerpt", async () => {
+    const capturedPrompts: string[] = [];
+    const recoveryCaller: VisionJsonCaller = vi.fn()
+      .mockImplementation(async (req) => {
+        capturedPrompts.push(req.prompt);
+        if (capturedPrompts.length === 1) {
+          return {
+            parsed: {
+              classified: true,
+              criterion: "color_appearance",
+              severity: "medium",
+              label: "Header background",
+              evidence: ["background color is #1A2B3C", "fill is #445566"]
+            },
+            rawContent: "",
+            model: "recovery-model",
+            provider: "openrouter"
+          };
+        }
+        return {
+          parsed: {
+            classified: true,
+            criterion: "color_appearance",
+            severity: "medium",
+            label: "Header background",
+            evidence: ["background color changed from dark to light"]
+          },
+          rawContent: "",
+          model: "repair-model",
+          provider: "openrouter"
+        };
+      });
+    const reviewerCaller: VisionJsonCaller = vi.fn().mockResolvedValue({
+      parsed: { decision: "accepted", reason: "confirmed" },
+      rawContent: "",
+      model: "test-reviewer",
+      provider: "openrouter"
+    });
+    const ctx = makeCtx({ recoveryCaller, reviewerCaller });
+    await runTargetRecovery([component], ctx, unlimitedBudget);
+    const repairPrompt = capturedPrompts[1] ?? "";
+    expect(repairPrompt).not.toContain("#1A2B3C");
+    expect(repairPrompt).not.toContain("#445566");
+    expect(repairPrompt).not.toContain("background color is #1A2B3C");
+    expect(repairPrompt).not.toContain("fill is #445566");
+    expect(repairPrompt).not.toContain("Header background is #1A2B3C");
+    expect(repairPrompt).toContain("unsupported_exact_color");
+    expect(repairPrompt).toContain("color_appearance");
+    expect(repairPrompt).toContain("changed_pixel_count");
+  });
+
+  it("repaired valid candidate proceeds to reviewer and is accepted", async () => {
+    const recoveryCaller: VisionJsonCaller = vi.fn()
+      .mockResolvedValueOnce({
+        parsed: {
+          classified: true,
+          criterion: "color_appearance",
+          severity: "medium",
+          label: "Header background",
+          evidence: ["background color is #1A2B3C"]
+        },
+        rawContent: "",
+        model: "recovery-model",
+        provider: "openrouter"
+      })
+      .mockResolvedValueOnce({
+        parsed: {
+          classified: true,
+          criterion: "color_appearance",
+          severity: "medium",
+          label: "Header background",
+          evidence: ["background color changed from dark to light"]
+        },
+        rawContent: "",
+        model: "repair-model",
+        provider: "openrouter"
+      });
+    const reviewerCaller: VisionJsonCaller = vi.fn().mockResolvedValue({
+      parsed: { decision: "accepted", reason: "color difference confirmed" },
+      rawContent: "",
+      model: "test-reviewer",
+      provider: "openrouter"
+    });
+    const ctx = makeCtx({ recoveryCaller, reviewerCaller });
+    const result = await runTargetRecovery([component], ctx, unlimitedBudget);
+    expect(result.recovered).toHaveLength(1);
+    expect(result.recovered[0]?.criterion).toBe("color_appearance");
+    expect(result.recovered[0]?.reviewerStatus).toBe("accepted");
+    const trace = result.trace.find(t => t.status === "recovery_accepted");
+    expect(trace?.repairAttempted).toBe(true);
+    expect(reviewerCaller).toHaveBeenCalledOnce();
+  });
+});
+
+describe("claim-repair: reviewer continuity for gradient-vs-flat wording (region-0090 style)", () => {
+  it("gradient-vs-flat original and uniform-color-replacement repaired candidate can be semantically continuous", async () => {
+    const recoveryCaller: VisionJsonCaller = vi.fn()
+      .mockResolvedValueOnce({
+        parsed: {
+          classified: true,
+          criterion: "color_appearance",
+          severity: "medium",
+          label: "Header",
+          evidence: ["gradient changed to flat color"]
+        },
+        rawContent: "",
+        model: "recovery-model",
+        provider: "openrouter"
+      })
+      .mockResolvedValueOnce({
+        parsed: {
+          classified: true,
+          criterion: "color_appearance",
+          severity: "medium",
+          label: "Header",
+          evidence: ["fill appearance changed from gradient to uniform"]
+        },
+        rawContent: "",
+        model: "repair-model",
+        provider: "openrouter"
+      });
+    const reviewerCaller: VisionJsonCaller = vi.fn().mockResolvedValue({
+      parsed: { decision: "accepted", reason: "same visual observation with reworded label" },
+      rawContent: "",
+      model: "test-reviewer",
+      provider: "openrouter"
+    });
+    const ctx = makeCtx({ recoveryCaller, reviewerCaller });
+    const result = await runTargetRecovery([component], ctx, unlimitedBudget);
+    expect(result.recovered).toHaveLength(1);
+    expect(result.recovered[0]?.criterion).toBe("color_appearance");
+    expect(result.recovered[0]?.reviewerStatus).toBe("accepted");
+  });
+
+  it("true substitution (gradient-vs-flat to missing icon) remains rejectable", async () => {
+    const recoveryCaller: VisionJsonCaller = vi.fn()
+      .mockResolvedValueOnce({
+        parsed: {
+          classified: true,
+          criterion: "color_appearance",
+          severity: "medium",
+          label: "Header",
+          evidence: ["gradient changed to flat color #AABBCC"]
+        },
+        rawContent: "",
+        model: "recovery-model",
+        provider: "openrouter"
+      })
+      .mockResolvedValueOnce({
+        parsed: {
+          classified: true,
+          criterion: "presence",
+          severity: "high",
+          label: "Header",
+          evidence: ["icon element is missing from actual"]
+        },
+        rawContent: "",
+        model: "repair-model",
+        provider: "openrouter"
+      });
+    const reviewerCaller: VisionJsonCaller = vi.fn().mockResolvedValue({
+      parsed: { decision: "rejected", reason: "different visual observation" },
+      rawContent: "",
+      model: "test-reviewer",
+      provider: "openrouter"
+    });
+    const ctx = makeCtx({ recoveryCaller, reviewerCaller });
+    const result = await runTargetRecovery([component], ctx, unlimitedBudget);
+    expect(result.recovered).toHaveLength(0);
+    expect(result.statusCounts["repair_criterion_change"]).toBe(1);
   });
 });
