@@ -357,6 +357,7 @@ export const ReportPartSchema = z.object({
     "elements",
     "pairs",
     "diffs",
+    "broad_evidence",
     "unresolved_regions",
     "debug_summary",
     "usage_summary",
@@ -448,6 +449,7 @@ export const UnresolvedRegionSchema = z.object({
   pixelCount: z.number().int().positive(),
   sourceComponentIds: z.array(z.string().min(1)).min(1),
   relatedFindingIds: z.array(z.string().min(1)).default([]),
+  relatedBroadEvidenceIds: z.preprocess(value => value ?? [], z.array(z.string().min(1)).optional()),
   relation: z.enum(["nearby_larger_finding", "inside_larger_finding", "none"]).default("none"),
   reason: z.enum([
     "not_classified",
@@ -980,6 +982,7 @@ export const UiDiffReportSchema = z.object({
   }),
   pairs: z.array(ElementPairSchema),
   diffs: z.array(DiffRecordSchema),
+  broadEvidence: z.preprocess(value => value ?? [], z.array(DiffRecordSchema).optional()),
   unresolvedRegions: z.array(UnresolvedRegionSchema).default([]),
   reportParts: z.preprocess(value => value ?? [], z.array(ReportPartSchema).optional()),
   usageSummary: UsageSummarySchema.optional(),

@@ -659,10 +659,11 @@ describe("ledger: markBroadVlmEvidence cannot overwrite blocking reason/diagnost
     markBroadVlmEvidence(ledger, [broadFinding]);
     const region = ledger.regions[0]!;
     // broad_vlm_evidence appended to detail
-    expect(region.unresolvedDetail).toContain("broad_vlm_evidence: diff-broad");
+    expect(region.unresolvedDetail).toContain("broad_vlm_evidence");
     expect(region.unresolvedDetail).toContain("unsupported_recovery_claim");
-    // coveringFindingIds includes the broad finding
-    expect(region.coveringFindingIds).toContain("diff-broad");
+    // Broad evidence has its own namespace and cannot masquerade as a final finding.
+    expect(region.coveringFindingIds).toEqual([]);
+    expect(region.relatedBroadEvidenceIds).toEqual(["diff-broad"]);
     // blocking reason/diagnostics preserved
     expect(region.blockingRecoveryOutcome).toBeDefined();
     expect(region.blockingRecoveryOutcome?.diagnostics?.code).toBe("unsupported_quantitative");
@@ -699,11 +700,13 @@ describe("ledger: markBroadVlmEvidence cannot overwrite blocking reason/diagnost
     markBroadVlmEvidence(ledger, [makeDiff({ id: "diff-broad", location: { x: 0, y: 0, width: 100, height: 100 } })]);
 
     expect(ledger.regions[0]!.unresolvedDetail).toBe(
-      "reviewer_rejected: evidence was not visually supported; broad_vlm_evidence: diff-broad"
+      "reviewer_rejected: evidence was not visually supported; broad_vlm_evidence"
     );
     expect(unresolvedRegionsFromLedger(ledger, "not_classified")[0]).toMatchObject({
       reason: "not_classified",
-      detail: "reviewer_rejected: evidence was not visually supported; broad_vlm_evidence: diff-broad"
+      detail: "reviewer_rejected: evidence was not visually supported; broad_vlm_evidence",
+      relatedFindingIds: [],
+      relatedBroadEvidenceIds: ["diff-broad"]
     });
   });
 
@@ -720,7 +723,9 @@ describe("ledger: markBroadVlmEvidence cannot overwrite blocking reason/diagnost
 
     expect(unresolvedRegionsFromLedger(ledger, "not_classified")[0]).toMatchObject({
       reason: "broad_vlm_evidence",
-      detail: "broad_vlm_evidence: diff-broad"
+      detail: "broad_vlm_evidence",
+      relatedFindingIds: [],
+      relatedBroadEvidenceIds: ["diff-broad"]
     });
   });
 });

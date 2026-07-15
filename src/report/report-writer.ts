@@ -52,6 +52,7 @@ export async function writeUiDiffReport(
   const reportParts = await writeReportParts(report);
 
   const diffArtifactPaths = report.diffs.flatMap(d => d.artifactPaths);
+  const broadEvidenceArtifactPaths = (report.broadEvidence ?? []).flatMap(d => d.artifactPaths);
   const unresolvedArtifactPaths = report.unresolvedRegions.flatMap(region => region.artifactPaths);
   const indexPath = path.join(reportDir, "index.json");
   const indexTmpPath = `${indexPath}.tmp`;
@@ -61,7 +62,7 @@ export async function writeUiDiffReport(
     reportPath,
     reportParts,
     runArtifacts: report.runArtifacts ?? [],
-    artifacts: [...diffArtifactPaths, ...unresolvedArtifactPaths]
+    artifacts: [...diffArtifactPaths, ...broadEvidenceArtifactPaths, ...unresolvedArtifactPaths]
   }, null, 2), "utf8");
   await fs.rename(indexTmpPath, indexPath);
 

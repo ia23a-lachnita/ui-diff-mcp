@@ -137,7 +137,7 @@ export function classifyBroadEvidenceFragmentDeferrals(
     deferrals.push({
       regionId: region.id,
       findingIds: related,
-      detail: `deferred_broad_evidence_fragment: ${related.join(",")}`
+      detail: "deferred_broad_evidence_fragment"
     });
   }
 
@@ -153,7 +153,7 @@ export function applyBroadEvidenceFragmentDeferrals(
     const region = byRegion.get(deferral.regionId);
     if (!region || region.state !== "unresolved") continue;
     region.recoveryDeferredReason = "deferred_broad_evidence_fragment";
-    region.coveringFindingIds = [...new Set([...region.coveringFindingIds, ...deferral.findingIds])].sort();
+    region.relatedBroadEvidenceIds = [...new Set([...(region.relatedBroadEvidenceIds ?? []), ...deferral.findingIds])].sort();
     if (!region.unresolvedDetail?.includes("deferred_broad_evidence_fragment")) {
       region.unresolvedDetail = region.unresolvedDetail
         ? `${deferral.detail}; ${region.unresolvedDetail}`

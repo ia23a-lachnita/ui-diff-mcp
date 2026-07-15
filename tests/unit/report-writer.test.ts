@@ -31,6 +31,7 @@ function makeReport(overrides: Partial<UiDiffReport> = {}): UiDiffReport {
     elements: { expected: [], actual: [] },
     pairs: [],
     diffs: [],
+    broadEvidence: [],
     unresolvedRegions: [],
     modelHealth: [],
     runArtifacts: [],
@@ -141,6 +142,146 @@ describe("writeUiDiffReport", () => {
     expect(hydrated.unresolvedRegions).toHaveLength(2);
   });
 
+  it("externalizes broad semantic evidence and hydrates typed references", async () => {
+    const finalDiff = {
+      id: "diff-final",
+      criterion: "geometry" as const,
+      severity: "medium" as const,
+      title: "Local displacement",
+      location: { x: 20, y: 40, width: 12, height: 12 },
+      evidence: ["Local geometry differs."],
+      measurements: [],
+      artifactPaths: [],
+      reviewerStatus: "accepted" as const
+    };
+    const broadEvidence = {
+      ...finalDiff,
+      id: "broad-screen",
+      title: "Screen-level displacement",
+      location: { x: 0, y: 0, width: 200, height: 400 },
+      classificationSource: "vlm_reviewed" as const,
+      repairLocality: "broad" as const
+    };
+    const report = makeReport({
+      diffs: [finalDiff],
+      broadEvidence: [broadEvidence],
+      unresolvedRegions: [{
+        id: "region-1",
+        location: { x: 1, y: 2, width: 3, height: 20 },
+        pixelCount: 60,
+        sourceComponentIds: ["component-1"],
+        relatedFindingIds: ["diff-final"],
+        relatedBroadEvidenceIds: ["broad-screen"],
+        relation: "inside_larger_finding",
+        reason: "deferred_broad_evidence_fragment",
+        artifactPaths: []
+      }]
+    });
+
+    const output = await writeUiDiffReport(report);
+    const written = UiDiffReportSchema.parse(JSON.parse(await fs.readFile(output.reportPath, "utf8")));
+    expect(written.broadEvidence).toEqual([]);
+    expect(written.reportParts?.map(part => part.role)).toContain("broad_evidence");
+
+    const hydrated = await hydrateReportParts(written, output.reportPath);
+    expect(hydrated.broadEvidence?.map(entry => entry.id)).toEqual(["broad-screen"]);
+    expect(hydrated.unresolvedRegions[0]).toMatchObject({
+      relatedFindingIds: ["diff-final"],
+      relatedBroadEvidenceIds: ["broad-screen"]
+    });
+  });
+
+  it("rejects dangling final and broad-evidence references", async () => {
+    const unresolved = {
+      id: "region-1",
+      location: { x: 1, y: 2, width: 3, height: 20 },
+      pixelCount: 60,
+      sourceComponentIds: ["component-1"],
+      relatedFindingIds: ["missing-final"],
+      relatedBroadEvidenceIds: ["missing-broad"],
+      relation: "nearby_larger_finding" as const,
+      reason: "not_classified" as const,
+      artifactPaths: []
+    };
+
+    await expect(writeUiDiffReport(makeReport({ unresolvedRegions: [unresolved] }))).rejects.toThrow(/dangling report reference/i);
+  });
+
+  it("rejects duplicate IDs inside final and broad-evidence namespaces", async () => {
+    const finding = {
+      id: "duplicate-id",
+      criterion: "geometry" as const,
+      severity: "medium" as const,
+      title: "Duplicate finding",
+      location: { x: 1, y: 2, width: 3, height: 4 },
+      evidence: ["Duplicate evidence."],
+      measurements: [],
+      artifactPaths: [],
+      reviewerStatus: "accepted" as const
+    };
+
+    await expect(writeUiDiffReport(makeReport({ diffs: [finding, finding] }))).rejects.toThrow(/duplicate final finding id/i);
+    await expect(writeUiDiffReport(makeReport({ broadEvidence: [finding, finding] }))).rejects.toThrow(/duplicate broad evidence id/i);
+  });
+
+  it("rejects dangling references introduced by a tampered report part", async () => {
+    const broadEvidence = {
+      id: "broad-screen",
+      criterion: "geometry" as const,
+      severity: "medium" as const,
+      title: "Screen-level displacement",
+      location: { x: 0, y: 0, width: 200, height: 400 },
+      evidence: ["Screen-level geometry differs."],
+      measurements: [],
+      artifactPaths: [],
+      reviewerStatus: "accepted" as const,
+      classificationSource: "vlm_reviewed" as const,
+      repairLocality: "broad" as const
+    };
+    const output = await writeUiDiffReport(makeReport({
+      broadEvidence: [broadEvidence],
+      unresolvedRegions: [{
+        id: "region-1",
+        location: { x: 1, y: 2, width: 3, height: 20 },
+        pixelCount: 60,
+        sourceComponentIds: ["component-1"],
+        relatedFindingIds: [],
+        relatedBroadEvidenceIds: ["broad-screen"],
+        relation: "nearby_larger_finding",
+        reason: "deferred_broad_evidence_fragment",
+        artifactPaths: []
+      }]
+    }));
+    const written = UiDiffReportSchema.parse(JSON.parse(await fs.readFile(output.reportPath, "utf8")));
+    const broadPart = written.reportParts?.find(part => part.role === "broad_evidence");
+    expect(broadPart).toBeDefined();
+    await fs.writeFile(path.resolve(path.dirname(output.reportPath), broadPart!.path), JSON.stringify({ broadEvidence: [] }), "utf8");
+
+    await expect(hydrateReportParts(written, output.reportPath)).rejects.toThrow(/dangling report reference/i);
+  });
+
+  it("hydrates legacy multipart reports that predate the broad-evidence namespace", async () => {
+    const legacyRegion = {
+      id: "region-legacy",
+      location: { x: 1, y: 2, width: 3, height: 20 },
+      pixelCount: 60,
+      sourceComponentIds: ["component-1"],
+      relatedFindingIds: ["legacy-broad-id"],
+      relation: "nearby_larger_finding" as const,
+      reason: "broad_vlm_evidence" as const,
+      artifactPaths: []
+    };
+    const legacy = makeReport({
+      unresolvedRegions: [],
+      reportParts: [{ role: "unresolved_regions", path: "parts/unresolved-regions.json" }]
+    });
+    const readFile = async () => Buffer.from(JSON.stringify({ unresolvedRegions: [legacyRegion] }));
+
+    await expect(hydrateReportParts(legacy, path.join(tmpDir, "report.json"), readFile)).resolves.toMatchObject({
+      unresolvedRegions: [expect.objectContaining({ relatedFindingIds: ["legacy-broad-id"] })]
+    });
+  });
+
   it("writes large report sections as relative report parts", async () => {
     const report = makeReport({
       usageSummary: {
@@ -198,6 +339,7 @@ describe("writeUiDiffReport", () => {
       "elements",
       "pairs",
       "diffs",
+      "broad_evidence",
       "unresolved_regions",
       "debug_summary",
       "usage_summary",

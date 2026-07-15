@@ -25,6 +25,7 @@ export interface CanonicalRegion {
   sourceComponentIds: string[];
   state: "unresolved" | "covered" | "recovered" | "noise";
   coveringFindingIds: string[];
+  relatedBroadEvidenceIds?: string[];
   artifactPaths: UiArtifact[];
   unresolvedDetail?: string;
   recoveryDeferredReason?: "deferred_broad_evidence_fragment";
@@ -157,12 +158,13 @@ export function markBroadVlmEvidence(ledger: RegionLedger, findings: DiffRecord[
   for (const region of ledger.regions) {
     if (region.state !== "unresolved") continue;
     const related = findings.filter(finding => overlapRatio(region.box, finding) >= 0.1).map(finding => finding.id).sort();
+    region.relatedBroadEvidenceIds = related;
     if (related.length === 0) continue;
-    const broadEvidence = `broad_vlm_evidence: ${related.join(",")}`;
-    region.unresolvedDetail = region.unresolvedDetail
-      ? `${region.unresolvedDetail}; ${broadEvidence}`
-      : broadEvidence;
-    region.coveringFindingIds = related;
+    if (!region.unresolvedDetail?.includes("broad_vlm_evidence")) {
+      region.unresolvedDetail = region.unresolvedDetail
+        ? `${region.unresolvedDetail}; broad_vlm_evidence`
+        : "broad_vlm_evidence";
+    }
   }
 }
 
@@ -198,7 +200,7 @@ export function unresolvedRegionsFromLedger(
           ? "deferred_broad_evidence_fragment"
         : fullDetail?.startsWith("unsupported_recovery_claim:")
             ? "unsupported_recovery_claim"
-          : fullDetail?.startsWith("broad_vlm_evidence:")
+          : fullDetail?.startsWith("broad_vlm_evidence")
             ? "broad_vlm_evidence"
             : reason;
       return {
@@ -207,7 +209,8 @@ export function unresolvedRegionsFromLedger(
         pixelCount: region.pixelCount,
         sourceComponentIds: region.sourceComponentIds,
         relatedFindingIds: region.coveringFindingIds,
-        relation: region.coveringFindingIds.length > 0 ? "nearby_larger_finding" : "none",
+        relatedBroadEvidenceIds: region.relatedBroadEvidenceIds ?? [],
+        relation: region.coveringFindingIds.length > 0 || (region.relatedBroadEvidenceIds?.length ?? 0) > 0 ? "nearby_larger_finding" : "none",
         reason: resolvedReason,
         ...(region.blockingRecoveryOutcome?.diagnostics !== undefined ? { diagnostics: region.blockingRecoveryOutcome.diagnostics } : {}),
         ...(detail ? { detail } : {}),

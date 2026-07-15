@@ -22,6 +22,7 @@ export const ElementsPartSchema = z.object({
 });
 export const PairsPartSchema = z.object({ pairs: z.array(ElementPairSchema) });
 export const DiffsPartSchema = z.object({ diffs: z.array(DiffRecordSchema) });
+export const BroadEvidencePartSchema = z.object({ broadEvidence: z.array(DiffRecordSchema) });
 export const UnresolvedRegionsPartSchema = z.object({ unresolvedRegions: z.array(UnresolvedRegionSchema) });
 export const DebugSummaryPartSchema = z.object({ debugSummary: RunDebugSummarySchema });
 export const UsageSummaryPartSchema = z.object({ usageSummary: UsageSummarySchema });
@@ -30,6 +31,7 @@ export const ScopeSummaryPartSchema = z.object({ scopeSummaries: z.array(ScopeDi
 type PartPayload = z.infer<typeof ElementsPartSchema>
   | z.infer<typeof PairsPartSchema>
   | z.infer<typeof DiffsPartSchema>
+  | z.infer<typeof BroadEvidencePartSchema>
   | z.infer<typeof UnresolvedRegionsPartSchema>
   | z.infer<typeof DebugSummaryPartSchema>
   | z.infer<typeof UsageSummaryPartSchema>
@@ -90,10 +92,12 @@ export async function writeReportPart<T extends PartPayload>(
 }
 
 export async function writeReportParts(report: UiDiffReport): Promise<ReportPart[]> {
+  assertReportReferenceIntegrity(report);
   const parts: ReportPart[] = [];
   parts.push(await writeReportPart(report.artifactRoot, "elements", "elements.json", { elements: report.elements }, ElementsPartSchema));
   parts.push(await writeReportPart(report.artifactRoot, "pairs", "pairs.json", { pairs: report.pairs }, PairsPartSchema));
   parts.push(await writeReportPart(report.artifactRoot, "diffs", "diffs.json", { diffs: report.diffs }, DiffsPartSchema));
+  parts.push(await writeReportPart(report.artifactRoot, "broad_evidence", "broad-evidence.json", { broadEvidence: report.broadEvidence ?? [] }, BroadEvidencePartSchema));
   parts.push(await writeReportPart(report.artifactRoot, "unresolved_regions", "unresolved-regions.json", { unresolvedRegions: report.unresolvedRegions }, UnresolvedRegionsPartSchema));
   if (report.debugSummary !== undefined) {
     parts.push(await writeReportPart(report.artifactRoot, "debug_summary", "debug-summary.json", { debugSummary: report.debugSummary }, DebugSummaryPartSchema));
@@ -114,6 +118,7 @@ export function slimReportForParts(report: UiDiffReport, reportParts: ReportPart
     elements: { expected: [], actual: [] },
     pairs: [],
     diffs: [],
+    broadEvidence: [],
     unresolvedRegions: [],
     debugSummary: undefined,
     usageSummary: undefined,
@@ -166,6 +171,12 @@ export async function hydrateReportParts(
     hydrated = { ...hydrated, diffs: payload.diffs };
   }
 
+  const broadEvidencePart = findPart("broad_evidence");
+  if (broadEvidencePart !== undefined && (report.broadEvidence?.length ?? 0) === 0) {
+    const payload = await readJsonPart(reportPath, broadEvidencePart, readFile, BroadEvidencePartSchema);
+    hydrated = { ...hydrated, broadEvidence: payload.broadEvidence };
+  }
+
   const unresolvedPart = findPart("unresolved_regions");
   if (unresolvedPart !== undefined && report.unresolvedRegions.length === 0) {
     const payload = await readJsonPart(reportPath, unresolvedPart, readFile, UnresolvedRegionsPartSchema);
@@ -200,5 +211,28 @@ export async function hydrateReportParts(
     };
   }
 
+  // Multipart reports written before the broad-evidence role used relatedFindingIds
+  // for broad evidence. Enforce the split namespace only for the new contract.
+  if (broadEvidencePart !== undefined) assertReportReferenceIntegrity(hydrated);
   return hydrated;
+}
+
+export function assertReportReferenceIntegrity(
+  report: Pick<UiDiffReport, "diffs" | "broadEvidence" | "unresolvedRegions">
+): void {
+  const finalIds = new Set(report.diffs.map(diff => diff.id));
+  const broadIds = new Set((report.broadEvidence ?? []).map(entry => entry.id));
+  if (finalIds.size !== report.diffs.length) throw new Error("Duplicate final finding ID in report");
+  if (broadIds.size !== (report.broadEvidence ?? []).length) throw new Error("Duplicate broad evidence ID in report");
+  for (const id of finalIds) {
+    if (broadIds.has(id)) throw new Error(`Dangling report reference namespace collision: ${id}`);
+  }
+  for (const region of report.unresolvedRegions) {
+    for (const id of region.relatedFindingIds) {
+      if (!finalIds.has(id)) throw new Error(`Dangling report reference from ${region.id} to final finding ${id}`);
+    }
+    for (const id of region.relatedBroadEvidenceIds ?? []) {
+      if (!broadIds.has(id)) throw new Error(`Dangling report reference from ${region.id} to broad evidence ${id}`);
+    }
+  }
 }

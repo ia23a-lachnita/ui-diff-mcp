@@ -1242,17 +1242,20 @@ describe("runUiDiff with mock sidecar and models (full mode)", () => {
     expect(buildDeterministicDiffs).toHaveBeenCalled();
     const raw = JSON.parse(await fs.readFile(result.reportPath, "utf8")) as {
       diffs: Array<{ classificationSource?: string }>;
-      unresolvedRegions: Array<{ reason: string; relatedFindingIds: string[] }>;
+      broadEvidence: Array<{ id: string }>;
+      unresolvedRegions: Array<{ reason: string; relatedFindingIds: string[]; relatedBroadEvidenceIds: string[] }>;
       visualClassificationStatus: string;
       runArtifacts: Array<{ role: string; path: string }>;
     };
     const report = await hydrateReportParts(raw as Parameters<typeof hydrateReportParts>[0], result.reportPath) as typeof raw;
 
     expect(report.diffs.some(diff => diff.classificationSource === "vlm_reviewed")).toBe(false);
+    expect(report.broadEvidence.map(entry => entry.id)).toEqual(["broad-vlm"]);
     expect(report.unresolvedRegions).toContainEqual(expect.objectContaining({
       reason: "not_classified",
-      detail: "not_classified; broad_vlm_evidence: broad-vlm",
-      relatedFindingIds: ["broad-vlm"]
+      detail: "not_classified; broad_vlm_evidence",
+      relatedFindingIds: [],
+      relatedBroadEvidenceIds: ["broad-vlm"]
     }));
     expect(report.visualClassificationStatus).toBe("incomplete");
     await expectFinalArtifactManifest(report as unknown as FinalArtifactReport);

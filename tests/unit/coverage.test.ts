@@ -302,7 +302,8 @@ describe("residual fragment classification", () => {
       pixelCount: 80,
       sourceComponentIds: ["component-0001"],
       recoveryDeferredReason: "deferred_broad_evidence_fragment",
-      coveringFindingIds: ["broad-screen-evidence"]
+      coveringFindingIds: [],
+      relatedBroadEvidenceIds: ["broad-screen-evidence"]
     });
     expect(unresolvedRegionsFromLedger(ledger, "not_classified")).toContainEqual(expect.objectContaining({
       reason: "deferred_broad_evidence_fragment",
