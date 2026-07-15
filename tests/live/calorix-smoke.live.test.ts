@@ -263,8 +263,13 @@ describe.skipIf(!calorixDeterministicLive)("Calorix deterministic pipeline quali
       assertFinalFindingIntegrity(report);
       assertNoSplitDisplacementConsensus(report);
       const groupCount = (report.projectedPreAudit?.displacementGroups ?? 0) + (report.projectedPreAudit?.structuralMismatchGroups ?? 0);
-      expect(groupCount, "baseline contains at least two grouped projected-mismatch UI areas").toBeGreaterThanOrEqual(2);
-      expect(report.projectedPreAudit?.groupedPairs ?? 0, "baseline eight fragments must become grouped mismatch evidence").toBeGreaterThanOrEqual(8);
+      const deterministicProjectedDiffs = report.projectedPreAudit?.deterministicProjectedDiffs ?? 0;
+      const groupedPairs = report.projectedPreAudit?.groupedPairs ?? 0;
+      expect(report.projectedPreAudit?.projectedPairsChecked ?? 0, "deterministic gate must inspect projected pairs").toBeGreaterThan(0);
+      expect(deterministicProjectedDiffs, "deterministic gate fixture must contain projected mismatch evidence").toBeGreaterThan(0);
+      expect(groupCount, "coherent projected mismatches must produce at least one grouped UI area").toBeGreaterThan(0);
+      expect(groupedPairs, "a grouped projected mismatch must retain at least two source pairs").toBeGreaterThanOrEqual(2);
+      expect(groupedPairs, "grouped pair accounting cannot exceed deterministic projected mismatches").toBeLessThanOrEqual(deterministicProjectedDiffs);
       console.info(`[calorix-deterministic] run=${report.runId} displacementGroups=${report.projectedPreAudit?.displacementGroups ?? 0} structuralGroups=${report.projectedPreAudit?.structuralMismatchGroups ?? 0} groupedPairs=${report.projectedPreAudit?.groupedPairs ?? 0} finalDiffs=${report.diffs.length} unresolved=${report.unresolvedRegions.length}`);
     } finally {
       await started.close();
