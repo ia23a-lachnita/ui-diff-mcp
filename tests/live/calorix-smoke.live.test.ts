@@ -11,6 +11,7 @@ import {
 } from "../helpers/calorix-device.js";
 import { prepareCalorixLiveGate, type PreparedCalorixLiveGate } from "../helpers/calorix-live-gate.js";
 import { startUiDiffMcpClient, waitForUiDiffRun } from "../helpers/mcp-client.js";
+import { collectReleaseIntegrityIssues } from "../helpers/release-integrity.js";
 
 const calorixLive = process.env["RUN_CALORIX_UI_DIFF_LIVE"] === "1";
 const calorixFullLive = process.env["RUN_CALORIX_FULL_LIVE"] === "1";
@@ -27,6 +28,24 @@ type UiDiffRunStatusOutput = {
 async function readHydratedReport(reportPath: string): Promise<UiDiffReport> {
   const rawReport = UiDiffReportSchema.parse(JSON.parse(await fs.readFile(reportPath, "utf8")));
   return hydrateReportParts(rawReport, reportPath);
+}
+
+async function collectReportReleaseIntegrityIssues(report: UiDiffReport): Promise<string[]> {
+  const legendArtifact = report.runArtifacts.find(artifact => artifact.role === "final_diff_groups_legend");
+  expect(legendArtifact, "release integrity requires final_diff_groups_legend").toBeDefined();
+  if (legendArtifact === undefined) return ["missing_final_diff_groups_legend"];
+  const legend = JSON.parse(await fs.readFile(legendArtifact.path, "utf8")) as {
+    groups: Array<{ id: string; diffIds: string[] }>;
+  };
+  return collectReleaseIntegrityIssues({
+    auditLimited: report.auditScope?.auditLimited ?? false,
+    diffs: report.diffs,
+    unresolvedRegions: report.unresolvedRegions,
+    recoveryStatusCounts: report.recoverySummary?.statusCounts ?? {},
+    finalDiffCount: report.diffSummary?.finalDiffCount ?? report.diffs.length,
+    finalGroupCount: report.diffSummary?.finalGroupCount,
+    groups: legend.groups
+  });
 }
 
 async function resolveCalorixGateImages(gate: PreparedCalorixLiveGate): Promise<{ expectedImagePath: string; actualImagePath: string; projectRoot: string; inputProvenance: InputProvenanceRequest }> {
@@ -440,6 +459,12 @@ describe.skipIf(!calorixFullLive)("verify:calorix-full-live unbounded all-target
         "all accepted diffs must have classificationSource"
       ).toBe(0);
       assertFinalFindingIntegrity(report);
+      const fullIntegrityIssues = (await collectReportReleaseIntegrityIssues(report))
+        .filter(issue => !issue.startsWith("unresolved_regions:"));
+      expect(
+        fullIntegrityIssues,
+        `unbounded diagnostic report has release-integrity defects: ${fullIntegrityIssues.join("; ") || "none"}`
+      ).toEqual([]);
 
       // Locator must have found elements with adequate coverage — weak or failed is a gate failure
       expect(report.locatorCoverageStatus, "locator coverage must not be weak or failed").not.toMatch(/^(failed|weak)$/);
@@ -673,6 +698,11 @@ describe.skipIf(!calorixReleaseLive)("Calorix release sign-off gate", () => {
         "release gate must not pass with accepted diffs missing classificationSource"
       ).toBe(0);
       assertFinalFindingIntegrity(report);
+      const releaseIntegrityIssues = await collectReportReleaseIntegrityIssues(report);
+      expect(
+        releaseIntegrityIssues,
+        `release gate integrity failures: ${releaseIntegrityIssues.join("; ") || "none"}`
+      ).toEqual([]);
 
       // If viewport is mismatch, source crops must preserve original pixels and all accepted
       // diffs must be VLM-reviewed/recovered or explicitly labeled as projected-location evidence.

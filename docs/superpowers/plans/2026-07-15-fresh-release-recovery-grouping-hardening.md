@@ -54,12 +54,12 @@
 
 ### Task 5: Release Gate / Report Truth
 
-- [ ] Assert uncapped runs have zero `deferred_broad_evidence_fragment` statuses.
-- [ ] Assert group references are valid; `finalGroupCount <= finalDiffCount` and exact equivalent-box fixtures reduce groups.
-- [ ] Assert unsupported exact claims cannot reach accepted output.
-- [ ] Assert unresolved remains a hard blocker.
-- [ ] Do not impose an arbitrary reduction ratio for every UI.
-- [ ] Files likely touched: `tests/live/calorix-smoke.live.test.ts`, `src/report/residual-fragments.ts`, `src/pipeline/run-ui-diff.ts`, `src/diff/scope-summary.ts`, `src/schemas/core.ts` (or equivalent).
+- [x] Assert uncapped runs have zero `deferred_broad_evidence_fragment` statuses.
+- [x] Assert group references are valid; `finalGroupCount <= finalDiffCount` and exact equivalent-box fixtures reduce groups.
+- [x] Assert unsupported exact claims cannot reach accepted output.
+- [x] Assert unresolved remains a hard blocker.
+- [x] Do not impose an arbitrary reduction ratio for every UI.
+- [x] Files likely touched: `tests/live/calorix-smoke.live.test.ts`, `tests/helpers/release-integrity.ts`, `tests/unit/release-integrity.test.ts`.
 
 ### Task 6: Verification
 
