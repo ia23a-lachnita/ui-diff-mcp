@@ -456,6 +456,7 @@ export const UnresolvedRegionSchema = z.object({
     "recovery_budget_exhausted",
     "evidence_crop_rejected",
     "broad_vlm_evidence",
+    "deferred_broad_evidence_fragment",
     "interrupted",
     "unsupported_recovery_claim"
   ]),

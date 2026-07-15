@@ -1258,6 +1258,54 @@ describe("runUiDiff with mock sidecar and models (full mode)", () => {
     await expectFinalArtifactManifest(report as unknown as FinalArtifactReport);
   });
 
+  it("defers a thin broad-evidence fragment before target recovery and accounts for it", async () => {
+    const expected = await writeSolidPng(tmpDir, "broad-thin-expected.png", 200, 400, 255, 255, 255);
+    const actual = await writeRectPng(tmpDir, "broad-thin-actual.png", 200, 400, 255, 255, 255, 100, 100, 2, 80, 0, 0, 0);
+    sidecar = await startMockSidecar({ imageWidth: 200, imageHeight: 400 });
+    vi.stubEnv("LOCATEANYTHING_SIDECAR_URL", sidecar.url);
+    vi.stubEnv("OPENROUTER_API_KEY", "sk-test-broad-thin");
+    vi.stubGlobal("fetch", makeMockFetch(Array.from({ length: 100 }, () => ({
+      criterion: "geometry" as const,
+      hasDiff: false,
+      reviewerDecision: "accepted" as const
+    })), { sidecarImageWidth: 200, sidecarImageHeight: 400 }));
+    vi.mocked(buildDeterministicDiffs).mockImplementation(() => [{
+      id: "broad-thin-vlm",
+      criterion: "geometry",
+      severity: "high",
+      title: "Broad screen displacement",
+      location: { x: 0, y: 0, width: 200, height: 400 },
+      evidence: ["screen-level geometry differs"],
+      measurements: [],
+      artifactPaths: [],
+      reviewerStatus: "accepted",
+      classificationSource: "vlm_reviewed"
+    }]);
+    const probeOverride = async () => [
+      { role: "auditor", provider: "openrouter", model: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free", status: "pass" as const, checkedAt: new Date().toISOString(), schemaValid: true, contentAccurate: true, maxImagesSupported: 5 },
+      { role: "reviewer", provider: "openrouter", model: "nex-agi/nex-n2-pro:free", status: "pass" as const, checkedAt: new Date().toISOString(), schemaValid: true, contentAccurate: true, maxImagesSupported: 5 },
+      { role: "target_recovery", provider: "openrouter", model: "nex-agi/nex-n2-pro:free", status: "pass" as const, checkedAt: new Date().toISOString(), schemaValid: true, contentAccurate: true, maxImagesSupported: 5 }
+    ];
+
+    const result = await runUiDiff({ expectedImagePath: expected, actualImagePath: actual, projectRoot: tmpDir, mode: "full" }, { probeOverride });
+    const raw = JSON.parse(await fs.readFile(result.reportPath, "utf8")) as {
+      unresolvedRegions: Array<{ reason: string; pixelCount: number }>;
+      recoverySummary?: { totalUncoveredComponents: number; eligibleComponents: number; skippedComponents: number; unclassifiedCount: number; statusCounts: Record<string, number> };
+    };
+    const report = await hydrateReportParts(raw as Parameters<typeof hydrateReportParts>[0], result.reportPath) as typeof raw;
+    expect(report.recoverySummary).toMatchObject({
+      totalUncoveredComponents: 1,
+      eligibleComponents: 0,
+      skippedComponents: 1,
+      unclassifiedCount: 1,
+      statusCounts: { deferred_broad_evidence_fragment: 1 }
+    });
+    expect(report.unresolvedRegions).toContainEqual(expect.objectContaining({
+      reason: "deferred_broad_evidence_fragment",
+      pixelCount: 160
+    }));
+  });
+
   it("completes when a broad raw finding is fully superseded by local coverage", async () => {
     const expected = await writeSolidPng(tmpDir, "broad-superseded-expected.png", 200, 400, 255, 255, 255);
     const actual = await writeRectPng(tmpDir, "broad-superseded-actual.png", 200, 400, 255, 255, 255, 20, 50, 160, 44, 0, 0, 0);

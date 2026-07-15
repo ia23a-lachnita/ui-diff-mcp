@@ -18,6 +18,12 @@ export interface ResidualFragmentDecision {
   detail: string;
 }
 
+export interface BroadEvidenceFragmentDeferral {
+  regionId: string;
+  findingIds: string[];
+  detail: string;
+}
+
 const DETERMINISTIC_SOURCES = new Set<DiffRecord["classificationSource"]>([
   "deterministic_projected_mismatch",
   "deterministic_geometry",
@@ -106,6 +112,54 @@ export function classifyResidualFragments(
   }
 
   return decisions;
+}
+
+export function classifyBroadEvidenceFragmentDeferrals(
+  regions: CanonicalRegion[],
+  broadFindings: DiffRecord[],
+  options: ResidualFragmentOptions
+): BroadEvidenceFragmentDeferral[] {
+  const deferrals: BroadEvidenceFragmentDeferral[] = [];
+
+  for (const region of regions) {
+    if (region.state !== "unresolved" || !residualEligible(region, options)) continue;
+    const regionArea = Math.max(1, area(region.box));
+    const related = broadFindings
+      .filter(finding => finding.classificationSource === "vlm_reviewed" && finding.reviewerStatus === "accepted")
+      .filter(finding => {
+        const relation = relationToFinding(region, finding, options);
+        const findingArea = Math.max(...(finding.coverageLocations ?? [finding.location]).map(area));
+        return relation !== undefined && findingArea >= regionArea * options.minAreaMultiplier;
+      })
+      .map(finding => finding.id)
+      .sort();
+    if (related.length === 0) continue;
+    deferrals.push({
+      regionId: region.id,
+      findingIds: related,
+      detail: `deferred_broad_evidence_fragment: ${related.join(",")}`
+    });
+  }
+
+  return deferrals;
+}
+
+export function applyBroadEvidenceFragmentDeferrals(
+  ledger: RegionLedger,
+  deferrals: BroadEvidenceFragmentDeferral[]
+): void {
+  const byRegion = new Map(ledger.regions.map(region => [region.id, region]));
+  for (const deferral of deferrals) {
+    const region = byRegion.get(deferral.regionId);
+    if (!region || region.state !== "unresolved") continue;
+    region.recoveryDeferredReason = "deferred_broad_evidence_fragment";
+    region.coveringFindingIds = [...new Set([...region.coveringFindingIds, ...deferral.findingIds])].sort();
+    if (!region.unresolvedDetail?.includes("deferred_broad_evidence_fragment")) {
+      region.unresolvedDetail = region.unresolvedDetail
+        ? `${deferral.detail}; ${region.unresolvedDetail}`
+        : deferral.detail;
+    }
+  }
 }
 
 export function applyResidualFragmentDecisions(

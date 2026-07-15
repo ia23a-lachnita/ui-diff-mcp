@@ -27,6 +27,7 @@ export interface CanonicalRegion {
   coveringFindingIds: string[];
   artifactPaths: UiArtifact[];
   unresolvedDetail?: string;
+  recoveryDeferredReason?: "deferred_broad_evidence_fragment";
   blockingRecoveryOutcome?: RecoveryRegionOutcome;
   supersessionDetail?: SupersessionDetail;
 }
@@ -193,6 +194,8 @@ export function unresolvedRegionsFromLedger(
       const detail = fullDetail ? emittedUnresolvedDetail(fullDetail) : undefined;
       const resolvedReason = fullDetail?.startsWith("evidence_crop_rejected:")
         ? "evidence_crop_rejected"
+        : region.recoveryDeferredReason === "deferred_broad_evidence_fragment"
+          ? "deferred_broad_evidence_fragment"
         : fullDetail?.startsWith("unsupported_recovery_claim:")
             ? "unsupported_recovery_claim"
           : fullDetail?.startsWith("broad_vlm_evidence:")

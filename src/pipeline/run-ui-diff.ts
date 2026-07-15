@@ -9,7 +9,7 @@ import { summarizeGeometryDiagnostics } from "../images/comparison-geometry.js";
 import { computeViewportCompatibility } from "../images/viewport.js";
 import { annotateRecoveryTraceSupersessions, buildRegionLedger, applyFindingCoverage, applyRecoveryOutcomes, markBroadVlmEvidence, unresolvedRegionsFromLedger, type RegionLedger } from "../report/region-ledger.js";
 import { finalizeFindings } from "../report/finding-consolidation.js";
-import { applyResidualFragmentDecisions, classifyResidualFragments } from "../report/residual-fragments.js";
+import { applyBroadEvidenceFragmentDeferrals, applyResidualFragmentDecisions, classifyBroadEvidenceFragmentDeferrals, classifyResidualFragments, type ResidualFragmentOptions } from "../report/residual-fragments.js";
 import { buildFindingGroups, writeRegionContextOverlays } from "../report/context-overlays.js";
 import { writeLocatorOverlays } from "../report/locator-overlays.js";
 import { writeOverlay, writeJsonArtifact } from "../images/artifacts.js";
@@ -377,13 +377,15 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     { role: "directional_overlay", path: directionalOverlayPath }
   ];
 
+  const residualFragmentOptions: ResidualFragmentOptions = {
+    maxDistancePx: 24,
+    maxResidualPixels: 120,
+    maxThinSidePx: 4,
+    minAreaMultiplier: 8
+  };
+
   function applyResidualSuppression(ledger: RegionLedger, findings: DiffRecord[]): void {
-    const decisions = classifyResidualFragments(ledger.regions, findings, {
-      maxDistancePx: 24,
-      maxResidualPixels: 120,
-      maxThinSidePx: 4,
-      minAreaMultiplier: 8
-    });
+    const decisions = classifyResidualFragments(ledger.regions, findings, residualFragmentOptions);
     applyResidualFragmentDecisions(ledger, decisions);
   }
 
@@ -1116,6 +1118,10 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
         });
         markBroadVlmEvidence(regionLedger, broadVlmEvidence);
         applyResidualSuppression(regionLedger, preRecoveryCoverage);
+        applyBroadEvidenceFragmentDeferrals(
+          regionLedger,
+          classifyBroadEvidenceFragmentDeferrals(regionLedger.regions, broadVlmEvidence, residualFragmentOptions)
+        );
         if (broadVlmEvidence.length > 0) visualClassificationStatus = "incomplete";
         debugTrace.coverage = regionLedger.coverageTrace;
         const allUncoveredComponents = regionLedger.regions
@@ -1125,7 +1131,11 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
           width: expectedImg.width,
           height: expectedImg.height
         });
-        const uncoveredComponents = scopedUncovered.components;
+        const deferredRegionIds = new Set(regionLedger.regions
+          .filter(region => region.recoveryDeferredReason === "deferred_broad_evidence_fragment")
+          .map(region => region.id));
+        const uncoveredComponents = scopedUncovered.components.filter(component => !deferredRegionIds.has(component.id));
+        const deferredComponentCount = scopedUncovered.components.length - uncoveredComponents.length;
         if (scopedUncovered.skippedOutsideScope > 0) {
           warnings.push(`Target recovery skipped ${scopedUncovered.skippedOutsideScope} uncovered component(s) outside diffScope.`);
         }
@@ -1133,10 +1143,10 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
         const postClusterUncoveredComponents = allUncoveredComponents.length;
         if (diffScope.kind === "screen") {
           recoverySummary = {
-            totalUncoveredComponents: uncoveredComponents.length,
+            totalUncoveredComponents: scopedUncovered.components.length,
             eligibleComponents: 0,
             completedComponents: 0,
-            remainingComponents: uncoveredComponents.length,
+            remainingComponents: scopedUncovered.components.length,
             batchCount: 0,
             attemptedComponents: 0,
             skippedComponents: allUncoveredComponents.length,
@@ -1149,6 +1159,28 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
           };
           visualClassificationStatus = allUncoveredComponents.length > 0 ? "incomplete" : "complete";
           await checkpoint("target_recovery", "skipped", "not_applicable", "screen_scope_bypasses_target_recovery", pairs, modelHealth);
+        } else if (uncoveredComponents.length === 0 && deferredComponentCount > 0) {
+          recoverySummary = {
+            totalUncoveredComponents: scopedUncovered.components.length,
+            eligibleComponents: 0,
+            completedComponents: 0,
+            remainingComponents: deferredComponentCount + scopedUncovered.skippedOutsideScope,
+            batchCount: 0,
+            attemptedComponents: 0,
+            skippedComponents: deferredComponentCount + scopedUncovered.skippedOutsideScope,
+            recoveredDiffs: 0,
+            unclassifiedCount: deferredComponentCount + scopedUncovered.skippedOutsideScope,
+            stoppedReason: "none",
+            preClusterUncoveredComponents,
+            postClusterUncoveredComponents,
+            statusCounts: {
+              deferred_broad_evidence_fragment: deferredComponentCount,
+              ...(scopedUncovered.skippedOutsideScope > 0 ? { skipped_scope_outside_region: scopedUncovered.skippedOutsideScope } : {})
+            }
+          };
+          visualClassificationStatus = "incomplete";
+          const recoveryStageOutcome = deriveRecoveryStageOutcome(recoverySummary);
+          await checkpoint("target_recovery", "complete", recoveryStageOutcome.outcome, recoveryStageOutcome.detail, pairs, modelHealth);
         } else if (uncoveredComponents.length > 0 && !recoveryCaller) {
           const prepared = await prepareRecoveryRegionArtifacts(uncoveredComponents, {
             expectedRgba: { data: expectedImg.rgba, width: expectedImg.width, height: expectedImg.height },
@@ -1164,19 +1196,20 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
           warnings.push("Target recovery skipped: no passing target_recovery route available for current mode. Uncovered pixel regions will not be classified.");
           visualClassificationStatus = "incomplete";
           recoverySummary = {
-            totalUncoveredComponents: uncoveredComponents.length,
+            totalUncoveredComponents: scopedUncovered.components.length,
             eligibleComponents: uncoveredComponents.length,
             completedComponents: 0,
-            remainingComponents: uncoveredComponents.length + scopedUncovered.skippedOutsideScope,
+            remainingComponents: scopedUncovered.components.length + scopedUncovered.skippedOutsideScope,
             batchCount: 0,
             attemptedComponents: 0,
-            skippedComponents: uncoveredComponents.length + scopedUncovered.skippedOutsideScope,
+            skippedComponents: scopedUncovered.components.length + scopedUncovered.skippedOutsideScope,
             recoveredDiffs: 0,
-            unclassifiedCount: uncoveredComponents.length + scopedUncovered.skippedOutsideScope,
+            unclassifiedCount: scopedUncovered.components.length + scopedUncovered.skippedOutsideScope,
             stoppedReason: "caller_unavailable",
             preClusterUncoveredComponents,
             postClusterUncoveredComponents,
             statusCounts: {
+              ...(deferredComponentCount > 0 ? { deferred_broad_evidence_fragment: deferredComponentCount } : {}),
               ...(scopedUncovered.skippedOutsideScope > 0 ? { skipped_scope_outside_region: scopedUncovered.skippedOutsideScope } : {})
             }
           };
@@ -1224,19 +1257,23 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
           debugTrace.coverage = regionLedger.coverageTrace;
           recoveryCursor = recoveryResult.cursor;
           recoverySummary = {
-            totalUncoveredComponents: uncoveredComponents.length,
+            totalUncoveredComponents: scopedUncovered.components.length,
             eligibleComponents: recoveryResult.eligibleComponents,
             completedComponents: recoveryResult.completedComponents,
-            remainingComponents: recoveryResult.remainingComponents,
+            remainingComponents: recoveryResult.remainingComponents + deferredComponentCount + scopedUncovered.skippedOutsideScope,
             batchCount: recoveryResult.batchCount,
             attemptedComponents: recoveryResult.attemptedComponents,
-            skippedComponents: recoveryResult.skippedComponents,
+            skippedComponents: recoveryResult.skippedComponents + deferredComponentCount + scopedUncovered.skippedOutsideScope,
             recoveredDiffs: activeRecovered.length,
-            unclassifiedCount: recoveryResult.unclassifiedCount,
+            unclassifiedCount: recoveryResult.unclassifiedCount + deferredComponentCount + scopedUncovered.skippedOutsideScope,
             stoppedReason: recoveryResult.stoppedReason,
             preClusterUncoveredComponents,
             postClusterUncoveredComponents,
-            statusCounts: recoveryResult.statusCounts
+            statusCounts: {
+              ...recoveryResult.statusCounts,
+              ...(deferredComponentCount > 0 ? { deferred_broad_evidence_fragment: deferredComponentCount } : {}),
+              ...(scopedUncovered.skippedOutsideScope > 0 ? { skipped_scope_outside_region: scopedUncovered.skippedOutsideScope } : {})
+            }
           };
           if (recoveryResult.stoppedReason !== "none" || recoveryResult.unclassifiedCount > 0) {
             visualClassificationStatus = "incomplete";

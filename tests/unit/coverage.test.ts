@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { findUncoveredComponents, assignDiffComponentsToRecords, traceCoverageDecisions } from "../../src/report/coverage.js";
 import { clusterUncoveredComponents } from "../../src/report/component-clustering.js";
 import { buildRegionLedger, unresolvedRegionsFromLedger } from "../../src/report/region-ledger.js";
-import { applyResidualFragmentDecisions, classifyResidualFragments } from "../../src/report/residual-fragments.js";
+import { applyBroadEvidenceFragmentDeferrals, applyResidualFragmentDecisions, classifyBroadEvidenceFragmentDeferrals, classifyResidualFragments } from "../../src/report/residual-fragments.js";
 import { UnresolvedRegionsPartSchema } from "../../src/report/report-parts.js";
 import type { PixelComponent } from "../../src/signals/pixel-diff.js";
 import type { DiffRecord } from "../../src/schemas/core.js";
@@ -272,6 +272,68 @@ describe("unresolvedRegionsFromLedger", () => {
 });
 
 describe("residual fragment classification", () => {
+  it("defers a thin fragment supported only by broad evidence without hiding its pixels", () => {
+    const ledger = buildRegionLedger([makeComponent(544, 2241, 3, 28, 80)], [], {
+      minPixelCount: 50,
+      maxGapPx: 12,
+      maxClusterAreaRatio: 0.5,
+      imageWidth: 1200,
+      imageHeight: 2600
+    });
+    const broadFinding = {
+      ...makeDiff(0, 0, 1200, 2600),
+      id: "broad-screen-evidence",
+      classificationSource: "vlm_reviewed" as const,
+      reviewerStatus: "accepted" as const
+    };
+    const options = {
+      maxDistancePx: 24,
+      maxResidualPixels: 120,
+      maxThinSidePx: 4,
+      minAreaMultiplier: 8
+    };
+
+    const decisions = classifyBroadEvidenceFragmentDeferrals(ledger.regions, [broadFinding], options);
+    applyBroadEvidenceFragmentDeferrals(ledger, decisions);
+
+    expect(decisions).toHaveLength(1);
+    expect(ledger.regions[0]).toMatchObject({
+      state: "unresolved",
+      pixelCount: 80,
+      sourceComponentIds: ["component-0001"],
+      recoveryDeferredReason: "deferred_broad_evidence_fragment",
+      coveringFindingIds: ["broad-screen-evidence"]
+    });
+    expect(unresolvedRegionsFromLedger(ledger, "not_classified")).toContainEqual(expect.objectContaining({
+      reason: "deferred_broad_evidence_fragment",
+      pixelCount: 80,
+      sourceComponentIds: ["component-0001"]
+    }));
+  });
+
+  it("does not defer a substantial residual region merely because broad evidence overlaps it", () => {
+    const ledger = buildRegionLedger([makeComponent(100, 100, 80, 60, 1000)], [], {
+      minPixelCount: 50,
+      maxGapPx: 12,
+      maxClusterAreaRatio: 0.5,
+      imageWidth: 1200,
+      imageHeight: 2600
+    });
+    const broadFinding = {
+      ...makeDiff(0, 0, 1200, 2600),
+      id: "broad-screen-evidence",
+      classificationSource: "vlm_reviewed" as const,
+      reviewerStatus: "accepted" as const
+    };
+
+    expect(classifyBroadEvidenceFragmentDeferrals(ledger.regions, [broadFinding], {
+      maxDistancePx: 24,
+      maxResidualPixels: 120,
+      maxThinSidePx: 4,
+      minAreaMultiplier: 8
+    })).toEqual([]);
+  });
+
   it("selects equal-area residual candidates by stable ID under permutations", () => {
     const ledger = buildRegionLedger([makeComponent(10, 10, 2, 20, 40)], [], {
       minPixelCount: 1,
