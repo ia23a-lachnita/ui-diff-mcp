@@ -663,6 +663,7 @@ export async function runTargetRecovery(
     let activeCandidate = {
       criterion: vlmResponse.criterion,
       label: vlmResponse.label,
+      severity: vlmResponse.severity ?? "medium",
       title: candidateTitle,
       evidence: candidateEvidence,
       measurements: candidateMeasurements,
@@ -939,58 +940,6 @@ export async function runTargetRecovery(
           continue;
         }
 
-        // Enforce severity continuity: repair must match original severity
-        const canonicalOriginalSeverity = vlmResponse.severity ?? "medium";
-        const repairedSeverity = repairResponse.severity ?? "medium";
-        if (repairedSeverity !== canonicalOriginalSeverity) {
-          countStatus("repair_severity_change");
-          const repairedTitle = `${repairResponse.criterion} in recovered region: ${repairResponse.label}`.slice(0, 200);
-          const repairedEvidence = repairResponse.evidence.slice(0, 10).map(e => e.slice(0, 200));
-          trace.push({
-            ...baseTrace,
-            status: "repair_severity_change",
-            model: componentRecoveryModel,
-            provider: componentRecoveryProvider,
-            repairModel: repairRes.model,
-            repairProvider: repairRes.provider,
-            recoveryDurationMs,
-            repairDurationMs,
-            criterion: vlmResponse.criterion,
-            repairAttempted: true,
-            originalCandidateTitle: candidateTitle,
-            originalCandidateEvidence: candidateEvidence,
-            originalCandidateMeasurements: candidateMeasurements,
-            rawModelProposedMeasurements: baseMeasurements,
-            originalCandidateRawMeasurements: baseMeasurements,
-            repairedCandidateRawMeasurements: repairedBaseMeasurements,
-            ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {}),
-            repairedCandidateTitle: repairedTitle,
-            repairedCandidateEvidence: repairedEvidence
-          });
-          regionOutcomes.push({
-            regionId: componentId,
-            state: "unresolved",
-            reason: "repair_severity_change",
-            artifactPaths: artifacts,
-            repairAttempted: true,
-            repairModel: repairRes.model,
-            repairProvider: repairRes.provider,
-            repairDurationMs,
-            originalCandidateTitle: candidateTitle,
-            originalCandidateEvidence: candidateEvidence,
-            originalCandidateMeasurements: candidateMeasurements,
-            rawModelProposedMeasurements: baseMeasurements,
-            originalCandidateRawMeasurements: baseMeasurements,
-            repairedCandidateRawMeasurements: repairedBaseMeasurements,
-            provider: componentRecoveryProvider,
-            ...(initialValidation.diagnostics !== undefined ? { originalCandidateDiagnostics: initialValidation.diagnostics } : {}),
-            repairedCandidateTitle: repairedTitle,
-            repairedCandidateEvidence: repairedEvidence
-          });
-          unclassifiedCount++;
-          continue;
-        }
-
         // Build repaired candidate and validate
         const repairedTitle = `${repairResponse.criterion} in recovered region: ${repairResponse.label}`.slice(0, 200);
         const repairedEvidence = repairResponse.evidence.slice(0, 10).map(e => e.slice(0, 200));
@@ -1060,6 +1009,7 @@ export async function runTargetRecovery(
         activeCandidate = {
           criterion: repairResponse.criterion,
           label: repairResponse.label,
+          severity: repairResponse.severity ?? "medium",
           title: repairedTitle,
           evidence: repairedEvidence,
           measurements: repairedMeasurements,
@@ -1149,6 +1099,8 @@ export async function runTargetRecovery(
           repairModel: activeCandidate.repairModel,
           repairProvider: activeCandidate.repairProvider,
           repairDurationMs: activeCandidate.repairDurationMs,
+          originalCandidateSeverity: vlmResponse.severity ?? "medium",
+          repairedCandidateSeverity: activeCandidate.severity,
           originalCandidateTitle: candidateTitle,
           originalCandidateEvidence: candidateEvidence,
           originalCandidateMeasurements: candidateMeasurements,
@@ -1168,6 +1120,8 @@ export async function runTargetRecovery(
           repairModel: activeCandidate.repairModel,
           repairProvider: activeCandidate.repairProvider,
           repairDurationMs: activeCandidate.repairDurationMs,
+          originalCandidateSeverity: vlmResponse.severity ?? "medium",
+          repairedCandidateSeverity: activeCandidate.severity,
           originalCandidateTitle: candidateTitle,
           originalCandidateEvidence: candidateEvidence,
           originalCandidateMeasurements: candidateMeasurements,
@@ -1404,6 +1358,8 @@ export async function runTargetRecovery(
           repairModel: activeCandidate.repairModel,
           repairProvider: activeCandidate.repairProvider,
           repairDurationMs: activeCandidate.repairDurationMs,
+          originalCandidateSeverity: vlmResponse.severity ?? "medium",
+          repairedCandidateSeverity: activeCandidate.severity,
           originalCandidateTitle: candidateTitle,
           originalCandidateEvidence: candidateEvidence,
           originalCandidateMeasurements: candidateMeasurements,
@@ -1436,6 +1392,8 @@ export async function runTargetRecovery(
           repairModel: activeCandidate.repairModel,
           repairProvider: activeCandidate.repairProvider,
           repairDurationMs: activeCandidate.repairDurationMs,
+          originalCandidateSeverity: vlmResponse.severity ?? "medium",
+          repairedCandidateSeverity: activeCandidate.severity,
           originalCandidateTitle: candidateTitle,
           originalCandidateEvidence: candidateEvidence,
           originalCandidateMeasurements: candidateMeasurements,
@@ -1452,7 +1410,7 @@ export async function runTargetRecovery(
     const record: DiffRecord = {
       id: diffId,
       criterion: activeCandidate.criterion,
-      severity: vlmResponse.severity ?? "medium",
+      severity: activeCandidate.severity,
       title: activeCandidate.title,
       location: recoveredBox,
       evidence: activeCandidate.evidence,
@@ -1608,6 +1566,8 @@ export async function runTargetRecovery(
         repairModel: activeCandidate.repairModel,
         repairProvider: activeCandidate.repairProvider,
         repairDurationMs: activeCandidate.repairDurationMs,
+        originalCandidateSeverity: vlmResponse.severity ?? "medium",
+        repairedCandidateSeverity: activeCandidate.severity,
         originalCandidateTitle: candidateTitle,
         originalCandidateEvidence: candidateEvidence,
         originalCandidateMeasurements: candidateMeasurements,
@@ -1641,6 +1601,8 @@ export async function runTargetRecovery(
         repairModel: activeCandidate.repairModel,
         repairProvider: activeCandidate.repairProvider,
         repairDurationMs: activeCandidate.repairDurationMs,
+        originalCandidateSeverity: vlmResponse.severity ?? "medium",
+        repairedCandidateSeverity: activeCandidate.severity,
         originalCandidateTitle: candidateTitle,
         originalCandidateEvidence: candidateEvidence,
         originalCandidateMeasurements: candidateMeasurements,

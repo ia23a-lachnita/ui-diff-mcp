@@ -403,7 +403,7 @@ describe("recovery-corrections: model measurements untrusted", () => {
 // ── P1: Severity continuity ──
 
 describe("recovery-corrections: severity continuity", () => {
-  it("repair with changed severity remains unresolved", async () => {
+  it("repair with changed severity proceeds to the independent reviewer and uses repaired severity", async () => {
     const recoveryCaller: VisionJsonCaller = vi.fn()
       .mockResolvedValueOnce({
         parsed: {
@@ -432,9 +432,19 @@ describe("recovery-corrections: severity continuity", () => {
     const reviewerCaller: VisionJsonCaller = vi.fn().mockResolvedValue(acceptedReviewerResponse());
     const ctx = makeCtx({ recoveryCaller, reviewerCaller });
     const result = await runTargetRecovery([invalidComponent], ctx, unlimitedBudget);
-    expect(result.recovered).toHaveLength(0);
-    expect(result.statusCounts["repair_severity_change"]).toBe(1);
-    expect(reviewerCaller).not.toHaveBeenCalled();
+    expect(result.recovered).toHaveLength(1);
+    expect(result.recovered[0]?.severity).toBe("low");
+    expect(result.statusCounts["repair_severity_change"]).toBeUndefined();
+    expect(result.statusCounts["recovery_accepted"]).toBe(1);
+    expect(reviewerCaller).toHaveBeenCalledOnce();
+    expect(result.trace[0]).toMatchObject({
+      originalCandidateSeverity: "high",
+      repairedCandidateSeverity: "low"
+    });
+    expect(result.regionOutcomes[0]).toMatchObject({
+      originalCandidateSeverity: "high",
+      repairedCandidateSeverity: "low"
+    });
   });
 
   it("repair with same severity proceeds to reviewer", async () => {
@@ -556,7 +566,7 @@ describe("recovery-corrections: semantic substitution rejection", () => {
         parsed: {
           classified: true,
           criterion: "color_appearance",
-          severity: "medium",
+          severity: "high",
           label: "Background",
           evidence: ["color is #FF0000"]
         },
@@ -568,7 +578,7 @@ describe("recovery-corrections: semantic substitution rejection", () => {
         parsed: {
           classified: true,
           criterion: "color_appearance",
-          severity: "medium",
+          severity: "low",
           label: "Sidebar",
           evidence: ["sidebar has different color"]
         },
@@ -587,8 +597,10 @@ describe("recovery-corrections: semantic substitution rejection", () => {
     const trace = result.trace[0];
     expect(trace?.continuityReviewResult).toBeDefined();
     expect(trace?.continuityReviewResult).toBe("rejected");
+    expect(trace).toMatchObject({ originalCandidateSeverity: "high", repairedCandidateSeverity: "low" });
     const outcome = result.regionOutcomes[0];
     expect(outcome?.continuityReviewResult).toBe("rejected");
+    expect(outcome).toMatchObject({ originalCandidateSeverity: "high", repairedCandidateSeverity: "low" });
   });
 });
 
@@ -1064,12 +1076,14 @@ describe("recovery-corrections: measurement trust completeness", () => {
     expect(trace.repairedCandidateRawMeasurements).toBeDefined();
   });
 
-  it("repair_severity_change branch: originalCandidateMeasurements is deterministic-only", async () => {
+  it("severity-changing repair accepted by the reviewer keeps deterministic-only measurements", async () => {
     const recoveryCaller: VisionJsonCaller = vi.fn()
       .mockResolvedValueOnce({ parsed: { classified: true, criterion: "color_appearance", severity: "high", label: "BG", evidence: ["color is #FF0000"] }, rawContent: "", model: "m", provider: "p" })
       .mockResolvedValueOnce({ parsed: { classified: true, criterion: "color_appearance", severity: "low", label: "BG", evidence: ["changed"] }, rawContent: "", model: "m2", provider: "p" });
-    const result = await runTargetRecovery([invalidComponent], makeCtx({ recoveryCaller }), unlimitedBudget);
-    expect(result.statusCounts["repair_severity_change"]).toBe(1);
+    const reviewerCaller: VisionJsonCaller = vi.fn().mockResolvedValue(acceptedReviewerResponse());
+    const result = await runTargetRecovery([invalidComponent], makeCtx({ recoveryCaller, reviewerCaller }), unlimitedBudget);
+    expect(result.statusCounts["recovery_accepted"]).toBe(1);
+    expect(result.recovered[0]?.severity).toBe("low");
     const trace = result.trace[0]!;
     const deterministicNames = ["changed_pixel_count", "region_area_pixels", "changed_pixel_percent", "coordinateSource"];
     expect(trace.originalCandidateMeasurements!.every(m => deterministicNames.includes(m.name))).toBe(true);
@@ -1348,9 +1362,6 @@ describe("recovery-corrections: trace/outcome completeness", () => {
     }],
     ["repair_criterion_change", async () => {
       return [invalidRecoveryResponse(), { parsed: { classified: true, criterion: "geometry", severity: "medium", label: "Other", evidence: ["different"] }, rawContent: "", model: "repair-model", provider: "mistral" }] as const;
-    }],
-    ["repair_severity_change", async () => {
-      return [invalidRecoveryResponse(), { parsed: { classified: true, criterion: "color_appearance", severity: "low", label: "BG", evidence: ["changed"] }, rawContent: "", model: "repair-model", provider: "mistral" }] as const;
     }],
     ["repair_provider_failure", async () => {
       return [invalidRecoveryResponse(), "throw"] as const;
