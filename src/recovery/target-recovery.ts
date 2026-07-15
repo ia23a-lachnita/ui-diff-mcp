@@ -17,7 +17,7 @@ import { resolveComparisonExtraction, type ComparisonExtractionBounds } from "..
 import { modelFamilyKey } from "../models/model-registry.js";
 
 const CLASSIFIABLE_CRITERIA = UiCriterionSchema.exclude(["unclassified_visual_change"]);
-const MIN_RECOVERY_EVIDENCE_SIZE = 2;
+const MIN_RECOVERY_CONTEXT_SIZE = 64;
 
 const RecoveryVlmResponseSchema = z.object({
   classified: z.boolean(),
@@ -225,7 +225,11 @@ interface RejectedRecoveryEvidence {
 
 type RecoveryEvidencePreparation = PreparedRecoveryEvidence | RejectedRecoveryEvidence;
 
-function expandRecoveryEvidenceBox(box: Box, canvas: { width: number; height: number }): Box {
+export function computeRecoveryContextBox(
+  box: Box,
+  canvas: { width: number; height: number },
+  minAxisSize: number = MIN_RECOVERY_CONTEXT_SIZE
+): Box {
   const values = [box.x, box.y, box.width, box.height, canvas.width, canvas.height];
   if (!values.every(Number.isFinite) || box.width <= 0 || box.height <= 0 || canvas.width <= 0 || canvas.height <= 0) {
     return box;
@@ -236,16 +240,21 @@ function expandRecoveryEvidenceBox(box: Box, canvas: { width: number; height: nu
   const bottom = Math.min(canvas.height, box.y + box.height);
   if (right <= left || bottom <= top) return box;
 
-  const expandAxis = (start: number, size: number, limit: number): { start: number; size: number } => {
-    if (size >= MIN_RECOVERY_EVIDENCE_SIZE || limit < MIN_RECOVERY_EVIDENCE_SIZE) return { start, size };
-    return {
-      start: Math.min(Math.max(0, start), limit - MIN_RECOVERY_EVIDENCE_SIZE),
-      size: MIN_RECOVERY_EVIDENCE_SIZE
-    };
+  const expandAxisCentered = (start: number, size: number, limit: number): { start: number; size: number } => {
+    const effectiveMin = Math.min(minAxisSize, limit);
+    if (size >= effectiveMin || limit < effectiveMin) return { start, size };
+    const center = start + size / 2;
+    let newStart = Math.round(center - effectiveMin / 2);
+    newStart = Math.max(0, Math.min(newStart, limit - effectiveMin));
+    return { start: newStart, size: effectiveMin };
   };
-  const horizontal = expandAxis(left, right - left, canvas.width);
-  const vertical = expandAxis(top, bottom - top, canvas.height);
+  const horizontal = expandAxisCentered(left, right - left, canvas.width);
+  const vertical = expandAxisCentered(top, bottom - top, canvas.height);
   return { x: horizontal.start, y: vertical.start, width: horizontal.size, height: vertical.size };
+}
+
+function expandRecoveryEvidenceBox(box: Box, canvas: { width: number; height: number }): Box {
+  return computeRecoveryContextBox(box, canvas);
 }
 
 export async function prepareRecoveryRegionArtifacts(
@@ -269,10 +278,12 @@ export async function prepareRecoveryRegionArtifacts(
       canvas: { width: ctx.expectedRgba.width, height: ctx.expectedRgba.height }
     });
     const projectedActualBox = ctx.imagePairTransform ? projectExpectedBoxToActualSource(evidenceBox, ctx.imagePairTransform) : evidenceBox;
-    const actualEvidenceBox = expandRecoveryEvidenceBox(projectedActualBox, {
-      width: ctx.actualRgba.width,
-      height: ctx.actualRgba.height
-    });
+    const actualEvidenceBox: Box = {
+      x: Math.max(0, Math.min(projectedActualBox.x, ctx.actualRgba.width)),
+      y: Math.max(0, Math.min(projectedActualBox.y, ctx.actualRgba.height)),
+      width: Math.min(projectedActualBox.width, ctx.actualRgba.width - Math.max(0, Math.min(projectedActualBox.x, ctx.actualRgba.width))),
+      height: Math.min(projectedActualBox.height, ctx.actualRgba.height - Math.max(0, Math.min(projectedActualBox.y, ctx.actualRgba.height)))
+    };
     const actual = resolveComparisonExtraction({
       box: actualEvidenceBox,
       sourceSpace: "comparison_expected_normalized",

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildAuditorPrompt, buildRecoveryPrompt, buildRecoveryReviewerPrompt, buildReviewerPrompt } from "../../src/audit/prompts.js";
+import { buildAuditorPrompt, buildRecoveryPrompt, buildRecoveryRepairPrompt, buildRecoveryReviewerPrompt, buildReviewerPrompt } from "../../src/audit/prompts.js";
 import { rubrics } from "../../src/audit/criteria.js";
 
 describe("quantitative evidence prompt discipline", () => {
@@ -74,5 +74,73 @@ describe("quantitative evidence prompt discipline", () => {
     expect(prompt).toContain("4. Pixel-diff mask");
     expect(prompt).not.toContain("Context crop");
     expect(prompt).not.toContain("5.");
+  });
+});
+
+describe("prompt builder context-expanded truthfulness", () => {
+  const recoveryPrompt = buildRecoveryPrompt(200, 500);
+  const repairPrompt = buildRecoveryRepairPrompt({
+    originalCriterion: "geometry",
+    originalLabel: "Header",
+    originalTitle: "Header shifted",
+    originalEvidence: ["shifted left"],
+    diagnosticCode: "unsupported_quantitative",
+    diagnosticMessage: "unsupported exact claim",
+    measurements: []
+  });
+  const reviewerPrompt = buildRecoveryReviewerPrompt("geometry", "Header", "Header shifted", ["shifted"], []);
+  const auditorReviewerPrompt = buildReviewerPrompt("geometry", "Header", "Header shifted", ["shifted"], []);
+
+  it("recovery prompt describes context-expanded crop truthfully", () => {
+    expect(recoveryPrompt).toContain("context-expanded evidence");
+    expect(recoveryPrompt).toContain("the crop may include surrounding UI context around the authoritative changed pixels");
+    expect(recoveryPrompt).not.toContain("larger than the changed area itself");
+  });
+
+  it("repair prompt describes context-expanded crop truthfully", () => {
+    expect(repairPrompt).toContain("context-expanded evidence");
+    expect(repairPrompt).toContain("the crop may include surrounding UI context around the authoritative changed pixels");
+    expect(repairPrompt).not.toContain("larger than the changed area itself");
+  });
+
+  it("recovery reviewer prompt describes context-expanded crop truthfully", () => {
+    expect(reviewerPrompt).toContain("context-expanded evidence");
+    expect(reviewerPrompt).toContain("the crop may include surrounding UI context around the authoritative changed pixels");
+    expect(reviewerPrompt).not.toContain("larger than the changed area itself");
+  });
+
+  it("recovery prompt says overlay and mask localize authoritative changed pixels", () => {
+    expect(recoveryPrompt).toContain("The overlay localizes authoritative changed pixels within the context-expanded evidence");
+    expect(recoveryPrompt).toContain("The mask localizes the authoritative changed pixels");
+  });
+
+  it("repair prompt says overlay and mask localize authoritative changed pixels", () => {
+    expect(repairPrompt).toContain("The overlay localizes authoritative changed pixels within the context-expanded evidence");
+    expect(repairPrompt).toContain("The mask localizes the authoritative changed pixels");
+  });
+
+  it("recovery reviewer prompt says overlay and mask localize authoritative changed pixels", () => {
+    expect(reviewerPrompt).toContain("The overlay localizes authoritative changed pixels within the context-expanded evidence");
+    expect(reviewerPrompt).toContain("The mask localizes the authoritative changed pixels");
+  });
+
+  it("auditor reviewer prompt says overlay and mask localize authoritative changed pixels", () => {
+    expect(auditorReviewerPrompt).toContain("The overlay and mask localize authoritative changed pixels");
+  });
+
+  it("recovery prompt warns not to claim the entire context differs", () => {
+    expect(recoveryPrompt).toContain("do not claim the entire context differs");
+  });
+
+  it("repair prompt warns not to claim the entire context differs", () => {
+    expect(repairPrompt).toContain("do not claim the entire context differs");
+  });
+
+  it("recovery reviewer prompt warns not to claim the entire context differs", () => {
+    expect(reviewerPrompt).toContain("do not claim the entire context differs");
+  });
+
+  it("auditor reviewer prompt warns not to claim the entire crop differs", () => {
+    expect(auditorReviewerPrompt).toContain("do not claim the entire crop differs");
   });
 });

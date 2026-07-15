@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { runTargetRecovery } from "../../src/recovery/target-recovery.js";
+import { runTargetRecovery, computeRecoveryContextBox } from "../../src/recovery/target-recovery.js";
 import type { RecoveryBudget, RecoveryContext } from "../../src/recovery/target-recovery.js";
 import { createImagePairTransform } from "../../src/images/coordinates.js";
 import type { PixelComponent } from "../../src/signals/pixel-diff.js";
@@ -92,8 +92,8 @@ describe("runTargetRecovery", () => {
   };
 
   it.each([
-    ["interior", { x: 16, y: 20, width: 1, height: 100 }, { x: 16, y: 20, width: 2, height: 100 }],
-    ["right edge", { x: 199, y: 20, width: 1, height: 100 }, { x: 198, y: 20, width: 2, height: 100 }]
+    ["interior", { x: 16, y: 20, width: 1, height: 100 }, { x: 0, y: 20, width: 64, height: 100 }],
+    ["right edge", { x: 199, y: 20, width: 1, height: 100 }, { x: 136, y: 20, width: 64, height: 100 }]
   ] as const)("expands a thin %s region for evidence while preserving its authoritative location", async (_label, box, expectedEvidenceBox) => {
     const recoveryCaller: VisionJsonCaller = vi.fn().mockResolvedValue({
       parsed: { classified: true, criterion: "geometry", severity: "medium", label: "Thin border", evidence: ["vertical border differs"] },
@@ -114,12 +114,12 @@ describe("runTargetRecovery", () => {
     });
     for (const artifact of result.recovered[0]!.artifactPaths) {
       const metadata = await sharp(artifact.path).metadata();
-      expect(metadata.width).toBe(2);
+      expect(metadata.width).toBe(64);
       expect(metadata.height).toBe(100);
     }
   });
 
-  it("independently expands a projected actual evidence box after downscaling", async () => {
+  it("projects actual evidence box to source resolution without re-expansion", async () => {
     const recoveryCaller: VisionJsonCaller = vi.fn().mockResolvedValue({
       parsed: { classified: true, criterion: "geometry", severity: "medium", label: "Thin border", evidence: ["vertical border differs"] },
       rawContent: "",
@@ -136,16 +136,16 @@ describe("runTargetRecovery", () => {
     expect(result.recovered[0]?.location).toEqual(component.box);
     expect(result.trace[0]).toMatchObject({
       componentBox: component.box,
-      evidenceBox: { x: 10, y: 20, width: 2, height: 100 },
-      actualEvidenceBox: { x: 5, y: 10, width: 2, height: 50 },
+      evidenceBox: { x: 0, y: 20, width: 64, height: 100 },
+      actualEvidenceBox: { x: 0, y: 10, width: 32, height: 50 },
       status: "recovery_accepted"
     });
     const expectedArtifact = result.recovered[0]!.artifactPaths.find(artifact => artifact.role === "recovery_expected_crop")!;
     const actualArtifact = result.recovered[0]!.artifactPaths.find(artifact => artifact.role === "recovery_actual_crop")!;
     const comparisonArtifact = result.recovered[0]!.artifactPaths.find(artifact => artifact.role === "recovery_actual_comparison_crop")!;
-    await expect(sharp(expectedArtifact.path).metadata()).resolves.toMatchObject({ width: 2, height: 100 });
-    await expect(sharp(actualArtifact.path).metadata()).resolves.toMatchObject({ width: 2, height: 50 });
-    await expect(sharp(comparisonArtifact.path).metadata()).resolves.toMatchObject({ width: 2, height: 100 });
+    await expect(sharp(expectedArtifact.path).metadata()).resolves.toMatchObject({ width: 64, height: 100 });
+    await expect(sharp(actualArtifact.path).metadata()).resolves.toMatchObject({ width: 32, height: 50 });
+    await expect(sharp(comparisonArtifact.path).metadata()).resolves.toMatchObject({ width: 64, height: 100 });
   });
 
   it("preserves source actual dimensions while sending an expected-sized comparison crop", async () => {
@@ -163,14 +163,14 @@ describe("runTargetRecovery", () => {
     const artifacts = result.trace[0]!.artifactPaths;
     const sourceActual = artifacts.find(artifact => artifact.role === "recovery_actual_crop")!;
     const comparisonActual = artifacts.find(artifact => artifact.role === "recovery_actual_comparison_crop")!;
-    await expect(sharp(sourceActual.path).metadata()).resolves.toMatchObject({ width: 40, height: 30 });
-    await expect(sharp(comparisonActual.path).metadata()).resolves.toMatchObject({ width: 80, height: 60 });
+    await expect(sharp(sourceActual.path).metadata()).resolves.toMatchObject({ width: 40, height: 32 });
+    await expect(sharp(comparisonActual.path).metadata()).resolves.toMatchObject({ width: 80, height: 64 });
     const imageMetadata = await Promise.all(captured[0]!.images.slice(0, 2).map(async dataUrl => {
       const buffer = Buffer.from(dataUrl.split(",")[1]!, "base64");
       return sharp(buffer).metadata();
     }));
-    expect(imageMetadata[0]).toMatchObject({ width: 80, height: 60 });
-    expect(imageMetadata[1]).toMatchObject({ width: 80, height: 60 });
+    expect(imageMetadata[0]).toMatchObject({ width: 80, height: 64 });
+    expect(imageMetadata[1]).toMatchObject({ width: 80, height: 64 });
   });
 
   it("returns empty when no components are provided", async () => {
@@ -729,5 +729,144 @@ describe("runTargetRecovery", () => {
     expect(result.attemptedComponents).toBe(1);
     expect(result.recovered.length).toBe(0);
     expect(result.unclassifiedCount).toBe(0);
+  });
+});
+
+describe("computeRecoveryContextBox", () => {
+  const canvas = { width: 400, height: 900 };
+
+  it("expands 1x408 vertical border to 64x408 centered", () => {
+    const box = { x: 50, y: 10, width: 1, height: 408 };
+    const result = computeRecoveryContextBox(box, canvas);
+    expect(result).toEqual({ x: 19, y: 10, width: 64, height: 408 });
+  });
+
+  it("expands 172x20 bar short axis to 64 centered", () => {
+    const box = { x: 20, y: 100, width: 172, height: 20 };
+    const result = computeRecoveryContextBox(box, canvas);
+    expect(result).toEqual({ x: 20, y: 78, width: 172, height: 64 });
+  });
+
+  it("expands a thin interior region centered to 64 on short axis", () => {
+    const box = { x: 16, y: 20, width: 1, height: 100 };
+    const result = computeRecoveryContextBox(box, canvas);
+    expect(result.width).toBe(64);
+    expect(result.height).toBe(100);
+    expect(result.x).toBeGreaterThanOrEqual(0);
+    expect(result.x + result.width).toBeLessThanOrEqual(canvas.width);
+  });
+
+  it("clamps at right edge without shrinking below 64", () => {
+    const box = { x: 390, y: 20, width: 8, height: 100 };
+    const result = computeRecoveryContextBox(box, canvas);
+    expect(result).toEqual({ x: 336, y: 20, width: 64, height: 100 });
+    expect(result.x + result.width).toBeLessThanOrEqual(canvas.width);
+  });
+
+  it("clamps at left edge without shrinking below 64", () => {
+    const box = { x: 2, y: 20, width: 5, height: 100 };
+    const result = computeRecoveryContextBox(box, canvas);
+    expect(result).toEqual({ x: 0, y: 20, width: 64, height: 100 });
+    expect(result.x).toBeGreaterThanOrEqual(0);
+  });
+
+  it("clamps at bottom edge without shrinking below 64", () => {
+    const box = { x: 50, y: 860, width: 100, height: 38 };
+    const result = computeRecoveryContextBox(box, canvas);
+    expect(result).toEqual({ x: 50, y: 836, width: 100, height: 64 });
+    expect(result.y + result.height).toBeLessThanOrEqual(canvas.height);
+  });
+
+  it("clamps at top edge without shrinking below 64", () => {
+    const box = { x: 50, y: 5, width: 100, height: 10 };
+    const result = computeRecoveryContextBox(box, canvas);
+    expect(result).toEqual({ x: 50, y: 0, width: 100, height: 64 });
+    expect(result.y).toBeGreaterThanOrEqual(0);
+  });
+
+  it("keeps long axis unexpanded for 1x408", () => {
+    const box = { x: 50, y: 10, width: 1, height: 408 };
+    const result = computeRecoveryContextBox(box, canvas);
+    expect(result.height).toBe(408);
+  });
+
+  it("keeps long axis unexpanded for 172x20", () => {
+    const box = { x: 20, y: 100, width: 172, height: 20 };
+    const result = computeRecoveryContextBox(box, canvas);
+    expect(result.width).toBe(172);
+  });
+
+  it("does not mutate the original box", () => {
+    const box = { x: 50, y: 20, width: 1, height: 100 };
+    const original = { ...box };
+    computeRecoveryContextBox(box, canvas);
+    expect(box).toEqual(original);
+  });
+
+  it("expands to viewport size when viewport is smaller than 64", () => {
+    const smallCanvas = { width: 30, height: 200 };
+    const box = { x: 5, y: 10, width: 2, height: 100 };
+    const result = computeRecoveryContextBox(box, smallCanvas);
+    expect(result.width).toBe(30);
+    expect(result.height).toBe(100);
+  });
+
+  it("handles a box already larger than 64 without shrinking", () => {
+    const box = { x: 10, y: 10, width: 100, height: 100 };
+    const result = computeRecoveryContextBox(box, canvas);
+    expect(result).toEqual({ x: 10, y: 10, width: 100, height: 100 });
+  });
+
+  it("clamps both axes simultaneously at corner", () => {
+    const box = { x: 380, y: 870, width: 20, height: 30 };
+    const result = computeRecoveryContextBox(box, canvas);
+    expect(result.x + result.width).toBeLessThanOrEqual(canvas.width);
+    expect(result.y + result.height).toBeLessThanOrEqual(canvas.height);
+    expect(result.width).toBeGreaterThanOrEqual(20);
+    expect(result.height).toBeGreaterThanOrEqual(30);
+  });
+
+  it("handles viewport exactly 64 wide", () => {
+    const exactCanvas = { width: 64, height: 200 };
+    const box = { x: 10, y: 20, width: 2, height: 80 };
+    const result = computeRecoveryContextBox(box, exactCanvas);
+    expect(result.width).toBe(64);
+    expect(result.x).toBe(0);
+  });
+
+  it("handles box at origin", () => {
+    const box = { x: 0, y: 0, width: 1, height: 1 };
+    const result = computeRecoveryContextBox(box, canvas);
+    expect(result).toEqual({ x: 0, y: 0, width: 64, height: 64 });
+  });
+
+  it("handles box spanning full canvas width", () => {
+    const box = { x: 0, y: 10, width: 400, height: 50 };
+    const result = computeRecoveryContextBox(box, canvas);
+    expect(result.width).toBe(400);
+    expect(result.height).toBe(64);
+    expect(result.y).toBeGreaterThanOrEqual(0);
+    expect(result.y + result.height).toBeLessThanOrEqual(canvas.height);
+  });
+
+  it("uses per-axis clamping for non-square canvas with height below 64", () => {
+    const tallNarrow = { width: 200, height: 40 };
+    const box = { x: 50, y: 5, width: 10, height: 30 };
+    const result = computeRecoveryContextBox(box, tallNarrow);
+    expect(result.width).toBe(64);
+    expect(result.height).toBe(40);
+    expect(result.x).toBeGreaterThanOrEqual(0);
+    expect(result.x + result.width).toBeLessThanOrEqual(tallNarrow.width);
+    expect(result.y).toBeGreaterThanOrEqual(0);
+    expect(result.y + result.height).toBeLessThanOrEqual(tallNarrow.height);
+  });
+
+  it("resolves fractional projected coordinates through comparison geometry", () => {
+    const projectedBox = { x: 25, y: 5, width: 0.5, height: 204 };
+    const contextBox = computeRecoveryContextBox(projectedBox, { width: 200, height: 450 });
+    expect(contextBox.width).toBe(64);
+    expect(contextBox.height).toBe(204);
+    expect(contextBox.x).toBeGreaterThanOrEqual(0);
+    expect(contextBox.y).toBeGreaterThanOrEqual(0);
   });
 });

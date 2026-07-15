@@ -26,13 +26,13 @@
 
 ### Task 2: TDD Recovery Evidence Context
 
-- [ ] Replace 2px minimum with centered 64 expected-space pixels per short axis, clamped to viewport.
-- [ ] Independently project/center actual source context.
-- [ ] Keep `componentBox` and final finding location authoritative and unchanged.
-- [ ] Existing actual source crop remains source-resolution; comparison crop remains Lanczos expected-context dimensions.
-- [ ] Prompt must truthfully call images "context-expanded" and say overlay/mask localize authoritative changed pixels.
-- [ ] Tests cover interior/edges, 1x408 borders, 172x20 bars, projection, artifact roles/dimensions, no coordinate drift.
-- [ ] Files likely touched: `src/images/crop.ts`, `src/recovery/target-recovery.ts`, `src/audit/prompts.ts`, `tests/unit/crop.test.ts`, `tests/unit/target-recovery.test.ts`.
+- [x] Replace 2px minimum with centered 64 expected-space pixels per short axis, clamped to viewport.
+- [x] Independently project/center actual source context.
+- [x] Keep `componentBox` and final finding location authoritative and unchanged.
+- [x] Existing actual source crop remains source-resolution; comparison crop remains Lanczos expected-context dimensions.
+- [x] Prompt must truthfully call images "context-expanded" and say overlay/mask localize authoritative changed pixels.
+- [x] Tests cover interior/edges, 1x408 borders, 172x20 bars, projection, artifact roles/dimensions, no coordinate drift.
+- [x] Files likely touched: `src/images/crop.ts`, `src/recovery/target-recovery.ts`, `src/audit/prompts.ts`, `tests/unit/crop.test.ts`, `tests/unit/target-recovery.test.ts`.
 
 ### Task 3: TDD Repair Decontamination and Continuity
 

@@ -378,7 +378,7 @@ describe("runUiDiff end-to-end (deterministic_only mode)", () => {
       "recovery_pixel_diff_mask"
     ]);
     for (const artifact of thinRegion!.artifactPaths) {
-      await expect(sharp(artifact.path).metadata()).resolves.toMatchObject({ width: 2, height: 50 });
+      await expect(sharp(artifact.path).metadata()).resolves.toMatchObject({ width: 64, height: 64 });
     }
   });
 
