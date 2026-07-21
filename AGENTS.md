@@ -60,7 +60,7 @@ Notes:
 ## 5. External Review Contract (Antigravity MCP)
 
 - Do not use the deprecated Gemini CLI or the `agy` Antigravity CLI for new reviews. Use the Antigravity MCP `ask-ai` tool.
-- For production plans, debugging help, and implementation reviews, request `model: "gemini-3.1-pro-preview"`, `approvalMode: "yolo"`, and a persistent `conversationId` so revisions can be reviewed in the same conversation without interactive stalls.
+- For production plans, debugging help, and implementation reviews, request `approvalMode: "yolo"` and a persistent `conversationId` so revisions can be reviewed in the same conversation without interactive stalls. Route models in this canonical fallback order: (1) Gemini 3.6 Flash (High) primary, (2) Gemini 3.1 Pro (High) fallback, (3) Gemini 3.5 Flash (High) final fallback. Record the exact error (category, provider message, timestamp) for each failed route before trying the next.
 - Every Antigravity MCP prompt must explicitly say: **Do not edit files, do not run write commands, and do not mutate the repository; only inspect, reason, debug, review, and propose changes for the main agent to apply.**
 - A review is green only when the response explicitly reports `AGREEMENT_STATUS: agree` and `MUST_FIX: none`. Apply must-fix feedback, then continue the same MCP conversation until green.
 - If the MCP tool or requested model is unavailable, record the exact tool error. Do not silently substitute a CLI review or count an empty response as successful.
