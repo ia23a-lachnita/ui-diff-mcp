@@ -5,7 +5,12 @@ import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { writeCrop } from "../../src/images/artifacts.js";
 import { loadNormalizedImage } from "../../src/images/normalize.js";
-import { createImagePairTransform, projectExpectedBoxToActualSource, projectActualBoxToExpectedSource } from "../../src/images/coordinates.js";
+import {
+  createImagePairTransform,
+  createUniformContainImagePairTransform,
+  projectExpectedBoxToActualSource,
+  projectActualBoxToExpectedSource
+} from "../../src/images/coordinates.js";
 import { assertSupportedImagePath } from "../../src/security/paths.js";
 import { writeSolidPng } from "../../src/testing/fixture-images.js";
 
@@ -123,6 +128,54 @@ describe("createImagePairTransform", () => {
     const t = createImagePairTransform({ width: 1000, height: 2000 }, { width: 500, height: 1500 });
     expect(t.scaleExpectedToActualX).toBeCloseTo(0.5);
     expect(t.scaleExpectedToActualY).toBeCloseTo(0.75);
+  });
+
+  it("uniformly contains a taller actual viewport without distorting geometry", () => {
+    const t = createUniformContainImagePairTransform(
+      { width: 402, height: 874 },
+      { width: 1080, height: 2400 }
+    );
+
+    expect(t.mappingMode).toBe("uniform_contain");
+    expect(t.scaleActualToExpectedX).toBeCloseTo(874 / 2400, 12);
+    expect(t.scaleActualToExpectedY).toBeCloseTo(874 / 2400, 12);
+    expect(t.offsetActualToExpectedX).toBeCloseTo(4.35, 2);
+    expect(t.offsetActualToExpectedY).toBeCloseTo(0, 12);
+    expect(t.validRect).toMatchObject({ y: 0, height: 874 });
+    expect(t.validRect.width).toBeCloseTo(393.3, 8);
+    expect(t.rasterValidRect).toEqual({
+      x: 5,
+      y: 0,
+      width: 392,
+      height: 874
+    });
+  });
+
+  it("uniformly contains a wider actual viewport with top and bottom margins", () => {
+    const t = createUniformContainImagePairTransform(
+      { width: 400, height: 800 },
+      { width: 1000, height: 1000 }
+    );
+
+    expect(t.scaleActualToExpectedX).toBeCloseTo(0.4);
+    expect(t.scaleActualToExpectedY).toBeCloseTo(0.4);
+    expect(t.validRect).toEqual({ x: 0, y: 200, width: 400, height: 400 });
+    expect(t.rasterValidRect).toEqual({ x: 0, y: 200, width: 400, height: 400 });
+  });
+
+  it("uniform contain projection is invertible with non-zero offsets", () => {
+    const t = createUniformContainImagePairTransform(
+      { width: 402, height: 874 },
+      { width: 1080, height: 2400 }
+    );
+    const actual = { x: 100, y: 200, width: 320, height: 480 };
+    const expected = projectActualBoxToExpectedSource(actual, t);
+    const roundTrip = projectExpectedBoxToActualSource(expected, t);
+
+    expect(roundTrip.x).toBeCloseTo(actual.x, 10);
+    expect(roundTrip.y).toBeCloseTo(actual.y, 10);
+    expect(roundTrip.width).toBeCloseTo(actual.width, 10);
+    expect(roundTrip.height).toBeCloseTo(actual.height, 10);
   });
 });
 
