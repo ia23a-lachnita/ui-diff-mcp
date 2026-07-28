@@ -310,7 +310,10 @@ describe.skipIf(!calorixLive)("Calorix live UI diff smoke", () => {
 
     // 10-min locator timeout for large phone screenshots (1200+ px tall).
     // No UI_DIFF_DUAL_LOCATOR: projection is the required default for release gates.
-    const started = await startUiDiffMcpClient({ LOCATEANYTHING_TIMEOUT_MS: "600000" });
+    const started = await startUiDiffMcpClient({
+      LOCATEANYTHING_TIMEOUT_MS: "600000",
+      UI_DIFF_MAX_AUDIT_PAIRS: "3"
+    });
     try {
       const startResult = await started.client.callTool({
         name: "start_ui_diff_run",

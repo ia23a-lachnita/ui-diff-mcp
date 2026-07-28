@@ -718,7 +718,8 @@ describe("runUiDiff end-to-end (deterministic_only mode)", () => {
         suppressions: [],
         targetIds: [],
         evidenceArea: 400,
-        coherentDisplacementKey: undefined
+        coherentDisplacementKey: undefined,
+        broad: false
       },
       {
         id: "valid-zoom-group",
@@ -731,7 +732,8 @@ describe("runUiDiff end-to-end (deterministic_only mode)", () => {
         suppressions: [],
         targetIds: [],
         evidenceArea: 400,
-        coherentDisplacementKey: undefined
+        coherentDisplacementKey: undefined,
+        broad: false
       }
     ]);
 

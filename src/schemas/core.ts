@@ -163,7 +163,7 @@ export const FindingGroupLegendEntrySchema = z.discriminatedUnion("zoomStatus", 
   z.object({
     ...FindingGroupLegendBaseShape,
     zoomStatus: z.literal("skipped"),
-    zoomSkippedReason: z.literal("max_zooms_exceeded")
+    zoomSkippedReason: z.enum(["max_zooms_exceeded", "broad_finding"])
   }).strict()
 ]);
 export type FindingGroupLegendEntry = z.infer<typeof FindingGroupLegendEntrySchema>;

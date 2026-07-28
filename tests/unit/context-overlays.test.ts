@@ -166,7 +166,11 @@ describe("writeRegionContextOverlays", () => {
 
     const groups = buildFindingGroups([parent, topCard, bottomCard]);
 
-    expect(groups.map(group => group.diffIds)).toEqual([["top-card"], ["bottom-card"]]);
+    expect(groups.map(group => group.diffIds)).toEqual([
+      ["screen-context"],
+      ["top-card"],
+      ["bottom-card"]
+    ]);
   });
 
   it("builds semantic hierarchy separately from visual diff groups", () => {
@@ -354,7 +358,7 @@ describe("writeRegionContextOverlays", () => {
     await expect(fs.readFile(legendPath, "utf8")).resolves.toContain('"zoomRejectionReason": "disjoint"');
   });
 
-  it("uses pipeline-canonical locations in group legends and excludes broad VLM evidence from zooms", async () => {
+  it("uses pipeline-canonical locations in group legends and keeps broad evidence standalone but out of zooms", async () => {
     const actualComparisonPath = await writeSolidPng(tmpDir, "actual-comparison.png", 200, 400, 30, 30, 30);
     const directionalOverlayPath = await writeSolidPng(tmpDir, "directional-overlay.png", 200, 400, 10, 10, 10);
     const projected = {
@@ -381,13 +385,47 @@ describe("writeRegionContextOverlays", () => {
     });
 
     const legendPath = artifacts.find(artifact => artifact.role === "final_diff_groups_legend")!.path;
-    const legend = JSON.parse(await fs.readFile(legendPath, "utf8")) as { groups: Array<{ box: DiffRecord["location"]; diffIds: string[] }> };
-    expect(legend.groups).toEqual([expect.objectContaining({
-      box: { x: 50, y: 100, width: 20, height: 20 },
-      diffIds: ["actual-source"],
-      coordinateSpace: "comparison_expected_normalized"
-    })]);
+    const legend = JSON.parse(await fs.readFile(legendPath, "utf8")) as {
+      groups: Array<{ box: DiffRecord["location"]; diffIds: string[]; zoomStatus: string; zoomSkippedReason?: string }>;
+    };
+    expect(legend.groups).toHaveLength(2);
+    expect(legend.groups).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        box: { x: 50, y: 100, width: 20, height: 20 },
+        diffIds: ["actual-source"],
+        coordinateSpace: "comparison_expected_normalized",
+        zoomStatus: "valid"
+      }),
+      expect.objectContaining({
+        box: { x: 0, y: 0, width: 200, height: 400 },
+        diffIds: ["broad-vlm"],
+        coordinateSpace: "comparison_expected_normalized",
+        zoomStatus: "skipped",
+        zoomSkippedReason: "broad_finding"
+      })
+    ]));
     expect(artifacts.filter(artifact => artifact.role === "final_diff_zoom")).toHaveLength(1);
+  });
+
+  it("references broad and local final diffs exactly once without merging them", () => {
+    const broad = {
+      ...diff("screen-layout"),
+      location: { x: 0, y: 0, width: 200, height: 400 },
+      scopeKind: "screen" as const,
+      targetIds: []
+    };
+    const local = {
+      ...diff("card-layout"),
+      location: { x: 20, y: 40, width: 80, height: 50 }
+    };
+
+    const groups = buildFindingGroups([broad, local], { width: 200, height: 400 });
+    const references = groups.flatMap(group => group.diffIds);
+
+    expect(groups).toHaveLength(2);
+    expect(references.sort()).toEqual(["card-layout", "screen-layout"]);
+    expect(references.filter(id => id === "screen-layout")).toHaveLength(1);
+    expect(references.filter(id => id === "card-layout")).toHaveLength(1);
   });
 
   it("keeps suppressed child evidence reachable through the repair-group legend", async () => {
@@ -458,7 +496,8 @@ describe("writeRegionContextOverlays", () => {
       suppressions: [],
       targetIds: [id],
       evidenceArea: 1_200,
-      coherentDisplacementKey: undefined
+      coherentDisplacementKey: undefined,
+      broad: false
     });
     const aGroup = make("a-group");
     const zGroup = make("z-group");

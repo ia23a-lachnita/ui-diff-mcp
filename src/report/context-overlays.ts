@@ -25,6 +25,7 @@ export interface FindingGroup {
   targetIds: string[];
   evidenceArea: number;
   coherentDisplacementKey: string | undefined;
+  broad: boolean;
 }
 
 export interface OverlayStyle {
@@ -147,7 +148,7 @@ function isBroadFinding(diff: DiffRecord, canvas?: { width: number; height: numb
 }
 
 function groupShouldAbsorb(group: FindingGroup, diff: DiffRecord, canvas?: { width: number; height: number }): boolean {
-  if (isBroadFinding(diff, canvas)) return false;
+  if (group.broad || isBroadFinding(diff, canvas)) return false;
   const smaller = Math.max(1, Math.min(boxArea(group.box), boxArea(diff.location)));
   const larger = Math.max(boxArea(group.box), boxArea(diff.location));
   if (larger / smaller > 8) return false;
@@ -170,7 +171,6 @@ export function buildFindingGroups(diffs: DiffRecord[], canvas?: { width: number
   });
 
   for (const diff of sorted) {
-    if (isBroadFinding(diff, canvas)) continue;
     const group = groups.find(existing => groupShouldAbsorb(existing, diff, canvas));
     if (!group) {
       const label = `G${groups.length + 1}`;
@@ -185,7 +185,8 @@ export function buildFindingGroups(diffs: DiffRecord[], canvas?: { width: number
         suppressions: diff.suppression ? [diff.suppression] : [],
         targetIds: [...new Set(diff.targetIds ?? [])].sort(),
         evidenceArea: boxArea(diff.location),
-        coherentDisplacementKey: displacementDirection(diff)
+        coherentDisplacementKey: displacementDirection(diff),
+        broad: isBroadFinding(diff, canvas)
       });
       continue;
     }
@@ -212,6 +213,7 @@ export function buildFindingGroups(diffs: DiffRecord[], canvas?: { width: number
 
 export function selectZoomGroups(findingGroups: FindingGroup[], maxZooms: number): FindingGroup[] {
   return findingGroups
+    .filter(group => !group.broad)
     .sort((a, b) => severityRank(b.severity) - severityRank(a.severity) || boxArea(b.box) - boxArea(a.box) || a.id.localeCompare(b.id))
     .slice(0, Math.max(0, maxZooms));
 }
@@ -603,7 +605,11 @@ export async function writeRegionContextOverlays(input: RegionContextOverlayInpu
     };
     const zoomIndex = zoomGroups.findIndex(candidate => candidate.id === group.id);
     if (zoomIndex < 0) {
-      legendGroups.push({ ...legendGroup, zoomStatus: "skipped", zoomSkippedReason: "max_zooms_exceeded" });
+      legendGroups.push({
+        ...legendGroup,
+        zoomStatus: "skipped",
+        zoomSkippedReason: group.broad ? "broad_finding" : "max_zooms_exceeded"
+      });
       continue;
     }
     const zoomPath = path.join(input.artifactDir, `final-diff-zoom-${String(zoomIndex + 1).padStart(3, "0")}.png`);

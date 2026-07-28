@@ -139,6 +139,17 @@ describe("core schemas", () => {
       zoomArtifact: "final-diff-zoom-002.png",
       coordinateSpace: "comparison_expected_normalized"
     })).toMatchObject({ zoomStatus: "valid", zoomArtifact: "final-diff-zoom-002.png" });
+    expect(FindingGroupLegendEntrySchema.parse({
+      id: "group-3",
+      label: "Whole screen",
+      box: { x: 0, y: 0, width: 200, height: 400 },
+      diffIds: ["diff-3"],
+      criteria: ["geometry"],
+      severity: "medium",
+      zoomStatus: "skipped",
+      zoomSkippedReason: "broad_finding",
+      coordinateSpace: "comparison_expected_normalized"
+    })).toMatchObject({ zoomStatus: "skipped", zoomSkippedReason: "broad_finding" });
   });
 
   it("rejects zoom metadata that mixes valid and rejected result shapes", () => {
