@@ -1,6 +1,10 @@
 import sharp from "sharp";
 import type { Box } from "../schemas/core.js";
 import { resolveComparisonExtraction, type ComparisonExtractionBounds } from "./comparison-geometry.js";
+import {
+  createUniformContainImagePairTransform,
+  type ImagePairTransform
+} from "./coordinates.js";
 
 export function extractImageCropFromBounds(
   imageData: Uint8Array,
@@ -36,16 +40,45 @@ export function extractImageCrop(
   return extractImageCropFromBounds(imageData, imageWidth, resolution.bounds);
 }
 
+export interface RgbaComparisonResult {
+  data: Uint8Array;
+  width: number;
+  height: number;
+  transform: ImagePairTransform;
+}
+
+export async function prepareRgbaForComparison(
+  input: { data: Uint8Array; width: number; height: number },
+  width: number,
+  height: number
+): Promise<RgbaComparisonResult> {
+  const transform = createUniformContainImagePairTransform(
+    { width, height },
+    { width: input.width, height: input.height }
+  );
+  const resized = await sharp(Buffer.from(input.data.buffer, input.data.byteOffset, input.data.byteLength), {
+    raw: { width: input.width, height: input.height, channels: 4 }
+  })
+    .resize(width, height, {
+      fit: "contain",
+      position: "centre",
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
+      kernel: sharp.kernel.lanczos3
+    })
+    .raw()
+    .toBuffer();
+  return {
+    data: new Uint8Array(resized),
+    width,
+    height,
+    transform
+  };
+}
+
 export async function resizeRgbaForComparison(
   input: { data: Uint8Array; width: number; height: number },
   width: number,
   height: number
 ): Promise<Uint8Array> {
-  const resized = await sharp(Buffer.from(input.data.buffer, input.data.byteOffset, input.data.byteLength), {
-    raw: { width: input.width, height: input.height, channels: 4 }
-  })
-    .resize(width, height, { fit: "fill", kernel: sharp.kernel.lanczos3 })
-    .raw()
-    .toBuffer();
-  return new Uint8Array(resized);
+  return (await prepareRgbaForComparison(input, width, height)).data;
 }

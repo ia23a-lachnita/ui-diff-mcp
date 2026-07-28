@@ -30,6 +30,21 @@ async function readHydratedReport(reportPath: string): Promise<UiDiffReport> {
   return hydrateReportParts(rawReport, reportPath);
 }
 
+function assertAspectPreservingComparison(report: UiDiffReport): void {
+  const comparison = report.comparisonSpace;
+  expect(comparison, "fresh live reports must record comparison-space metadata").toBeDefined();
+  expect(comparison?.actualResizeMode, "actual comparison must not use anisotropic fill").toBe("contain");
+  expect(comparison?.mappingMode, "fresh comparison mapping mode must be explicit").toBe("uniform_contain");
+  expect(comparison?.scaleX).toBeCloseTo(comparison?.scaleY ?? 0, 12);
+  expect(comparison?.validRect, "continuous comparable bounds must be recorded").toBeDefined();
+  expect(comparison?.rasterValidRect, "raster comparable bounds must be recorded").toBeDefined();
+  expect(comparison?.comparablePixels, "comparable pixel count must be positive").toBeGreaterThan(0);
+  expect(
+    (comparison?.comparablePixels ?? 0) + (comparison?.excludedPixels ?? 0),
+    "comparable and excluded pixels must exhaust comparison space"
+  ).toBe((comparison?.width ?? 0) * (comparison?.height ?? 0));
+}
+
 async function collectReportReleaseIntegrityIssues(report: UiDiffReport): Promise<string[]> {
   const legendArtifact = report.runArtifacts.find(artifact => artifact.role === "final_diff_groups_legend");
   expect(legendArtifact, "release integrity requires final_diff_groups_legend").toBeDefined();
@@ -259,6 +274,7 @@ describe.skipIf(!calorixDeterministicLive)("Calorix deterministic pipeline quali
       expect(statusOut?.status, `deterministic gate must terminate; child=${JSON.stringify(started.getDiagnostics())}`).not.toBe("running");
       expect(statusOut?.reportPath).toBeTruthy();
       const report = await readHydratedReport(statusOut!.reportPath!);
+      assertAspectPreservingComparison(report);
       expect(report.inputProvenance?.acquisition).toEqual(inputProvenance.acquisition);
       assertFinalFindingIntegrity(report);
       assertNoSplitDisplacementConsensus(report);
@@ -315,6 +331,7 @@ describe.skipIf(!calorixLive)("Calorix live UI diff smoke", () => {
       expect(statusOut.reportPath).toBeTruthy();
 
       const report = await readHydratedReport(statusOut.reportPath!);
+      assertAspectPreservingComparison(report);
       expect(report.inputProvenance?.acquisition).toEqual(inputProvenance.acquisition);
       started.recordRunStatus(report.status);
       expect(path.resolve(statusOut.reportPath!).includes(`${path.sep}.ui-diff${path.sep}runs${path.sep}`)).toBe(true);
@@ -433,6 +450,7 @@ describe.skipIf(!calorixFullLive)("verify:calorix-full-live unbounded all-target
       expect(statusOut.reportPath).toBeTruthy();
 
       const report = await readHydratedReport(statusOut.reportPath!);
+      assertAspectPreservingComparison(report);
       expect(report.inputProvenance?.acquisition).toEqual(inputProvenance.acquisition);
       started.recordRunStatus(report.status);
       expect(report.auditScope?.auditLimited ?? false).toBe(false);
@@ -614,7 +632,7 @@ describe.skipIf(!calorixReleaseLive)("Calorix release sign-off gate", () => {
 
   afterAll(() => { gate?.sidecarHandle.close(); });
 
-  test("production sign-off: complete classification, no viewport mismatch, audit not limited", async () => {
+  test("production sign-off: complete classification, aspect-preserving comparison, audit not limited", async () => {
     const { expectedImagePath, actualImagePath, projectRoot, inputProvenance } = await resolveCalorixGateImages(gate!);
     expect(process.env["LOCATEANYTHING_SIDECAR_URL"], "LOCATEANYTHING_SIDECAR_URL must be set").toBeTruthy();
 
@@ -639,6 +657,7 @@ describe.skipIf(!calorixReleaseLive)("Calorix release sign-off gate", () => {
       expect(statusOut.status, `release gate requires complete status, got: ${statusOut.status}; error=${statusOut.error ?? "none"}; child=${JSON.stringify(started.getDiagnostics())}`).toBe("complete");
 
       const report = await readHydratedReport(statusOut.reportPath!);
+      assertAspectPreservingComparison(report);
       expect(report.inputProvenance?.acquisition).toEqual(inputProvenance.acquisition);
       started.recordRunStatus(report.status);
 

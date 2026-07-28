@@ -4,7 +4,10 @@ import path from "node:path";
 import sharp from "sharp";
 import type { Box, DiffRecord, ElementPair, GeometryDiagnosticReference, ProjectedPreAuditSummary, UiArtifact, UiElement } from "../schemas/core.js";
 import { detectProjectedCropMismatch, type ProjectedMismatchResult } from "../audit/projected-mismatch.js";
-import { extractImageCropFromBounds, resizeRgbaForComparison } from "../images/crop.js";
+import {
+  extractImageCropFromBounds,
+  prepareRgbaForComparison
+} from "../images/crop.js";
 import { resolveComparisonExtraction, type ComparisonExtractionBounds } from "../images/comparison-geometry.js";
 import { createDirectionalDiffOverlay } from "../images/directional-diff.js";
 import { buildDisplacementSearchIndex, searchDisplacementCandidates, type DisplacementCandidate } from "./displacement-search.js";
@@ -54,9 +57,25 @@ function translateBox(box: Box, dx: number, dy: number): Box {
   return { ...box, x: box.x + dx, y: box.y + dy };
 }
 
-function makeMask(expected: Uint8Array, actual: Uint8Array, width: number, height: number): Uint8Array {
+function makeMask(
+  expected: Uint8Array,
+  actual: Uint8Array,
+  width: number,
+  height: number,
+  validRect?: Box
+): Uint8Array {
   const mask = new Uint8Array(width * height);
   for (let pixel = 0; pixel < mask.length; pixel++) {
+    const x = pixel % width;
+    const y = Math.floor(pixel / width);
+    if (validRect !== undefined && (
+      x < validRect.x
+      || x >= validRect.x + validRect.width
+      || y < validRect.y
+      || y >= validRect.y + validRect.height
+    )) {
+      continue;
+    }
     const offset = pixel * 4;
     const delta = Math.abs((expected[offset] ?? 0) - (actual[offset] ?? 0))
       + Math.abs((expected[offset + 1] ?? 0) - (actual[offset + 1] ?? 0))
@@ -73,6 +92,7 @@ async function writeArtifactSet(input: {
   actual: Uint8Array;
   width: number;
   height: number;
+  validRect?: Box;
   roles: [UiArtifact["role"], UiArtifact["role"], UiArtifact["role"], UiArtifact["role"]];
   pairId?: string;
   targetLabel?: string;
@@ -82,7 +102,13 @@ async function writeArtifactSet(input: {
   const actualPath = path.join(input.artifactDir, `${input.base}-actual.png`);
   const overlayPath = path.join(input.artifactDir, `${input.base}-overlay.png`);
   const maskPath = path.join(input.artifactDir, `${input.base}-mask.png`);
-  const mask = makeMask(input.expected, input.actual, input.width, input.height);
+  const mask = makeMask(
+    input.expected,
+    input.actual,
+    input.width,
+    input.height,
+    input.validRect
+  );
   await sharp(Buffer.from(input.expected), { raw: { width: input.width, height: input.height, channels: 4 } }).png().toFile(expectedPath);
   await sharp(Buffer.from(input.actual), { raw: { width: input.width, height: input.height, channels: 4 } }).png().toFile(actualPath);
   await sharp(Buffer.from(mask), { raw: { width: input.width, height: input.height, channels: 1 } }).png().toFile(maskPath);
@@ -92,7 +118,8 @@ async function writeArtifactSet(input: {
     mask,
     input.width,
     input.height,
-    overlayPath
+    overlayPath,
+    input.validRect
   );
   const metadata = {
     ...(input.pairId ? { pairId: input.pairId } : {}),
@@ -109,20 +136,23 @@ async function writeArtifactSet(input: {
 async function writeChildArtifacts(entry: MismatchEntry, artifactDir: string): Promise<UiArtifact[]> {
   const width = entry.expectedBounds.width;
   const height = entry.expectedBounds.height;
-  const actual = entry.actualBounds.width === width && entry.actualBounds.height === height
-    ? entry.actualCrop
-    : await resizeRgbaForComparison(
-        { data: entry.actualCrop, width: entry.actualBounds.width, height: entry.actualBounds.height },
-        width,
-        height
-      );
+  const preparedActual = await prepareRgbaForComparison(
+    {
+      data: entry.actualCrop,
+      width: entry.actualBounds.width,
+      height: entry.actualBounds.height
+    },
+    width,
+    height
+  );
   return writeArtifactSet({
     artifactDir,
     base: `projected-${entry.pair.id.replace(/[^a-zA-Z0-9_-]/g, "-")}`,
     expected: entry.expectedCrop,
-    actual,
+    actual: preparedActual.data,
     width,
     height,
+    validRect: preparedActual.transform.rasterValidRect,
     roles: ["projected_expected_crop", "projected_actual_crop", "projected_directional_overlay", "projected_pixel_diff_mask"],
     pairId: entry.pair.id,
     targetLabel: entry.expected.label
@@ -172,7 +202,7 @@ async function writeGroupArtifacts(group: ActiveMismatchGroup, members: Mismatch
   const height = expectedBounds.height;
   const expected = extractImageCropFromBounds(input.expectedRgba.data, input.expectedRgba.width, expectedBounds);
   const actualRaw = extractImageCropFromBounds(input.actualRgba.data, input.actualRgba.width, actualBounds);
-  const actual = await resizeRgbaForComparison(
+  const preparedActual = await prepareRgbaForComparison(
     { data: actualRaw, width: actualBounds.width, height: actualBounds.height },
     width,
     height
@@ -181,9 +211,10 @@ async function writeGroupArtifacts(group: ActiveMismatchGroup, members: Mismatch
     artifactDir: input.artifactDir,
     base: group.id,
     expected,
-    actual,
+    actual: preparedActual.data,
     width,
     height,
+    validRect: preparedActual.transform.rasterValidRect,
     roles: [
       "projected_group_expected_crop",
       "projected_group_actual_crop",

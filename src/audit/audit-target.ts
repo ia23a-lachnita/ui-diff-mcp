@@ -11,6 +11,7 @@ import type { VisionJsonCaller } from "../models/vision-json.js";
 import { computePixelDiff } from "../signals/pixel-diff.js";
 import { createDirectionalDiffOverlay, type Rgba } from "../images/directional-diff.js";
 import { extractImageCropFromBounds } from "../images/crop.js";
+import { prepareAspectPreservingComparison } from "../images/aspect-preserving-comparison.js";
 import { resolveComparisonExtraction, type ComparisonExtractionBounds } from "../images/comparison-geometry.js";
 import type { ImagePairTransform } from "../images/coordinates.js";
 import { hasUnsupportedQuantitativeClaim } from "./review-findings.js";
@@ -204,13 +205,16 @@ export async function auditElementPair(
     const cmpW = expCropMeta.width;
     const cmpH = expCropMeta.height;
     const actualComparisonCropPath = baseFileName("actual-crop-comparison");
-    await sharp(Buffer.from(actualCropB64, "base64"))
-      .resize(cmpW, cmpH, { fit: "fill" })
-      .toFile(actualComparisonCropPath);
+    const comparison = await prepareAspectPreservingComparison({
+      sourcePath: baseFileName("actual-crop"),
+      outputPath: actualComparisonCropPath,
+      targetSize: { width: cmpW, height: cmpH }
+    });
 
     const localPixelDiff = computePixelDiff(
       baseFileName("expected-crop"),
-      actualComparisonCropPath
+      actualComparisonCropPath,
+      comparison.transform.rasterValidRect
     );
     await writeCropArtifact(localPixelDiff.diffMask, localPixelDiff.width, localPixelDiff.height, localPixelDiffMaskPath, 1);
     localPixelDiffMaskB64 = (await sharp(Buffer.from(localPixelDiff.diffMask.buffer, localPixelDiff.diffMask.byteOffset, localPixelDiff.diffMask.byteLength), { raw: { width: localPixelDiff.width, height: localPixelDiff.height, channels: 1 } }).png().toBuffer()).toString("base64");
@@ -224,7 +228,8 @@ export async function auditElementPair(
       localPixelDiff.diffMask,
       localPixelDiff.width,
       localPixelDiff.height,
-      localDirectionalOverlayPath
+      localDirectionalOverlayPath,
+      comparison.transform.rasterValidRect
     );
     localDirectionalOverlayB64 = (await fs.readFile(localDirectionalOverlayPath)).toString("base64");
     auditArtifacts.push({ role: "local_directional_overlay", path: localDirectionalOverlayPath, pairId });

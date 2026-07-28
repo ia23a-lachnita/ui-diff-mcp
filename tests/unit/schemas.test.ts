@@ -420,6 +420,43 @@ describe("core schemas", () => {
     expect(parsed.modelSelection).toBeUndefined();
   });
 
+  it("reads legacy fill comparison metadata without new transform fields", () => {
+    const parsed = UiDiffReportSchema.parse(makeMinimalReport({
+      comparisonSpace: {
+        width: 402,
+        height: 874,
+        actualResizeMode: "fill",
+        sourceCropsPreserveOriginalPixels: true
+      }
+    }));
+
+    expect(parsed.comparisonSpace?.actualResizeMode).toBe("fill");
+    expect(parsed.comparisonSpace?.mappingMode).toBeUndefined();
+  });
+
+  it("accepts complete uniform-contain comparison metadata", () => {
+    const parsed = UiDiffReportSchema.parse(makeMinimalReport({
+      comparisonSpace: {
+        width: 402,
+        height: 874,
+        actualResizeMode: "contain",
+        mappingMode: "uniform_contain",
+        scaleX: 874 / 2400,
+        scaleY: 874 / 2400,
+        offsetX: 4.35,
+        offsetY: 0,
+        validRect: { x: 4.35, y: 0, width: 393.3, height: 874 },
+        rasterValidRect: { x: 5, y: 0, width: 392, height: 874 },
+        comparablePixels: 342608,
+        excludedPixels: 8740,
+        sourceCropsPreserveOriginalPixels: true
+      }
+    }));
+
+    expect(parsed.comparisonSpace?.mappingMode).toBe("uniform_contain");
+    expect(parsed.comparisonSpace?.comparablePixels).toBe(342608);
+  });
+
   it("ModelSelectionSchema rejects empty model string", () => {
     expect(() => ModelSelectionSchema.parse({
       auditor: { model: "", provider: "openrouter", costClass: "free" }

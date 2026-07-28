@@ -1,4 +1,7 @@
-import { resizeRgbaForComparison } from "../images/crop.js";
+import {
+  extractImageCrop,
+  prepareRgbaForComparison
+} from "../images/crop.js";
 import type { Box } from "../schemas/core.js";
 import { buildDisplacementSearchIndex, isUniqueDisplacementCandidate, searchDisplacementCandidates } from "../diff/displacement-search.js";
 
@@ -166,23 +169,38 @@ export async function detectProjectedCropMismatch(
   // When dimensions differ due to projection scaling, resize actual to expected dimensions
   // using Sharp/Lanczos3 before comparison. Nearest-neighbor would create artificial edges
   // in UI text, rings, and icons. Original crop buffers are not mutated.
-  const comparisonActualData =
-    expected.width === actual.width && expected.height === actual.height
-      ? actual.data
-      : await resizeRgbaForComparison(actual, expected.width, expected.height);
+  const preparedActual = await prepareRgbaForComparison(
+    actual,
+    expected.width,
+    expected.height
+  );
+  const validRect = preparedActual.transform.rasterValidRect;
+  if (validRect.width <= 0 || validRect.height <= 0) return null;
+  const expectedComparableData = extractImageCrop(
+    expected.data,
+    expected.width,
+    expected.height,
+    validRect
+  );
+  const comparisonActualData = extractImageCrop(
+    preparedActual.data,
+    preparedActual.width,
+    preparedActual.height,
+    validRect
+  );
 
   const comparisonActual: CropInput = {
     data: comparisonActualData,
-    width: expected.width,
-    height: expected.height
+    width: validRect.width,
+    height: validRect.height
   };
 
-  const minLen = Math.min(expected.data.length, comparisonActual.data.length);
-  const changedPercent = computeChangedPercent(expected.data, comparisonActual.data, minLen);
-  const paletteIntersection = computePaletteIntersectionPercent(expected.data, comparisonActual.data);
-  const expEdges = computeEdgePixels(expected.data, expected.width, expected.height);
+  const minLen = Math.min(expectedComparableData.length, comparisonActual.data.length);
+  const changedPercent = computeChangedPercent(expectedComparableData, comparisonActual.data, minLen);
+  const paletteIntersection = computePaletteIntersectionPercent(expectedComparableData, comparisonActual.data);
+  const expEdges = computeEdgePixels(expectedComparableData, validRect.width, validRect.height);
   const actEdges = computeEdgePixels(comparisonActual.data, comparisonActual.width, comparisonActual.height);
-  const edgeOverlap = computeEdgeOverlapPercent(expEdges, actEdges, expected.width, expected.height);
+  const edgeOverlap = computeEdgeOverlapPercent(expEdges, actEdges, validRect.width, validRect.height);
 
   // If edge structure is well-preserved, it's a genuine element diff, not a projection miss
   if (edgeOverlap >= 30) {

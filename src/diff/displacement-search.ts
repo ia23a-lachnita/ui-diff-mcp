@@ -1,6 +1,6 @@
 import type { Box } from "../schemas/core.js";
 import type { ComparisonExtractionBounds } from "../images/comparison-geometry.js";
-import { resizeRgbaForComparison } from "../images/crop.js";
+import { prepareRgbaForComparison } from "../images/crop.js";
 
 export interface RgbaSearchImage {
   data: Uint8Array;
@@ -41,12 +41,14 @@ function quantizeColor(r: number, g: number, b: number): number {
 function buildMaps(image: RgbaSearchImage): Pick<DisplacementSearchIndex, "edgeMap" | "edgeProximityMap" | "colorMap"> {
   const size = image.width * image.height;
   const gray = new Uint8Array(size);
+  const alpha = new Uint8Array(size);
   const colorMap = new Uint16Array(size);
   for (let pixel = 0; pixel < size; pixel++) {
     const offset = pixel * 4;
     const r = image.data[offset] ?? 0;
     const g = image.data[offset + 1] ?? 0;
     const b = image.data[offset + 2] ?? 0;
+    alpha[pixel] = image.data[offset + 3] ?? 0;
     gray[pixel] = Math.round((r + g + b) / 3);
     colorMap[pixel] = quantizeColor(r, g, b);
   }
@@ -54,6 +56,16 @@ function buildMaps(image: RgbaSearchImage): Pick<DisplacementSearchIndex, "edgeM
   const edgeMap = new Uint8Array(size);
   for (let y = 1; y < image.height - 1; y++) {
     for (let x = 1; x < image.width - 1; x++) {
+      let opaqueNeighborhood = true;
+      for (let oy = -1; oy <= 1 && opaqueNeighborhood; oy++) {
+        for (let ox = -1; ox <= 1; ox++) {
+          if ((alpha[(y + oy) * image.width + x + ox] ?? 0) < 128) {
+            opaqueNeighborhood = false;
+            break;
+          }
+        }
+      }
+      if (!opaqueNeighborhood) continue;
       const at = (row: number, col: number) => gray[row * image.width + col] ?? 0;
       const gx = at(y - 1, x + 1) + 2 * at(y, x + 1) + at(y + 1, x + 1)
         - at(y - 1, x - 1) - 2 * at(y, x - 1) - at(y + 1, x - 1);
@@ -128,7 +140,11 @@ export async function searchDisplacementCandidates(input: {
   const targetHeight = input.actualBounds?.height ?? Math.max(1, Math.round(input.projectedBox.height));
   const templateData = input.expected.width === targetWidth && input.expected.height === targetHeight
     ? input.expected.data
-    : await resizeRgbaForComparison(input.expected, targetWidth, targetHeight);
+    : (await prepareRgbaForComparison(
+        input.expected,
+        targetWidth,
+        targetHeight
+      )).data;
   const templateMaps = buildMaps({ data: templateData, width: targetWidth, height: targetHeight });
   const points = sampleEdgePoints(templateMaps.edgeMap, templateMaps.colorMap, targetWidth);
   if (points.length < 4) return [];

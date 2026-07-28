@@ -12,7 +12,10 @@ import type { BudgetedAttemptHook } from "../models/fallback-caller.js";
 import { buildRecoveryPrompt, buildRecoveryReviewerPrompt, buildRecoveryRepairPrompt, type RepairPromptContext, type RecoveryReviewerContext } from "../audit/prompts.js";
 import { validateClaim } from "../audit/review-findings.js";
 import { type ImagePairTransform, projectExpectedBoxToActualSource } from "../images/coordinates.js";
-import { extractImageCropFromBounds, resizeRgbaForComparison } from "../images/crop.js";
+import {
+  extractImageCropFromBounds,
+  prepareRgbaForComparison
+} from "../images/crop.js";
 import { resolveComparisonExtraction, type ComparisonExtractionBounds } from "../images/comparison-geometry.js";
 import { modelFamilyKey } from "../models/model-registry.js";
 
@@ -307,11 +310,11 @@ export async function prepareRecoveryRegionArtifacts(
     }
     const expCrop = extractRgbaCrop(ctx.expectedRgba.data, ctx.expectedRgba.width, comparison.bounds);
     const actCrop = extractRgbaCrop(ctx.actualRgba.data, ctx.actualRgba.width, actual.bounds);
-    const actComparisonCrop = {
-      data: await resizeRgbaForComparison(actCrop, expCrop.width, expCrop.height),
-      width: expCrop.width,
-      height: expCrop.height
-    };
+    const actComparisonCrop = await prepareRgbaForComparison(
+      actCrop,
+      expCrop.width,
+      expCrop.height
+    );
     const overlayCrop = extractRgbaCrop(overlayData, overlayRawResult.info.width, comparison.bounds);
     const maskCrop = extractMaskCrop(ctx.pixelDiffMask, ctx.expectedRgba.width, comparison.bounds);
     const expCropPath = path.join(ctx.artifactDir, `recovery-${safeId}-expected.png`);

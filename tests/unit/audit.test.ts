@@ -655,6 +655,67 @@ describe("auditElementPair", () => {
     expect(nonZero / total).toBeLessThan(0.05);
   });
 
+  it("local comparison preserves a circular feature across crop aspect ratios",
+      async () => {
+    function makeCircleCanvas(
+      width: number,
+      height: number,
+      centerX: number,
+      centerY: number,
+      radius: number
+    ): Uint8Array {
+      const data = new Uint8Array(width * height * 4);
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          const offset = (y * width + x) * 4;
+          const inside =
+            (x - centerX) ** 2 + (y - centerY) ** 2 <= radius ** 2;
+          const value = inside ? 255 : 0;
+          data[offset] = value;
+          data[offset + 1] = value;
+          data[offset + 2] = value;
+          data[offset + 3] = 255;
+        }
+      }
+      return data;
+    }
+
+    const squareActualEl: UiElement = {
+      ...expectedEl,
+      id: "a1",
+      box: { x: 10, y: 50, width: 40, height: 40 }
+    };
+    const auditorCaller: VisionJsonCaller = vi.fn().mockResolvedValue({
+      parsed: { hasDiff: false },
+      rawContent: "",
+      model: "m",
+      provider: "nvidia"
+    });
+    await auditElementPair(pair, {
+      ...makeAuditContext({ auditorCaller }),
+      actualElements: [squareActualEl],
+      expectedRgba: {
+        data: makeCircleCanvas(200, 400, 50, 70, 15),
+        width: 200,
+        height: 400
+      },
+      actualRgba: {
+        data: makeCircleCanvas(200, 400, 30, 70, 15),
+        width: 200,
+        height: 400
+      }
+    });
+
+    const maskFile = (await fs.readdir(tmpDir))
+      .find(file => file.endsWith("-local-pixel-diff-mask.png"));
+    expect(maskFile).toBeDefined();
+    const { data } = await sharp(path.join(tmpDir, maskFile!))
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    const nonZero = [...data].filter(value => value > 0).length;
+    expect(nonZero).toBeLessThan(20);
+  });
+
   it("trace predicate for vlmAuditedPairs: matched pair always triggers geometry fallback", async () => {
     // selectTriggeredCriteria adds geometry as a fallback for any matched pair with no other signals.
     // The pipeline counts vlmAuditedPairs via trace.some(t => t.status !== "criterion_not_triggered").
