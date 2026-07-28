@@ -173,7 +173,10 @@ export const ProjectionMetadataSchema = z.object({
   coordinateSpace: z.literal("actual_source_image"),
   sourceElementId: z.string().min(1),
   scaleExpectedToActualX: z.number().positive(),
-  scaleExpectedToActualY: z.number().positive()
+  scaleExpectedToActualY: z.number().positive(),
+  mappingMode: z.enum(["stretch", "uniform_contain"]).optional(),
+  offsetExpectedToActualX: z.number().finite().optional(),
+  offsetExpectedToActualY: z.number().finite().optional()
 });
 export type ProjectionMetadata = z.infer<typeof ProjectionMetadataSchema>;
 
@@ -1007,7 +1010,16 @@ export const UiDiffReportSchema = z.object({
   comparisonSpace: z.object({
     width: z.number().int().positive(),
     height: z.number().int().positive(),
-    actualResizeMode: z.literal("fill"),
+    actualResizeMode: z.enum(["fill", "contain"]),
+    mappingMode: z.enum(["stretch", "uniform_contain"]).optional(),
+    scaleX: z.number().positive().optional(),
+    scaleY: z.number().positive().optional(),
+    offsetX: z.number().finite().optional(),
+    offsetY: z.number().finite().optional(),
+    validRect: BoxSchema.optional(),
+    rasterValidRect: BoxSchema.optional(),
+    comparablePixels: z.number().int().nonnegative().optional(),
+    excludedPixels: z.number().int().nonnegative().optional(),
     sourceCropsPreserveOriginalPixels: z.boolean()
   }).optional(),
   providerDiagnosticsPresent: z.boolean().optional(),

@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { loadNormalizedImage } from "../../src/images/normalize.js";
-import { writeRectPng } from "../../src/testing/fixture-images.js";
+import { writeRectPng, writeSolidPng } from "../../src/testing/fixture-images.js";
 import { area, containsCenter, expandBox, fromNormalizedBox, intersect, iou, toNormalizedBox } from "../../src/signals/geometry.js";
 import { computePixelDiff } from "../../src/signals/pixel-diff.js";
 import { sampleColorStats } from "../../src/signals/color.js";
@@ -111,6 +111,29 @@ describe("pixelDiff", () => {
     const boxA = { x: 10, y: 10, width: 30, height: 30 };
     const boxB = { x: 20, y: 20, width: 30, height: 30 };
     expect(iou(boxA, boxB)).toBeLessThan(1);
+  });
+
+  it("excludes non-comparable margins from pixels and denominator", async () => {
+    const expectedPath = await writeSolidPng(
+      tmpDir, "expected-margin.png", 10, 10, 0, 0, 0
+    );
+    const actualPath = await writeSolidPng(
+      tmpDir, "actual-margin.png", 10, 10, 255, 255, 255
+    );
+
+    const result = computePixelDiff(
+      expectedPath,
+      actualPath,
+      { x: 3, y: 0, width: 4, height: 10 }
+    );
+
+    expect(result.changedPixels).toBe(40);
+    expect(result.comparablePixels).toBe(40);
+    expect(result.excludedPixels).toBe(60);
+    expect(result.changedPercent).toBe(100);
+    expect(result.components).toEqual([
+      { box: { x: 3, y: 0, width: 4, height: 10 }, pixelCount: 40 }
+    ]);
   });
 });
 

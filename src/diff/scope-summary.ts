@@ -9,6 +9,7 @@ interface ComponentLike {
 export interface ScopeSummaryInput {
   imageWidth: number;
   imageHeight: number;
+  validRect?: Box;
   pixelComponents: ComponentLike[];
   edgeComponents?: ComponentLike[];
   expectedRgba?: { data: Uint8Array; width: number; height: number };
@@ -33,6 +34,15 @@ function intersectionArea(a: Box, b: Box): number {
   const x2 = Math.min(a.x + a.width, b.x + b.width);
   const y2 = Math.min(a.y + a.height, b.y + b.height);
   return Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
+}
+
+function intersectionBox(a: Box, b: Box): Box | undefined {
+  const x = Math.max(a.x, b.x);
+  const y = Math.max(a.y, b.y);
+  const right = Math.min(a.x + a.width, b.x + b.width);
+  const bottom = Math.min(a.y + a.height, b.y + b.height);
+  if (right <= x || bottom <= y) return undefined;
+  return { x, y, width: right - x, height: bottom - y };
 }
 
 function componentPixelsInBox(components: ComponentLike[], box: Box): number {
@@ -87,13 +97,26 @@ function triggeredCriteria(changedPercent: number, edgePercent: number, box: Box
 
 export function buildScopeDiffSummaries(input: ScopeSummaryInput): ScopeDiffSummary[] {
   return regionBoxes(input.imageWidth, input.imageHeight).map(region => {
-    const area = Math.max(1, region.box.width * region.box.height);
+    const comparableBox = input.validRect === undefined
+      ? region.box
+      : intersectionBox(region.box, input.validRect);
+    const area = comparableBox === undefined
+      ? 0
+      : comparableBox.width * comparableBox.height;
     const changedPixels = componentPixelsInBox(input.pixelComponents, region.box);
     const edgePixels = componentPixelsInBox(input.edgeComponents ?? [], region.box);
-    const changedPixelPercent = Number(((changedPixels / area) * 100).toFixed(3));
-    const edgeChangedPercent = Number(((edgePixels / area) * 100).toFixed(3));
-    const expectedAvg = averageRgb(input.expectedRgba, region.box);
-    const actualAvg = averageRgb(input.actualRgba, region.box);
+    const changedPixelPercent = area > 0
+      ? Number(((changedPixels / area) * 100).toFixed(3))
+      : 0;
+    const edgeChangedPercent = area > 0
+      ? Number(((edgePixels / area) * 100).toFixed(3))
+      : 0;
+    const expectedAvg = comparableBox === undefined
+      ? undefined
+      : averageRgb(input.expectedRgba, comparableBox);
+    const actualAvg = comparableBox === undefined
+      ? undefined
+      : averageRgb(input.actualRgba, comparableBox);
     const scopeColorDistance = colorDistance(expectedAvg, actualAvg);
     return {
       id: region.id,
@@ -106,6 +129,7 @@ export function buildScopeDiffSummaries(input: ScopeSummaryInput): ScopeDiffSumm
       measurements: [
         { name: "changed_pixel_percent", value: changedPixelPercent, unit: "percent" },
         { name: "edge_changed_percent", value: edgeChangedPercent, unit: "percent" },
+        { name: "comparable_pixel_count", value: area, unit: "pixels" },
         { name: "scope_color_distance", value: scopeColorDistance },
         ...(expectedAvg !== undefined ? [{ name: "scope_expected_avg_rgb", value: `rgb(${expectedAvg.r},${expectedAvg.g},${expectedAvg.b})` }] : []),
         ...(actualAvg !== undefined ? [{ name: "scope_actual_avg_rgb", value: `rgb(${actualAvg.r},${actualAvg.g},${actualAvg.b})` }] : [])

@@ -1,4 +1,5 @@
 import sharp from "sharp";
+import type { Box } from "../schemas/core.js";
 
 export interface Rgba {
   data: Uint8Array;
@@ -12,7 +13,8 @@ export async function createDirectionalDiffOverlay(
   pixelDiffMask: Uint8Array,
   imageWidth: number,
   imageHeight: number,
-  outPath: string
+  outPath: string,
+  validRect?: Box
 ): Promise<string> {
   const outputBuffer = Buffer.alloc(imageWidth * imageHeight * 4);
 
@@ -28,6 +30,20 @@ export async function createDirectionalDiffOverlay(
     for (let x = 0; x < imageWidth; x++) {
       const i = y * imageWidth + x;
       const offset = i * 4;
+      const comparable = validRect === undefined || (
+        x >= validRect.x
+        && x < validRect.x + validRect.width
+        && y >= validRect.y
+        && y < validRect.y + validRect.height
+      );
+      if (!comparable) {
+        const hatch = (x + y) % 6 < 3 ? 40 : 56;
+        outputBuffer[offset] = hatch;
+        outputBuffer[offset + 1] = hatch;
+        outputBuffer[offset + 2] = hatch + 5;
+        outputBuffer[offset + 3] = 255;
+        continue;
+      }
       const diffMaskValue = pixelDiffMask[i] ?? 0;
 
       const er = expectedData[offset] ?? 0;

@@ -26,6 +26,22 @@ describe("scope summary", () => {
     expect(nav?.measurements.some(measurement => measurement.name === "scope_color_distance")).toBe(true);
   });
 
+  it("uses only comparable pixels for scope percentages", () => {
+    const summaries = buildScopeDiffSummaries({
+      imageWidth: 100,
+      imageHeight: 100,
+      validRect: { x: 10, y: 0, width: 80, height: 100 },
+      pixelComponents: [
+        {
+          box: { x: 10, y: 0, width: 80, height: 100 },
+          pixelCount: 8_000
+        }
+      ]
+    });
+
+    expect(summaries.find(summary => summary.id === "screen")?.changedPixelPercent).toBe(100);
+  });
+
   it("builds final diff counts by severity, criterion, and classification source", () => {
     const diffs: DiffRecord[] = [
       {

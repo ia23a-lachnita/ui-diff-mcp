@@ -106,6 +106,28 @@ describe("createDirectionalDiffOverlay", () => {
     expect(b).toBe(128);
   });
 
+  it("hatches pixels outside the comparable rectangle", async () => {
+    const width = 6;
+    const height = 4;
+    const expected = solidRgba(width, height, 100, 100, 100);
+    const actual = solidRgba(width, height, 100, 100, 100);
+    const diffMask = new Uint8Array(width * height);
+
+    const outPath = path.join(tmpDir, "overlay-excluded.png");
+    await createDirectionalDiffOverlay(
+      expected,
+      actual,
+      diffMask,
+      width,
+      height,
+      outPath,
+      { x: 1, y: 0, width: 4, height: 4 }
+    );
+
+    expect(await readPixel(outPath, 0, 0)).not.toEqual([128, 128, 128]);
+    expect(await readPixel(outPath, 2, 0)).toEqual([128, 128, 128]);
+  });
+
   it("writes a valid PNG file", async () => {
     const width = 8;
     const height = 8;

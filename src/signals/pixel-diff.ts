@@ -11,6 +11,8 @@ export interface PixelComponent {
 export interface PixelDiffResult {
   changedPixels: number;
   changedPercent: number;
+  comparablePixels: number;
+  excludedPixels: number;
   components: PixelComponent[];
   diffBuffer: Buffer;
   diffMask: Uint8Array;
@@ -59,7 +61,8 @@ function labelComponents(mask: Uint8Array, width: number, height: number): Pixel
 
 export function computePixelDiff(
   expectedPngPath: string,
-  actualPngPath: string
+  actualPngPath: string,
+  validRect?: Box
 ): PixelDiffResult {
   const expected = PNG.sync.read(fs.readFileSync(expectedPngPath));
   const actual = PNG.sync.read(fs.readFileSync(actualPngPath));
@@ -80,7 +83,7 @@ export function computePixelDiff(
   }
 
   const diffData = new Uint8Array(width * height * 4);
-  const changed = pixelmatch(
+  pixelmatch(
     expected.data as unknown as Uint8Array,
     actualData,
     diffData,
@@ -95,22 +98,50 @@ export function computePixelDiff(
     }
   );
 
+  const validLeft = Math.max(0, Math.ceil(validRect?.x ?? 0));
+  const validTop = Math.max(0, Math.ceil(validRect?.y ?? 0));
+  const validRight = Math.min(width, Math.floor(
+    validRect === undefined ? width : validRect.x + validRect.width
+  ));
+  const validBottom = Math.min(height, Math.floor(
+    validRect === undefined ? height : validRect.y + validRect.height
+  ));
+  const comparablePixels = Math.max(0, validRight - validLeft)
+    * Math.max(0, validBottom - validTop);
   const mask = new Uint8Array(width * height);
+  let changedPixels = 0;
   for (let i = 0; i < width * height; i++) {
+    const x = i % width;
+    const y = Math.floor(i / width);
+    const comparable = x >= validLeft && x < validRight && y >= validTop && y < validBottom;
+    if (!comparable) {
+      diffData[i * 4] = 0;
+      diffData[i * 4 + 1] = 0;
+      diffData[i * 4 + 2] = 0;
+      diffData[i * 4 + 3] = 0;
+      continue;
+    }
     const r = diffData[i * 4];
     const g = diffData[i * 4 + 1];
     const b = diffData[i * 4 + 2];
     const isDiffRed = r !== undefined && g !== undefined && b !== undefined && r > 200 && g < 80 && b < 80;
     const isDiffBlue = r !== undefined && g !== undefined && b !== undefined && b > 200 && r < 80 && g < 80;
-    mask[i] = isDiffRed || isDiffBlue ? 255 : 0;
+    if (isDiffRed || isDiffBlue) {
+      mask[i] = 255;
+      changedPixels++;
+    }
   }
 
   const components = labelComponents(mask, width, height);
-  const changedPercent = (changed / (width * height)) * 100;
+  const changedPercent = comparablePixels > 0
+    ? (changedPixels / comparablePixels) * 100
+    : 0;
 
   return {
-    changedPixels: changed,
+    changedPixels,
     changedPercent,
+    comparablePixels,
+    excludedPixels: width * height - comparablePixels,
     components,
     diffBuffer: Buffer.from(diffData),
     diffMask: mask,

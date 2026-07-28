@@ -1628,8 +1628,28 @@ describe("runUiDiff viewport mismatch detection", () => {
       viewportCompatibilityStatus?: string;
       viewportCompatibilityReasons?: string[];
       warnings: string[];
+      comparisonSpace?: {
+        actualResizeMode: string;
+        mappingMode?: string;
+        scaleX?: number;
+        scaleY?: number;
+        validRect?: { x: number; y: number; width: number; height: number };
+        rasterValidRect?: { x: number; y: number; width: number; height: number };
+        comparablePixels?: number;
+        excludedPixels?: number;
+      };
     };
     expect(report.viewportCompatibilityStatus).toBe("mismatch");
     expect(report.warnings.some(w => w.includes("[viewport-mismatch]"))).toBe(true);
+    expect(report.comparisonSpace?.actualResizeMode).toBe("contain");
+    expect(report.comparisonSpace?.mappingMode).toBe("uniform_contain");
+    expect(report.comparisonSpace?.scaleX).toBeCloseTo(report.comparisonSpace?.scaleY ?? 0);
+    expect(report.comparisonSpace?.validRect).toBeDefined();
+    expect(report.comparisonSpace?.rasterValidRect).toBeDefined();
+    expect(report.comparisonSpace?.excludedPixels).toBeGreaterThan(0);
+    expect(
+      (report.comparisonSpace?.comparablePixels ?? 0)
+      + (report.comparisonSpace?.excludedPixels ?? 0)
+    ).toBe(120 * 262);
   });
 });

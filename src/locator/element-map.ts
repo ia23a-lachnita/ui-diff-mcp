@@ -320,7 +320,10 @@ export function projectElementsToActual(
         coordinateSpace: "actual_source_image" as const,
         sourceElementId: exp.id,
         scaleExpectedToActualX: transform.scaleExpectedToActualX,
-        scaleExpectedToActualY: transform.scaleExpectedToActualY
+        scaleExpectedToActualY: transform.scaleExpectedToActualY,
+        mappingMode: transform.mappingMode,
+        offsetExpectedToActualX: transform.offsetExpectedToActualX,
+        offsetExpectedToActualY: transform.offsetExpectedToActualY
       }
     };
   });

@@ -4,7 +4,7 @@ import path from "node:path";
 import sharp from "sharp";
 import { resolveInputImagePath, createRunDirectory } from "../security/paths.js";
 import { loadNormalizedImage } from "../images/normalize.js";
-import { createImagePairTransform } from "../images/coordinates.js";
+import { prepareAspectPreservingComparison } from "../images/aspect-preserving-comparison.js";
 import { summarizeGeometryDiagnostics } from "../images/comparison-geometry.js";
 import { computeViewportCompatibility } from "../images/viewport.js";
 import { annotateRecoveryTraceSupersessions, buildRegionLedger, applyFindingCoverage, applyRecoveryOutcomes, markBroadVlmEvidence, unresolvedRegionsFromLedger, type RegionLedger } from "../report/region-ledger.js";
@@ -297,17 +297,15 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
   const expectedImg = await loadNormalizedImage(expectedAbs, normalizedExpPath);
   const actualImg = await loadNormalizedImage(actualAbs, normalizedActPath);
 
-  const imagePairTransform = createImagePairTransform(
-    { width: expectedImg.width, height: expectedImg.height },
-    { width: actualImg.width, height: actualImg.height }
-  );
-
-  // Resize actual to expected dimensions for pixel diff and overlay only.
-  // Source images (actualImg) are kept at their native resolution for crops.
+  // Preserve the actual frame's aspect ratio in comparison space. Margins
+  // without corresponding actual pixels are explicitly excluded from signals.
   const actualComparisonPath = path.join(runDir, "actual-comparison-space.png");
-  await sharp(normalizedActPath)
-    .resize(expectedImg.width, expectedImg.height, { fit: "fill" })
-    .toFile(actualComparisonPath);
+  const comparisonPreparation = await prepareAspectPreservingComparison({
+    sourcePath: normalizedActPath,
+    outputPath: actualComparisonPath,
+    targetSize: { width: expectedImg.width, height: expectedImg.height }
+  });
+  const imagePairTransform = comparisonPreparation.transform;
   const { data: actualComparisonRgba } = await sharp(actualComparisonPath)
     .ensureAlpha()
     .raw()
@@ -318,7 +316,11 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     warnings.push(`[viewport-mismatch] ${viewportCompatibility.reasons.join("; ")}`);
   }
 
-  const pixelDiff = computePixelDiff(normalizedExpPath, actualComparisonPath);
+  const pixelDiff = computePixelDiff(
+    normalizedExpPath,
+    actualComparisonPath,
+    imagePairTransform.rasterValidRect
+  );
   const pixelDiffPngPath = path.join(runDir, "pixel-diff.png");
   await sharp(Buffer.from(pixelDiff.diffBuffer), {
     raw: { width: pixelDiff.width, height: pixelDiff.height, channels: 4 }
@@ -336,16 +338,22 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     pixelDiff.diffMask,
     expectedImg.width,
     expectedImg.height,
-    directionalOverlayPath
+    directionalOverlayPath,
+    imagePairTransform.rasterValidRect
   );
   const edgeMask = extractEdgeMask(expectedImg.rgba, expectedImg.width, expectedImg.height);
   const scopeSummaries = buildScopeDiffSummaries({
     imageWidth: expectedImg.width,
     imageHeight: expectedImg.height,
+    validRect: imagePairTransform.rasterValidRect,
     pixelComponents: pixelDiff.components,
     edgeComponents: edgeMask.components,
     expectedRgba: { data: expectedImg.rgba, width: expectedImg.width, height: expectedImg.height },
-    actualRgba: { data: actualImg.rgba, width: actualImg.width, height: actualImg.height }
+    actualRgba: {
+      data: actualComparisonRgba,
+      width: expectedImg.width,
+      height: expectedImg.height
+    }
   });
 
   let status: RunStatus = "complete";
@@ -1432,7 +1440,16 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     comparisonSpace: {
       width: expectedImg.width,
       height: expectedImg.height,
-      actualResizeMode: "fill" as const,
+      actualResizeMode: "contain" as const,
+      mappingMode: imagePairTransform.mappingMode,
+      scaleX: imagePairTransform.scaleActualToExpectedX,
+      scaleY: imagePairTransform.scaleActualToExpectedY,
+      offsetX: imagePairTransform.offsetActualToExpectedX,
+      offsetY: imagePairTransform.offsetActualToExpectedY,
+      validRect: imagePairTransform.validRect,
+      rasterValidRect: imagePairTransform.rasterValidRect,
+      comparablePixels: pixelDiff.comparablePixels,
+      excludedPixels: pixelDiff.excludedPixels,
       sourceCropsPreserveOriginalPixels: true
     },
     viewportCompatibilityStatus: viewportCompatibility.status,
