@@ -217,6 +217,39 @@ describe("validateClaim structured diagnostics", () => {
     expect(result).toMatchObject({ valid: false, diagnostics: { code: "unsupported_quantitative" } });
   });
 
+  it("does not let a possessive apostrophe corrupt later quoted visible percentages", () => {
+    const result = validateClaim(makeDiff({
+      title: "Spacing alignment mismatch",
+      evidence: [
+        "The element's placement differs from the expected mockup.",
+        "The baseline of the text '132/250g' is not aligned with the quoted value '53%'."
+      ]
+    }));
+
+    expect(result).toEqual({ valid: true });
+  });
+
+  it("keeps apostrophes inside a single-quoted visible label within that quote", () => {
+    const result = validateClaim(makeDiff({
+      title: "Text alignment mismatch",
+      evidence: ["The label 'user's input 53%' is vertically misaligned."]
+    }));
+
+    expect(result).toEqual({ valid: true });
+  });
+
+  it("still rejects the real percentage when it is not quoted", () => {
+    const result = validateClaim(makeDiff({
+      title: "Spacing alignment mismatch",
+      evidence: [
+        "The element's placement differs from the expected mockup.",
+        "The progress is 53%."
+      ]
+    }));
+
+    expect(result).toMatchObject({ valid: false, diagnostics: { code: "unsupported_quantitative" } });
+  });
+
   it("offending excerpt is capped at 200 characters", () => {
     const longEvidence = "X".repeat(300) + "100%" + "Y".repeat(300);
     const diff = makeDiff({ evidence: [longEvidence] });

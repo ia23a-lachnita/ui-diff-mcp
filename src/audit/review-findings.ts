@@ -105,13 +105,20 @@ interface QuantitativeAnalysis {
   excerpt: string;
 }
 
+function stripQuotedLiterals(value: string): string {
+  return value
+    .replace(/"[^"\r\n]*"/g, " ")
+    .replace(/`[^`\r\n]*`/g, " ")
+    .replace(/(?<![\p{L}\p{N}_])'(?:[^'\r\n]|'(?=[\p{L}\p{N}_]))*'(?![\p{L}\p{N}_])/gu, " ");
+}
+
 function analyzeQuantitativeClaims(
   diff: Pick<DiffRecord, "title" | "evidence">,
   measurements: DeterministicMeasurement[] = [],
   visibleTexts: string[] = []
 ): QuantitativeAnalysis | undefined {
   let searchable = [diff.title, ...diff.evidence].join(" ");
-  searchable = searchable.replace(/(["'`]).*?\1/g, " ");
+  searchable = stripQuotedLiterals(searchable);
   searchable = searchable.replace(new RegExp(EXACT_HEX_COLOR_PATTERN, "gi"), " ");
   for (const visibleText of visibleTexts.filter(Boolean).sort((a, b) => b.length - a.length)) {
     searchable = searchable.replace(new RegExp(escapeRegExp(visibleText), "gi"), " ");
