@@ -214,6 +214,42 @@ describe("writeRegionContextOverlays", () => {
     expect(nodes.find(node => node.id === "t2")).toMatchObject({ parentNodeId: "sec", nodeRole: "leaf" });
   });
 
+  it("uses valid child geometry for locator text structural parents", () => {
+    const parent = element("text-parent", "Nutrition card", "text", { x: 10, y: 40, width: 180, height: 100 });
+    const icon = element("text-icon", "icon", "icon", { x: 20, y: 50, width: 20, height: 20 }, parent.id);
+    const content = element("text-content", "96 g", "text", { x: 60, y: 50, width: 40, height: 20 }, parent.id);
+    parent.childIds = [icon.id, content.id];
+    const one = element("one-child", "one", "text", { x: 10, y: 180, width: 80, height: 40 });
+    const oneChild = element("one-child-leaf", "only", "icon", { x: 20, y: 190, width: 20, height: 20 }, one.id);
+    one.childIds = [oneChild.id];
+    const invalid = { ...element("invalid", "invalid", "icon", { x: 110, y: 190, width: 20, height: 20 }, parent.id), box: { x: 110, y: 190, width: 0, height: 20 } };
+    const merged = { ...parent, id: "merged-parent", source: "merged" as const };
+    const mergedIcon = { ...icon, id: "merged-icon", parentId: merged.id };
+    const mergedContent = { ...content, id: "merged-content", parentId: merged.id };
+    merged.childIds = [mergedIcon.id, mergedContent.id];
+    const invalidParent = element("invalid-parent", "Invalid", "text", { x: 10, y: 260, width: 80, height: 40 });
+    const invalidChild = { ...element("invalid-child", "bad", "icon", { x: 20, y: 270, width: 20, height: 20 }, invalidParent.id), box: { x: 20, y: 270, width: 0, height: 20 } };
+    invalidParent.childIds = [invalidChild.id];
+    const empty = element("empty-parent", "Empty", "text", { x: 110, y: 260, width: 80, height: 40 });
+    const nodes = buildSemanticHierarchy([parent, icon, content, one, oneChild, invalid, merged, mergedIcon, mergedContent, invalidParent, invalidChild, empty], 200, 400);
+    expect(nodes.find(node => node.id === parent.id)).toMatchObject({ nodeRole: "container" });
+    expect(nodes.find(node => node.id === one.id)).toMatchObject({ nodeRole: "leaf" });
+    expect(nodes.find(node => node.id === merged.id)).toMatchObject({ nodeRole: "leaf" });
+    expect(nodes.find(node => node.id === invalidParent.id)).toMatchObject({ nodeRole: "leaf" });
+    expect(nodes.find(node => node.id === empty.id)).toMatchObject({ nodeRole: "leaf" });
+  });
+
+  it("groups independent icon and content criteria under the local structural parent", () => {
+    const findings = [
+      { ...diff("icon"), criterion: "icon_image" as const, targetIds: ["parent", "icon"] },
+      { ...diff("content"), criterion: "typography_content" as const, targetIds: ["parent", "content"] }
+    ];
+    const groups = buildFindingGroups(findings, { width: 200, height: 400 });
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.diffIds).toEqual(["content", "icon"]);
+    expect(groups[0]?.criteria).toEqual(["icon_image", "typography_content"]);
+  });
+
   it("retains ordinary text and icon leaves beneath a card through a structural component", () => {
     const summary = element("summary", "<ref> Macro summary </ref><12,34,56,78>", "card", { x: 10, y: 40, width: 180, height: 160 });
     const component = element("component", "cv_component", "unknown", { x: 20, y: 60, width: 160, height: 120 }, summary.id);

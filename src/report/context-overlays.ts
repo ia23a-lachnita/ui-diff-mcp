@@ -4,6 +4,7 @@ import sharp from "sharp";
 import type { Box, ComparisonBoxRejectionReason, DiffRecord, FindingGroupLegendEntry, GeometryDiagnosticReference, SemanticHierarchyNode, UiArtifact, UiElement, UnresolvedRegion } from "../schemas/core.js";
 import type { ImagePairTransform } from "../images/coordinates.js";
 import { resolveComparisonBox, resolveComparisonExtraction } from "../images/comparison-geometry.js";
+import { isStructuralContainer, SEMANTIC_CONTAINER_TYPES } from "./structural-container.js";
 
 type AnnotationKind = "diff" | "unresolved" | "element" | "hierarchy";
 
@@ -48,14 +49,6 @@ export interface RegionContextOverlayInput {
   geometryRejections?: GeometryDiagnosticReference[];
 }
 
-const SEMANTIC_ELEMENT_TYPES = new Set<UiElement["type"]>([
-  "card",
-  "chart",
-  "nav",
-  "list_item",
-  "button",
-  "image"
-]);
 const MAX_REPAIR_LOCAL_AREA_RATIO = 0.3;
 const FINAL_DIFF_ZOOM_FILE_NAME = /^final-diff-zoom-\d+\.png$/;
 
@@ -325,8 +318,11 @@ export function buildSemanticHierarchy(
 
   const validChildCounts = new Map<string, number>();
   for (const { element } of validElements.values()) {
-    if (!element.parentId || !validElements.has(element.parentId)) continue;
-    validChildCounts.set(element.parentId, (validChildCounts.get(element.parentId) ?? 0) + 1);
+    const childIds = new Set(element.childIds.filter(childId => validElements.has(childId)));
+    for (const { element: child } of validElements.values()) {
+      if (child.parentId === element.id) childIds.add(child.id);
+    }
+    if (childIds.size > 0) validChildCounts.set(element.id, childIds.size);
   }
 
   const nodes = new Map<string, SemanticHierarchyNode>();
@@ -341,9 +337,8 @@ export function buildSemanticHierarchy(
   });
 
   for (const { element, box, label } of validElements.values()) {
-    const nodeRole = SEMANTIC_ELEMENT_TYPES.has(element.type) || (validChildCounts.get(element.id) ?? 0) >= 2
-      ? "container"
-      : "leaf";
+    const nodeRole = isStructuralContainer(element, validChildCounts.get(element.id) ?? 0)
+      ? "container" : "leaf";
     if (boxArea(box) / imageArea >= FULL_SCREEN_AREA_RATIO) continue;
     if (nodeRole === "leaf" && !isMeaningfulHierarchyLabel(label)) continue;
     nodes.set(element.id, {
@@ -380,7 +375,7 @@ function elementAnnotations(
   geometryRejections?: GeometryDiagnosticReference[]
 ): Annotation[] {
   const expected = (elements ?? [])
-    .filter(element => SEMANTIC_ELEMENT_TYPES.has(element.type))
+    .filter(element => SEMANTIC_CONTAINER_TYPES.has(element.type))
     .flatMap(element => canonicalAnnotation({
       box: element.box,
       sourceSpace: "comparison_expected_normalized",
@@ -391,7 +386,7 @@ function elementAnnotations(
       geometryRejections
     }));
   const actual = (actualElements ?? [])
-    .filter(element => SEMANTIC_ELEMENT_TYPES.has(element.type))
+    .filter(element => SEMANTIC_CONTAINER_TYPES.has(element.type))
     .flatMap(element => canonicalAnnotation({
       box: element.box,
       sourceSpace: transform ? "actual_normalized" : "comparison_expected_normalized",

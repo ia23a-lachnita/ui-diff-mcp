@@ -2,10 +2,7 @@ import type { Box, DiffRecord, ElementPair, GeometryDiagnosticReference, UiEleme
 import { resolveComparisonBox } from "../images/comparison-geometry.js";
 import type { ImagePairTransform } from "../images/coordinates.js";
 import { intersect } from "../signals/geometry.js";
-
-const SEMANTIC_PARENT_TYPES = new Set<UiElement["type"]>([
-  "card", "chart", "nav", "list_item", "button", "image"
-]);
+import { isStructuralContainer } from "./structural-container.js";
 const MAX_REPAIR_PARENT_AREA_RATIO = 0.3;
 
 interface OwnedFinding {
@@ -82,8 +79,25 @@ function unionBoxes(boxes: Box[]): Box {
   return { x, y, width: right - x, height: bottom - y };
 }
 
-function eligibleParent(element: UiElement): boolean {
-  return SEMANTIC_PARENT_TYPES.has(element.type) && element.source !== "merged";
+function hasValidGeometry(element: UiElement): boolean {
+  return Number.isFinite(element.box.x) && Number.isFinite(element.box.y)
+    && Number.isFinite(element.box.width) && Number.isFinite(element.box.height)
+    && element.box.width > 0 && element.box.height > 0;
+}
+
+function validStructuralChildCount(element: UiElement, elements: Map<string, UiElement>): number {
+  const childIds = new Set(element.childIds);
+  for (const child of elements.values()) {
+    if (child.parentId === element.id) childIds.add(child.id);
+  }
+  return [...childIds].filter(childId => {
+    const child = elements.get(childId);
+    return child !== undefined && hasValidGeometry(child);
+  }).length;
+}
+
+function eligibleParent(element: UiElement, elements: Map<string, UiElement>): boolean {
+  return isStructuralContainer(element, validStructuralChildCount(element, elements));
 }
 
 function median(values: number[]): number | undefined {
@@ -136,15 +150,16 @@ function ascendToSemanticParent(element: UiElement, elements: Map<string, UiElem
   const visited = new Set<string>();
   while (current && !visited.has(current.id)) {
     visited.add(current.id);
-    if (eligibleParent(current)) return current;
+    if (eligibleParent(current, elements)) return current;
     current = current.parentId ? elements.get(current.parentId) : undefined;
   }
   return undefined;
 }
 
 function overlappingSemanticParent(finding: DiffRecord, elements: UiElement[]): UiElement | undefined {
+  const elementMap = new Map(elements.map(element => [element.id, element]));
   return elements
-    .filter(eligibleParent)
+    .filter(element => eligibleParent(element, elementMap))
     .filter(element => !isOversizedRepairParent(element))
     .map(element => ({ element, overlap: intersect(finding.location, element.box) }))
     .filter((entry): entry is { element: UiElement; overlap: Box } => entry.overlap !== undefined && entry.overlap !== null)

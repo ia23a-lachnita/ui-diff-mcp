@@ -99,6 +99,51 @@ describe("consolidateFindings", () => {
     expect(result[0]?.evidence).toEqual(expect.arrayContaining(["evidence for audited", "evidence for recovered"]));
   });
 
+  it("merges geometry and color findings under a locator text parent", () => {
+    const parent = element("text-parent", "text", 20, 40, 80, 60);
+    const icon = element("text-icon", "icon", 30, 55, 30, 24, parent.id);
+    const content = element("text-content", "text", 55, 55, 30, 20, parent.id);
+    parent.childIds = [icon.id, content.id];
+    const cases = [
+      ["geometry", "pair-geometry", icon.id, "geometry"],
+      ["color", "pair-color", content.id, "color_appearance"]
+    ] as const;
+
+    for (const [name, pairId, childId, criterion] of cases) {
+      const parentFinding = finding(`parent-${name}`, `parent-${pairId}`, criterion, 20, 40, 80, 60);
+      parentFinding.targetIds = [parent.id];
+      const childFinding = finding(`child-${name}`, pairId, criterion, 30, 55, 30, 24);
+      childFinding.targetIds = [childId];
+      const result = consolidateFindings(
+        [parentFinding, childFinding],
+        [parent, icon, content],
+        [pair(`parent-${pairId}`, parent.id), pair(pairId, childId)]
+      );
+      expect(result, name).toHaveLength(1);
+      expectMergedChildIds(result[0]!, [parentFinding.id, childFinding.id]);
+      expect(result[0]?.evidence).toEqual(expect.arrayContaining(parentFinding.evidence.concat(childFinding.evidence)));
+    }
+  });
+
+  it("keeps oversized parents, merged parents, and permutations conservative", () => {
+    const parent = element("parent", "text", 0, 0, 200, 400);
+    const icon = element("icon", "icon", 20, 30, 20, 20, parent.id);
+    const content = element("content", "text", 60, 30, 40, 20, parent.id);
+    parent.childIds = [icon.id, content.id];
+    const parentFinding = finding("parent-finding", "pair-parent", "geometry", 0, 0, 200, 400);
+    parentFinding.targetIds = [parent.id];
+    const childFinding = finding("child-finding", "pair-child", "geometry", 20, 30, 20, 20);
+    childFinding.targetIds = [icon.id];
+    const elements = [parent, icon, content];
+    const pairs = [pair("pair-parent", parent.id), pair("pair-child", icon.id)];
+    expect(consolidateFindings([parentFinding, childFinding], elements, pairs)).toHaveLength(2);
+    expect(consolidateFindings([childFinding, parentFinding], [content, icon, parent], [...pairs].reverse())).toEqual(
+      consolidateFindings([parentFinding, childFinding], elements, pairs)
+    );
+    const merged = { ...parent, id: "merged", source: "merged" as const };
+    expect(consolidateFindings([parentFinding, childFinding], [merged, icon, content], pairs)).toHaveLength(2);
+  });
+
   it("keeps different criteria on the same parent separate", () => {
     const card = element("card", "card", 0, 0, 100, 100);
     const icon = element("icon", "icon", 10, 10, 20, 20, card.id);

@@ -13,6 +13,14 @@ Make final finding consolidation reflect the semantic UI hierarchy: a valid stru
 - Root cause: context overlays can infer a container from semantic type or at least two geometry-valid children, but `finding-consolidation` currently accepts only hardcoded semantic parent types. Live CV cards are often typed `text` while carrying valid `childIds`, so parent ownership, merge, and suppression are absent.
 - Exact-evidence equality remains conservative and is not the primary parent-discovery mechanism. The implementation must use structured hierarchy, geometry, criterion, and lineage data only; never prose-keyword heuristics.
 
+## Helmholtz Read-Only Investigation
+
+- Run `run-1785365640667-b52869` used a mixed-coordinate geometry trigger: `run-ui-diff` compared expected `402x874` boxes with projected actual `1080x2400` boxes. Raw deltas exceeded `3px` for `74/74` pairs, ranging from `132.97` to `2036.11` pixels. Applying the comparison transform made `73/74` pairs exactly zero; the remaining difference was the `4.35px` full-width contain inset. The raw trigger therefore falsely produced geometry/spacing findings.
+- VLM requests used native actual crops, while masks and overlays used actual-crop-comparison images normalized to expected-crop dimensions. These are not the same evidence coordinate/scale and must be made explicit and consistent.
+- Normal-audit reviewer independence was absent: `153/154` accepted audit decisions used the same auditor/reviewer model. Final records were `127/146` Ministral 8B and `19/146` Ministral 14B; there were zero `no_diff` decisions, `154/170` accepted audit findings, and `124/125` layout findings without a geometry displacement measurement. The `146` findings are not trustworthy as repair truth; concrete suspect IDs are `95a17bc6d40b`, `ad40093084e2`, `ea513272dfd3`, and `0152ed9a642c`.
+- Hierarchy quantification: `7` parent groups, `57` child groups, `87` repeated-criterion child records, `39` child-only duplicate groups, and `22` independent criteria across `18` child groups. A criterion-only upper bound is approximately `146 -> 59` records and `75 -> 36` groups, but `G42` and `G55` may span sibling cards, so blind suppression is unsafe.
+- Scope expansion is pending Antigravity review: correct the coordinate-space trigger, normalize VLM evidence, enforce normal reviewer-family independence, and add a structured mechanism key plus invariant. Tasks 1–3 remain complete; Task 4 is not checked and no live rerun should claim repair-grade truth until this review/implementation sequence is complete.
+
 ## Contract
 
 - Parent eligibility is a neutral shared structural-container predicate/utility used consistently by context overlays and finding consolidation.
@@ -27,21 +35,21 @@ Make final finding consolidation reflect the semantic UI hierarchy: a valid stru
 
 ### 1. Establish the shared predicate
 
-- [ ] Identify the existing context-overlay and finding-consolidation structural checks and define one neutral shared utility/predicate.
-- [ ] Specify geometry-valid child counting, lineage validity, semantic-type handling, viewport-area guard, and deterministic ordering in the utility contract.
-- [ ] Add unit tests for semantic container types, `text` parents with valid `childIds`, invalid/missing child geometry, zero/one/two-child thresholds, and the `>=30%` oversized guard.
+- [x] Identify the existing context-overlay and finding-consolidation structural checks and define one neutral shared utility/predicate.
+- [x] Specify geometry-valid child counting, lineage validity, semantic-type handling, viewport-area guard, and deterministic ordering in the utility contract.
+- [x] Add unit tests for semantic container types, `text` parents with valid `childIds`, invalid/missing child geometry, zero/one/two-child thresholds, and the `>=30%` oversized guard.
 
 ### 2. Make parent ownership structural
 
-- [ ] Replace the hardcoded `eligibleParent` semantic-type gate with the shared predicate while preserving conservative exact-evidence behavior.
-- [ ] Carry parent/child lineage through ownership selection, merge, suppression, retained IDs, and report group references.
-- [ ] Add tests for same-criterion nested layout/color findings merging into one parent-owned finding with complete lineage.
+- [x] Replace the hardcoded `eligibleParent` semantic-type gate with the shared predicate while preserving conservative exact-evidence behavior.
+- [x] Carry parent/child lineage through ownership selection, merge, suppression, retained IDs, and report group references.
+- [x] Add tests for same-criterion nested layout/color findings merging into one parent-owned finding with complete lineage.
 
 ### 3. Preserve independent criteria
 
-- [ ] Add tests proving icon and content findings in the same structural region remain separate criterion-level findings while sharing one group.
-- [ ] Ensure no merge occurs for unrelated geometry, invalid overlap, missing lineage, or parent-only containment without sufficient child evidence.
-- [ ] Add stable-permutation tests with equivalent input orderings and assert identical retained IDs, child IDs, groups, and suppression decisions.
+- [x] Add tests proving icon and content findings in the same structural region remain separate criterion-level findings while sharing one group.
+- [x] Ensure no merge occurs for unrelated geometry, invalid overlap, missing lineage, or parent-only containment without sufficient child evidence.
+- [x] Add stable-permutation tests with equivalent input orderings and assert identical retained IDs, child IDs, groups, and suppression decisions.
 
 ### 4. Enforce output invariants
 
