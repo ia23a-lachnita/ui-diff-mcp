@@ -51,27 +51,52 @@ Make final finding consolidation reflect the semantic UI hierarchy: a valid stru
 - [x] Ensure no merge occurs for unrelated geometry, invalid overlap, missing lineage, or parent-only containment without sufficient child evidence.
 - [x] Add stable-permutation tests with equivalent input orderings and assert identical retained IDs, child IDs, groups, and suppression decisions.
 
-### 4. Enforce output invariants
+### 4. Comparison-Space Trigger Correctness
 
-- [ ] Add an algorithmic helper/assertion that detects unexplained nested redundancy after consolidation.
-- [ ] Require every suppression to reference a retained parent/group and every retained nested record to have a distinct criterion or valid independent geometry reason.
-- [ ] Add report-contract and end-to-end fixtures covering zero unexplained redundancy, valid group lineage, oversized parents, and cross-criterion shared groups.
+- [ ] RED: add focused tests in `tests/unit/comparison-geometry.test.ts` and the existing run/trigger unit suite for a pure helper in `src/images/comparison-geometry.ts` (or a narrowly focused module). The helper accepts expected `Box`, actual `Box`, and optional `ImagePairTransform`; when a transform exists it calls `projectActualBoxToExpectedSource` and returns `dx`, `dy`, `dw`, `dh`, `positionDeltaPx`, `geometryDeltaPx`, and `coordinateSpace: "comparison_expected_normalized"`.
+- [ ] Cover identity, stretch, uniform contain/aspect mismatch, the real `402x874` expected versus `1080x2400` actual projection, and genuine moved/resized actual boxes. The comparison helper must intersect/clip the expected box with `ImagePairTransform.validRect` before comparing it with `projectActualBoxToExpectedSource(actual)`. A full-width expected box that projects outside the valid rectangle must compare only its comparable expected-space intersection; if there is no comparable intersection, return an explicit non-comparable outcome rather than a geometry delta. Capture the RED result against the raw mixed-space behavior.
+- [ ] Implement the helper and replace `TriggerContext.boxDeltaPx` in `src/pipeline/run-ui-diff.ts` with `positionDeltaPx` and `geometryDeltaPx`. Geometry eligibility triggers only when `geometryDeltaPx > 3`; `spacing_alignment` eligibility uses `positionDeltaPx > 2` when matched. Do not add projected single-locator layout measurements as independent evidence; this helper controls eligibility only.
+- [ ] GREEN: assert ideal projected boxes, including the real full-width `402x874`/`1080x2400` case, produce zero deltas after valid-rect clipping. The historical `4.35px` contain inset is non-comparable margin and must be neutralized, never accepted as a trigger exception; genuine independent moves/resizes within `validRect` remain nonzero. Preserve the existing oversized and deterministic evidence guards.
 
-### 5. Verification and live validation
+### 5. Normalized Target Evidence
 
-- [ ] Run focused structural-container and consolidation tests.
-- [ ] Run `npm run typecheck` and `npm run verify`.
-- [ ] Run a fresh full semantic Calorix audit with `auditLimited=false` when the sidecar and provider routes permit.
-- [ ] Inspect exhaustive final/group/parent-child artifacts, not only aggregate counts; record exact run ID, model/provider usage, tokens, errors, fallbacks, rejected findings, groups, and unresolved findings.
-- [ ] Do not claim production readiness unless the fresh semantic run is complete, has zero unresolved/escalated findings, and the structural invariant passes.
+- [ ] RED: add `tests/unit/audit.test.ts`, schema/artifact assertions where needed, and prompt/image-order regressions that inspect dimensions, pixel content, image slot order, and artifact roles for mismatched expected/actual crops.
+- [ ] In `src/audit/audit-target.ts`, preserve the native `actual_crop` artifact for diagnostics, but persist/add `UiArtifact` role `actual_comparison_crop` from the exact `prepareAspectPreservingComparison` PNG. Load that normalized PNG as VLM slot 2 instead of `actualCropB64`; pixel masks, overlays, and the sent image must use the same normalized comparison crop.
+- [ ] Update `imageRoles`, prompt descriptions, and required accepted artifact roles to distinguish native diagnostics from normalized comparison evidence. Ensure report JSON references both roles without ambiguity.
+- [ ] GREEN: verify native and comparison artifacts remain available, normalized expected/actual dimensions match, content is the exact persisted PNG sent to the VLM, and mismatched-size crops cannot silently use mixed evidence.
+
+### 6. Runtime Independent Reviewer Routing
+
+- [ ] RED: add tests in `tests/unit/audit.test.ts`, `tests/unit/audit-scope.test.ts`, model-routing tests, and relevant stage tests proving normal audit review is dynamically independent of the successful auditor response, not a static primary route.
+- [ ] Change `AuditContext` in `src/audit/audit-target.ts` to accept `reviewerResolver: (auditorProvider, auditorModel) => VisionJsonCaller | undefined` or an equivalent typed resolver. Resolve it only after the auditor response; apply the same design to `auditScopeSummaries` in `src/audit/audit-scope.ts`.
+- [ ] Build the resolver in `src/pipeline/run-ui-diff.ts` using `orderIndependentReviewerCandidates` and fallback callers. Exclude the exact route and its `modelFamilyKey`; prefer a different provider. Keep the runtime fallback list family-independent and retain all candidate diagnostics. Existing recovery resolver behavior is the reference.
+- [ ] Add `AuditDecisionStatus: "independent_reviewer_unavailable"` where the schema does not already provide the equivalent. If no independent resolver exists, emit a `needs_escalation` trace/record excluded by `filterAcceptedDiffs`, not a silent drop.
+- [ ] Add the status to `auditTraceHasFailure`; feed target and scope traces into failed-pair/stage accounting so `deriveVisualClassificationStatus` becomes incomplete. Scope audits must return trace/failure facts rather than throw or discard them. Keep existing escalation semantics; do not duplicate `needs_escalation` filtering.
+- [ ] Update `modelSelection.reviewer` to the initial independent route relative to the primary auditor while retaining route diagnostics. GREEN: assert no successful normal audit has the same provider and model family as its auditor, and unavailable independence is visible as incomplete/escalated.
+
+### 7. Structural Invariants
+
+- [ ] RED: add an algorithmic helper, preferably in `src/report/structural-invariants.ts` with focused tests, that detects unexplained nested redundancy after `finding-consolidation` and reports retained parent/group lineage for every suppressed child.
+- [ ] Require every suppression to reference a retained parent/group; require each retained nested record to have a distinct criterion or a valid independent geometry reason. Preserve parent-first same-criterion merging, cross-criterion distinct `DiffRecord`s, stable permutations, and the `>=30%` oversized-parent guard.
+- [ ] Add report-contract and end-to-end fixtures covering zero unexplained redundancy, valid child/suppression lineage, oversized parents, cross-criterion shared groups, sibling-card boundaries such as `G42`/`G55`, and the known suspect finding shapes.
+- [ ] GREEN: assert the invariant is machine-checkable and fails the old `146/75` structural result rather than hiding it; no prose labels, keyword heuristics, or human-manual inspection may determine release behavior.
+
+### 8. Verification And Live Validation
+
+- [ ] Run focused RED/GREEN tests for Tasks 4–7, `npm run typecheck`, `npm run verify`, and `git diff --check`; record exact counts and failures.
+- [ ] Run relevant provider/live gates permitted by credentials, quota, and sidecar availability, including the normal MCP and Calorix gates. Record unavailable routes, fallbacks, errors, and route exhaustion exactly.
+- [ ] Run a fresh physical Calorix full audit with `auditLimited=false` only after Tasks 4–7 are green. Inspect exhaustive final diffs, group/parent-child lineage, artifacts, masks, overlays, and comparison crops through automation; human manual inspection is never release behavior.
+- [ ] Compare trigger counts before/after, assert no same-family auditor/reviewer decisions, and record exact provider/model routes, input/output/reasoning/total tokens, errors, fallbacks, accepted/rejected/escalated/unresolved counts, and artifact coverage.
+- [ ] Do not claim production readiness unless classification is complete, the fresh run is exhaustive, zero unresolved/escalated findings remain, the structural invariant is green, coordinate/evidence contracts pass, and the report artifacts are machine-verifiably repair-grade.
 
 ## Review Record
 
 - Antigravity conversation: `ui-diff-ai-history-live-grouping-20260730`.
 - Explicit Gemini 3.6 request failed because the MCP omitted the required effort parameter; the default route used Gemini 3.5 Flash High.
 - The first review proposed an unsafe keyword-based direction; that was challenged and removed from this plan.
-- Final review: `AGREEMENT_STATUS agree`, `MUST_FIX none`, `SHOULD_FIX none`.
-- MCP response noise: permission-search wrapper, concatenated headings/words, file URLs, and duplicate footer. No repository mutation.
+- Scope-expansion review: `AGREEMENT_STATUS agree`, `MUST_FIX none`, `SHOULD_FIX none`.
+- MCP response noise: three false "wait for search" prefatory statements, concatenated words/sections, and inconsistent model identity (`Gemini 1.5 Pro Standard Output` in the body versus `gemini-3.5-flash agy` in the footer). No repository mutation.
+- Release policy: human manual inspection is explicitly rejected as release behavior; exhaustive automated artifacts, accounting, routing, and structural invariants are required.
 
 ## Execution Blocker
 
