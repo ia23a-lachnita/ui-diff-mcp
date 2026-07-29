@@ -12,6 +12,7 @@ import {
 import { prepareCalorixLiveGate, type PreparedCalorixLiveGate } from "../helpers/calorix-live-gate.js";
 import { startUiDiffMcpClient, waitForUiDiffRun } from "../helpers/mcp-client.js";
 import { collectReleaseIntegrityIssues } from "../helpers/release-integrity.js";
+import { assertDeterministicAccounting } from "../helpers/deterministic-accounting.js";
 
 const calorixLive = process.env["RUN_CALORIX_UI_DIFF_LIVE"] === "1";
 const calorixFullLive = process.env["RUN_CALORIX_FULL_LIVE"] === "1";
@@ -251,7 +252,7 @@ describe.skipIf(!calorixDeterministicLive)("Calorix deterministic pipeline quali
 
   afterAll(() => { gate?.sidecarHandle.close(); });
 
-  test("consolidates large projected displacement without model providers", async () => {
+  test("deterministic projection produces coherent accounting without model providers", async () => {
     const { expectedImagePath, actualImagePath, projectRoot, inputProvenance } = await resolveCalorixGateImages(gate!);
     const started = await startUiDiffMcpClient({
       LOCATEANYTHING_TIMEOUT_MS: "600000",
@@ -283,9 +284,7 @@ describe.skipIf(!calorixDeterministicLive)("Calorix deterministic pipeline quali
       const groupedPairs = report.projectedPreAudit?.groupedPairs ?? 0;
       expect(report.projectedPreAudit?.projectedPairsChecked ?? 0, "deterministic gate must inspect projected pairs").toBeGreaterThan(0);
       expect(deterministicProjectedDiffs, "deterministic gate fixture must contain projected mismatch evidence").toBeGreaterThan(0);
-      expect(groupCount, "coherent projected mismatches must produce at least one grouped UI area").toBeGreaterThan(0);
-      expect(groupedPairs, "a grouped projected mismatch must retain at least two source pairs").toBeGreaterThanOrEqual(2);
-      expect(groupedPairs, "grouped pair accounting cannot exceed deterministic projected mismatches").toBeLessThanOrEqual(deterministicProjectedDiffs);
+      assertDeterministicAccounting({ groupCount, groupedPairs, deterministicProjectedDiffs });
       console.info(`[calorix-deterministic] run=${report.runId} displacementGroups=${report.projectedPreAudit?.displacementGroups ?? 0} structuralGroups=${report.projectedPreAudit?.structuralMismatchGroups ?? 0} groupedPairs=${report.projectedPreAudit?.groupedPairs ?? 0} finalDiffs=${report.diffs.length} unresolved=${report.unresolvedRegions.length}`);
     } finally {
       await started.close();
