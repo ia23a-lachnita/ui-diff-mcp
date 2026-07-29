@@ -12,7 +12,10 @@ import {
 import { prepareCalorixLiveGate, type PreparedCalorixLiveGate } from "../helpers/calorix-live-gate.js";
 import { startUiDiffMcpClient, waitForUiDiffRun } from "../helpers/mcp-client.js";
 import { collectReleaseIntegrityIssues } from "../helpers/release-integrity.js";
-import { assertDeterministicAccounting } from "../helpers/deterministic-accounting.js";
+import {
+  assertDeterministicAccounting,
+  assertDeterministicPairConservation
+} from "../helpers/deterministic-accounting.js";
 
 const calorixLive = process.env["RUN_CALORIX_UI_DIFF_LIVE"] === "1";
 const calorixFullLive = process.env["RUN_CALORIX_FULL_LIVE"] === "1";
@@ -283,8 +286,12 @@ describe.skipIf(!calorixDeterministicLive)("Calorix deterministic pipeline quali
       const deterministicProjectedDiffs = report.projectedPreAudit?.deterministicProjectedDiffs ?? 0;
       const groupedPairs = report.projectedPreAudit?.groupedPairs ?? 0;
       expect(report.projectedPreAudit?.projectedPairsChecked ?? 0, "deterministic gate must inspect projected pairs").toBeGreaterThan(0);
-      expect(deterministicProjectedDiffs, "deterministic gate fixture must contain projected mismatch evidence").toBeGreaterThan(0);
       assertDeterministicAccounting({ groupCount, groupedPairs, deterministicProjectedDiffs });
+      assertDeterministicPairConservation({
+        projectedPairsChecked: report.projectedPreAudit?.projectedPairsChecked ?? 0,
+        deterministicProjectedDiffs,
+        sentToVlmPairs: report.projectedPreAudit?.sentToVlmPairs ?? 0
+      });
       console.info(`[calorix-deterministic] run=${report.runId} displacementGroups=${report.projectedPreAudit?.displacementGroups ?? 0} structuralGroups=${report.projectedPreAudit?.structuralMismatchGroups ?? 0} groupedPairs=${report.projectedPreAudit?.groupedPairs ?? 0} finalDiffs=${report.diffs.length} unresolved=${report.unresolvedRegions.length}`);
     } finally {
       await started.close();

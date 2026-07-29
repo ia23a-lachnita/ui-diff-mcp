@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   validateDeterministicAccounting,
-  assertDeterministicAccounting
+  assertDeterministicAccounting,
+  assertDeterministicPairConservation
 } from "../helpers/deterministic-accounting.js";
 import type { DeterministicAccountingInput } from "../helpers/deterministic-accounting.js";
 
@@ -11,6 +12,15 @@ describe("validateDeterministicAccounting", () => {
       groupCount: 0,
       groupedPairs: 0,
       deterministicProjectedDiffs: 5
+    });
+    expect(issues).toEqual([]);
+  });
+
+  it("accepts a clean zero-diff projection with no groups or grouped pairs", () => {
+    const issues = validateDeterministicAccounting({
+      groupCount: 0,
+      groupedPairs: 0,
+      deterministicProjectedDiffs: 0
     });
     expect(issues).toEqual([]);
   });
@@ -93,5 +103,23 @@ describe("assertDeterministicAccounting", () => {
       groupedPairs: 3,
       deterministicProjectedDiffs: 5
     })).toThrow(/zero_groups_nonzero_pairs/);
+  });
+});
+
+describe("assertDeterministicPairConservation", () => {
+  it("accepts zero projected mismatches when every checked pair is sent to VLM", () => {
+    expect(() => assertDeterministicPairConservation({
+      projectedPairsChecked: 120,
+      deterministicProjectedDiffs: 0,
+      sentToVlmPairs: 120
+    })).not.toThrow();
+  });
+
+  it("throws when projected pairs are neither classified nor sent to VLM", () => {
+    expect(() => assertDeterministicPairConservation({
+      projectedPairsChecked: 120,
+      deterministicProjectedDiffs: 0,
+      sentToVlmPairs: 119
+    })).toThrow(/pair_conservation_mismatch/);
   });
 });

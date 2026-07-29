@@ -9,6 +9,12 @@ export interface DeterministicAccountingIssue {
   message: string;
 }
 
+export interface DeterministicPairConservationInput {
+  projectedPairsChecked: number;
+  deterministicProjectedDiffs: number;
+  sentToVlmPairs: number;
+}
+
 export function validateDeterministicAccounting(input: DeterministicAccountingInput): DeterministicAccountingIssue[] {
   const issues: DeterministicAccountingIssue[] = [];
 
@@ -41,6 +47,27 @@ export function assertDeterministicAccounting(input: DeterministicAccountingInpu
   if (issues.length > 0) {
     throw new Error(
       `Deterministic accounting validation failed:\n${issues.map(i => `  - [${i.code}] ${i.message}`).join("\n")}`
+    );
+  }
+}
+
+export function validateDeterministicPairConservation(
+  input: DeterministicPairConservationInput
+): DeterministicAccountingIssue[] {
+  if (input.deterministicProjectedDiffs + input.sentToVlmPairs === input.projectedPairsChecked) {
+    return [];
+  }
+  return [{
+    code: "pair_conservation_mismatch",
+    message: `deterministicProjectedDiffs (${input.deterministicProjectedDiffs}) + sentToVlmPairs (${input.sentToVlmPairs}) must equal projectedPairsChecked (${input.projectedPairsChecked})`
+  }];
+}
+
+export function assertDeterministicPairConservation(input: DeterministicPairConservationInput): void {
+  const issues = validateDeterministicPairConservation(input);
+  if (issues.length > 0) {
+    throw new Error(
+      `Deterministic pair conservation validation failed:\n${issues.map(i => `  - [${i.code}] ${i.message}`).join("\n")}`
     );
   }
 }
