@@ -3,6 +3,15 @@ import { resolveComparisonBox } from "../images/comparison-geometry.js";
 import type { ImagePairTransform } from "../images/coordinates.js";
 import { intersect } from "../signals/geometry.js";
 import { isStructuralContainer } from "./structural-container.js";
+import {
+  classifyStructuralRelation,
+  buildCandidateTerminalRecords,
+  freezeStructuralLedger,
+  measurementSignature,
+  type StructuralConsolidationLedger,
+  type StructuralRelationInput,
+  type StructuralSuppressionDecision
+} from "./structural-invariants.js";
 const MAX_REPAIR_PARENT_AREA_RATIO = 0.3;
 
 interface OwnedFinding {
@@ -21,6 +30,7 @@ export interface FindingConsolidationContext {
 export interface FindingFinalization {
   diffs: DiffRecord[];
   broadVlmFindings: DiffRecord[];
+  structuralLedger: StructuralConsolidationLedger;
 }
 
 function boxArea(box: Box): number {
@@ -350,6 +360,74 @@ function targetIdsForFinding(finding: DiffRecord, pairMap: Map<string, ElementPa
   ])];
 }
 
+function structuralRelationInput(
+  parent: DiffRecord,
+  child: DiffRecord,
+  elements: Map<string, UiElement>,
+  pairMap: Map<string, ElementPair>,
+  viewportArea: number
+): StructuralRelationInput {
+  const parentTargets = targetIdsForFinding(parent, pairMap);
+  const childTargets = targetIdsForFinding(child, pairMap);
+  let semanticRelation: StructuralRelationInput["semanticRelation"] = "unrelated";
+  let parentElementId: string | undefined;
+  let childElementId: string | undefined;
+  for (const parentId of parentTargets) {
+    for (const childId of childTargets) {
+      const parentElement = elements.get(parentId);
+      const childElement = elements.get(childId);
+      if (!parentElement || !childElement) continue;
+      if (parentId === childId) {
+        semanticRelation = "descendant";
+        parentElementId = parentId;
+        childElementId = childId;
+        continue;
+      }
+      if (isDescendantOf(childId, parentId, elements)) {
+        semanticRelation = "descendant";
+        parentElementId = parentId;
+        childElementId = childId;
+        continue;
+      }
+      if (parentElement.parentId !== undefined && parentElement.parentId === childElement.parentId) {
+        if (semanticRelation === "unrelated") semanticRelation = "sibling";
+        parentElementId ??= parentId;
+        childElementId ??= childId;
+      }
+    }
+  }
+  const unionBox = unionBoxes([parent.location, child.location]);
+  const explicitGroup = parent.findingGroupId !== undefined
+    && parent.findingGroupKind !== undefined
+    && parent.findingGroupId === child.findingGroupId
+    && parent.findingGroupKind === child.findingGroupKind;
+  const explicitGroupFields: Pick<StructuralRelationInput, "explicitFindingGroupId" | "explicitFindingGroupKind"> = explicitGroup
+    ? { explicitFindingGroupId: parent.findingGroupId!, explicitFindingGroupKind: parent.findingGroupKind! }
+    : {};
+  return {
+    parentFindingId: parent.id,
+    childFindingId: child.id,
+    ...(parentElementId ? { parentElementId } : {}),
+    ...(childElementId ? { childElementId } : {}),
+    criterion: parent.criterion,
+    sameCriterion: parent.criterion === child.criterion,
+    semanticRelation,
+    parentBox: parent.location,
+    childBox: child.location,
+    unionBox,
+    canvas: { width: Math.sqrt(viewportArea), height: Math.sqrt(viewportArea) },
+    parentAreaRatio: boxArea(parent.location) / Math.max(1, viewportArea),
+    unionAreaRatio: boxArea(unionBox) / Math.max(1, viewportArea),
+    childContainment: containedRatio(child.location, parent.location),
+    ...(parent.projectionMismatchKind && child.projectionMismatchKind
+      ? { parentProjectionMismatchKind: parent.projectionMismatchKind, childProjectionMismatchKind: child.projectionMismatchKind }
+      : {}),
+    ...explicitGroupFields,
+    parentMeasurement: measurementSignature(parent.measurements),
+    childMeasurement: measurementSignature(child.measurements)
+  };
+}
+
 function parentExplainsChildLayout(
   parent: DiffRecord,
   child: DiffRecord,
@@ -357,21 +435,8 @@ function parentExplainsChildLayout(
   pairMap: Map<string, ElementPair>,
   viewportArea: number
 ): boolean {
-  if (parent.id === child.id) return false;
-  if (!isLayoutFinding(parent) || parent.criterion !== child.criterion) return false;
-  if (boxArea(parent.location) / Math.max(1, viewportArea) >= MAX_REPAIR_PARENT_AREA_RATIO) return false;
-  if (boxArea(parent.location) <= boxArea(child.location)) return false;
-  const parentTargets = targetIdsForFinding(parent, pairMap);
-  const childTargets = targetIdsForFinding(child, pairMap);
-  if (parentTargets.length === 0 || childTargets.length === 0) return false;
-  const descendant = parentTargets.some(parentId =>
-    childTargets.some(childId => childId !== parentId && isDescendantOf(childId, parentId, elements))
-  );
-  if (!descendant || !coherentDisplacement(parent, child)) return false;
-  const normalizeEvidence = (values: string[]) => [...new Set(values.map(value => value.trim().toLocaleLowerCase()).filter(Boolean))].sort();
-  const parentEvidence = normalizeEvidence(parent.evidence);
-  const childEvidence = normalizeEvidence(child.evidence);
-  return parentEvidence.length === childEvidence.length && parentEvidence.every((value, index) => value === childEvidence[index]);
+  if (!isLayoutFinding(parent) || parent.criterion !== child.criterion || boxArea(parent.location) <= boxArea(child.location)) return false;
+  return classifyStructuralRelation(structuralRelationInput(parent, child, elements, pairMap, viewportArea)).action === "suppress";
 }
 
 function mergeChildIntoParent(parent: DiffRecord, children: DiffRecord[]): DiffRecord {
@@ -468,12 +533,19 @@ function suppressLayoutChildrenCoveredByParent(
     });
 }
 
-export function consolidateFindings(
+interface ConsolidationWithLedger {
+  diffs: DiffRecord[];
+  ledger: StructuralConsolidationLedger;
+}
+
+function consolidateFindingsWithLedger(
   findings: DiffRecord[],
   elements: UiElement[],
   pairs: ElementPair[],
-  context?: FindingConsolidationContext
-): DiffRecord[] {
+  context?: FindingConsolidationContext,
+  ledgerCandidates: DiffRecord[] = findings,
+  broadExcludedIds: readonly string[] = []
+): ConsolidationWithLedger {
   const canonicalFindings = context ? canonicalizeFinalFindings(findings, context, pairs) : findings;
   const ownershipCanvas = context?.canvas ?? estimateOwnershipCanvas(elements);
   const viewportArea = ownershipCanvas.width * ownershipCanvas.height;
@@ -510,7 +582,7 @@ export function consolidateFindings(
 
   const initiallyMerged = mergeOverlappingOwnedGroups([...groups.values()]).map(mergeGroup);
   const finalMerged = mergeFinalDuplicateFindings(initiallyMerged);
-  return suppressLayoutChildrenCoveredByParent(finalMerged, ownershipElements, pairs, viewportArea)
+  const diffs = suppressLayoutChildrenCoveredByParent(finalMerged, ownershipElements, pairs, viewportArea)
     .map(finding => ({
       ...finding,
       childFindingIds: [...new Set(finding.childFindingIds ?? [])]
@@ -518,6 +590,110 @@ export function consolidateFindings(
         .sort((a, b) => a.localeCompare(b))
     }))
     .sort((a, b) => a.location.y - b.location.y || a.location.x - b.location.x || a.id.localeCompare(b.id));
+  return {
+    diffs,
+    ledger: buildStructuralLedger(ledgerCandidates, diffs, ownershipElements, pairs, ownershipCanvas, broadExcludedIds)
+  };
+}
+
+export function consolidateFindings(
+  findings: DiffRecord[],
+  elements: UiElement[],
+  pairs: ElementPair[],
+  context?: FindingConsolidationContext
+): DiffRecord[] {
+  return consolidateFindingsWithLedger(findings, elements, pairs, context).diffs;
+}
+
+function buildStructuralLedger(
+  candidates: DiffRecord[],
+  retained: DiffRecord[],
+  elements: UiElement[],
+  pairs: ElementPair[],
+  canvas: { width: number; height: number },
+  broadExcludedIds: readonly string[] = []
+): StructuralConsolidationLedger {
+  const elementMap = new Map(elements.map(element => [element.id, element]));
+  const pairMap = new Map(pairs.map(pair => [pair.id, pair]));
+  const candidateIds = new Set(candidates.map(candidate => candidate.id));
+  const candidateRecords = candidates.map(candidate => ({
+    findingId: candidate.id,
+    criterion: candidate.criterion,
+    elementIds: targetIdsForFinding(candidate, pairMap).sort((a, b) => a.localeCompare(b)),
+    ...(candidate.classificationSource !== undefined ? { classificationSource: candidate.classificationSource } : {}),
+    ...(candidate.repairLocality !== undefined ? { repairLocality: candidate.repairLocality } : {})
+  }));
+  const involvedElementIds = new Set(candidateRecords.flatMap(candidate => candidate.elementIds));
+  const elementLineage = elements
+    .filter(element => involvedElementIds.has(element.id) || involvedElementIds.size > 0)
+    .map(element => ({
+      elementId: element.id,
+      ...(element.parentId ? { parentId: element.parentId } : {})
+    }));
+  for (const elementId of involvedElementIds) {
+    if (!elementLineage.some(lineage => lineage.elementId === elementId)) elementLineage.push({ elementId });
+  }
+  const removedLineage = new Map<string, string[]>();
+  for (const retainedFinding of retained) {
+    for (const suppressedFindingId of retainedFinding.childFindingIds ?? []) {
+      if (!candidateIds.has(suppressedFindingId)) continue;
+      const lineage = removedLineage.get(suppressedFindingId) ?? [];
+      lineage.push(retainedFinding.id);
+      removedLineage.set(suppressedFindingId, lineage);
+    }
+  }
+  const decisions: StructuralSuppressionDecision[] = [];
+  for (const retainedFinding of retained) {
+    for (const suppressedFindingId of retainedFinding.childFindingIds ?? []) {
+      if (!candidateIds.has(suppressedFindingId)) continue;
+      const suppressedFinding = candidates.find(candidate => candidate.id === suppressedFindingId);
+      if (!suppressedFinding) continue;
+      const input = structuralRelationInput(
+        retainedFinding,
+        suppressedFinding,
+        elementMap,
+        pairMap,
+        canvas.width * canvas.height
+      );
+      const relation = classifyStructuralRelation(input);
+      decisions.push({
+        action: relation.action,
+        reason: relation.reason,
+        suppressedFindingId,
+        retainedFindingId: retainedFinding.id,
+        ...(input.parentElementId ? { parentElementId: input.parentElementId } : {}),
+        ...(input.childElementId ? { childElementId: input.childElementId } : {}),
+        criterion: input.criterion,
+        sameCriterion: input.sameCriterion,
+        semanticDescendant: input.semanticRelation === "descendant",
+        semanticRelation: input.semanticRelation,
+        parentAreaRatio: input.parentAreaRatio,
+        locality: input.unionAreaRatio,
+        childContainment: input.childContainment,
+        parentMeasurement: input.parentMeasurement,
+        childMeasurement: input.childMeasurement,
+        ...(input.parentProjectionMismatchKind ? { parentProjectionMismatchKind: input.parentProjectionMismatchKind } : {}),
+        ...(input.childProjectionMismatchKind ? { childProjectionMismatchKind: input.childProjectionMismatchKind } : {}),
+        ...(input.explicitFindingGroupId ? { explicitFindingGroupId: input.explicitFindingGroupId } : {}),
+        ...(input.explicitFindingGroupKind ? { explicitFindingGroupKind: input.explicitFindingGroupKind } : {}),
+        displacementRelation: relation.displacementRelation,
+        measurementRelation: relation.measurementRelation
+      });
+    }
+  }
+  return freezeStructuralLedger({
+    candidates: candidateRecords,
+    decisions,
+    retainedFindingIds: retained.map(finding => finding.id),
+    elementLineage,
+    candidateTerminals: buildCandidateTerminalRecords({
+      candidates: candidateRecords,
+      retainedFindingIds: retained.map(finding => finding.id),
+      broadExcludedIds,
+      removedLineage: [...removedLineage.entries()].map(([candidateId, retainedFindingIds]) => ({ candidateId, retainedFindingIds })),
+      decisions
+    })
+  });
 }
 
 export function finalizeFindings(
@@ -530,14 +706,18 @@ export function finalizeFindings(
   const broadVlmFindings = canonical
     .filter(finding => finding.repairLocality === "broad" && finding.classificationSource === "vlm_reviewed")
     .sort((a, b) => a.id.localeCompare(b.id));
-  return {
-    diffs: consolidateFindings(
+  const consolidation = consolidateFindingsWithLedger(
       canonical.filter(finding => !broadVlmFindings.some(broad => broad.id === finding.id)),
       elements,
       pairs,
-      context
-    ).sort((a, b) => a.location.y - b.location.y || a.location.x - b.location.x || a.id.localeCompare(b.id)),
-    broadVlmFindings
+      context,
+      canonical,
+      broadVlmFindings.map(finding => finding.id)
+    );
+  return {
+    diffs: consolidation.diffs,
+    broadVlmFindings,
+    structuralLedger: consolidation.ledger
   };
 }
 
