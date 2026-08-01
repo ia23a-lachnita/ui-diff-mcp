@@ -364,11 +364,153 @@ export const ReportPartSchema = z.object({
     "unresolved_regions",
     "debug_summary",
     "usage_summary",
-    "scope_summary"
+    "scope_summary",
+    "structural_consolidation"
   ]),
   path: z.string().min(1)
 });
 export type ReportPart = z.infer<typeof ReportPartSchema>;
+
+export const StructuralRelationReasonSchema = z.enum([
+  "same_finding",
+  "no_semantic_relation",
+  "sibling_boundary",
+  "distinct_criterion",
+  "oversized_parent",
+  "nonlocal",
+  "distinct_projection_kind",
+  "equivalent_explicit_group",
+  "invalid_measurement_relation",
+  "independent_geometry",
+  "coherent_translation",
+  "coherent_resize",
+  "unexplained_nested_same_criterion"
+]);
+export const StructuralRelationActionSchema = z.enum(["suppress", "retain_distinct", "violation", "unrelated"]);
+export const StructuralSemanticRelationSchema = z.enum(["descendant", "sibling", "unrelated", "invalid"]);
+export const StructuralMeasurementKindSchema = z.enum(["none", "translation", "resize", "mixed", "invalid"]);
+export const StructuralDisplacementRelationSchema = z.enum(["coherent_translation", "distinct_translation", "not_applicable", "missing_measurement"]);
+export const StructuralMeasurementRelationSchema = z.enum(["same", "distinct_resize", "resize_vs_translation", "distinct_projection_kind", "explicit_equivalence", "coherent_translation", "coherent_resize", "missing_measurement"]);
+export const StructuralAccountingIssueSchema = z.enum([
+  "duplicate_candidate", "unknown_terminal", "duplicate_terminal", "duplicate_retained_id",
+  "retained_terminal_not_retained", "retained_id_without_candidate", "retained_id_without_terminal",
+  "suppressed_missing_decision", "suppressed_mismatched_decision", "duplicate_decision",
+  "decision_for_retained_candidate", "decision_for_broad_candidate", "unknown_decision_id",
+  "decision_criterion_mismatch", "decision_action_mismatch", "decision_reason_mismatch",
+  "decision_semantic_descendant_mismatch", "decision_semantic_relation_mismatch",
+  "decision_displacement_mismatch", "decision_measurement_mismatch", "duplicate_element_lineage",
+  "dangling_parent_lineage", "cyclic_element_lineage", "broad_ineligible", "broad_has_retained",
+  "broad_has_decision", "terminal_violation", "final_finding_without_candidate",
+  "retained_candidate_missing_final_finding", "suppressed_target_missing_final_finding",
+  "broad_excluded_in_final", "duplicate_final_finding"
+]);
+export const StructuralValidationViolationSchema = z.enum([
+  "missing_retained_lineage", "unexplained_nested_same_criterion", "oversized_parent", "sibling_boundary",
+  "invalid_measurement_relation", "missing_retained_group", "ambiguous_retained_group"
+]);
+
+const StructuralMeasurementSignatureSchema = z.object({
+  kind: StructuralMeasurementKindSchema,
+  x: z.number().finite().optional(),
+  y: z.number().finite().optional(),
+  width: z.number().finite().optional(),
+  height: z.number().finite().optional()
+}).strict();
+
+export const StructuralLedgerCandidateSchema = z.object({
+  findingId: z.string().min(1),
+  criterion: UiCriterionSchema,
+  elementIds: z.array(z.string().min(1)),
+  elementId: z.string().min(1).optional(),
+  classificationSource: z.enum(["vlm_reviewed", "deterministic_projected_mismatch", "target_recovery", "unclassified", "deterministic_geometry", "deterministic_presence"]).optional(),
+  repairLocality: RepairLocalitySchema.optional()
+}).strict();
+export const StructuralElementLineageSchema = z.object({
+  elementId: z.string().min(1),
+  parentId: z.string().min(1).optional()
+}).strict();
+export const StructuralSuppressionDecisionSchema = z.object({
+  action: StructuralRelationActionSchema,
+  reason: StructuralRelationReasonSchema,
+  suppressedFindingId: z.string().min(1),
+  retainedFindingId: z.string().min(1),
+  parentElementId: z.string().min(1).optional(),
+  childElementId: z.string().min(1).optional(),
+  criterion: UiCriterionSchema,
+  sameCriterion: z.boolean(),
+  semanticDescendant: z.boolean(),
+  semanticRelation: StructuralSemanticRelationSchema,
+  parentAreaRatio: z.number().finite().nonnegative(),
+  locality: z.number().finite().nonnegative(),
+  childContainment: z.number().finite().min(0).max(1),
+  parentMeasurement: StructuralMeasurementSignatureSchema,
+  childMeasurement: StructuralMeasurementSignatureSchema,
+  parentProjectionMismatchKind: z.string().min(1).optional(),
+  childProjectionMismatchKind: z.string().min(1).optional(),
+  explicitFindingGroupId: z.string().min(1).optional(),
+  explicitFindingGroupKind: z.string().min(1).optional(),
+  displacementRelation: StructuralDisplacementRelationSchema,
+  measurementRelation: StructuralMeasurementRelationSchema,
+  retainedGroupId: z.string().min(1).optional(),
+  retainedGroupIds: z.array(z.string().min(1)).optional()
+}).strict();
+export const StructuralCandidateTerminalSchema = z.enum(["retained", "suppressed_to_retained", "broad_excluded", "violation"]);
+const StructuralTerminalBaseShape = {
+  candidateId: z.string().min(1)
+};
+const StructuralTerminalDetailSchema = z.object({
+  expectedRetainedCount: z.number().int().nonnegative(),
+  actualRetainedCount: z.number().int().nonnegative(),
+  accountingIssue: StructuralAccountingIssueSchema.optional()
+}).strict();
+export const StructuralCandidateTerminalRecordSchema = z.discriminatedUnion("terminal", [
+  z.object({ ...StructuralTerminalBaseShape, terminal: z.literal("retained") }).strict(),
+  z.object({ ...StructuralTerminalBaseShape, terminal: z.literal("suppressed_to_retained"), retainedFindingId: z.string().min(1) }).strict(),
+  z.object({ ...StructuralTerminalBaseShape, terminal: z.literal("broad_excluded"), exclusionReason: z.literal("broad_vlm_evidence") }).strict(),
+  z.object({
+    ...StructuralTerminalBaseShape,
+    terminal: z.literal("violation"),
+    violationCode: z.literal("missing_retained_lineage"),
+    detail: StructuralTerminalDetailSchema.optional()
+  }).strict()
+]);
+export const StructuralConsolidationLedgerSchema = z.object({
+  candidates: z.array(StructuralLedgerCandidateSchema),
+  decisions: z.array(StructuralSuppressionDecisionSchema),
+  retainedFindingIds: z.array(z.string().min(1)),
+  candidateTerminals: z.array(StructuralCandidateTerminalRecordSchema),
+  elementLineage: z.array(StructuralElementLineageSchema)
+}).strict();
+export const StructuralValidationViolationRecordSchema = z.object({
+  code: StructuralValidationViolationSchema,
+  elementId: z.string().min(1).optional(),
+  candidateId: z.string().min(1).optional(),
+  suppressedFindingId: z.string().min(1).optional(),
+  retainedFindingId: z.string().min(1).optional(),
+  affectedGroupIds: z.array(z.string().min(1)),
+  detail: z.object({
+    expectedRetainedCount: z.number().int().nonnegative().optional(),
+    actualRetainedCount: z.number().int().nonnegative().optional(),
+    accountingIssue: StructuralAccountingIssueSchema.optional()
+  }).strict().optional()
+}).strict();
+export const StructuralConsolidationValidationSchema = z.object({
+  status: z.enum(["pass", "fail", "not_evaluated"]),
+  violations: z.array(StructuralValidationViolationRecordSchema)
+}).strict();
+export const StructuralConsolidationSummarySchema = z.object({
+  status: z.enum(["pass", "fail", "not_evaluated"]),
+  candidateCount: z.number().int().nonnegative(),
+  retainedCount: z.number().int().nonnegative(),
+  suppressedCount: z.number().int().nonnegative(),
+  broadExcludedCount: z.number().int().nonnegative(),
+  violationCount: z.number().int().nonnegative()
+}).strict();
+export type StructuralConsolidationSummary = z.infer<typeof StructuralConsolidationSummarySchema>;
+export const StructuralConsolidationDetailSchema = z.object({
+  ledger: StructuralConsolidationLedgerSchema,
+  validation: StructuralConsolidationValidationSchema
+}).strict();
 
 export const UiArtifactSchema = z.object({
   role: z.enum([
@@ -1041,6 +1183,19 @@ export const UiDiffReportSchema = z.object({
   broadEvidence: z.preprocess(value => value ?? [], z.array(DiffRecordSchema).optional()),
   unresolvedRegions: z.array(UnresolvedRegionSchema).default([]),
   reportParts: z.preprocess(value => value ?? [], z.array(ReportPartSchema).optional()),
+  structuralConsolidation: z.preprocess(
+    value => value ?? {
+      status: "not_evaluated",
+      candidateCount: 0,
+      retainedCount: 0,
+      suppressedCount: 0,
+      broadExcludedCount: 0,
+      violationCount: 0
+    },
+    StructuralConsolidationSummarySchema.optional()
+  ),
+  structuralConsolidationContract: z.literal("v1").optional(),
+  structuralConsolidationDetail: StructuralConsolidationDetailSchema.optional(),
   usageSummary: UsageSummarySchema.optional(),
   diffSummary: DiffSummarySchema.optional(),
   modelHealth: z.array(z.object({

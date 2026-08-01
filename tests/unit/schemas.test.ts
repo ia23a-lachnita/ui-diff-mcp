@@ -62,6 +62,32 @@ describe("core schemas", () => {
     expect(() => semanticHierarchyNodeSchema!.parse({ ...node, coordinateSpace: "actual_normalized" })).toThrow();
   });
 
+  it("defaults legacy reports to unevaluated structural consolidation and rejects malformed detail", () => {
+    const parsed = UiDiffReportSchema.parse(makeMinimalReport());
+    expect(parsed.structuralConsolidation).toEqual({
+      status: "not_evaluated",
+      candidateCount: 0,
+      retainedCount: 0,
+      suppressedCount: 0,
+      broadExcludedCount: 0,
+      violationCount: 0
+    });
+    expect(() => UiDiffReportSchema.parse(makeMinimalReport({
+      structuralConsolidation: { status: "pass", candidateCount: 0, retainedCount: 0, suppressedCount: 0, broadExcludedCount: 0, violationCount: 0, extra: true }
+    }))).toThrow();
+  });
+
+  it("requires canonical candidate element IDs and ledger lineage arrays", () => {
+    const candidate = { findingId: "finding-1", criterion: "geometry" };
+    expect(() => schemas.StructuralLedgerCandidateSchema.parse(candidate)).toThrow();
+    expect(() => schemas.StructuralConsolidationLedgerSchema.parse({
+      candidates: [], decisions: [], retainedFindingIds: [], candidateTerminals: []
+    })).toThrow();
+    expect(schemas.StructuralConsolidationLedgerSchema.parse({
+      candidates: [], decisions: [], retainedFindingIds: [], candidateTerminals: [], elementLineage: []
+    })).toMatchObject({ elementLineage: [] });
+  });
+
   it("rejects compact-role metadata on non-button elements while accepting legacy elements", () => {
     const baseElement = {
       id: "element-1",

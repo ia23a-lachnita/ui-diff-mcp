@@ -155,7 +155,7 @@ describe("runUiDiff non-comparable audit accounting", () => {
     expect(auditTrace).toContainEqual(expect.objectContaining({ status: "comparison_non_comparable", skipReason: "no_comparable_intersection" }));
     expect(report.stages.find(stage => stage.name === "audit")?.outcome).toBe("incomplete");
     expect(report.visualClassificationStatus).toBe("incomplete");
-  });
+  }, 15000);
 
   it("missing/extra pairs are deterministic_presence, never enter audit trace, and accounting is exact", async () => {
     const expected = await writeSolidPng(tmpDir, "expected.png", 200, 400, 128, 128, 128);

@@ -7,12 +7,14 @@ import {
   ElementPairSchema,
   RunDebugSummarySchema,
   ScopeDiffSummarySchema,
+  StructuralConsolidationDetailSchema,
   UiElementSchema,
   UnresolvedRegionSchema,
   UsageSummarySchema,
   type ReportPart,
   type UiDiffReport
 } from "../schemas/core.js";
+import { assertStructuralConsolidationAuthenticity } from "./structural-authenticity.js";
 
 export const ElementsPartSchema = z.object({
   elements: z.object({
@@ -27,6 +29,10 @@ export const UnresolvedRegionsPartSchema = z.object({ unresolvedRegions: z.array
 export const DebugSummaryPartSchema = z.object({ debugSummary: RunDebugSummarySchema });
 export const UsageSummaryPartSchema = z.object({ usageSummary: UsageSummarySchema });
 export const ScopeSummaryPartSchema = z.object({ scopeSummaries: z.array(ScopeDiffSummarySchema) });
+export const StructuralConsolidationPartSchema = z.object({
+  ledger: StructuralConsolidationDetailSchema.shape.ledger,
+  validation: StructuralConsolidationDetailSchema.shape.validation
+}).strict();
 
 type PartPayload = z.infer<typeof ElementsPartSchema>
   | z.infer<typeof PairsPartSchema>
@@ -35,7 +41,8 @@ type PartPayload = z.infer<typeof ElementsPartSchema>
   | z.infer<typeof UnresolvedRegionsPartSchema>
   | z.infer<typeof DebugSummaryPartSchema>
   | z.infer<typeof UsageSummaryPartSchema>
-  | z.infer<typeof ScopeSummaryPartSchema>;
+  | z.infer<typeof ScopeSummaryPartSchema>
+  | z.infer<typeof StructuralConsolidationPartSchema>;
 
 type ReadFile = (path: string) => Promise<string | Buffer>;
 
@@ -91,27 +98,60 @@ export async function writeReportPart<T extends PartPayload>(
   return { role, path: path.join("parts", fileName).replace(/\\/g, "/") };
 }
 
+export function assertReportPartsIntegrity(parts: readonly ReportPart[]): void {
+  const roles = new Set<string>();
+  const paths = new Set<string>();
+  for (const part of parts) {
+    const normalizedPath = path.posix.normalize(part.path.replaceAll("\\", "/"));
+    if (roles.has(part.role)) throw new Error(`Duplicate report part role: ${part.role}`);
+    if (paths.has(normalizedPath)) throw new Error(`Duplicate report part path: ${normalizedPath}`);
+    roles.add(part.role);
+    paths.add(normalizedPath);
+  }
+}
+
 export async function writeReportParts(report: UiDiffReport): Promise<ReportPart[]> {
   assertReportReferenceIntegrity(report);
-  const parts: ReportPart[] = [];
-  parts.push(await writeReportPart(report.artifactRoot, "elements", "elements.json", { elements: report.elements }, ElementsPartSchema));
-  parts.push(await writeReportPart(report.artifactRoot, "pairs", "pairs.json", { pairs: report.pairs }, PairsPartSchema));
-  parts.push(await writeReportPart(report.artifactRoot, "diffs", "diffs.json", { diffs: report.diffs }, DiffsPartSchema));
-  parts.push(await writeReportPart(report.artifactRoot, "broad_evidence", "broad-evidence.json", { broadEvidence: report.broadEvidence ?? [] }, BroadEvidencePartSchema));
-  parts.push(await writeReportPart(report.artifactRoot, "unresolved_regions", "unresolved-regions.json", { unresolvedRegions: report.unresolvedRegions }, UnresolvedRegionsPartSchema));
+  assertReportPartsIntegrity(report.reportParts ?? []);
+  const planned: ReportPart[] = [
+    { role: "elements", path: "parts/elements.json" },
+    { role: "pairs", path: "parts/pairs.json" },
+    { role: "diffs", path: "parts/diffs.json" },
+    { role: "broad_evidence", path: "parts/broad-evidence.json" },
+    { role: "unresolved_regions", path: "parts/unresolved-regions.json" }
+  ];
+  const writers: Array<() => Promise<ReportPart>> = [
+    () => writeReportPart(report.artifactRoot, "elements", "elements.json", { elements: report.elements }, ElementsPartSchema),
+    () => writeReportPart(report.artifactRoot, "pairs", "pairs.json", { pairs: report.pairs }, PairsPartSchema),
+    () => writeReportPart(report.artifactRoot, "diffs", "diffs.json", { diffs: report.diffs }, DiffsPartSchema),
+    () => writeReportPart(report.artifactRoot, "broad_evidence", "broad-evidence.json", { broadEvidence: report.broadEvidence ?? [] }, BroadEvidencePartSchema),
+    () => writeReportPart(report.artifactRoot, "unresolved_regions", "unresolved-regions.json", { unresolvedRegions: report.unresolvedRegions }, UnresolvedRegionsPartSchema)
+  ];
   if (report.debugSummary !== undefined) {
-    parts.push(await writeReportPart(report.artifactRoot, "debug_summary", "debug-summary.json", { debugSummary: report.debugSummary }, DebugSummaryPartSchema));
+    planned.push({ role: "debug_summary", path: "parts/debug-summary.json" });
+    writers.push(() => writeReportPart(report.artifactRoot, "debug_summary", "debug-summary.json", { debugSummary: report.debugSummary! }, DebugSummaryPartSchema));
   }
   if (report.usageSummary !== undefined) {
-    parts.push(await writeReportPart(report.artifactRoot, "usage_summary", "usage-summary.json", { usageSummary: report.usageSummary }, UsageSummaryPartSchema));
+    planned.push({ role: "usage_summary", path: "parts/usage-summary.json" });
+    writers.push(() => writeReportPart(report.artifactRoot, "usage_summary", "usage-summary.json", { usageSummary: report.usageSummary! }, UsageSummaryPartSchema));
   }
   if (report.diffSummary !== undefined) {
-    parts.push(await writeReportPart(report.artifactRoot, "scope_summary", "scope-summary.json", { scopeSummaries: report.diffSummary.scopeSummaries }, ScopeSummaryPartSchema));
+    planned.push({ role: "scope_summary", path: "parts/scope-summary.json" });
+    writers.push(() => writeReportPart(report.artifactRoot, "scope_summary", "scope-summary.json", { scopeSummaries: report.diffSummary!.scopeSummaries }, ScopeSummaryPartSchema));
   }
+  if (report.structuralConsolidationDetail !== undefined) {
+    planned.push({ role: "structural_consolidation", path: "parts/structural-consolidation.json" });
+    writers.push(() => writeReportPart(report.artifactRoot, "structural_consolidation", "structural-consolidation.json", report.structuralConsolidationDetail!, StructuralConsolidationPartSchema));
+  }
+  assertReportPartsIntegrity(planned);
+  const parts = [] as ReportPart[];
+  for (const writer of writers) parts.push(await writer());
+  assertReportPartsIntegrity(parts);
   return parts;
 }
 
 export function slimReportForParts(report: UiDiffReport, reportParts: ReportPart[]): UiDiffReport {
+  assertReportPartsIntegrity(reportParts);
   return {
     ...report,
     reportParts,
@@ -125,6 +165,8 @@ export function slimReportForParts(report: UiDiffReport, reportParts: ReportPart
     diffSummary: report.diffSummary === undefined
       ? undefined
       : { ...report.diffSummary, scopeSummaries: [] }
+    ,
+    structuralConsolidationDetail: undefined
   };
 }
 
@@ -142,16 +184,54 @@ async function readJsonPart<T>(reportPath: string, part: ReportPart, readFile: R
   return schema.parse(JSON.parse(raw.toString()));
 }
 
+function notEvaluatedStructuralSummary(): NonNullable<UiDiffReport["structuralConsolidation"]> {
+  return {
+    status: "not_evaluated",
+    candidateCount: 0,
+    retainedCount: 0,
+    suppressedCount: 0,
+    broadExcludedCount: 0,
+    violationCount: 0
+  };
+}
+
+function assertReportLifecycle(report: Pick<UiDiffReport, "isCheckpoint" | "status">): void {
+  if (report.isCheckpoint === true) {
+    if (report.status !== "running" && report.status !== "interrupted") {
+      throw new Error(`checkpoint status must be running or interrupted, got ${report.status}`);
+    }
+    return;
+  }
+  if (report.status === "running" || report.status === "interrupted") {
+    throw new Error(`final report status cannot be ${report.status}`);
+  }
+}
+
 export async function hydrateReportParts(
   report: UiDiffReport,
   reportPath: string,
   readFile: ReadFile = fs.readFile
 ): Promise<UiDiffReport> {
+  assertReportLifecycle(report);
   const reportParts = report.reportParts ?? [];
-  if (reportParts.length === 0) return report;
+  assertReportPartsIntegrity(reportParts);
+  if (reportParts.length === 0) {
+    if (!report.isCheckpoint) {
+      if (report.structuralConsolidationDetail !== undefined) {
+        assertStructuralConsolidationAuthenticity(report, report.structuralConsolidationDetail);
+      } else if (report.structuralConsolidationContract === "v1") {
+        throw new Error("structural consolidation authenticity: final report is missing structural part/detail");
+      } else {
+        return { ...report, structuralConsolidation: notEvaluatedStructuralSummary(), structuralConsolidationDetail: undefined };
+      }
+    }
+    return report;
+  }
 
   let hydrated: UiDiffReport = report;
   const findPart = (role: ReportPart["role"]) => reportParts.find(part => part.role === role);
+  const structuralPart = findPart("structural_consolidation");
+  const currentStructuralContract = report.structuralConsolidationContract === "v1" || structuralPart !== undefined;
 
   const elementsPart = findPart("elements");
   if (elementsPart !== undefined && report.elements.expected.length === 0 && report.elements.actual.length === 0) {
@@ -212,6 +292,21 @@ export async function hydrateReportParts(
         scopeSummaries: payload.scopeSummaries
       }
     };
+  }
+
+  if (structuralPart !== undefined && hydrated.structuralConsolidationDetail === undefined) {
+    const payload = await readJsonPart(reportPath, structuralPart, readFile, StructuralConsolidationPartSchema);
+    hydrated = { ...hydrated, structuralConsolidationDetail: payload };
+  }
+
+  if (!hydrated.isCheckpoint) {
+    if (hydrated.structuralConsolidationDetail !== undefined) {
+      assertStructuralConsolidationAuthenticity(hydrated, hydrated.structuralConsolidationDetail);
+    } else if (currentStructuralContract) {
+      throw new Error("structural consolidation authenticity: final report is missing structural part/detail");
+    } else {
+      hydrated = { ...hydrated, structuralConsolidation: notEvaluatedStructuralSummary(), structuralConsolidationDetail: undefined };
+    }
   }
 
   // Multipart reports written before the broad-evidence role used relatedFindingIds

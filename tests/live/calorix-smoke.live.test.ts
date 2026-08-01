@@ -63,7 +63,8 @@ async function collectReportReleaseIntegrityIssues(report: UiDiffReport): Promis
     recoveryStatusCounts: report.recoverySummary?.statusCounts ?? {},
     finalDiffCount: report.diffSummary?.finalDiffCount ?? report.diffs.length,
     finalGroupCount: report.diffSummary?.finalGroupCount,
-    groups: legend.groups
+    groups: legend.groups,
+    ...(report.structuralConsolidation !== undefined ? { structuralConsolidation: report.structuralConsolidation } : {})
   });
 }
 

@@ -1,6 +1,15 @@
 import { validateClaim } from "../../src/audit/review-findings.js";
 import type { DiffRecord } from "../../src/schemas/core.js";
 
+type StructuralSummary = {
+  status: "pass" | "fail" | "not_evaluated";
+  candidateCount: number;
+  retainedCount: number;
+  suppressedCount: number;
+  broadExcludedCount: number;
+  violationCount: number;
+};
+
 export interface ReleaseIntegrityInput {
   auditLimited: boolean;
   diffs: DiffRecord[];
@@ -9,10 +18,16 @@ export interface ReleaseIntegrityInput {
   finalDiffCount: number;
   finalGroupCount: number | undefined;
   groups: Array<{ id: string; diffIds: string[] }>;
+  structuralConsolidation?: StructuralSummary;
 }
 
 export function collectReleaseIntegrityIssues(input: ReleaseIntegrityInput): string[] {
   const issues: string[] = [];
+  if (input.structuralConsolidation === undefined) {
+    issues.push("missing_structural_consolidation");
+  } else if (input.structuralConsolidation.status !== "pass") {
+    issues.push(`structural_consolidation:${input.structuralConsolidation.status}`);
+  }
   if (input.unresolvedRegions.length > 0) {
     issues.push(`unresolved_regions:${input.unresolvedRegions.length}`);
   }

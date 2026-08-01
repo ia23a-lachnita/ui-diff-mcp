@@ -5,10 +5,33 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { assignDiffComponentsToRecords } from "../../src/report/coverage.js";
 import { compareRunInputs } from "../../src/report/report-parts.js";
 import { writeUiDiffReport } from "../../src/report/report-writer.js";
-import { UiDiffReportSchema, type DiffRecord } from "../../src/schemas/core.js";
+import { StructuralConsolidationDetailSchema, UiDiffReportSchema, type DiffRecord } from "../../src/schemas/core.js";
 import { makeElementSlug } from "../../src/audit/audit-target.js";
+import { buildFindingGroups } from "../../src/report/context-overlays.js";
+import { summarizeStructuralConsolidation, validateStructuralConsolidationLedger } from "../../src/report/structural-invariants.js";
 
 let tmpDir: string;
+
+const emptyStructuralReportFields = {
+  comparisonSpace: {
+    width: 200,
+    height: 400,
+    actualResizeMode: "contain" as const,
+    sourceCropsPreserveOriginalPixels: true
+  },
+  structuralConsolidation: {
+    status: "pass" as const,
+    candidateCount: 0,
+    retainedCount: 0,
+    suppressedCount: 0,
+    broadExcludedCount: 0,
+    violationCount: 0
+  },
+  structuralConsolidationDetail: {
+    ledger: { candidates: [], decisions: [], retainedFindingIds: [], candidateTerminals: [], elementLineage: [] },
+    validation: { status: "pass" as const, violations: [] }
+  }
+};
 
 beforeEach(async () => {
   tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ui-diff-report-"));
@@ -74,7 +97,8 @@ describe("writeUiDiffReport", () => {
       modelHealth: [],
       runArtifacts: [],
       warnings: [],
-      stages: []
+      stages: [],
+      ...emptyStructuralReportFields,
     };
 
     const output = await writeUiDiffReport(report);
@@ -94,6 +118,27 @@ describe("writeUiDiffReport", () => {
 
   it("compact summary mentions diff count and high severity", async () => {
     const artifactRoot = path.join(tmpDir, "artifacts2");
+    const finding = {
+      id: "d1", criterion: "geometry" as const, severity: "high" as const,
+      title: "Big shift", location: { x: 0, y: 0, width: 10, height: 10 },
+      evidence: ["y=50"], measurements: [], artifactPaths: [],
+      reviewerStatus: "accepted" as const
+    };
+    const ledger = {
+      candidates: [{ findingId: finding.id, criterion: finding.criterion, elementIds: [] }],
+      decisions: [],
+      retainedFindingIds: [finding.id],
+      candidateTerminals: [{ candidateId: finding.id, terminal: "retained" as const }],
+      elementLineage: []
+    };
+    const groups = buildFindingGroups([finding], { width: 200, height: 400 })
+      .map(group => ({ id: group.id, diffIds: [...group.diffIds] }));
+    const validation = validateStructuralConsolidationLedger(ledger, {
+      requireGroups: true,
+      actualGroups: groups,
+      finalFindingIds: [finding.id]
+    });
+    const detail = StructuralConsolidationDetailSchema.parse({ ledger, validation });
     const report = {
       schemaVersion: "0.1" as const,
       runId: "run-2",
@@ -106,17 +151,15 @@ describe("writeUiDiffReport", () => {
       artifactRoot,
       elements: { expected: [], actual: [] },
       pairs: [],
-      diffs: [{
-        id: "d1", criterion: "geometry" as const, severity: "high" as const,
-        title: "Big shift", location: { x: 0, y: 0, width: 10, height: 10 },
-        evidence: ["y=50"], measurements: [], artifactPaths: [],
-        reviewerStatus: "accepted" as const
-      }],
+      diffs: [finding],
       unresolvedRegions: [],
       modelHealth: [],
       runArtifacts: [],
       warnings: [],
-      stages: []
+      stages: [],
+      ...emptyStructuralReportFields,
+      structuralConsolidation: summarizeStructuralConsolidation(ledger, validation),
+      structuralConsolidationDetail: detail,
     };
 
     const output = await writeUiDiffReport(report);
@@ -145,6 +188,7 @@ describe("writeUiDiffReport", () => {
       runArtifacts: [],
       warnings: [],
       stages: [],
+      ...emptyStructuralReportFields,
       auditScope: { auditedPairs: 3, totalPairs: 5, auditLimited: true, limitReason: "max pairs limit", scopeAuditCalls: 0, scopeFailedAudits: 0, scopeUnresolvedAudits: 0 }
     };
 
@@ -178,7 +222,8 @@ describe("writeUiDiffReport", () => {
       modelHealth: [],
       runArtifacts: [],
       warnings: [],
-      stages: []
+      stages: [],
+      ...emptyStructuralReportFields,
     };
 
     const output = await writeUiDiffReport(report);
@@ -205,6 +250,7 @@ describe("writeUiDiffReport", () => {
       runArtifacts: [],
       warnings: [],
       stages: [],
+      ...emptyStructuralReportFields,
       modelSelection: {
         auditor: { provider: "gemini", model: "gemini-3.5-flash", costClass: "free" as const },
         reviewer: { provider: "mistral", model: "mistral-small-3.2", costClass: "free" as const },

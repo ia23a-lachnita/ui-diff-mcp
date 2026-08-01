@@ -27,6 +27,14 @@ function input(overrides: Partial<Parameters<typeof collectReleaseIntegrityIssue
     finalDiffCount: 1,
     finalGroupCount: 1,
     groups: [{ id: "group-001", diffIds: ["diff-1"] }],
+    structuralConsolidation: {
+      status: "pass",
+      candidateCount: 1,
+      retainedCount: 1,
+      suppressedCount: 0,
+      broadExcludedCount: 0,
+      violationCount: 0
+    },
     ...overrides
   };
 }
@@ -34,6 +42,17 @@ function input(overrides: Partial<Parameters<typeof collectReleaseIntegrityIssue
 describe("collectReleaseIntegrityIssues", () => {
   it("accepts an uncapped report with one valid group and supported claim", () => {
     expect(collectReleaseIntegrityIssues(input())).toEqual([]);
+  });
+
+  it("rejects a missing or non-passing structural consolidation summary", () => {
+    const { structuralConsolidation: _ignored, ...withoutStructural } = input();
+    expect(collectReleaseIntegrityIssues(withoutStructural)).toContain("missing_structural_consolidation");
+    expect(collectReleaseIntegrityIssues(input({
+      structuralConsolidation: { ...input().structuralConsolidation!, status: "not_evaluated" }
+    })).some(issue => issue === "structural_consolidation:not_evaluated")).toBe(true);
+    expect(collectReleaseIntegrityIssues(input({
+      structuralConsolidation: { ...input().structuralConsolidation!, status: "fail", violationCount: 1 }
+    })).some(issue => issue === "structural_consolidation:fail")).toBe(true);
   });
 
   it("blocks deferred broad fragments and unresolved regions in uncapped runs", () => {

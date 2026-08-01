@@ -29,6 +29,11 @@ vi.mock("../../src/report/context-overlays.js", async importOriginal => {
   return { ...actual, buildFindingGroups: vi.fn(actual.buildFindingGroups) };
 });
 
+vi.mock("../../src/report/finding-consolidation.js", async importOriginal => {
+  const actual = await importOriginal<typeof import("../../src/report/finding-consolidation.js")>();
+  return { ...actual, finalizeFindings: vi.fn(actual.finalizeFindings) };
+});
+
 vi.mock("../../src/diff/scope-summary.js", async importOriginal => {
   const actual = await importOriginal<typeof import("../../src/diff/scope-summary.js")>();
   return { ...actual, buildScopeDiffSummaries: vi.fn(actual.buildScopeDiffSummaries) };
@@ -37,6 +42,7 @@ vi.mock("../../src/diff/scope-summary.js", async importOriginal => {
 import { runProjectedPreAudit } from "../../src/diff/projected-preaudit.js";
 import { buildDeterministicDiffs } from "../../src/diff/deterministic-diffs.js";
 import { buildFindingGroups } from "../../src/report/context-overlays.js";
+import { finalizeFindings } from "../../src/report/finding-consolidation.js";
 import { buildScopeDiffSummaries } from "../../src/diff/scope-summary.js";
 
 let tmpDir: string;
@@ -478,7 +484,9 @@ describe("runUiDiff end-to-end (deterministic_only mode)", () => {
     expect(report.runId).toBe(result.runId);
     expect(report.visualClassificationStatus).toBe("not_run");
     expect(report.unresolvedRegions.length).toBeGreaterThan(0);
-    expect(buildFindingGroups).toHaveBeenCalledTimes(1);
+    // The final pipeline builds groups once, authenticity verification rebuilds them
+    // before writing, and hydration rebuilds them again before accepting the report.
+    expect(buildFindingGroups).toHaveBeenCalledTimes(3);
     expect(report.diffs.every(diff => !(diff.childFindingIds ?? []).includes(diff.id))).toBe(true);
     const groupLegendArtifact = (report as unknown as { runArtifacts: Array<{ role: string; path: string }> }).runArtifacts
       .find(artifact => artifact.role === "final_diff_groups_legend");
@@ -1628,6 +1636,40 @@ describe("runUiDiff auditScope.vlmAuditedPairs pipeline accounting", () => {
     // call is needed for the unchanged targets.
     expect(report.projectedPreAudit?.deterministicProjectedDiffs).toBe(0);
     expect(report.projectedPreAudit?.sentToVlmPairs).toBe(total);
+  });
+
+  it("persists a passing structural consolidation detail for a no-candidate run", async () => {
+    const { expected, actual } = await writeSolidPng(tmpDir, "structural-empty-e.png", 200, 400, 120, 120, 120)
+      .then(async expectedPath => ({ expected: expectedPath, actual: await writeSolidPng(tmpDir, "structural-empty-a.png", 200, 400, 120, 120, 120) }));
+    const result = await runUiDiff({ expectedImagePath: expected, actualImagePath: actual, projectRoot: tmpDir, mode: "deterministic_only" });
+    const raw = JSON.parse(await fs.readFile(result.reportPath, "utf8")) as { structuralConsolidation: { status: string; candidateCount: number }; runArtifacts: Array<{ role: string }>; };
+    const report = await hydrateReportParts(raw as Parameters<typeof hydrateReportParts>[0], result.reportPath) as typeof raw & { structuralConsolidationDetail?: { ledger: { candidates: unknown[] }; validation: { status: string } } };
+    expect(report.structuralConsolidation).toMatchObject({ status: "pass", candidateCount: 0 });
+    expect(report.structuralConsolidationDetail).toMatchObject({ ledger: { candidates: [] }, validation: { status: "pass" } });
+    expect(report.runArtifacts.some(artifact => artifact.role === "structural_consolidation")).toBe(false);
+  });
+
+  it("forces incomplete when the final structural ledger fails validation", async () => {
+    const { expected, actual } = await writeSolidPng(tmpDir, "structural-fail-e.png", 200, 400, 120, 120, 120)
+      .then(async expectedPath => ({ expected: expectedPath, actual: await writeSolidPng(tmpDir, "structural-fail-a.png", 200, 400, 120, 120, 120) }));
+    const actualConsolidation = await vi.importActual<typeof import("../../src/report/finding-consolidation.js")>("../../src/report/finding-consolidation.js");
+    vi.mocked(finalizeFindings).mockImplementationOnce((...args) => {
+      const base = actualConsolidation.finalizeFindings(...args);
+      return {
+        ...base,
+        structuralLedger: {
+          ...base.structuralLedger,
+          candidateTerminals: [{ candidateId: "forged-candidate", terminal: "violation", violationCode: "missing_retained_lineage" }]
+        }
+      };
+    });
+    const result = await runUiDiff({ expectedImagePath: expected, actualImagePath: actual, projectRoot: tmpDir, mode: "deterministic_only" });
+    const raw = JSON.parse(await fs.readFile(result.reportPath, "utf8")) as { visualClassificationStatus: string; structuralConsolidation: { status: string; violationCount: number }; warnings: string[] };
+    const report = await hydrateReportParts(raw as Parameters<typeof hydrateReportParts>[0], result.reportPath) as typeof raw;
+    expect(report.structuralConsolidation.status).toBe("fail");
+    expect(report.structuralConsolidation.violationCount).toBeGreaterThan(0);
+    expect(report.visualClassificationStatus).toBe("incomplete");
+    expect(report.warnings.some(warning => warning.startsWith("[structural-consolidation]"))).toBe(true);
   });
 
   it("retains target-audit escalation when no independent reviewer route exists", async () => {

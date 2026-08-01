@@ -49,6 +49,8 @@ export const STRUCTURAL_ACCOUNTING_ISSUES = [
   "decision_semantic_relation_mismatch",
   "decision_displacement_mismatch",
   "decision_measurement_mismatch",
+  "final_finding_without_candidate", "retained_candidate_missing_final_finding",
+  "suppressed_target_missing_final_finding", "broad_excluded_in_final", "duplicate_final_finding",
   "duplicate_element_lineage",
   "dangling_parent_lineage",
   "cyclic_element_lineage",
@@ -297,6 +299,60 @@ export function freezeStructuralLedger(ledger: StructuralConsolidationLedger): S
   });
 }
 
+export interface StructuralFindingGroupReference {
+  readonly id: string;
+  readonly diffIds: readonly string[];
+}
+
+/** Maps final retained findings to the stable group that owns them. */
+export function mapStructuralDecisionGroups(
+  ledger: StructuralConsolidationLedger,
+  groups: readonly StructuralFindingGroupReference[]
+): StructuralConsolidationLedger {
+  const sortedGroups = [...groups]
+    .map(group => ({ id: group.id, diffIds: [...group.diffIds].sort((a, b) => a.localeCompare(b)) }))
+    .sort((a, b) => a.id.localeCompare(b.id));
+  const decisions = ledger.decisions.map(decision => {
+    const { retainedGroupId: _oldRetainedGroupId, retainedGroupIds: _oldRetainedGroupIds, ...withoutOldGroups } = decision;
+    const matching = sortedGroups
+      .filter(group => group.diffIds.includes(decision.retainedFindingId))
+      .map(group => group.id)
+      .sort((a, b) => a.localeCompare(b));
+    if (matching.length === 1) {
+      return { ...withoutOldGroups, retainedGroupId: matching[0]!, retainedGroupIds: matching };
+    }
+    if (matching.length > 1) return { ...withoutOldGroups, retainedGroupIds: matching };
+    return { ...withoutOldGroups };
+  });
+  return freezeStructuralLedger({ ...ledger, decisions });
+}
+
+export interface StructuralConsolidationSummary {
+  readonly status: "pass" | "fail" | "not_evaluated";
+  readonly candidateCount: number;
+  readonly retainedCount: number;
+  readonly suppressedCount: number;
+  readonly broadExcludedCount: number;
+  readonly violationCount: number;
+}
+
+export function summarizeStructuralConsolidation(
+  ledger: StructuralConsolidationLedger | undefined,
+  validation: StructuralLedgerValidation | undefined
+): StructuralConsolidationSummary {
+  if (ledger === undefined || validation === undefined) {
+    return { status: "not_evaluated", candidateCount: 0, retainedCount: 0, suppressedCount: 0, broadExcludedCount: 0, violationCount: 0 };
+  }
+  return {
+    status: validation.status,
+    candidateCount: ledger.candidates.length,
+    retainedCount: ledger.candidateTerminals.filter(terminal => terminal.terminal === "retained").length,
+    suppressedCount: ledger.candidateTerminals.filter(terminal => terminal.terminal === "suppressed_to_retained").length,
+    broadExcludedCount: ledger.candidateTerminals.filter(terminal => terminal.terminal === "broad_excluded").length,
+    violationCount: validation.violations.length + ledger.candidateTerminals.filter(terminal => terminal.terminal === "violation").length
+  };
+}
+
 export function measurementSignature(measurements: readonly DeterministicMeasurement[]): StructuralMeasurementSignature {
   const hasX = measurements.some(measurement => measurement.name === "horizontal_shift" || measurement.name === "deltaX");
   const hasY = measurements.some(measurement => measurement.name === "vertical_shift" || measurement.name === "deltaY");
@@ -536,7 +592,11 @@ function validateElementLineage(lineage: readonly StructuralElementLineage[]): r
 
 export function validateStructuralConsolidationLedger(
   ledger: StructuralConsolidationLedger | undefined,
-  options: { readonly requireGroups?: boolean } = {}
+  options: {
+    readonly requireGroups?: boolean;
+    readonly actualGroups?: readonly StructuralFindingGroupReference[];
+    readonly finalFindingIds?: readonly string[];
+  } = {}
 ): StructuralLedgerValidation {
   if (!ledger) return Object.freeze({ status: "not_evaluated" as const, violations: freezeArray([]) });
   const violations: StructuralValidationViolationRecord[] = [...validateElementLineage(ledger.elementLineage ?? [])];
@@ -578,6 +638,49 @@ export function validateStructuralConsolidationLedger(
     const terminal = terminalByCandidate.get(retainedId);
     if (!terminal || terminal.terminal !== "retained") {
       violations.push(accountingViolation("retained_id_without_terminal", { candidateId: retainedId }));
+    }
+  }
+  if (options.finalFindingIds !== undefined) {
+    const finalFindingIds = [...options.finalFindingIds];
+    const finalIdCounts = new Map<string, number>();
+    for (const findingId of finalFindingIds) finalIdCounts.set(findingId, (finalIdCounts.get(findingId) ?? 0) + 1);
+    for (const [findingId, count] of finalIdCounts) {
+      if (count > 1) violations.push(accountingViolation("duplicate_final_finding", { candidateId: findingId }, {
+        expectedRetainedCount: 1,
+        actualRetainedCount: count
+      }));
+    }
+    const finalIds = new Set(finalFindingIds);
+    const retainedTerminalIds = new Set(ledger.candidateTerminals
+      .filter(terminal => terminal.terminal === "retained")
+      .map(terminal => terminal.candidateId));
+    for (const findingId of finalIds) {
+      const candidate = ledger.candidates.find(item => item.findingId === findingId);
+      if (!candidate) {
+        violations.push(accountingViolation("final_finding_without_candidate", { candidateId: findingId }));
+        continue;
+      }
+      const terminal = terminalByCandidate.get(findingId);
+      if (candidate.classificationSource === "vlm_reviewed" && candidate.repairLocality === "broad") {
+        if (terminal?.terminal === "broad_excluded") violations.push(accountingViolation("broad_excluded_in_final", { candidateId: findingId }));
+      } else if (terminal?.terminal !== "retained") {
+        violations.push(accountingViolation("retained_candidate_missing_final_finding", { candidateId: findingId }));
+      }
+    }
+    for (const findingId of retainedTerminalIds) {
+      if (!finalIds.has(findingId)) violations.push(accountingViolation("retained_candidate_missing_final_finding", { candidateId: findingId }));
+    }
+    for (const findingId of retainedIds) {
+      if (!finalIds.has(findingId)) violations.push(accountingViolation("retained_candidate_missing_final_finding", { candidateId: findingId }));
+    }
+    for (const terminal of ledger.candidateTerminals) {
+      const retainedFindingId = terminal.terminal === "suppressed_to_retained" ? terminal.retainedFindingId : undefined;
+      if (retainedFindingId !== undefined && !finalIds.has(retainedFindingId)) {
+        violations.push(accountingViolation("suppressed_target_missing_final_finding", {
+          candidateId: terminal.candidateId,
+          retainedFindingId
+        }));
+      }
     }
   }
   for (const candidate of ledger.candidates) {
@@ -704,6 +807,23 @@ export function validateStructuralConsolidationLedger(
       const groups = decision.retainedGroupIds ?? (decision.retainedGroupId ? [decision.retainedGroupId] : []);
       if (groups.length === 0) violations.push(violationRecord("missing_retained_group", decision));
       if (groups.length > 1) violations.push(violationRecord("ambiguous_retained_group", decision));
+      if (decision.retainedGroupId !== undefined && decision.retainedGroupIds !== undefined
+        && (decision.retainedGroupIds.length !== 1 || decision.retainedGroupIds[0] !== decision.retainedGroupId)) {
+        violations.push(violationRecord("ambiguous_retained_group", decision));
+      }
+      if (options.actualGroups !== undefined) {
+        const actualGroups = [...options.actualGroups]
+          .filter(group => group.diffIds.includes(decision.retainedFindingId))
+          .map(group => group.id)
+          .sort((a, b) => a.localeCompare(b));
+        if (actualGroups.length === 0) {
+          violations.push(violationRecord("missing_retained_group", decision));
+        } else if (actualGroups.length > 1) {
+          violations.push(violationRecord("ambiguous_retained_group", decision));
+        } else if (groups.length !== 1 || groups[0] !== actualGroups[0]) {
+          violations.push(violationRecord("missing_retained_group", decision));
+        }
+      }
     }
   }
   for (const terminal of ledger.candidateTerminals) {

@@ -3,6 +3,7 @@ import {
   buildCandidateTerminalRecords,
   classifyStructuralRelation,
   freezeStructuralLedger,
+  mapStructuralDecisionGroups,
   validateStructuralConsolidationLedger,
   type StructuralConsolidationLedger,
   type StructuralRelationInput,
@@ -914,5 +915,69 @@ describe("Task 7A decision-aware accounting", () => {
     });
     expect(ledger.elementLineage?.slice(0, 2).map(lineage => lineage.parentId)).toEqual(["a-parent", "z-parent"]);
     expect(validateStructuralConsolidationLedger(ledger).status).toBe("fail");
+  });
+
+  it("maps each retained decision to exactly one stable finding group", () => {
+    const mapped = mapStructuralDecisionGroups(lineageCandidateLedger([
+      { elementId: "child-element", parentId: "parent-element" },
+      { elementId: "parent-element" }
+    ]), [{ id: "group-002", diffIds: ["parent"] }, { id: "group-001", diffIds: ["child"] }]);
+    expect(mapped.decisions[0]).toMatchObject({ retainedGroupId: "group-002", retainedGroupIds: ["group-002"] });
+    expect(validateStructuralConsolidationLedger(mapped, { requireGroups: true })).toEqual({ status: "pass", violations: [] });
+  });
+
+  it.each([
+    ["missing", []],
+    ["ambiguous", [{ id: "group-001", diffIds: ["parent"] }, { id: "group-002", diffIds: ["parent"] }]]
+  ])("fails requireGroups validation for %s retained group mapping", (_label, groups) => {
+    const mapped = mapStructuralDecisionGroups(lineageCandidateLedger([
+      { elementId: "child-element", parentId: "parent-element" },
+      { elementId: "parent-element" }
+    ]), groups);
+    expect(validateStructuralConsolidationLedger(mapped, { requireGroups: true }).status).toBe("fail");
+  });
+
+  it("keeps group mapping byte-stable under input permutations", () => {
+    const ledger = lineageCandidateLedger([
+      { elementId: "child-element", parentId: "parent-element" },
+      { elementId: "parent-element" }
+    ]);
+    const groups = [{ id: "group-002", diffIds: ["parent"] }, { id: "group-001", diffIds: ["child"] }];
+    const forward = mapStructuralDecisionGroups(ledger, groups);
+    const reverse = mapStructuralDecisionGroups({
+      ...ledger,
+      decisions: [...ledger.decisions].reverse(),
+      candidates: [...ledger.candidates].reverse(),
+      elementLineage: [...ledger.elementLineage].reverse()
+    }, [...groups].reverse());
+    expect(JSON.stringify(forward)).toBe(JSON.stringify(reverse));
+  });
+
+  it("clears stale retained group ownership before remapping", () => {
+    const ledger = lineageCandidateLedger([{ elementId: "child-element", parentId: "parent-element" }, { elementId: "parent-element" }]);
+    const stale = {
+      ...ledger,
+      decisions: ledger.decisions.map(decision => ({ ...decision, retainedGroupId: "stale", retainedGroupIds: ["stale"] }))
+    };
+    const mapped = mapStructuralDecisionGroups(stale, [{ id: "group-001", diffIds: ["parent"] }]);
+    expect(mapped.decisions[0]).toMatchObject({ retainedGroupId: "group-001", retainedGroupIds: ["group-001"] });
+    expect(mapped.decisions[0]).not.toMatchObject({ retainedGroupId: "stale", retainedGroupIds: ["stale"] });
+  });
+
+  it("rejects stale, wrong-owner, missing, and ambiguous actual group ownership", () => {
+    const ledger = lineageCandidateLedger([{ elementId: "child-element", parentId: "parent-element" }, { elementId: "parent-element" }]);
+    const stale = mapStructuralDecisionGroups(ledger, [{ id: "group-001", diffIds: ["parent"] }]);
+    expect(validateStructuralConsolidationLedger(stale, {
+      requireGroups: true,
+      actualGroups: [{ id: "group-999", diffIds: ["parent"] }]
+    }).status).toBe("fail");
+    expect(validateStructuralConsolidationLedger(stale, {
+      requireGroups: true,
+      actualGroups: [{ id: "group-001", diffIds: ["other"] }]
+    }).status).toBe("fail");
+    expect(validateStructuralConsolidationLedger(stale, {
+      requireGroups: true,
+      actualGroups: [{ id: "group-001", diffIds: ["parent"] }, { id: "group-002", diffIds: ["parent"] }]
+    }).status).toBe("fail");
   });
 });

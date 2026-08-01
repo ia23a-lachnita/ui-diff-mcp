@@ -1,8 +1,9 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { UiDiffReport, UiArtifact, AuditScope, RecoverySummary, RunDebugSummary, RuntimeModelUsage, RuntimeModelUsageDiagnostics, UsageSummary } from "../schemas/core.js";
+import type { UiDiffReport, UiArtifact, AuditScope, RecoverySummary, RunDebugSummary, RuntimeModelUsage, RuntimeModelUsageDiagnostics, UsageSummary, StructuralConsolidationSummary } from "../schemas/core.js";
 import { UiDiffReportSchema } from "../schemas/core.js";
-import { slimReportForParts, writeReportParts } from "./report-parts.js";
+import { assertReportReferenceIntegrity, slimReportForParts, writeReportParts } from "./report-parts.js";
+import { assertStructuralConsolidationAuthenticity } from "./structural-authenticity.js";
 
 export interface CompactOutput {
   runId: string;
@@ -17,6 +18,7 @@ export interface CompactOutput {
   visualClassificationStatus: string;
   locatorCoverageStatus: string;
   auditLimited: boolean;
+  structuralConsolidation: StructuralConsolidationSummary;
   auditScope?: AuditScope;
   recoverySummary?: RecoverySummary;
   debugSummary?: RunDebugSummary;
@@ -29,9 +31,22 @@ export async function writeReportCheckpoint(report: UiDiffReport): Promise<strin
   const reportPath = path.join(report.artifactRoot, "report.json");
   const tmpPath = `${reportPath}.tmp`;
   await fs.mkdir(report.artifactRoot, { recursive: true });
-  const reportParts = await writeReportParts(report);
-  const checkpoint = UiDiffReportSchema.parse(slimReportForParts({
+  const checkpointSource: UiDiffReport = {
     ...report,
+    isCheckpoint: true,
+    structuralConsolidation: {
+      status: "not_evaluated",
+      candidateCount: 0,
+      retainedCount: 0,
+      suppressedCount: 0,
+      broadExcludedCount: 0,
+      violationCount: 0
+    },
+    structuralConsolidationDetail: undefined
+  };
+  const reportParts = await writeReportParts(checkpointSource);
+  const checkpoint = UiDiffReportSchema.parse(slimReportForParts({
+    ...checkpointSource,
     status: report.status === "interrupted" ? "interrupted" : "running",
     isCheckpoint: true,
     heartbeatAt: new Date().toISOString(),
@@ -45,6 +60,14 @@ export async function writeReportCheckpoint(report: UiDiffReport): Promise<strin
 export async function writeUiDiffReport(
   report: UiDiffReport
 ): Promise<CompactOutput> {
+  if (report.isCheckpoint === true) {
+    throw new Error("writeUiDiffReport is the final writer; checkpoint input is not allowed");
+  }
+  if (report.status === "running" || report.status === "interrupted") {
+    throw new Error(`final report status cannot be ${report.status}`);
+  }
+  assertReportReferenceIntegrity(report);
+  assertStructuralConsolidationAuthenticity(report, report.structuralConsolidationDetail);
   const reportDir = report.artifactRoot;
   await fs.mkdir(reportDir, { recursive: true });
 
@@ -69,6 +92,7 @@ export async function writeUiDiffReport(
   const finalReport = UiDiffReportSchema.parse(slimReportForParts({
     ...report,
     isCheckpoint: false,
+    structuralConsolidationContract: "v1",
     heartbeatAt: new Date().toISOString()
   }, reportParts));
   const reportTmpPath = `${reportPath}.tmp`;
@@ -95,6 +119,14 @@ export async function writeUiDiffReport(
     visualClassificationStatus: report.visualClassificationStatus,
     locatorCoverageStatus: report.locatorCoverageStatus,
     auditLimited: report.auditScope?.auditLimited ?? false,
+    structuralConsolidation: report.structuralConsolidation ?? {
+      status: "not_evaluated",
+      candidateCount: 0,
+      retainedCount: 0,
+      suppressedCount: 0,
+      broadExcludedCount: 0,
+      violationCount: 0
+    },
     ...(report.auditScope !== undefined ? { auditScope: report.auditScope } : {}),
     ...(report.recoverySummary !== undefined ? { recoverySummary: report.recoverySummary } : {}),
     ...(report.debugSummary !== undefined ? { debugSummary: report.debugSummary } : {}),

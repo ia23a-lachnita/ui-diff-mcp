@@ -9,6 +9,7 @@ import { computeComparisonSpaceDelta, summarizeGeometryDiagnostics } from "../im
 import { computeViewportCompatibility } from "../images/viewport.js";
 import { annotateRecoveryTraceSupersessions, buildRegionLedger, applyFindingCoverage, applyRecoveryOutcomes, markBroadVlmEvidence, unresolvedRegionsFromLedger, type RegionLedger } from "../report/region-ledger.js";
 import { finalizeFindings } from "../report/finding-consolidation.js";
+import { mapStructuralDecisionGroups, summarizeStructuralConsolidation, validateStructuralConsolidationLedger } from "../report/structural-invariants.js";
 import { applyBroadEvidenceFragmentDeferrals, applyResidualFragmentDecisions, classifyBroadEvidenceFragmentDeferrals, classifyResidualFragments, type ResidualFragmentOptions } from "../report/residual-fragments.js";
 import { buildFindingGroups, writeRegionContextOverlays } from "../report/context-overlays.js";
 import { writeLocatorOverlays } from "../report/locator-overlays.js";
@@ -46,7 +47,7 @@ import { filterComponentsForScope, filterPairsForScope, normalizeDiffScope } fro
 import type { UiDiffReport, RunStatus, VisualClassificationStatus, LocatorCoverageStatus, DiffRecord, ElementPair, UiArtifact, AuditScope, ModelSelection, RecoverySummary, RecoveryCursor, StageStatus, LocatorLaneMetadata, RunDebugSummary, ProjectedPreAuditSummary, DiffScope, RuntimeModelUsage, RuntimeModelUsageDiagnostics, UsageSummary, LocatorInputSizing, InputProvenance, InputProvenanceRequest, ComparisonBoxRejectionReason, GeometryDiagnosticReference } from "../schemas/core.js";
 import { computeColorEvidence } from "../signals/color.js";
 import { createRunId } from "./run-store.js";
-import { UiDiffReportSchema } from "../schemas/core.js";
+import { StructuralConsolidationDetailSchema, UiDiffReportSchema } from "../schemas/core.js";
 import { auditTraceHasFailure, deriveAuditStageOutcome, deriveRecoveryStageOutcome, deriveVisualClassificationStatus } from "./stages.js";
 import type { StageOutcome } from "../schemas/core.js";
 import type { LocateAnythingRequestSizing } from "../locator/locateanything-client.js";
@@ -1466,6 +1467,21 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     unresolvedRegionCount: unresolvedRegions.length
   });
   const findingGroups = buildFindingGroups(finalDiffs, { width: expectedImg.width, height: expectedImg.height });
+  const structuralLedger = mapStructuralDecisionGroups(finalization.structuralLedger, findingGroups);
+  const structuralValidation = validateStructuralConsolidationLedger(structuralLedger, {
+    requireGroups: true,
+    actualGroups: findingGroups.map(group => ({ id: group.id, diffIds: [...group.diffIds] })),
+    finalFindingIds: finalDiffs.map(diff => diff.id)
+  });
+  const structuralConsolidation = summarizeStructuralConsolidation(structuralLedger, structuralValidation);
+  const structuralConsolidationDetail = StructuralConsolidationDetailSchema.parse({
+    ledger: structuralLedger,
+    validation: structuralValidation
+  });
+  if (structuralConsolidation.status !== "pass") {
+    visualClassificationStatus = "incomplete";
+    warnings.push(`[structural-consolidation] status=${structuralConsolidation.status} violations=${structuralConsolidation.violationCount}`);
+  }
   const diffSummary = buildDiffSummary(finalDiffs, unresolvedRegions.length, scopeSummaries, findingGroups.length);
 
   const contextArtifacts = await writeRegionContextOverlays({
@@ -1521,6 +1537,8 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     ...(recoverySummary !== undefined ? { recoverySummary } : {}),
     ...(recoveryCursor !== undefined ? { recoveryCursor } : {}),
     ...(projectedPreAuditSummary !== undefined ? { projectedPreAudit: projectedPreAuditSummary } : {}),
+    structuralConsolidation,
+    structuralConsolidationDetail,
     geometryDiagnostics: summarizeGeometryDiagnostics(geometryRejections),
     providerDiagnosticsPresent: providerTrace.getEvents().some(e => e.diagnostic !== undefined),
     imageNormalization: { expected: expectedImg.metadata, actual: actualImg.metadata },

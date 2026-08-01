@@ -3,9 +3,11 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { writeReportCheckpoint, writeUiDiffReport } from "../../src/report/report-writer.js";
-import { hydrateReportParts } from "../../src/report/report-parts.js";
+import { hydrateReportParts, slimReportForParts } from "../../src/report/report-parts.js";
 import { UiDiffReportSchema, UnresolvedRegionSchema } from "../../src/schemas/core.js";
 import type { UiDiffReport } from "../../src/schemas/core.js";
+import { buildFindingGroups } from "../../src/report/context-overlays.js";
+import { summarizeStructuralConsolidation, validateStructuralConsolidationLedger, type StructuralLedgerValidation } from "../../src/report/structural-invariants.js";
 
 let tmpDir: string;
 
@@ -18,7 +20,7 @@ afterEach(async () => {
 });
 
 function makeReport(overrides: Partial<UiDiffReport> = {}): UiDiffReport {
-  return {
+  const report: UiDiffReport = {
     schemaVersion: "0.1",
     runId: "run-test-1",
     createdAt: new Date().toISOString(),
@@ -37,8 +39,76 @@ function makeReport(overrides: Partial<UiDiffReport> = {}): UiDiffReport {
     runArtifacts: [],
     warnings: [],
     stages: [],
+    comparisonSpace: {
+      width: 200,
+      height: 400,
+      actualResizeMode: "contain",
+      sourceCropsPreserveOriginalPixels: true
+    },
+    structuralConsolidation: {
+      status: "pass",
+      candidateCount: 0,
+      retainedCount: 0,
+      suppressedCount: 0,
+      broadExcludedCount: 0,
+      violationCount: 0
+    },
+    structuralConsolidationDetail: {
+      ledger: { candidates: [], decisions: [], retainedFindingIds: [], candidateTerminals: [], elementLineage: [] },
+      validation: { status: "pass", violations: [] }
+    },
     ...overrides
   };
+  if (report.diffs.length > 0 && !Object.prototype.hasOwnProperty.call(overrides, "structuralConsolidationDetail")) {
+    const validDetail = makeRetainedDetail(report);
+    return {
+      ...report,
+      structuralConsolidation: validDetail.summary,
+      structuralConsolidationDetail: { ledger: validDetail.ledger, validation: validDetail.validation }
+    };
+  }
+  return report;
+}
+
+function makeFinalFinding(id = "diff-final") {
+  return {
+    id,
+    criterion: "geometry" as const,
+    severity: "medium" as const,
+    title: "Local displacement",
+    location: { x: 20, y: 40, width: 12, height: 12 },
+    evidence: ["Local geometry differs."],
+    measurements: [],
+    artifactPaths: [],
+    reviewerStatus: "accepted" as const
+  };
+}
+
+function schemaValidation(validation: StructuralLedgerValidation) {
+  return {
+    status: validation.status,
+    violations: validation.violations.map(violation => ({
+      ...violation,
+      affectedGroupIds: [...violation.affectedGroupIds],
+      ...(violation.detail === undefined ? {} : { detail: { ...violation.detail } })
+    }))
+  };
+}
+
+function makeRetainedDetail(report: UiDiffReport, onlyFindingId?: string) {
+  const findings = onlyFindingId === undefined ? report.diffs : report.diffs.filter(finding => finding.id === onlyFindingId);
+  const findingIds = findings.map(finding => finding.id);
+  const ledger = {
+    candidates: findings.map(finding => ({ findingId: finding.id, criterion: finding.criterion, elementIds: [] })),
+    decisions: [],
+    retainedFindingIds: findingIds,
+    candidateTerminals: findingIds.map(findingId => ({ candidateId: findingId, terminal: "retained" as const })),
+    elementLineage: []
+  };
+  const groups = buildFindingGroups(report.diffs, { width: report.comparisonSpace!.width, height: report.comparisonSpace!.height })
+    .map(group => ({ id: group.id, diffIds: [...group.diffIds] }));
+  const validation = validateStructuralConsolidationLedger(ledger, { requireGroups: true, actualGroups: groups });
+  return { ledger, validation: schemaValidation(validation), summary: summarizeStructuralConsolidation(ledger, validation) };
 }
 
 describe("writeReportCheckpoint", () => {
@@ -49,6 +119,84 @@ describe("writeReportCheckpoint", () => {
     expect(reportPath).toBe(path.join(tmpDir, "report.json"));
     const written = JSON.parse(await fs.readFile(reportPath, "utf8"));
     expect(() => UiDiffReportSchema.parse(written)).not.toThrow();
+  });
+
+  it("persists structural consolidation as a dedicated part and hydrates the exact detail", async () => {
+    const detail = {
+      ledger: { candidates: [], decisions: [], retainedFindingIds: [], candidateTerminals: [], elementLineage: [] },
+      validation: { status: "pass" as const, violations: [] }
+    };
+    const report = makeReport({
+      structuralConsolidation: {
+        status: "pass",
+        candidateCount: 0,
+        retainedCount: 0,
+        suppressedCount: 0,
+        broadExcludedCount: 0,
+        violationCount: 0
+      },
+      structuralConsolidationDetail: detail
+    });
+    await writeUiDiffReport(report);
+    const written = UiDiffReportSchema.parse(JSON.parse(await fs.readFile(path.join(tmpDir, "report.json"), "utf8")));
+    expect(written.structuralConsolidationDetail).toBeUndefined();
+    expect(written.reportParts).toContainEqual({ role: "structural_consolidation", path: "parts/structural-consolidation.json" });
+    const hydrated = await hydrateReportParts(written, path.join(tmpDir, "report.json"));
+    expect(hydrated.structuralConsolidationDetail).toEqual(detail);
+    await expect(fs.access(path.join(tmpDir, "parts", "structural-consolidation.json"))).resolves.toBeUndefined();
+  });
+
+  it("rejects a final report without structural detail before creating artifacts", async () => {
+    const report = makeReport({ structuralConsolidationDetail: undefined });
+    await expect(writeUiDiffReport(report)).rejects.toThrow(/structural consolidation detail/i);
+    await expect(fs.access(path.join(tmpDir, "report.json"))).rejects.toThrow();
+  });
+
+  it("rejects forged structural validation or summary before writing", async () => {
+    await expect(writeUiDiffReport(makeReport({
+      structuralConsolidation: { ...makeReport().structuralConsolidation!, status: "fail", violationCount: 1 }
+    }))).rejects.toThrow(/structural consolidation authenticity/i);
+    await expect(writeUiDiffReport(makeReport({
+      structuralConsolidationDetail: {
+        ledger: { candidates: [], decisions: [], retainedFindingIds: [], candidateTerminals: [], elementLineage: [] },
+        validation: { status: "fail", violations: [] }
+      }
+    }))).rejects.toThrow(/structural consolidation authenticity/i);
+  });
+
+  it("rejects forged structural detail or summary during hydration", async () => {
+    await expect(hydrateReportParts(makeReport({ structuralConsolidationContract: "v1", structuralConsolidationDetail: undefined }), path.join(tmpDir, "missing-structural-report.json")))
+      .rejects.toThrow(/missing structural part\/detail/i);
+
+    const output = await writeUiDiffReport(makeReport());
+    const compact = UiDiffReportSchema.parse(JSON.parse(await fs.readFile(output.reportPath, "utf8")));
+    const structuralPart = compact.reportParts?.find(part => part.role === "structural_consolidation");
+    expect(structuralPart).toBeDefined();
+    const structuralPath = path.resolve(path.dirname(output.reportPath), structuralPart!.path);
+    await fs.writeFile(structuralPath, JSON.stringify({
+      ledger: { candidates: [], decisions: [], retainedFindingIds: [], candidateTerminals: [], elementLineage: [] },
+      validation: { status: "fail", violations: [] }
+    }), "utf8");
+    await expect(hydrateReportParts(compact, output.reportPath)).rejects.toThrow(/structural consolidation authenticity/i);
+
+    const fresh = await writeUiDiffReport(makeReport());
+    const forgedSummary = UiDiffReportSchema.parse(JSON.parse(await fs.readFile(fresh.reportPath, "utf8")));
+    forgedSummary.structuralConsolidation = { ...forgedSummary.structuralConsolidation!, status: "fail", violationCount: 1 };
+    await expect(hydrateReportParts(forgedSummary, fresh.reportPath)).rejects.toThrow(/structural consolidation authenticity/i);
+  });
+
+  it("rejects duplicate report part roles and normalized paths at slim/hydrate boundaries", async () => {
+    const duplicateRole = [
+      { role: "elements" as const, path: "parts/elements.json" },
+      { role: "elements" as const, path: "parts/elements-copy.json" }
+    ];
+    expect(() => slimReportForParts(makeReport(), duplicateRole)).toThrow(/duplicate report part role/i);
+    const duplicatePath = [
+      { role: "elements" as const, path: "parts/elements.json" },
+      { role: "pairs" as const, path: "parts/./elements.json" }
+    ];
+    expect(() => slimReportForParts(makeReport(), duplicatePath)).toThrow(/duplicate report part path/i);
+    await expect(hydrateReportParts(makeReport({ reportParts: duplicateRole }), path.join(tmpDir, "report.json"))).rejects.toThrow(/duplicate report part role/i);
   });
 
   it("creates artifactRoot directory if it does not exist", async () => {
@@ -89,6 +237,85 @@ describe("writeReportCheckpoint", () => {
     const written = JSON.parse(await fs.readFile(reportPath, "utf8")) as { status: string; isCheckpoint?: boolean };
     expect(written.status).toBe("running");
     expect(written.isCheckpoint).toBe(true);
+  });
+
+  it("rejects checkpoint-shaped input in the final writer before creating artifacts", async () => {
+    await expect(writeUiDiffReport(makeReport({ isCheckpoint: true }))).rejects.toThrow(/final writer|checkpoint/i);
+    await expect(fs.access(path.join(tmpDir, "report.json"))).rejects.toThrow();
+  });
+
+  it("rejects impossible checkpoint and final status combinations during hydration", async () => {
+    await expect(hydrateReportParts(makeReport({ isCheckpoint: true, status: "complete" }), path.join(tmpDir, "checkpoint.json")))
+      .rejects.toThrow(/checkpoint status/i);
+    await expect(hydrateReportParts(makeReport({ isCheckpoint: false, status: "running" }), path.join(tmpDir, "final.json")))
+      .rejects.toThrow(/final report status/i);
+  });
+
+  it("rejects complete visual status when structural validation fails", async () => {
+    const ledger = {
+      candidates: [{ findingId: "orphan", criterion: "geometry" as const, elementIds: [] }],
+      decisions: [],
+      retainedFindingIds: [],
+      candidateTerminals: [],
+      elementLineage: []
+    };
+    const validation = validateStructuralConsolidationLedger(ledger, { requireGroups: true, actualGroups: [] });
+    const summary = summarizeStructuralConsolidation(ledger, validation);
+    await expect(writeUiDiffReport(makeReport({
+      visualClassificationStatus: "complete",
+      structuralConsolidation: summary,
+      structuralConsolidationDetail: { ledger, validation: schemaValidation(validation) }
+    }))).rejects.toThrow(/visual classification|structural consolidation/i);
+  });
+
+  it("normalizes old multipart reports without structural detail to not_evaluated", async () => {
+    const legacy = makeReport({
+      status: "complete",
+      visualClassificationStatus: "complete",
+      structuralConsolidation: { status: "fail", candidateCount: 2, retainedCount: 1, suppressedCount: 1, broadExcludedCount: 0, violationCount: 1 },
+      structuralConsolidationDetail: undefined,
+      reportParts: [{ role: "unresolved_regions", path: "parts/unresolved-regions.json" }]
+    });
+    const readFile = async () => Buffer.from(JSON.stringify({ unresolvedRegions: [] }));
+    const hydrated = await hydrateReportParts(legacy, path.join(tmpDir, "legacy.json"), readFile);
+    expect(hydrated.structuralConsolidation).toMatchObject({ status: "not_evaluated" });
+    expect(hydrated.structuralConsolidationDetail).toBeUndefined();
+  });
+
+  it("rejects a forged empty passing ledger when final diffs exist at write and hydrate", async () => {
+    const finding = makeFinalFinding();
+    const report = makeReport({
+      diffs: [finding],
+      structuralConsolidation: {
+        status: "pass",
+        candidateCount: 0,
+        retainedCount: 0,
+        suppressedCount: 0,
+        broadExcludedCount: 0,
+        violationCount: 0
+      },
+      structuralConsolidationDetail: {
+        ledger: { candidates: [], decisions: [], retainedFindingIds: [], candidateTerminals: [], elementLineage: [] },
+        validation: { status: "pass", violations: [] }
+      }
+    });
+    await expect(writeUiDiffReport(report)).rejects.toThrow(/final finding|structural consolidation authenticity/i);
+
+    const validDetail = makeRetainedDetail(report, finding.id);
+    const validReport = makeReport({
+      diffs: [finding],
+      structuralConsolidation: validDetail.summary,
+      structuralConsolidationDetail: { ledger: validDetail.ledger, validation: validDetail.validation }
+    });
+    const output = await writeUiDiffReport(validReport);
+    const compact = UiDiffReportSchema.parse(JSON.parse(await fs.readFile(output.reportPath, "utf8")));
+    const structuralPart = compact.reportParts?.find(part => part.role === "structural_consolidation");
+    expect(structuralPart).toBeDefined();
+    await fs.writeFile(path.resolve(path.dirname(output.reportPath), structuralPart!.path), JSON.stringify({
+      ledger: { candidates: [], decisions: [], retainedFindingIds: [], candidateTerminals: [], elementLineage: [] },
+      validation: { status: "pass", violations: [] }
+    }), "utf8");
+    await expect(hydrateReportParts(compact, output.reportPath)).rejects.toThrow(/structural consolidation authenticity/i);
   });
 });
 
@@ -273,6 +500,8 @@ describe("writeUiDiffReport", () => {
     };
     const legacy = makeReport({
       unresolvedRegions: [],
+      structuralConsolidation: { status: "not_evaluated", candidateCount: 0, retainedCount: 0, suppressedCount: 0, broadExcludedCount: 0, violationCount: 0 },
+      structuralConsolidationDetail: undefined,
       reportParts: [{ role: "unresolved_regions", path: "parts/unresolved-regions.json" }]
     });
     const readFile = async () => Buffer.from(JSON.stringify({ unresolvedRegions: [legacyRegion] }));
