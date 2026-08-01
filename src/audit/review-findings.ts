@@ -364,7 +364,7 @@ export function reviewAndMergeFindings(rawDiffs: DiffRecord[]): DiffRecord[] {
 }
 
 const SCOPE_AUDIT_ROLES = ["expected_normalized", "actual_comparison_space", "directional_overlay", "pixel_diff_mask"] as const;
-const TARGET_AUDIT_ROLES = ["expected_crop", "actual_crop", "local_directional_overlay", "local_pixel_diff_mask", "context_crop"] as const;
+const TARGET_AUDIT_ROLES = ["expected_crop", "actual_comparison_crop", "local_directional_overlay", "local_pixel_diff_mask", "context_crop"] as const;
 const RECOVERY_ROLES = ["recovery_expected_crop", "recovery_actual_crop", "recovery_actual_comparison_crop", "recovery_directional_overlay", "recovery_pixel_diff_mask"] as const;
 
 export function requiredAcceptedArtifactRoles(diff: Pick<DiffRecord, "classificationSource" | "scopeKind">): readonly UiArtifact["role"][] {

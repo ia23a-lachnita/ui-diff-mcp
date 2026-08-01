@@ -214,10 +214,10 @@ export async function auditElementPair(
   let localDirectionalOverlayB64 = "";
   let localPixelDiffMaskB64 = "";
 
+  let actualComparisonCropB64: string | null = null;
+  let actualComparisonArtifact: UiArtifact | null = null;
+
   if (expectedEl && actualEl && expectedCropB64 && actualCropB64) {
-    // Write a single resized comparison crop so the pixel mask and the directional overlay
-    // both describe the same comparison. computePixelDiff's internal zero-padding and
-    // Sharp's Lanczos resize differ; using one file for both operations eliminates the mismatch.
     const expCropMeta = await sharp(Buffer.from(expectedCropB64, "base64")).metadata();
     if (!expCropMeta.width || !expCropMeta.height) throw new Error("Expected crop metadata is missing dimensions");
     const cmpW = expCropMeta.width;
@@ -228,6 +228,11 @@ export async function auditElementPair(
       outputPath: actualComparisonCropPath,
       targetSize: { width: cmpW, height: cmpH }
     });
+    actualComparisonArtifact = { role: "actual_comparison_crop", path: actualComparisonCropPath, pairId };
+    auditArtifacts.push(actualComparisonArtifact);
+
+    const comparisonPngBuf = await fs.readFile(actualComparisonCropPath);
+    actualComparisonCropB64 = comparisonPngBuf.toString("base64");
 
     const localPixelDiff = computePixelDiff(
       baseFileName("expected-crop"),
@@ -265,16 +270,16 @@ export async function auditElementPair(
     auditArtifacts.push(artifact);
   }
 
-  // Evidence image order: expected crop, actual crop, local directional overlay, local pixel-diff mask, context crop
+  // Evidence image order: expected crop, normalized actual comparison crop, local directional overlay, local pixel-diff mask, context crop
   if (expectedCropB64) images.push(`data:image/png;base64,${expectedCropB64}`);
-  if (actualCropB64) images.push(`data:image/png;base64,${actualCropB64}`);
+  if (actualComparisonCropB64) images.push(`data:image/png;base64,${actualComparisonCropB64}`);
   if (localDirectionalOverlayB64) images.push(`data:image/png;base64,${localDirectionalOverlayB64}`);
   if (localPixelDiffMaskB64) images.push(`data:image/png;base64,${localPixelDiffMaskB64}`);
   if (contextCropB64) images.push(`data:image/png;base64,${contextCropB64}`);
 
   const imageRoles = [
     expectedCropB64 ? "expected_crop" : null,
-    actualCropB64 ? "actual_crop" : null,
+    actualComparisonCropB64 ? "actual_comparison_crop" : null,
     localDirectionalOverlayB64 ? "local_directional_overlay" : null,
     localPixelDiffMaskB64 ? "local_pixel_diff_mask" : null,
     contextCropB64 ? "context_crop" : null

@@ -64,10 +64,10 @@ Task 4 fix round: RED was captured with `6 failed, 86 passed` across the focused
 
 ### 5. Normalized Target Evidence
 
-- [ ] RED: add `tests/unit/audit.test.ts`, schema/artifact assertions where needed, and prompt/image-order regressions that inspect dimensions, pixel content, image slot order, and artifact roles for mismatched expected/actual crops.
-- [ ] In `src/audit/audit-target.ts`, preserve the native `actual_crop` artifact for diagnostics, but persist/add `UiArtifact` role `actual_comparison_crop` from the exact `prepareAspectPreservingComparison` PNG. Load that normalized PNG as VLM slot 2 instead of `actualCropB64`; pixel masks, overlays, and the sent image must use the same normalized comparison crop.
-- [ ] Update `imageRoles`, prompt descriptions, and required accepted artifact roles to distinguish native diagnostics from normalized comparison evidence. Ensure report JSON references both roles without ambiguity.
-- [ ] GREEN: verify native and comparison artifacts remain available, normalized expected/actual dimensions match, content is the exact persisted PNG sent to the VLM, and mismatched-size crops cannot silently use mixed evidence.
+- [x] RED: add `tests/unit/audit.test.ts`, schema/artifact assertions where needed, and prompt/image-order regressions that inspect dimensions, pixel content, image slot order, and artifact roles for mismatched expected/actual crops.
+- [x] In `src/audit/audit-target.ts`, preserve the native `actual_crop` artifact for diagnostics, but persist/add `UiArtifact` role `actual_comparison_crop` from the exact `prepareAspectPreservingComparison` PNG. Load that normalized PNG as VLM slot 2 instead of `actualCropB64`; pixel masks, overlays, and the sent image must use the same normalized comparison crop.
+- [x] Update `imageRoles`, prompt descriptions, and required accepted artifact roles to distinguish native diagnostics from normalized comparison evidence. Ensure report JSON references both roles without ambiguity.
+- [x] GREEN: verify native and comparison artifacts remain available, normalized expected/actual dimensions match, content is the exact persisted PNG sent to the VLM, and mismatched-size crops cannot silently use mixed evidence.
 
 ### 6. Runtime Independent Reviewer Routing
 

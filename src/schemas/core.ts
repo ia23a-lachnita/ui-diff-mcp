@@ -386,6 +386,7 @@ export const UiArtifactSchema = z.object({
     "target_map_expected",
     "target_map_actual",
     "expected_crop",
+    "actual_comparison_crop",
     "actual_crop",
     "local_directional_overlay",
     "local_pixel_diff_mask",

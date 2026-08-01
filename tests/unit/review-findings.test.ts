@@ -265,12 +265,12 @@ describe("requiredAcceptedArtifactRoles", () => {
 
   it("returns target audit roles for target-kind vlm_reviewed diffs", () => {
     const roles = requiredAcceptedArtifactRoles({ classificationSource: "vlm_reviewed", scopeKind: "target" });
-    expect(roles).toEqual(["expected_crop", "actual_crop", "local_directional_overlay", "local_pixel_diff_mask", "context_crop"]);
+    expect(roles).toEqual(["expected_crop", "actual_comparison_crop", "local_directional_overlay", "local_pixel_diff_mask", "context_crop"]);
   });
 
   it("returns target audit roles for vlm_reviewed diffs with no scopeKind", () => {
     const roles = requiredAcceptedArtifactRoles({ classificationSource: "vlm_reviewed" });
-    expect(roles).toEqual(["expected_crop", "actual_crop", "local_directional_overlay", "local_pixel_diff_mask", "context_crop"]);
+    expect(roles).toEqual(["expected_crop", "actual_comparison_crop", "local_directional_overlay", "local_pixel_diff_mask", "context_crop"]);
   });
 
   it("returns recovery roles for target_recovery diffs", () => {
@@ -280,6 +280,6 @@ describe("requiredAcceptedArtifactRoles", () => {
 
   it("returns target audit roles for diffs with no classificationSource", () => {
     const roles = requiredAcceptedArtifactRoles({});
-    expect(roles).toEqual(["expected_crop", "actual_crop", "local_directional_overlay", "local_pixel_diff_mask", "context_crop"]);
+    expect(roles).toEqual(["expected_crop", "actual_comparison_crop", "local_directional_overlay", "local_pixel_diff_mask", "context_crop"]);
   });
 });

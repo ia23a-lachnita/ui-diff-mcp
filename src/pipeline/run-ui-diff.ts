@@ -51,6 +51,19 @@ import { auditTraceHasFailure, deriveAuditStageOutcome, deriveRecoveryStageOutco
 import type { StageOutcome } from "../schemas/core.js";
 import type { LocateAnythingRequestSizing } from "../locator/locateanything-client.js";
 
+export function intersectScopedPairIds(
+  scopedPairIds: Set<string>,
+  ...idSets: Array<Set<string> | string[]>
+): Set<string> {
+  const result = new Set<string>();
+  for (const ids of idSets) {
+    for (const id of ids) {
+      if (scopedPairIds.has(id)) result.add(id);
+    }
+  }
+  return result;
+}
+
 export interface RunInput {
   expectedImagePath: string;
   actualImagePath: string;
@@ -749,6 +762,14 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
   });
   allDiffs.push(...deterministicDiffs);
 
+  // Presence pairs (missing/extra) are resolved deterministically and cannot produce
+  // a two-sided actual_comparison_crop for VLM audit. Exclude them from VLM candidates.
+  const deterministicPresencePairIds = new Set(
+    deterministicDiffs
+      .filter(d => d.classificationSource === "deterministic_presence" && d.pairId)
+      .map(d => d.pairId!)
+  );
+
   let projectedPreAuditSummary: ProjectedPreAuditSummary | undefined;
   const projectedPreAuditResult = await runProjectedPreAudit({
     pairs,
@@ -762,8 +783,12 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
   allDiffs.push(...projectedPreAuditResult.diffs);
   projectedPreAuditSummary = projectedPreAuditResult.summary;
 
-  // VLM-eligible pairs are those not already resolved deterministically by pre-audit.
-  const vlmCandidatePairs = scopedTargetPairs.filter(p => !projectedPreAuditResult.skipVlmPairIds.has(p.id));
+  // VLM-eligible pairs are those not already resolved deterministically by pre-audit
+  // and not resolved as deterministic presence (missing/extra) diffs.
+  const vlmCandidatePairs = scopedTargetPairs.filter(p =>
+    !projectedPreAuditResult.skipVlmPairIds.has(p.id)
+    && !deterministicPresencePairIds.has(p.id)
+  );
 
   const modelHealth: UiDiffReport["modelHealth"] = [];
   const locatorStageOutcome: StageOutcome = locatorFailed || locatorCoverageStatus === "failed"
@@ -1100,11 +1125,22 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
           auditOutcomes.push({ pairId: pair.id, entered: true, providerCalled, validAuditor, reviewed, skippedNoTrigger: !providerCalled && !comparisonNonComparable, failed });
         }
 
+        // Count unique pair IDs resolved deterministically: presence pairs (from buildDeterministicDiffs)
+        // plus projected-preaudit skipped pairs, unioned to avoid double-counting.
+        // Only include IDs that are actually in scopedTargetPairs to avoid inflating
+        // preAuditDeterministicPairs with out-of-scope projected skip IDs.
+        const scopedPairIds = new Set(scopedTargetPairs.map(pair => pair.id));
+        const preAuditPairIds = intersectScopedPairIds(
+          scopedPairIds,
+          deterministicPresencePairIds,
+          projectedPreAuditResult.skipVlmPairIds
+        );
+
         auditScope = summarizeAuditPairOutcomes(auditOutcomes, {
           totalPairs: scopedTargetPairs.length,
           selectedPairs: auditTotal,
           auditLimited: auditSelection.limited,
-          preAuditDeterministicPairs: projectedPreAuditResult.diffs.length,
+          preAuditDeterministicPairs: preAuditPairIds.size,
           stoppedReason: auditStoppedReason,
           remainingPairs: remainingAuditPairs,
           ...(auditSelection.warning ? { limitReason: auditSelection.warning } : {})

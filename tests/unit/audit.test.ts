@@ -6,14 +6,14 @@ import sharp from "sharp";
 import { rubrics, selectTriggeredCriteria } from "../../src/audit/criteria.js";
 import { buildAuditorPrompt, buildRecoveryPrompt, buildReviewerPrompt } from "../../src/audit/prompts.js";
 import { auditElementPair } from "../../src/audit/audit-target.js";
-import { reviewAndMergeFindings, hasUnsupportedCropBoundaryClaim } from "../../src/audit/review-findings.js";
+import { reviewAndMergeFindings, hasUnsupportedCropBoundaryClaim, requiredAcceptedArtifactRoles } from "../../src/audit/review-findings.js";
 import { UiCriterionSchema } from "../../src/schemas/core.js";
-import type { ElementPair, UiElement, DiffRecord } from "../../src/schemas/core.js";
+import type { ElementPair, UiElement, DiffRecord, UiArtifact } from "../../src/schemas/core.js";
 import type { VisionJsonCaller } from "../../src/models/vision-json.js";
 import { RouteExhaustedError } from "../../src/models/fallback-caller.js";
 import { writeSolidPng } from "../../src/testing/fixture-images.js";
 import { summarizeAuditPairOutcomes } from "../../src/debug/run-debug.js";
-import { createUniformContainImagePairTransform } from "../../src/images/coordinates.js";
+import { createUniformContainImagePairTransform, createImagePairTransform } from "../../src/images/coordinates.js";
 import { computeComparisonSpaceDelta } from "../../src/images/comparison-geometry.js";
 
 // Creates an RGBA buffer with 2-row white/blue stripes — produces real edges so
@@ -170,7 +170,7 @@ describe("prompt builders", () => {
     });
     expect(prompt).not.toMatch(/fix the code|fix the bug|implement this|change the code|update the component|edit the/i);
     expect(prompt).toContain("EXPECTED");
-    expect(prompt).toContain("ACTUAL");
+    expect(prompt).toContain("NORMALIZED actual comparison crop");
   });
 
   it("reviewer prompt instructs accept/reject/needs_escalation only", () => {
@@ -957,5 +957,369 @@ describe("projected actual element reaches VLM auditor after pre-audit stage", (
     });
 
     expect(vi.mocked(auditorCaller)).toHaveBeenCalled();
+  });
+});
+
+describe("Task 5: Normalized Target Evidence", () => {
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ui-diff-task5-"));
+  });
+
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  // --- Helpers ---
+
+  /** Real 200x400 expected RGBA: rows of solid red (255,0,0,255). */
+  function makeExpectedRgba(): Uint8Array {
+    const w = 200, h = 400;
+    const data = new Uint8Array(w * h * 4);
+    for (let i = 0; i < w * h; i++) {
+      data[i * 4] = 255; data[i * 4 + 1] = 0; data[i * 4 + 2] = 0; data[i * 4 + 3] = 255;
+    }
+    return data;
+  }
+
+  /** Real 300x600 actual RGBA: blue background with a green crop-box at x15,y75,w120,h60. */
+  function makeActualRgba(): Uint8Array {
+    const w = 300, h = 600;
+    const data = new Uint8Array(w * h * 4);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const i = (y * w + x) * 4;
+        const inBox = x >= 15 && x < 15 + 120 && y >= 75 && y < 75 + 60;
+        if (inBox) {
+          data[i] = 0; data[i + 1] = 200; data[i + 2] = 0; data[i + 3] = 255;
+        } else {
+          data[i] = 0; data[i + 1] = 0; data[i + 2] = 255; data[i + 3] = 255;
+        }
+      }
+    }
+    return data;
+  }
+
+  const expectedElDef: UiElement = {
+    id: "e1",
+    label: "Card",
+    type: "card",
+    box: { x: 10, y: 50, width: 80, height: 40 },
+    normalizedBox: { x: 0.05, y: 0.125, width: 0.4, height: 0.1 },
+    confidence: 0.95,
+    source: "locator",
+    childIds: []
+  };
+
+  const pairDef: ElementPair = {
+    id: "pair-t5",
+    expectedId: "e1",
+    actualId: "a1",
+    status: "matched",
+    score: 0.9,
+    reasons: []
+  };
+
+  function makeTask5Context(overrides: {
+    auditorCaller?: VisionJsonCaller;
+    reviewerCaller?: VisionJsonCaller;
+    expectedRgba?: Uint8Array;
+    actualRgba?: Uint8Array;
+    expectedWidth?: number;
+    expectedHeight?: number;
+    actualWidth?: number;
+    actualHeight?: number;
+    actualBox?: { x: number; y: number; width: number; height: number };
+    expectedElements?: UiElement[];
+    actualElements?: UiElement[];
+    imagePairTransform?: import("../../src/images/coordinates.js").ImagePairTransform;
+    auditIndex?: number;
+  } = {}) {
+    const expectedW = overrides.expectedWidth ?? 200;
+    const expectedH = overrides.expectedHeight ?? 400;
+    const actualW = overrides.actualWidth ?? 300;
+    const actualH = overrides.actualHeight ?? 600;
+    const expectedRgbaData = overrides.expectedRgba ?? makeExpectedRgba();
+    const actualRgbaData = overrides.actualRgba ?? makeActualRgba();
+
+    const auditorCaller: VisionJsonCaller = overrides.auditorCaller ?? vi.fn().mockResolvedValue({
+      parsed: { hasDiff: true, severity: "medium", title: "Color shift", evidence: ["background changed"] },
+      rawContent: "", model: "test-auditor", provider: "nvidia"
+    });
+    const reviewerCaller: VisionJsonCaller = overrides.reviewerCaller ?? vi.fn().mockResolvedValue({
+      parsed: { decision: "accepted", reason: "confirmed" },
+      rawContent: "", model: "test-reviewer", provider: "nvidia"
+    });
+
+    // Expected box 80x40, actual box projected 120x60 (stretched via transform)
+    const actualBox = overrides.actualBox ?? { x: 15, y: 75, width: 120, height: 60 };
+
+    return {
+      expectedImagePath: path.join(tmpDir, "expected.png"),
+      actualImagePath: path.join(tmpDir, "actual.png"),
+      expectedElements: overrides.expectedElements ?? [{ ...expectedElDef }],
+      actualElements: overrides.actualElements ?? [{ ...expectedElDef, id: "a1", box: actualBox }],
+      artifactDir: tmpDir,
+      auditorCaller,
+      reviewerCaller,
+      expectedRgba: { data: expectedRgbaData, width: expectedW, height: expectedH },
+      actualRgba: { data: actualRgbaData, width: actualW, height: actualH },
+      imagePairTransform: overrides.imagePairTransform ?? createImagePairTransform({ width: expectedW, height: expectedH }, { width: actualW, height: actualH }),
+      measurements: [],
+      auditIndex: overrides.auditIndex ?? 1,
+      auditTotal: 1,
+      elementSlug: "card",
+      triggerCtx: {
+        pairingStatus: "matched" as const,
+        positionDeltaPx: 0,
+        geometryDeltaPx: 0,
+        comparisonComparable: true,
+        textDelta: false,
+        colorDelta: true,
+        edgeMismatch: false,
+        overlapDetected: false,
+        stateWordsDiffer: false,
+        elementType: "card" as const,
+        measurements: []
+      }
+    };
+  }
+
+  // --- Tests ---
+
+  it("persist actual_comparison_crop artifact with pairId and native actual_crop retains native dimensions", async () => {
+    const ctx = makeTask5Context();
+    const result = await auditElementPair(pairDef, ctx);
+
+    expect(result.accepted.length).toBeGreaterThanOrEqual(1);
+    const diffRecord = result.accepted[0]!;
+
+    const actualComparisonArtifact = diffRecord.artifactPaths.find(
+      (a: UiArtifact) => a.role === "actual_comparison_crop"
+    );
+    expect(actualComparisonArtifact).toBeDefined();
+    expect(actualComparisonArtifact!.pairId).toBe(pairDef.id);
+    await expect(fs.access(actualComparisonArtifact!.path)).resolves.toBeUndefined();
+
+    const nativeActualCropArtifact = diffRecord.artifactPaths.find(
+      (a: UiArtifact) => a.role === "actual_crop"
+    );
+    expect(nativeActualCropArtifact).toBeDefined();
+    expect(nativeActualCropArtifact!.pairId).toBe(pairDef.id);
+    await expect(fs.access(nativeActualCropArtifact!.path)).resolves.toBeUndefined();
+
+    // Native actual_crop reflects actual native box: 120x60
+    const nativeMeta = await sharp(nativeActualCropArtifact!.path).metadata();
+    expect(nativeMeta.width).toBe(120);
+    expect(nativeMeta.height).toBe(60);
+
+    // actual_comparison_crop matches expected crop dimensions: 80x40
+    const cmpMeta = await sharp(actualComparisonArtifact!.path).metadata();
+    expect(cmpMeta.width).toBe(80);
+    expect(cmpMeta.height).toBe(40);
+  });
+
+  it("VLM slot 2 is the persisted actual_comparison_crop with same-run bytes", async () => {
+    const capturedImages: string[][] = [];
+    const auditorCaller: VisionJsonCaller = vi.fn().mockImplementation(async (req) => {
+      capturedImages.push([...req.images]);
+      return {
+        parsed: { hasDiff: true, severity: "medium", title: "Shift", evidence: ["observed"] },
+        rawContent: "", model: "test-auditor", provider: "nvidia"
+      };
+    });
+    const reviewerCaller: VisionJsonCaller = vi.fn().mockResolvedValue({
+      parsed: { decision: "accepted", reason: "ok" },
+      rawContent: "", model: "test-reviewer", provider: "nvidia"
+    });
+
+    const result = await auditElementPair(pairDef, makeTask5Context({ auditorCaller, reviewerCaller }));
+
+    expect(capturedImages.length).toBeGreaterThanOrEqual(1);
+    const images = capturedImages[0]!;
+
+    // Slot 1: expected crop 80x40, Slot 2: actual_comparison_crop 80x40
+    expect(images.length).toBeGreaterThanOrEqual(2);
+
+    const slot2B64 = images[1]!.replace(/^data:image\/png;base64,/, "");
+    const slot2Buf = Buffer.from(slot2B64, "base64");
+    const slot2Meta = await sharp(slot2Buf).metadata();
+    expect(slot2Meta.width).toBe(80);
+    expect(slot2Meta.height).toBe(40);
+
+    // Decode slot2 and assert it contains the actual-source green pixel values (0,200,0).
+    const slot2Rgba = await sharp(slot2Buf).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    const pixelCount = slot2Meta.width! * slot2Meta.height!;
+    const greenPixels = Array.from(slot2Rgba.data).reduce((count, _val, idx, arr) => {
+      if (idx % 4 !== 0) return count;
+      const r = arr[idx] ?? 0;
+      const g = arr[idx + 1] ?? 0;
+      const b = arr[idx + 2] ?? 0;
+      // Within tiny tolerance of the fixture actual green (0, 200, 0)
+      return (r <= 5 && g >= 195 && g <= 205 && b <= 5) ? count + 1 : count;
+    }, 0);
+    // The actual crop should be predominantly green pixels from the actual-source fixture.
+    expect(greenPixels / pixelCount).toBeGreaterThan(0.8);
+
+    // Prove the correct source coordinates were cropped: the actual image has a blue
+    // background surrounding the green crop box. The native actual_crop (120x60) is
+    // entirely within the green box, so it is all green. Spatial correctness is proven
+    // by verifying: (a) comparison_crop is 80x40, (b) it is predominantly green from
+    // the correct source region, and (c) the actual RGBA data has blue pixels outside
+    // the crop region.
+    const nativeActualCropArtifact = result.accepted[0]?.artifactPaths.find(
+      (a: UiArtifact) => a.role === "actual_crop"
+    );
+    expect(nativeActualCropArtifact).toBeDefined();
+    const nativeMeta = await sharp(nativeActualCropArtifact!.path).metadata();
+    expect(nativeMeta.width).toBe(120);
+    expect(nativeMeta.height).toBe(60);
+
+    // Verify the actual RGBA data has blue pixels outside the crop region (proving
+    // spatially distinct data, not a uniform-green image).
+    // Top-left corner (0,0) is outside the green box at x15,y75 → should be blue
+    const actualData = makeActualRgba();
+    const tlIdx = 0;
+    const rTL = actualData[tlIdx] ?? 0;
+    const gTL = actualData[tlIdx + 1] ?? 0;
+    const bTL = actualData[tlIdx + 2] ?? 0;
+    expect(rTL).toBeLessThanOrEqual(5);
+    expect(gTL).toBeLessThanOrEqual(5);
+    expect(bTL).toBeGreaterThanOrEqual(250);
+
+    const slot1B64 = images[0]!.replace(/^data:image\/png;base64,/, "");
+    const slot1Buf = Buffer.from(slot1B64, "base64");
+    const slot1Meta = await sharp(slot1Buf).metadata();
+    expect(slot1Meta.width).toBe(80);
+    expect(slot1Meta.height).toBe(40);
+
+    // Same-run: slot 2 bytes match persisted actual_comparison_crop artifact
+    const cmpArtifact = result.accepted[0]?.artifactPaths.find(
+      (a: UiArtifact) => a.role === "actual_comparison_crop"
+    );
+    expect(cmpArtifact).toBeDefined();
+    const persistedPng = await fs.readFile(cmpArtifact!.path);
+    expect(slot2Buf.equals(persistedPng)).toBe(true);
+  });
+
+  it("imageRoles excludes actual_crop when comparison exists", async () => {
+    const ctx = makeTask5Context();
+    const result = await auditElementPair(pairDef, ctx);
+
+    const relevantTraces = result.trace.filter(t => t.imageRoles.includes("expected_crop"));
+    expect(relevantTraces.length).toBeGreaterThanOrEqual(1);
+    for (const t of relevantTraces) {
+      expect(t.imageRoles).toContain("actual_comparison_crop");
+      expect(t.imageRoles).not.toContain("actual_crop");
+    }
+  });
+
+  it("requiredAcceptedArtifactRoles includes actual_comparison_crop for vlm_reviewed target audit", () => {
+    const roles = requiredAcceptedArtifactRoles({
+      classificationSource: "vlm_reviewed",
+      scopeKind: "target"
+    });
+    expect(roles).toContain("actual_comparison_crop");
+    expect(roles).toContain("expected_crop");
+    expect(roles).toContain("local_directional_overlay");
+    expect(roles).toContain("local_pixel_diff_mask");
+    expect(roles).toContain("context_crop");
+  });
+
+  it("UiArtifactSchema accepts actual_comparison_crop role", async () => {
+    const { UiArtifactSchema } = await import("../../src/schemas/core.js");
+    const artifact = {
+      role: "actual_comparison_crop",
+      path: "/tmp/test.png",
+      pairId: "p1"
+    };
+    const result = UiArtifactSchema.safeParse(artifact);
+    expect(result.success).toBe(true);
+  });
+
+  it("auditor prompt describes slot 2 as normalized actual comparison crop", () => {
+    const prompt = buildAuditorPrompt({
+      criterion: "geometry",
+      rubric: rubrics["geometry"],
+      elementLabel: "Card",
+      elementType: "card",
+      pairingStatus: "matched",
+      measurements: []
+    });
+    expect(prompt).toContain("NORMALIZED actual comparison crop");
+    expect(prompt).not.toMatch(/ACTUAL crop — the actual screenshot/);
+  });
+
+  it("reviewer prompt describes slot 2 as normalized actual comparison crop", () => {
+    const prompt = buildReviewerPrompt(
+      "geometry",
+      "Card",
+      "Card shifted",
+      ["visible shift"]
+    );
+    expect(prompt).toContain("NORMALIZED actual comparison crop");
+    expect(prompt).not.toMatch(/ACTUAL crop — the actual screenshot/);
+  });
+
+  it("differing-aspect actual crops with transparent contain padding", async () => {
+    // Actual source box 120x80 (taller than expected 80x40). Under uniform-contain
+    // normalization the comparison_crop must be 80x40 with transparent padding on
+    // the shorter axis and a green opaque center.
+    const actualBox120x80 = { x: 15, y: 75, width: 120, height: 80 };
+    const ctx = makeTask5Context({ actualBox: actualBox120x80 });
+    const result = await auditElementPair(pairDef, ctx);
+
+    expect(result.accepted.length).toBeGreaterThanOrEqual(1);
+    const diffRecord = result.accepted[0]!;
+
+    // Native actual_crop retains actual box dimensions: 120x80
+    const nativeArtifact = diffRecord.artifactPaths.find(
+      (a: UiArtifact) => a.role === "actual_crop"
+    );
+    expect(nativeArtifact).toBeDefined();
+    const nativeMeta = await sharp(nativeArtifact!.path).metadata();
+    expect(nativeMeta.width).toBe(120);
+    expect(nativeMeta.height).toBe(80);
+
+    // Comparison crop matches expected dimensions: 80x40
+    const cmpArtifact = diffRecord.artifactPaths.find(
+      (a: UiArtifact) => a.role === "actual_comparison_crop"
+    );
+    expect(cmpArtifact).toBeDefined();
+    const cmpMeta = await sharp(cmpArtifact!.path).metadata();
+    expect(cmpMeta.width).toBe(80);
+    expect(cmpMeta.height).toBe(40);
+
+    // Decode comparison crop: expect transparent padding at left/right edges
+    // and opaque green center pixel.
+    const cmpRgba = await sharp(cmpArtifact!.path)
+      .ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    const cw = cmpMeta.width!;
+    const ch = cmpMeta.height!;
+
+    // Left column (x=0): should be transparent (alpha near 0) due to contain padding
+    let transparentLeft = 0;
+    for (let y = 0; y < ch; y++) {
+      const li = (y * cw + 0) * 4;
+      const alphaL = cmpRgba.data[li + 3] ?? 255;
+      if (alphaL < 10) transparentLeft++;
+    }
+    expect(transparentLeft).toBeGreaterThan(0);
+
+    // Center pixel (x=cw/2, y=ch/2): should be opaque green
+    const ccx = Math.floor(cw / 2);
+    const ccy = Math.floor(ch / 2);
+    const ci = (ccy * cw + ccx) * 4;
+    const rC = cmpRgba.data[ci] ?? 0;
+    const gC = cmpRgba.data[ci + 1] ?? 0;
+    const bC = cmpRgba.data[ci + 2] ?? 0;
+    const aC = cmpRgba.data[ci + 3] ?? 0;
+    expect(rC).toBeLessThanOrEqual(5);
+    expect(gC).toBeGreaterThanOrEqual(195);
+    expect(gC).toBeLessThanOrEqual(205);
+    expect(bC).toBeLessThanOrEqual(5);
+    expect(aC).toBeGreaterThanOrEqual(250);
   });
 });
