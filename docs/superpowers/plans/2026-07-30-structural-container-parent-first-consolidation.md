@@ -80,10 +80,77 @@ Task 4 fix round: RED was captured with `6 failed, 86 passed` across the focused
 
 ### 7. Structural Invariants
 
-- [ ] RED: add an algorithmic helper, preferably in `src/report/structural-invariants.ts` with focused tests, that detects unexplained nested redundancy after `finding-consolidation` and reports retained parent/group lineage for every suppressed child.
-- [ ] Require every suppression to reference a retained parent/group; require each retained nested record to have a distinct criterion or a valid independent geometry reason. Preserve parent-first same-criterion merging, cross-criterion distinct `DiffRecord`s, stable permutations, and the `>=30%` oversized-parent guard.
-- [ ] Add report-contract and end-to-end fixtures covering zero unexplained redundancy, valid child/suppression lineage, oversized parents, cross-criterion shared groups, sibling-card boundaries such as `G42`/`G55`, and the known suspect finding shapes.
-- [ ] GREEN: assert the invariant is machine-checkable and fails the old `146/75` structural result rather than hiding it; no prose labels, keyword heuristics, or human-manual inspection may determine release behavior.
+Task 7 design correction from the read-only pre-review:
+
+- The source of truth is an explicit immutable consolidation ledger built from pre-consolidation candidates through retained final findings. Validation must not reconstruct lineage from post-consolidation output alone.
+- New suppression decisions use typed fields: `suppressedFindingId`, `retainedFindingId`, `parentElementId`, `childElementId`, `criterion`, `sameCriterion`, `semanticDescendant`, `parentAreaRatio`, `locality`, `displacementRelation`, `measurementRelation`, and later `retainedGroupId`. The existing `FindingSuppression` field may remain only for compatibility and is deprecated as truth; new decisions contain no free-form evidence text.
+- Consolidation and validation share one `classifyStructuralRelation` helper. Its inputs are typed semantic ancestry, criterion, canonical geometry, projection kind, and deterministic measurement signature; keyword or prose heuristics are prohibited.
+- Validation status is `pass`, `fail`, or `not_evaluated`, with structured violations: `missing_retained_lineage`, `unexplained_nested_same_criterion`, `oversized_parent`, `sibling_boundary`, and `invalid_measurement_relation`. Legacy hydrated reports use `not_evaluated` when the ledger is absent.
+- Persist a dedicated `structural_consolidation` report part/artifact and keep only a compact summary in the main report. Build groups after ledger decisions, then map each decision to its retained group.
+- A fresh full run is incomplete and the release gate is blocked when structural status is `fail` or `not_evaluated`.
+
+The classifier contract is executable and closed-world: `classifyStructuralRelation` returns exactly one of
+`suppress`, `retain_distinct`, `violation`, or `unrelated`, and every result carries exactly one
+`StructuralRelationReason` from the exact enum `same_finding`, `no_semantic_relation`, `sibling_boundary`,
+`distinct_criterion`, `oversized_parent`, `nonlocal`, `distinct_projection_kind`, `equivalent_explicit_group`,
+`invalid_measurement_relation`, `independent_geometry`, `coherent_translation`, `coherent_resize`,
+`unexplained_nested_same_criterion`. No other classifier-reason strings are allowed. Its inputs and facts use closed
+enums rather than prose: semantic ancestry, criterion, canonical expected-space geometry, typed `projectionMismatchKind`, and a deterministic
+measurement signature. Canonical measurement aliases are `horizontal_shift`/`deltaX` for translation x,
+`vertical_shift`/`deltaY` for translation y, `deltaWidth` for resize width, and `deltaHeight` for resize height.
+`displacementRelation` is one of `coherent_translation`, `distinct_translation`, `not_applicable`, or
+`missing_measurement`; `measurementRelation` is one of `same`, `distinct_resize`, `resize_vs_translation`,
+`distinct_projection_kind`, `explicit_equivalence`, or `missing_measurement`.
+
+`coherent_translation` requires complete x and y pairs, equal sign per axis, and absolute per-axis differences of at
+most 4 comparison-space pixels. Complete translation outside that tolerance or with a sign difference is
+`retain_distinct` with reason `independent_geometry`; a complete resize versus a complete translation has fact
+`resize_vs_translation` and reason `independent_geometry`; complete width or height resize differences above 4 pixels
+are `retain_distinct` with reason `independent_geometry`; differing typed projection kinds are
+`distinct_projection_kind`. Equal explicit `findingGroupId` plus `findingGroupKind` is typed equivalence. Missing or
+incomplete measurement signatures for nested same-criterion records are violations, never independent findings.
+
+The classifier has this total ordered precedence, applied before explicit grouping or measurements: (1) self or
+unrelated invalid ancestry returns `unrelated`; semantic siblings return `retain_distinct` with reason
+`sibling_boundary`; (2) different criteria return `retain_distinct` with `distinct_criterion`; (3) parent area or union
+locality at or above `0.30` of the canvas, or child containment below `0.70` in canonical expected space, returns
+`retain_distinct` with `oversized_parent` or `nonlocal`; (4) different typed `projectionMismatchKind` values return
+`retain_distinct` with `distinct_projection_kind`; (5) equal explicit `findingGroupId` plus `findingGroupKind` returns
+`suppress` with `equivalent_explicit_group`; (6) derive the canonical measurement signature enum
+`none|translation|resize|mixed|invalid`; `mixed` or `invalid` returns `violation` with
+`invalid_measurement_relation`; (7) translation versus resize returns `retain_distinct` with
+`independent_geometry`; (8) complete translation pairs with equal sign per axis and absolute per-axis differences of
+at most 4 comparison-space pixels return `suppress` with `coherent_translation`, otherwise `retain_distinct` with
+`independent_geometry`; (9) complete resize pairs with width and height differences of at most 4 pixels return
+`suppress` with `coherent_resize`, otherwise `retain_distinct` with `independent_geometry`; (10) one or both missing
+required signatures for a nested same-criterion relation return `violation` with
+`unexplained_nested_same_criterion`, or `invalid_measurement_relation` for a partial signature. The displacement and
+measurement relation enums are closed fact classifications, not additional structural reasons; no free-form evidence
+text is part of a new decision.
+
+Ledger validation uses a separate `StructuralValidationViolation` enum with exactly these values:
+`missing_retained_lineage`, `unexplained_nested_same_criterion`, `oversized_parent`, `sibling_boundary`,
+`invalid_measurement_relation`, `missing_retained_group`, `ambiguous_retained_group`. No other validation-violation
+strings are allowed. The overlapping names have distinct meanings: `oversized_parent` and `sibling_boundary` are valid
+non-failing classifier reasons when returned with `retain_distinct`, but are validation violations only when a malformed
+suppression decision crosses the corresponding guard.
+
+`sibling_boundary` and `oversized_parent` are non-failing classifier reasons for valid `retain_distinct` decisions. The
+same-named structured validation violations are emitted only when a malformed suppression decision illegally crosses the
+corresponding sibling or size/locality guard. Siblings, including the `G42`/`G55` boundary shape, therefore produce
+`retain_distinct`, structural `pass`, and no incomplete status; malformed suppression ledgers crossing those guards
+produce `sibling_boundary` or `oversized_parent` validation violations and structural `fail`.
+
+Every newly written non-checkpoint report always persists `structuralConsolidation`. A new run with no candidates is a
+structural `pass`; legacy hydration without a ledger is `not_evaluated`. A `fail` forces
+`visualClassificationStatus: incomplete`, and release gates reject `fail`, `not_evaluated`, or a missing structural
+part. Every `retainedFindingId` referenced by a decision maps to exactly one stable group; violations include
+`missing_retained_group` and `ambiguous_retained_group`.
+
+- [ ] RED: add the immutable pre-to-post consolidation ledger, typed suppression decisions, shared `classifyStructuralRelation` helper, and focused tests. The old `FindingSuppression` shape remains compatibility-only and is explicitly excluded from new truth.
+- [ ] Require typed retained lineage and the shared classifier before groups are built; preserve parent-first same-criterion merging, cross-criterion distinct findings, stable permutations, sibling boundaries, and the `>=30%` oversized-parent guard. Add one focused case for every classifier terminal/reason: `same_finding`, `no_semantic_relation`/unrelated, `sibling_boundary`, `distinct_criterion`, `oversized_parent`, `nonlocal`, `distinct_projection_kind`, `equivalent_explicit_group`, `invalid_measurement_relation` for mixed and invalid partial measurements, `independent_geometry` for translation-vs-resize and out-of-tolerance geometry, `coherent_translation`, `coherent_resize`, and `unexplained_nested_same_criterion`. Include the synthetic `146` candidates/`75` groups failure and permutation stability. Siblings and `>=30%` parents must retain distinctly with no violations and structural `pass`; malformed suppression ledgers crossing those guards must fail.
+- [ ] Add the dedicated `structural_consolidation` report part/artifact, compact main-report summary, post-ledger group mapping, fresh-run incomplete/release-blocking semantics, and legacy-hydration `not_evaluated`. Test no-candidate `pass`, legacy missing-ledger hydration, compact-report hydration, fail/status propagation, release rejection, exact retained-group mapping, `missing_retained_group`, and `ambiguous_retained_group`.
+- [ ] GREEN: assert zero unexplained redundancy, complete retained/suppressed lineage, valid group mapping, and machine-checkable status/violations. Add malformed-ledger validation cases for every exact `StructuralValidationViolation`: `missing_retained_lineage`, `unexplained_nested_same_criterion`, `oversized_parent`, `sibling_boundary`, `invalid_measurement_relation`, `missing_retained_group`, and `ambiguous_retained_group`. No prose labels, keyword heuristics, or human manual inspection may determine release behavior.
 
 ### 8. Verification And Live Validation
 
