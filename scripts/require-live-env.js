@@ -17,6 +17,10 @@ if (process.env[varName] !== "1") {
     console.error(
       "Also set OPENROUTER_API_KEY and LOCATEANYTHING_SIDECAR_URL before running verify:openrouter-free-live."
     );
+  } else if (varName === "RUN_LOCATEANYTHING_LIVE") {
+    console.error(
+      "Also set LOCATEANYTHING_SIDECAR_URL and restart the existing sidecar without LOCATEANYTHING_SKIP_MODEL before running verify:locateanything-live; do not use a skipped or stale sidecar."
+    );
   } else if (varName === "RUN_FREE_LIVE") {
     console.error(
       "Also set OPENROUTER_API_KEY before running verify:free-live (alias for verify:openrouter-free-live)."

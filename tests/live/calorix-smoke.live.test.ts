@@ -694,6 +694,16 @@ describe.skipIf(!calorixReleaseLive)("Calorix release sign-off gate", () => {
         "release gate requires complete visual classification; inspect audit and recovery stage outcomes for the exact blocker"
       ).toBe("complete");
 
+      const locateAnythingLane = report.locatorMetadata?.lanes?.locateanything;
+      expect(
+        locateAnythingLane?.status,
+        "strict release gate requires a completed LocateAnything lane; run the direct locator gate after restarting the sidecar without LOCATEANYTHING_SKIP_MODEL"
+      ).toBe("complete");
+      expect(
+        locateAnythingLane?.count,
+        "strict release gate requires LocateAnything to return at least one element"
+      ).toBeGreaterThan(0);
+
       expect(
         report.auditScope?.auditLimited ?? false,
         "release gate requires auditLimited=false"

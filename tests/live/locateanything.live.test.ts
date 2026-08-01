@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { locateUiElements } from "../../src/locator/locateanything-client.js";
 import { writeTwoButtonFixture } from "../../src/testing/fixture-images.js";
 
-const liveEnabled = process.env["RUN_UI_DIFF_LIVE"] === "1";
+const liveEnabled = process.env["RUN_LOCATEANYTHING_LIVE"] === "1";
 
 let tmpDir = "";
 
@@ -20,7 +20,7 @@ afterEach(async () => {
 describe.skipIf(!liveEnabled)("live LocateAnything sidecar", () => {
   test("returns valid in-bounds UI element boxes for a generated fixture", async () => {
     const endpoint = process.env["LOCATEANYTHING_SIDECAR_URL"];
-    expect(endpoint, "LOCATEANYTHING_SIDECAR_URL must be set when RUN_UI_DIFF_LIVE=1").toBeTruthy();
+    expect(endpoint, "LOCATEANYTHING_SIDECAR_URL must be set when RUN_LOCATEANYTHING_LIVE=1").toBeTruthy();
 
     const { expected } = await writeTwoButtonFixture(tmpDir, "expected.png", "actual.png");
     const response = await locateUiElements({
@@ -43,6 +43,8 @@ describe.skipIf(!liveEnabled)("live LocateAnything sidecar", () => {
     expect(response.image.width).toBe(200);
     expect(response.image.height).toBe(400);
     expect(response.elements.length).toBeGreaterThan(0);
+    expect(response.metadata?.lanes?.locateanything?.status, "LocateAnything lane must complete").toBe("complete");
+    expect(response.metadata?.lanes?.locateanything?.count, "LocateAnything lane must return elements").toBeGreaterThan(0);
     for (const element of response.elements) {
       expect(element.box.x).toBeGreaterThanOrEqual(0);
       expect(element.box.y).toBeGreaterThanOrEqual(0);

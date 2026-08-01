@@ -99,6 +99,41 @@ Required result:
 
 Deterministic displacement findings retain separate expected and translated child locations for region-ledger coverage. The rectangular corridor between those shapes is not marked covered, so unrelated changed pixels inside a final group's display union remain eligible for recovery.
 
+## LocateAnything Direct Live Preflight
+
+Run this preflight before full or strict Calorix release evidence. It must use a freshly restarted sidecar with the model enabled; a sidecar started with `LOCATEANYTHING_SKIP_MODEL=1` is not valid release evidence.
+
+```powershell
+# Run this block in a dedicated PowerShell terminal. It intentionally targets only the configured LocateAnything port 39731.
+$sidecarPort = 39731
+$listener = Get-NetTCPConnection -LocalPort $sidecarPort -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($listener) {
+  $owner = Get-CimInstance Win32_Process -Filter "ProcessId = $($listener.OwningProcess)"
+  $commandLine = [string]$owner.CommandLine
+  if ($commandLine -notlike "*sidecars.locateanything.server:app*") {
+    throw "Refusing to stop PID $($listener.OwningProcess) on port $sidecarPort. CommandLine: $commandLine. Resolve the listener manually before continuing."
+  }
+  Stop-Process -Id ([int]$listener.OwningProcess) -Force
+  Start-Sleep -Seconds 1
+}
+
+# Remove the skip flag, then restart the sidecar from the ui-diff-mcp root.
+Remove-Item Env:LOCATEANYTHING_SKIP_MODEL -ErrorAction SilentlyContinue
+.\scripts\start-locateanything-sidecar.ps1
+
+$env:LOCATEANYTHING_SIDECAR_URL="http://127.0.0.1:39731"
+$env:RUN_LOCATEANYTHING_LIVE="1"
+npm run verify:locateanything-live
+```
+
+Required result:
+
+- The direct locator gate runs rather than skipping and uses the restarted sidecar.
+- `metadata.lanes.locateanything.status === "complete"`.
+- `metadata.lanes.locateanything.count > 0`.
+
+The strict Calorix release gate below repeats the same lane contract from its persisted report; a skipped or zero-count LocateAnything lane blocks release even when the rest of the report is complete.
+
 ## Deterministic Calorix Pipeline Gate
 
 Run this before provider-backed Calorix gates so displacement, consolidation, coverage, and recovery scheduling are evaluated independently of model availability:
@@ -207,6 +242,7 @@ Required result:
 
 - `status === "complete"`, `isCheckpoint === false`, and the MCP child remains healthy through final report persistence.
 - `visualClassificationStatus === "complete"` and `auditLimited === false`.
+- `report.locatorMetadata.lanes.locateanything.status === "complete"` and `report.locatorMetadata.lanes.locateanything.count > 0`; the direct locator preflight must have passed after a sidecar restart without `LOCATEANYTHING_SKIP_MODEL`.
 - `unresolvedRegions.length === 0`, `auditScope.remainingPairs === 0`, and `auditScope.stoppedReason === "none"`.
 - `auditScope.providerCalledPairs + auditScope.skippedNoTriggeredPairs === auditScope.selectedPairs` and `auditScope.failedPairs === 0`.
 - No final finding has `reviewerStatus:"needs_escalation"`, lacks `classificationSource` when reviewer-accepted, or uses `unclassified_visual_change`.
