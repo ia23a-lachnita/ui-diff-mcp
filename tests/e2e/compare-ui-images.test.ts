@@ -12,6 +12,7 @@ import { writeTwoButtonFixture, writeSolidPng, writeRectPng } from "../../src/te
 import { startMockSidecar } from "../fixtures/mock-sidecar.js";
 import { makeMockFetch } from "../fixtures/mock-models.js";
 import type { MockSidecar } from "../fixtures/mock-sidecar.js";
+import type { ScopeDiffSummary } from "../../src/schemas/core.js";
 
 vi.mock("../../src/diff/projected-preaudit.js", async importOriginal => {
   const actual = await importOriginal<typeof import("../../src/diff/projected-preaudit.js")>();
@@ -28,9 +29,15 @@ vi.mock("../../src/report/context-overlays.js", async importOriginal => {
   return { ...actual, buildFindingGroups: vi.fn(actual.buildFindingGroups) };
 });
 
+vi.mock("../../src/diff/scope-summary.js", async importOriginal => {
+  const actual = await importOriginal<typeof import("../../src/diff/scope-summary.js")>();
+  return { ...actual, buildScopeDiffSummaries: vi.fn(actual.buildScopeDiffSummaries) };
+});
+
 import { runProjectedPreAudit } from "../../src/diff/projected-preaudit.js";
 import { buildDeterministicDiffs } from "../../src/diff/deterministic-diffs.js";
 import { buildFindingGroups } from "../../src/report/context-overlays.js";
+import { buildScopeDiffSummaries } from "../../src/diff/scope-summary.js";
 
 let tmpDir: string;
 let sidecar: MockSidecar;
@@ -215,8 +222,10 @@ beforeEach(async () => {
 afterEach(async () => {
   const actualDeterministic = await vi.importActual<typeof import("../../src/diff/deterministic-diffs.js")>("../../src/diff/deterministic-diffs.js");
   const actualContextOverlays = await vi.importActual<typeof import("../../src/report/context-overlays.js")>("../../src/report/context-overlays.js");
+  const actualScopeSummary = await vi.importActual<typeof import("../../src/diff/scope-summary.js")>("../../src/diff/scope-summary.js");
   vi.mocked(buildDeterministicDiffs).mockImplementation(actualDeterministic.buildDeterministicDiffs);
   vi.mocked(buildFindingGroups).mockImplementation(actualContextOverlays.buildFindingGroups);
+  vi.mocked(buildScopeDiffSummaries).mockImplementation(actualScopeSummary.buildScopeDiffSummaries);
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
   if (sidecar) await sidecar.stop();
@@ -1074,7 +1083,8 @@ describe("runUiDiff with mock sidecar and models (full mode)", () => {
     };
     expect(result.status).toBe("complete");
     expect(report.modelSelection?.["auditor"]).toMatchObject({ provider });
-    expect(report.modelSelection?.["reviewer"]).toMatchObject({ provider });
+    if (mode === "free_opencode") expect(report.modelSelection?.["reviewer"]).toBeUndefined();
+    else expect(report.modelSelection?.["reviewer"]).toMatchObject({ provider });
   });
 
   it("routes free_opencode semantic calls through Zen and records exact model selections", async () => {
@@ -1139,7 +1149,7 @@ describe("runUiDiff with mock sidecar and models (full mode)", () => {
       stages: Array<{ name: string; status: string; outcome: string; detail?: string }>;
     };
     expect(report.modelSelection?.["auditor"]).toMatchObject({ provider: "opencode", model: "mimo-v2.5-free" });
-    expect(report.modelSelection?.["reviewer"]).toMatchObject({ provider: "opencode", model: "mimo-v2.5-free" });
+    expect(report.modelSelection?.["reviewer"]).toBeUndefined();
     expect(report.modelSelection?.["targetRecovery"]).toMatchObject({ provider: "opencode", model: "mimo-v2.5-free" });
     expect(mockFetch.mock.calls.some(([url]) => typeof url === "string" && url.includes("opencode.ai/zen/v1/chat/completions"))).toBe(true);
     const providerTracePath = report.runArtifacts.find(artifact => artifact.role === "provider_trace")?.path;
@@ -1152,8 +1162,8 @@ describe("runUiDiff with mock sidecar and models (full mode)", () => {
       snapshot.trace.some(event => event.provider === "opencode" && event.event === "call_success")
     )).toBe(true);
     const stageMap = Object.fromEntries(report.stages.map(stage => [stage.name, stage]));
-    expect(stageMap["model_probe"]).toMatchObject({ status: "complete", outcome: "success" });
-    expect(stageMap["audit"]).toMatchObject({ status: "complete", outcome: "success" });
+    expect(stageMap["model_probe"]).toMatchObject({ status: "complete", outcome: "incomplete" });
+    expect(stageMap["audit"]).toMatchObject({ status: "complete", outcome: "incomplete" });
     expect(stageMap["target_recovery"]).toMatchObject({ status: "complete", outcome: "success" });
   });
 
@@ -1679,6 +1689,137 @@ describe("runUiDiff auditScope.vlmAuditedPairs pipeline accounting", () => {
     const escalation = report.diffs.find(diff => diff.id === unavailable[0]!.diffId);
     expect(escalation).toBeDefined();
     expect(escalation?.reviewerStatus).toBe("needs_escalation");
+  });
+
+  it.each([
+    ["scope provider/schema failure", "failure"],
+    ["scope unresolved reviewer", "unresolved"]
+  ] as const)("makes visual status incomplete solely from %s", async (_label, outcome) => {
+    const expected = await writeSolidPng(tmpDir, `scope-only-${outcome}-expected.png`, 200, 400, 32, 32, 32);
+    const actual = await writeSolidPng(tmpDir, `scope-only-${outcome}-actual.png`, 200, 400, 32, 32, 32);
+    sidecar = await startMockSidecar({
+      imageWidth: 200,
+      imageHeight: 400,
+      queryIds: ["text_labels", "buttons", "cards_panels_containers", "icons", "charts_indicators", "tab_bar_nav_elements", "list_items", "image_thumbnails_avatars", "text_labels", "buttons", "icons", "cards_panels_containers"]
+    });
+    vi.stubEnv("LOCATEANYTHING_SIDECAR_URL", sidecar.url);
+    vi.stubEnv("OPENROUTER_API_KEY", `sk-test-scope-only-${outcome}`);
+    const scopeSummary: ScopeDiffSummary = {
+      id: "screen",
+      kind: "screen",
+      label: "Whole screen",
+      box: { x: 0, y: 0, width: 200, height: 400 },
+      changedPixelPercent: 10,
+      edgeChangedPercent: 4,
+      triggeredCriteria: ["geometry"],
+      measurements: [{ name: "changed_pixel_percent", value: 10, unit: "percent" }]
+    };
+    vi.mocked(buildScopeDiffSummaries).mockReturnValue([scopeSummary]);
+    vi.stubGlobal("fetch", makeMockFetch(outcome === "unresolved"
+      ? [{ criterion: "geometry", hasDiff: true, severity: "high", title: "Scope mismatch", evidence: ["The scope overlay shows a broad mismatch."], reviewerDecision: "needs_escalation" }]
+      : [], { sidecarImageWidth: 200, sidecarImageHeight: 400 }));
+    const sameRoute = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free";
+    const probeOverride = async () => [
+      { role: "auditor", provider: "openrouter", model: sameRoute, status: "pass" as const, checkedAt: new Date().toISOString(), schemaValid: true, contentAccurate: true, maxImagesSupported: 5 },
+      { role: "reviewer", provider: "openrouter", model: sameRoute, status: "pass" as const, checkedAt: new Date().toISOString(), schemaValid: true, contentAccurate: true, maxImagesSupported: 5 }
+    ];
+
+    const result = await runUiDiff({ expectedImagePath: expected, actualImagePath: actual, projectRoot: tmpDir, mode: "full", diffScope: { kind: "screen" } }, { probeOverride });
+    const raw = JSON.parse(await fs.readFile(result.reportPath, "utf8")) as {
+      status: string;
+      visualClassificationStatus: string;
+      locatorCoverageStatus: string;
+      auditScope?: {
+        scopeFailedAudits?: number;
+        scopeAuditErrors?: number;
+        scopeUnresolvedAudits?: number;
+        scopeAuditEscalated?: number;
+        failedPairs?: number;
+        remainingPairs?: number;
+        auditLimited?: boolean;
+      };
+      recoverySummary?: { unclassifiedCount?: number; remainingComponents?: number };
+      diffs: Array<{ id: string; reviewerStatus: string }>;
+      runArtifacts: Array<{ role: string; path: string }>;
+    };
+    expect(result.status).toBe("complete");
+    expect(raw.visualClassificationStatus).toBe("incomplete");
+    expect(raw.locatorCoverageStatus).toBe("complete");
+    expect(raw.auditScope?.failedPairs ?? 0).toBe(0);
+    expect(raw.auditScope?.remainingPairs ?? 0).toBe(0);
+    expect(raw.auditScope?.auditLimited).not.toBe(true);
+    expect(raw.recoverySummary?.unclassifiedCount ?? 0).toBe(0);
+    expect(raw.recoverySummary?.remainingComponents ?? 0).toBe(0);
+    if (outcome === "failure") {
+      expect(raw.auditScope?.scopeFailedAudits).toBe(1);
+      expect(raw.auditScope?.scopeUnresolvedAudits ?? 0).toBe(0);
+    } else {
+      expect(raw.auditScope?.scopeFailedAudits ?? 0).toBe(0);
+      expect(raw.auditScope?.scopeUnresolvedAudits).toBe(1);
+    }
+    const scopeArtifact = raw.runArtifacts.find(artifact => artifact.role === "scope_audit_trace");
+    expect(scopeArtifact).toBeDefined();
+    const scopeTrace = JSON.parse(await fs.readFile(scopeArtifact!.path, "utf8")) as Array<{ status: string; diffId?: string }>;
+    expect(scopeTrace).toHaveLength(1);
+    expect(scopeTrace[0]?.status).toBe(outcome === "failure" ? "auditor_error" : "independent_reviewer_unavailable");
+    const debugSummaryArtifact = raw.runArtifacts.find(artifact => artifact.role === "debug_summary");
+    expect(debugSummaryArtifact).toBeDefined();
+    const debugSummary = JSON.parse(await fs.readFile(debugSummaryArtifact!.path, "utf8")) as { scopeAuditErrors: number; scopeAuditEscalated: number };
+    if (outcome === "failure") {
+      expect(debugSummary.scopeAuditErrors).toBe(1);
+      expect(debugSummary.scopeAuditEscalated).toBe(0);
+      expect(scopeTrace[0]?.diffId).toBeUndefined();
+      expect(raw.diffs).toHaveLength(0);
+    } else {
+      expect(debugSummary.scopeAuditErrors).toBe(0);
+      expect(debugSummary.scopeAuditEscalated).toBe(1);
+      expect(scopeTrace[0]?.diffId).toBeTruthy();
+      const hydrated = await hydrateReportParts(raw as never, result.reportPath);
+      const finalFindings = [...hydrated.diffs, ...(hydrated.broadEvidence ?? [])];
+      expect(finalFindings).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: scopeTrace[0]!.diffId, reviewerStatus: "needs_escalation" })
+      ]));
+    }
+  });
+
+  it("retains scope escalation when all reviewer candidates share the auditor family", async () => {
+    const expected = await writeRectPng(tmpDir, "scope-expected.png", 200, 400, 240, 240, 240, 20, 50, 160, 44, 0, 120, 255);
+    const actual = await writeRectPng(tmpDir, "scope-actual.png", 200, 400, 240, 240, 240, 20, 50, 160, 44, 255, 30, 30);
+    sidecar = await startMockSidecar({ imageWidth: 200, imageHeight: 400 });
+    vi.stubEnv("LOCATEANYTHING_SIDECAR_URL", sidecar.url);
+    vi.stubEnv("OPENROUTER_API_KEY", "sk-test-scope-no-independent");
+    vi.stubGlobal("fetch", makeMockFetch([
+      { criterion: "geometry", hasDiff: true, severity: "high", title: "Whole screen mismatch", evidence: ["The scope overlay shows a broad mismatch."], reviewerDecision: "accepted" }
+    ], { sidecarImageWidth: 200, sidecarImageHeight: 400 }));
+
+    const sameRoute = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free";
+    const probeOverride = async () => [
+      { role: "auditor", provider: "openrouter", model: sameRoute, status: "pass" as const, checkedAt: new Date().toISOString(), schemaValid: true, contentAccurate: true, maxImagesSupported: 5 },
+      { role: "reviewer", provider: "openrouter", model: sameRoute, status: "pass" as const, checkedAt: new Date().toISOString(), schemaValid: true, contentAccurate: true, maxImagesSupported: 5 }
+    ];
+    const result = await runUiDiff({ expectedImagePath: expected, actualImagePath: actual, projectRoot: tmpDir, mode: "full", diffScope: { kind: "screen" } }, { probeOverride });
+    const raw = JSON.parse(await fs.readFile(result.reportPath, "utf8")) as {
+      status: string;
+      visualClassificationStatus: string;
+      auditScope?: { scopeAuditCalls: number; scopeUnresolvedAudits: number };
+      modelSelection?: { reviewer?: unknown };
+      diffs: Array<{ id: string; reviewerStatus: string }>;
+      broadEvidence?: Array<{ id: string; reviewerStatus: string }>;
+      runArtifacts: Array<{ role: string; path: string }>;
+    };
+    const scopeArtifact = raw.runArtifacts.find(artifact => artifact.role === "scope_audit_trace");
+    expect(scopeArtifact).toBeDefined();
+    const scopeTrace = JSON.parse(await fs.readFile(scopeArtifact!.path, "utf8")) as Array<{ status: string; diffId?: string }>;
+    expect(raw.status).toBe("complete");
+    expect(raw.visualClassificationStatus).toBe("incomplete");
+    expect(raw.modelSelection?.reviewer).toBeUndefined();
+    expect(raw.auditScope?.scopeAuditCalls).toBeGreaterThan(0);
+    expect(raw.auditScope?.scopeUnresolvedAudits).toBeGreaterThan(0);
+    expect(scopeTrace.some(entry => entry.status === "independent_reviewer_unavailable" && entry.diffId)).toBe(true);
+    const escalationId = scopeTrace.find(entry => entry.status === "independent_reviewer_unavailable")?.diffId;
+    const hydrated = await hydrateReportParts(raw as never, result.reportPath);
+    const finalFindings = [...hydrated.diffs, ...(hydrated.broadEvidence ?? [])];
+    expect(finalFindings.find(diff => diff.id === escalationId)?.reviewerStatus).toBe("needs_escalation");
   });
 });
 

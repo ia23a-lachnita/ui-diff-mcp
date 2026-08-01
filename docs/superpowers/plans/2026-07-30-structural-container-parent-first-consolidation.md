@@ -71,12 +71,12 @@ Task 4 fix round: RED was captured with `6 failed, 86 passed` across the focused
 
 ### 6. Runtime Independent Reviewer Routing
 
-- [ ] RED: add tests in `tests/unit/audit.test.ts`, `tests/unit/audit-scope.test.ts`, model-routing tests, and relevant stage tests proving normal audit review is dynamically independent of the successful auditor response, not a static primary route.
-- [ ] Change `AuditContext` in `src/audit/audit-target.ts` to accept `reviewerResolver: (auditorProvider, auditorModel) => VisionJsonCaller | undefined` or an equivalent typed resolver. Resolve it only after the auditor response; apply the same design to `auditScopeSummaries` in `src/audit/audit-scope.ts`.
-- [ ] Build the resolver in `src/pipeline/run-ui-diff.ts` using `orderIndependentReviewerCandidates` and fallback callers. Exclude the exact route and its `modelFamilyKey`; prefer a different provider. Keep the runtime fallback list family-independent and retain all candidate diagnostics. Existing recovery resolver behavior is the reference.
-- [ ] Add `AuditDecisionStatus: "independent_reviewer_unavailable"` where the schema does not already provide the equivalent. If no independent resolver exists, emit a `needs_escalation` trace/record excluded by `filterAcceptedDiffs`, not a silent drop.
-- [ ] Add the status to `auditTraceHasFailure`; feed target and scope traces into failed-pair/stage accounting so `deriveVisualClassificationStatus` becomes incomplete. Scope audits must return trace/failure facts rather than throw or discard them. Keep existing escalation semantics; do not duplicate `needs_escalation` filtering.
-- [ ] Update `modelSelection.reviewer` to the initial independent route relative to the primary auditor while retaining route diagnostics. GREEN: assert no successful normal audit has the same provider and model family as its auditor, and unavailable independence is visible as incomplete/escalated.
+- [x] RED: add tests in `tests/unit/audit.test.ts`, `tests/unit/audit-scope.test.ts`, model-routing tests, and relevant stage tests proving normal audit review is dynamically independent of the successful auditor response, not a static primary route.
+- [x] Change `AuditContext` in `src/audit/audit-target.ts` to accept `reviewerResolver: (auditorProvider, auditorModel) => VisionJsonCaller | undefined` or an equivalent typed resolver. Resolve it only after the auditor response; apply the same design to `auditScopeSummaries` in `src/audit/audit-scope.ts`.
+- [x] Build the resolver in `src/pipeline/run-ui-diff.ts` using `orderIndependentReviewerCandidates` and fallback callers. Exclude the exact route and its `modelFamilyKey`; prefer a different provider. Keep the runtime fallback list family-independent and retain all candidate diagnostics. Existing recovery resolver behavior is the reference.
+- [x] Add `AuditDecisionStatus: "independent_reviewer_unavailable"` where the schema does not already provide the equivalent. If no independent resolver exists, emit a `needs_escalation` trace/record excluded by `filterAcceptedDiffs`, not a silent drop.
+- [x] Add the status to `auditTraceHasFailure`; feed target and scope traces into failed-pair/stage accounting so `deriveVisualClassificationStatus` becomes incomplete. Scope audits must return trace/failure facts rather than throw or discard them. Keep existing escalation semantics; do not duplicate `needs_escalation` filtering.
+- [x] Update `modelSelection.reviewer` to the initial independent route relative to the primary auditor while retaining route diagnostics. GREEN: assert no successful normal audit has the same provider and model family as its auditor, and unavailable independence is visible as incomplete/escalated.
 
 ### 7. Structural Invariants
 

@@ -320,7 +320,13 @@ describe("writeUiDiffReport", () => {
         recoveryRejected: 0,
         recoveryClassifiedFalse: 0,
         recoveryErrors: 0,
-        recoverySkipped: 0
+        recoverySkipped: 0,
+        scopeAuditCalls: 0,
+        scopeAuditAccepted: 0,
+        scopeAuditRejected: 0,
+        scopeAuditNoDiff: 0,
+        scopeAuditErrors: 0,
+        scopeAuditEscalated: 0
       },
       diffSummary: {
         finalDiffCount: 0,

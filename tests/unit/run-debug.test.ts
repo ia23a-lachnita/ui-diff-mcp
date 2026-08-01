@@ -19,7 +19,8 @@ describe("run debug trace", () => {
       ],
       recovery: [
         { componentId: "c2", rank: 0, componentBox: { x: 20, y: 0, width: 10, height: 10 }, pixelCount: 100, status: "classified_false", artifactPaths: [] }
-      ]
+      ],
+      scopeAudit: [{ scopeId: "screen", scopeKind: "screen", scopeLabel: "Whole screen", criterion: "geometry", status: "reviewer_accepted", evidenceCount: 1, imageRoles: [], artifactPaths: [] }]
     };
     const summary = summarizeRunDebug(trace);
     expect(summary.auditPairs).toBe(2);
@@ -32,13 +33,39 @@ describe("run debug trace", () => {
 
   it("writes four debug artifact files", async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "ui-debug-"));
-    const result = await writeRunDebugArtifacts(dir, { audit: [], coverage: [], recovery: [] });
-    expect(result.artifacts.map(a => a.role).sort()).toEqual(["audit_trace", "coverage_trace", "debug_summary", "recovery_trace"]);
+    const result = await writeRunDebugArtifacts(dir, { audit: [], coverage: [], recovery: [], scopeAudit: [] });
+    expect(result.artifacts.map(a => a.role).sort()).toEqual(["audit_trace", "coverage_trace", "debug_summary", "recovery_trace", "scope_audit_trace"]);
     await expect(fs.access(path.join(dir, "audit-trace.json"))).resolves.toBeUndefined();
     await expect(fs.access(path.join(dir, "coverage-trace.json"))).resolves.toBeUndefined();
     await expect(fs.access(path.join(dir, "recovery-trace.json"))).resolves.toBeUndefined();
+    await expect(fs.access(path.join(dir, "scope-audit-trace.json"))).resolves.toBeUndefined();
     await expect(fs.access(path.join(dir, "debug-summary.json"))).resolves.toBeUndefined();
     await fs.rm(dir, { recursive: true, force: true });
+  });
+
+  it("counts every retained reviewer escalation, including reviewer failures", () => {
+    const base = {
+      scopeId: "screen",
+      scopeKind: "screen" as const,
+      scopeLabel: "Whole screen",
+      criterion: "geometry" as const,
+      imageRoles: [],
+      artifactPaths: []
+    };
+    const trace: RunDebugTrace = {
+      audit: [],
+      coverage: [],
+      recovery: [],
+      scopeAudit: [
+        { ...base, status: "reviewer_error", evidenceCount: 2, diffId: "d-provider" },
+        { ...base, status: "reviewer_identity_error", evidenceCount: 3, diffId: "d-identity" },
+        { ...base, status: "reviewer_needs_escalation", evidenceCount: 1, diffId: "d-decision" },
+        { ...base, status: "independent_reviewer_unavailable", evidenceCount: 1, diffId: "d-unavailable" }
+      ]
+    };
+    const summary = summarizeRunDebug(trace);
+    expect(summary.scopeAuditErrors).toBe(2);
+    expect(summary.scopeAuditEscalated).toBe(4);
   });
 
   it("counts auditCriterionCalls excluding criterion_not_triggered", () => {
@@ -50,6 +77,7 @@ describe("run debug trace", () => {
       ],
       coverage: [],
       recovery: []
+      ,scopeAudit: []
     };
     const summary = summarizeRunDebug(trace);
     expect(summary.auditCriterionCalls).toBe(2);
@@ -63,7 +91,8 @@ describe("run debug trace", () => {
         { componentId: "c1", rank: 0, componentBox: { x: 0, y: 0, width: 10, height: 10 }, pixelCount: 100, status: "missing_required_fields", artifactPaths: [] },
         { componentId: "c2", rank: 1, componentBox: { x: 10, y: 0, width: 10, height: 10 }, pixelCount: 100, status: "box_out_of_bounds", artifactPaths: [] },
         { componentId: "c3", rank: 2, componentBox: { x: 20, y: 0, width: 10, height: 10 }, pixelCount: 100, status: "recovery_error", artifactPaths: [] }
-      ]
+      ],
+      scopeAudit: []
     };
     const summary = summarizeRunDebug(trace);
     expect(summary.recoveryErrors).toBe(3);

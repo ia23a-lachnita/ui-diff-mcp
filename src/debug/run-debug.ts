@@ -4,6 +4,7 @@ import type {
   AuditCriterionTrace,
   CoverageDecisionTrace,
   RecoveryComponentTrace,
+  ScopeAuditTrace,
   RunDebugSummary,
   UiArtifact
 } from "../schemas/core.js";
@@ -30,6 +31,11 @@ export function summarizeAuditPairOutcomes(
     preAuditDeterministicPairs?: number;
     limitReason?: string;
     remainingPairs?: number;
+    scopeAudit?: {
+      scopeAuditCalls: number;
+      scopeFailedAudits: number;
+      scopeUnresolvedAudits: number;
+    };
   }
 ): AuditScope {
   const selectedPairs = options.selectedPairs ?? outcomes.length;
@@ -48,6 +54,9 @@ export function summarizeAuditPairOutcomes(
     failedPairs: outcomes.filter(outcome => outcome.failed).length,
     remainingPairs: options.remainingPairs ?? 0,
     stoppedReason: options.stoppedReason,
+    scopeAuditCalls: options.scopeAudit?.scopeAuditCalls ?? 0,
+    scopeFailedAudits: options.scopeAudit?.scopeFailedAudits ?? 0,
+    scopeUnresolvedAudits: options.scopeAudit?.scopeUnresolvedAudits ?? 0,
     ...(options.preAuditDeterministicPairs !== undefined ? { preAuditDeterministicPairs: options.preAuditDeterministicPairs } : {}),
     ...(options.limitReason !== undefined ? { limitReason: options.limitReason } : {})
   };
@@ -57,6 +66,7 @@ export interface RunDebugTrace {
   audit: AuditCriterionTrace[];
   coverage: CoverageDecisionTrace[];
   recovery: RecoveryComponentTrace[];
+  scopeAudit: ScopeAuditTrace[];
 }
 
 export function summarizeRunDebug(trace: RunDebugTrace): RunDebugSummary {
@@ -98,7 +108,24 @@ export function summarizeRunDebug(trace: RunDebugTrace): RunDebugSummary {
     ].includes(t.status)).length,
     recoverySkipped: trace.recovery.filter(t =>
       t.status.startsWith("skipped_") || t.status === "below_threshold"
-    ).length
+    ).length,
+    scopeAuditCalls: trace.scopeAudit.length,
+    scopeAuditAccepted: trace.scopeAudit.filter(t => t.status === "reviewer_accepted").length,
+    scopeAuditRejected: trace.scopeAudit.filter(t => t.status === "reviewer_rejected").length,
+    scopeAuditNoDiff: trace.scopeAudit.filter(t => t.status === "auditor_no_diff").length,
+    scopeAuditErrors: trace.scopeAudit.filter(t => [
+      "auditor_error",
+      "auditor_schema_error",
+      "auditor_empty_evidence",
+      "reviewer_error",
+      "reviewer_identity_error"
+    ].includes(t.status)).length,
+    scopeAuditEscalated: trace.scopeAudit.filter(t => [
+      "reviewer_needs_escalation",
+      "independent_reviewer_unavailable",
+      "reviewer_error",
+      "reviewer_identity_error"
+    ].includes(t.status)).length
   };
   return RunDebugSummarySchema.parse(summary);
 }
@@ -111,6 +138,7 @@ export async function writeRunDebugArtifacts(
   const summary = summarizeRunDebug(trace);
   const files = [
     { role: "audit_trace" as const, path: path.join(artifactDir, "audit-trace.json"), data: trace.audit },
+    { role: "scope_audit_trace" as const, path: path.join(artifactDir, "scope-audit-trace.json"), data: trace.scopeAudit },
     { role: "coverage_trace" as const, path: path.join(artifactDir, "coverage-trace.json"), data: trace.coverage },
     { role: "recovery_trace" as const, path: path.join(artifactDir, "recovery-trace.json"), data: trace.recovery },
     { role: "debug_summary" as const, path: path.join(artifactDir, "debug-summary.json"), data: summary }

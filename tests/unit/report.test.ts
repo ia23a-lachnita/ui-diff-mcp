@@ -145,7 +145,7 @@ describe("writeUiDiffReport", () => {
       runArtifacts: [],
       warnings: [],
       stages: [],
-      auditScope: { auditedPairs: 3, totalPairs: 5, auditLimited: true, limitReason: "max pairs limit" }
+      auditScope: { auditedPairs: 3, totalPairs: 5, auditLimited: true, limitReason: "max pairs limit", scopeAuditCalls: 0, scopeFailedAudits: 0, scopeUnresolvedAudits: 0 }
     };
 
     const output = await writeUiDiffReport(report);

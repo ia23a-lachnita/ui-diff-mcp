@@ -31,7 +31,7 @@ import { makeGeminiVisionCaller } from "../models/gemini-client.js";
 import { makeMistralVisionCaller } from "../models/mistral-client.js";
 import { resolveVisionProviderConfig, type VisionProviderConfig } from "../models/provider-config.js";
 import { auditElementPair, makeElementSlug, type AuditContext, type ReviewerHandle } from "../audit/audit-target.js";
-import { auditScopeSummaries } from "../audit/audit-scope.js";
+import { auditScopeSummaries, type AuditScopeSummariesResult } from "../audit/audit-scope.js";
 import { deduplicateDiffs, filterAcceptedDiffs, reviewAndMergeFindings } from "../audit/review-findings.js";
 import { prepareRecoveryRegionArtifacts, runTargetRecovery } from "../recovery/target-recovery.js";
 import { writeRunDebugArtifacts, summarizeAuditPairOutcomes, type AuditPairOutcome, type RunDebugTrace } from "../debug/run-debug.js";
@@ -374,12 +374,13 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
   let locatorCoverageStatus: LocatorCoverageStatus = "not_run";
   let locatorLanes: Record<string, LocatorLaneMetadata> | undefined;
   let auditScope: AuditScope | undefined = undefined;
+  let scopeAuditResult: AuditScopeSummariesResult | undefined;
   let modelSelection: ModelSelection | undefined = undefined;
   let recoverySummary: RecoverySummary | undefined = undefined;
   let recoveryCursor: RecoveryCursor | undefined = undefined;
   let regionLedger: RegionLedger | undefined;
   const geometryRejections: GeometryDiagnosticReference[] = [];
-  const debugTrace: RunDebugTrace = { audit: [], coverage: [], recovery: [] };
+  const debugTrace: RunDebugTrace = { audit: [], coverage: [], recovery: [], scopeAudit: [] };
   const providerTrace = new ProviderTraceWriter();
   if (resumedProviderTraceEvents !== undefined) providerTrace.importEvents(resumedProviderTraceEvents);
   const allDiffs: DiffRecord[] = [];
@@ -879,18 +880,23 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     const auditorCandidates = selectFallbackModelsForMode("auditor", mode, probeResults, 3, process.env);
     const reviewerCandidates = selectFallbackModelsForMode("reviewer", mode, probeResults, 3, process.env);
     const auditorEntry = auditorCandidates[0];
-    const reviewerEntry = reviewerCandidates[0];
+    const independentReviewer = auditorCandidates[0]
+      ? orderIndependentReviewerCandidates(reviewerCandidates, auditorCandidates[0].provider, auditorCandidates[0].model)[0]
+      : undefined;
+    const reviewerEntry = independentReviewer === undefined
+      ? undefined
+      : reviewerCandidates.find(candidate => candidate.provider === independentReviewer.provider && candidate.model === independentReviewer.model);
 
     await checkpoint(
       "model_probe",
       "complete",
-      auditorEntry && reviewerEntry ? "success" : "unavailable",
+      auditorEntry && reviewerEntry ? "success" : auditorEntry ? "incomplete" : "unavailable",
       !auditorEntry ? "auditor_unavailable" : !reviewerEntry ? "reviewer_unavailable" : undefined,
       pairs,
       modelHealth
     );
 
-    if (!auditorEntry || !reviewerEntry) {
+    if (!auditorEntry) {
       if (!locatorFailed) {
         status = "model_unavailable";
         visualClassificationStatus = "incomplete";
@@ -916,7 +922,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
         const toRouteEntry = (e: ModelEntry) => ({ model: e.model, provider: e.provider, costClass: e.costClass });
         modelSelection = {
           auditor: toRouteEntry(auditorEntry),
-          reviewer: toRouteEntry(reviewerEntry),
+          ...(reviewerEntry ? { reviewer: toRouteEntry(reviewerEntry) } : {}),
           ...(recoveryEntry ? { targetRecovery: toRouteEntry(recoveryEntry) } : {}),
           auditorRoutes: auditorCandidates.map(toRouteEntry),
           reviewerRoutes: reviewerCandidates.map(toRouteEntry),
@@ -956,16 +962,6 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
             phase: "audit" as const
           })),
           makeFallbackWarning("auditor"),
-          providerTrace.sink
-        );
-        const reviewerCaller = makeFallbackVisionCaller(
-          reviewerCandidates.map(e => ({
-            caller: makeVisionCaller(e, providerConfig),
-            provider: e.provider,
-            model: e.model,
-            phase: "reviewer" as const
-          })),
-          makeFallbackWarning("reviewer"),
           providerTrace.sink
         );
         const recoveryCaller = recoveryCandidates.length > 0
@@ -1053,22 +1049,21 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
         visualClassificationStatus = "incomplete";
         const auditedDiffs: DiffRecord[] = [];
         if (diffScope.kind !== "target") {
-          try {
-            const scopeAudit = await auditScopeSummaries({
-              summaries: scopeSummaries,
-              diffScope,
-              expectedImagePath: normalizedExpPath,
-              actualImagePath: actualComparisonPath,
-              directionalOverlayPath,
-              pixelDiffMaskPath,
-              auditorCaller,
-              reviewerCaller
-            });
-            auditedDiffs.push(...scopeAudit.accepted);
-          } catch (err) {
-            if (!(err instanceof RouteExhaustedError)) throw err;
-            visualClassificationStatus = "incomplete";
-            warnings.push(`Scope audit routes exhausted before target audit: ${err.message}`);
+          const scopeAudit = await auditScopeSummaries({
+            summaries: scopeSummaries,
+            diffScope,
+            expectedImagePath: normalizedExpPath,
+            actualImagePath: actualComparisonPath,
+            directionalOverlayPath,
+            pixelDiffMaskPath,
+            auditorCaller,
+            reviewerResolver: normalAuditReviewerResolver
+          });
+          auditedDiffs.push(...scopeAudit.accepted);
+          debugTrace.scopeAudit.push(...scopeAudit.trace);
+          scopeAuditResult = scopeAudit;
+          if (scopeAudit.summary.stoppedReason === "route_exhausted") {
+            warnings.push("Scope audit routes exhausted; the scope failure is retained in scope-audit-trace.json.");
           }
         }
         const auditSelection = selectAuditPairsForRun(vlmCandidatePairs, process.env);
@@ -1191,6 +1186,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
           preAuditDeterministicPairs: preAuditPairIds.size,
           stoppedReason: auditStoppedReason,
           remainingPairs: remainingAuditPairs,
+          ...(scopeAuditResult !== undefined ? { scopeAudit: scopeAuditResult.summary } : {}),
           ...(auditSelection.warning ? { limitReason: auditSelection.warning } : {})
         });
 

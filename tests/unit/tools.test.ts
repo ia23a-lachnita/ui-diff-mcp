@@ -49,7 +49,7 @@ describe("handleCompareUiImages compact output", () => {
   });
 
   it("includes auditLimited in structured content", async () => {
-    const result = makeRunOutput({ auditLimited: true, auditScope: { auditedPairs: 2, totalPairs: 8, auditLimited: true } });
+    const result = makeRunOutput({ auditLimited: true, auditScope: { auditedPairs: 2, totalPairs: 8, auditLimited: true, scopeAuditCalls: 0, scopeFailedAudits: 0, scopeUnresolvedAudits: 0 } });
     const deps = makeDeps(result);
     const output = await handleCompareUiImages(
       { expectedImagePath: "e.png", actualImagePath: "a.png" },
@@ -64,7 +64,7 @@ describe("handleCompareUiImages compact output", () => {
       status: "complete",
       visualClassificationStatus: "incomplete",
       auditLimited: true,
-      auditScope: { auditedPairs: 3, totalPairs: 15, auditLimited: true, limitReason: "max pairs limit" }
+      auditScope: { auditedPairs: 3, totalPairs: 15, auditLimited: true, limitReason: "max pairs limit", scopeAuditCalls: 0, scopeFailedAudits: 0, scopeUnresolvedAudits: 0 }
     });
     const deps = makeDeps(result);
     const output = await handleCompareUiImages(

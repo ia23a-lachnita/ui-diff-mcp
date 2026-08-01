@@ -416,7 +416,8 @@ export const UiArtifactSchema = z.object({
     "final_diff_groups_legend",
     "final_diff_zoom",
     "semantic_hierarchy_overlay",
-    "semantic_hierarchy_legend"
+    "semantic_hierarchy_legend",
+    "scope_audit_trace"
   ]),
   path: z.string().min(1),
   pairId: z.string().optional(),
@@ -424,6 +425,43 @@ export const UiArtifactSchema = z.object({
   targetLabel: z.string().optional()
 });
 export type UiArtifact = z.infer<typeof UiArtifactSchema>;
+
+export const ScopeAuditTraceStatusSchema = z.enum([
+  "auditor_no_diff",
+  "auditor_error",
+  "auditor_schema_error",
+  "auditor_empty_evidence",
+  "reviewer_accepted",
+  "reviewer_rejected",
+  "reviewer_needs_escalation",
+  "reviewer_error",
+  "independent_reviewer_unavailable",
+  "reviewer_identity_error"
+]);
+export type ScopeAuditTraceStatus = z.infer<typeof ScopeAuditTraceStatusSchema>;
+
+export const ScopeAuditTraceSchema = z.object({
+  scopeId: z.string().min(1),
+  scopeKind: z.enum(["screen", "region"]),
+  scopeLabel: z.string().min(1),
+  criterion: UiCriterionSchema.exclude(["unclassified_visual_change"]),
+  status: ScopeAuditTraceStatusSchema,
+  auditorProvider: z.string().min(1).optional(),
+  auditorModel: z.string().min(1).optional(),
+  reviewerProvider: z.string().min(1).optional(),
+  reviewerModel: z.string().min(1).optional(),
+  durationMs: z.number().int().nonnegative().optional(),
+  auditorDurationMs: z.number().int().nonnegative().optional(),
+  reviewerDurationMs: z.number().int().nonnegative().optional(),
+  evidenceCount: z.number().int().nonnegative().default(0),
+  diffId: z.string().min(1).optional(),
+  rejectionReason: z.string().max(500).optional(),
+  errorKind: z.enum(["provider", "schema", "identity", "unexpected"]).optional(),
+  errorMessage: z.string().max(500).optional(),
+  imageRoles: z.array(z.string()).default([]),
+  artifactPaths: z.array(UiArtifactSchema).default([])
+}).strict();
+export type ScopeAuditTrace = z.infer<typeof ScopeAuditTraceSchema>;
 
 export const ClaimDiagnosticsSchema = z.object({
   code: z.enum([
@@ -629,7 +667,10 @@ export const AuditScopeSchema = z.object({
   skippedNoTriggeredPairs: z.number().int().nonnegative().optional(),
   failedPairs: z.number().int().nonnegative().optional(),
   remainingPairs: z.number().int().nonnegative().optional(),
-  stoppedReason: z.enum(["none", "route_exhausted", "interrupted"]).optional()
+  stoppedReason: z.enum(["none", "route_exhausted", "interrupted"]).optional(),
+  scopeAuditCalls: z.number().int().nonnegative().default(0),
+  scopeFailedAudits: z.number().int().nonnegative().default(0),
+  scopeUnresolvedAudits: z.number().int().nonnegative().default(0)
 });
 export type AuditScope = z.infer<typeof AuditScopeSchema>;
 
@@ -891,7 +932,13 @@ export const RunDebugSummarySchema = z.object({
   recoveryRejected: z.number().int().min(0),
   recoveryClassifiedFalse: z.number().int().min(0),
   recoveryErrors: z.number().int().min(0),
-  recoverySkipped: z.number().int().min(0)
+  recoverySkipped: z.number().int().min(0),
+  scopeAuditCalls: z.number().int().min(0).default(0),
+  scopeAuditAccepted: z.number().int().min(0).default(0),
+  scopeAuditRejected: z.number().int().min(0).default(0),
+  scopeAuditNoDiff: z.number().int().min(0).default(0),
+  scopeAuditErrors: z.number().int().min(0).default(0),
+  scopeAuditEscalated: z.number().int().min(0).default(0)
 });
 export type RunDebugSummary = z.infer<typeof RunDebugSummarySchema>;
 

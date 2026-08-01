@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import * as schemas from "../../src/schemas/core.js";
 import {
   CoverageDecisionTraceSchema,
+  AuditScopeSchema,
   ComparisonBoxResolutionSchema,
   DiffScopeSchema,
   DiffRecordSchema,
@@ -13,6 +14,7 @@ import {
   ModelSelectionSchema,
   RunDebugSummarySchema,
   StageStatusSchema,
+  ScopeAuditTraceSchema,
   UiArtifactSchema,
   UiDiffReportSchema,
   UiElementSchema,
@@ -322,6 +324,36 @@ describe("core schemas", () => {
     });
 
     expect(parsed.coverageResidualNoise).toBe(1);
+    expect(parsed.scopeAuditCalls).toBe(0);
+    expect(parsed.scopeAuditEscalated).toBe(0);
+  });
+
+  it("defaults scope audit counters and enforces the dedicated strict trace contract", () => {
+    expect(AuditScopeSchema.parse({ auditedPairs: 0, totalPairs: 0, auditLimited: false })).toMatchObject({
+      scopeAuditCalls: 0,
+      scopeFailedAudits: 0,
+      scopeUnresolvedAudits: 0
+    });
+    expect(ScopeAuditTraceSchema.parse({
+      scopeId: "screen",
+      scopeKind: "screen",
+      scopeLabel: "Whole screen",
+      criterion: "geometry",
+      status: "reviewer_identity_error",
+      evidenceCount: 1,
+      imageRoles: [],
+      artifactPaths: [],
+      errorKind: "identity",
+      errorMessage: "undeclared route"
+    })).toMatchObject({ status: "reviewer_identity_error" });
+    expect(() => ScopeAuditTraceSchema.parse({
+      scopeId: "screen",
+      scopeKind: "screen",
+      scopeLabel: "Whole screen",
+      criterion: "geometry",
+      status: "auditor_no_diff",
+      unexpected: true
+    })).toThrow();
   });
 
   it("parses legacy complete stage records fail-closed as incomplete", () => {

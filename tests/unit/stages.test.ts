@@ -59,8 +59,27 @@ describe("semantic stage outcomes", () => {
       auditLimited: false,
       failedPairs: 1,
       remainingPairs: 8,
-      stoppedReason: "route_exhausted"
+      stoppedReason: "route_exhausted",
+      scopeAuditCalls: 0,
+      scopeFailedAudits: 0,
+      scopeUnresolvedAudits: 0
     })).toEqual({ outcome: "incomplete", detail: "route_exhausted" });
+  });
+
+  it.each([
+    ["scope audit failure", { scopeFailedAudits: 1 }, "scope_audit_failures"],
+    ["scope audit unresolved", { scopeUnresolvedAudits: 1 }, "scope_audit_unresolved"]
+  ] as const)("marks %s incomplete", (_label, counters, detail) => {
+    const scopeCounters = counters as { scopeFailedAudits?: number; scopeUnresolvedAudits?: number };
+    expect(deriveAuditStageOutcome({
+      auditedPairs: 0,
+      totalPairs: 0,
+      auditLimited: false,
+      scopeAuditCalls: 1,
+      scopeFailedAudits: scopeCounters.scopeFailedAudits ?? 0,
+      scopeUnresolvedAudits: scopeCounters.scopeUnresolvedAudits ?? 0,
+      stoppedReason: "none"
+    })).toEqual({ outcome: "incomplete", detail });
   });
 
   it("marks deadline-limited recovery incomplete", () => {

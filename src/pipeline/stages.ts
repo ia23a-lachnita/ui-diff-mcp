@@ -52,6 +52,12 @@ export function deriveAuditStageOutcome(scope: AuditScope): SemanticStageOutcome
   if ((scope.failedPairs ?? 0) > 0) {
     return { outcome: "incomplete", detail: "failed_pairs" };
   }
+  if (scope.scopeFailedAudits > 0) {
+    return { outcome: "incomplete", detail: "scope_audit_failures" };
+  }
+  if (scope.scopeUnresolvedAudits > 0) {
+    return { outcome: "incomplete", detail: "scope_audit_unresolved" };
+  }
   if ((scope.remainingPairs ?? 0) > 0) {
     return { outcome: "incomplete", detail: "remaining_pairs" };
   }
@@ -84,6 +90,8 @@ export interface VisualClassificationFacts {
     stoppedReason?: AuditScope["stoppedReason"] | undefined;
     failedPairs?: number | undefined;
     remainingPairs?: number | undefined;
+    scopeFailedAudits?: number | undefined;
+    scopeUnresolvedAudits?: number | undefined;
   };
   recoverySummary?: {
     stoppedReason?: RecoverySummary["stoppedReason"] | undefined;
@@ -106,6 +114,8 @@ export function deriveVisualClassificationStatus(
     || (audit?.stoppedReason !== undefined && audit.stoppedReason !== "none")
     || (audit?.failedPairs ?? 0) > 0
     || (audit?.remainingPairs ?? 0) > 0
+    || (audit?.scopeFailedAudits ?? 0) > 0
+    || (audit?.scopeUnresolvedAudits ?? 0) > 0
   ) {
     return "incomplete";
   }

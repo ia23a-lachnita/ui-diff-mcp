@@ -3,9 +3,10 @@ import http from "node:http";
 export interface MockSidecarOptions {
   imageWidth: number;
   imageHeight: number;
+  queryIds?: string[];
 }
 
-function makeSidecarResponse(width: number, height: number): string {
+function makeSidecarResponse(width: number, height: number, queryIds?: string[]): string {
   const sx = width / 200;
   const sy = height / 400;
   const box = (x: number, y: number, w: number, h: number) => ({
@@ -14,40 +15,23 @@ function makeSidecarResponse(width: number, height: number): string {
     width: Math.max(1, Math.round(w * sx)),
     height: Math.max(1, Math.round(h * sy))
   });
+  const elements = [
+    { queryId: "text", label: "Welcome heading", box: box(10, 20, 180, 30), rawBox1000: [50, 50, 900, 75], confidence: 0.94, rawText: "Welcome" },
+    { queryId: "button", label: "Sign in button", box: box(20, 80, 160, 44), rawBox1000: [100, 200, 800, 110], confidence: 0.91 },
+    { queryId: "icon", label: "Logo icon", box: box(80, 140, 40, 40), rawBox1000: [400, 350, 200, 100], confidence: 0.88 },
+    { queryId: "card", label: "Main card", box: box(5, 200, 190, 120), rawBox1000: [25, 500, 950, 300], confidence: 0.85 }
+  ];
+  const mappedElements = queryIds === undefined
+    ? elements
+    : queryIds.map((queryId, index) => ({
+      ...elements[index % elements.length]!,
+      queryId,
+      box: box(5 + (index % 4) * 45, 20 + Math.floor(index / 4) * 100, 30, 40)
+    }));
   return JSON.stringify({
     model: "nvidia/LocateAnything-3B",
     image: { width, height },
-    elements: [
-      {
-        queryId: "text",
-        label: "Welcome heading",
-        box: box(10, 20, 180, 30),
-        rawBox1000: [50, 50, 900, 75],
-        confidence: 0.94,
-        rawText: "Welcome"
-      },
-      {
-        queryId: "button",
-        label: "Sign in button",
-        box: box(20, 80, 160, 44),
-        rawBox1000: [100, 200, 800, 110],
-        confidence: 0.91
-      },
-      {
-        queryId: "icon",
-        label: "Logo icon",
-        box: box(80, 140, 40, 40),
-        rawBox1000: [400, 350, 200, 100],
-        confidence: 0.88
-      },
-      {
-        queryId: "card",
-        label: "Main card",
-        box: box(5, 200, 190, 120),
-        rawBox1000: [25, 500, 950, 300],
-        confidence: 0.85
-      }
-    ],
+    elements: mappedElements,
     warnings: []
   });
 }
@@ -75,7 +59,7 @@ export function startMockSidecar(opts: MockSidecarOptions): Promise<MockSidecar>
         req.on("end", () => {
           requests.push(JSON.parse(body) as { queries: unknown[] });
           res.writeHead(200, { "Content-Type": "application/json" });
-          res.end(makeSidecarResponse(opts.imageWidth, opts.imageHeight));
+          res.end(makeSidecarResponse(opts.imageWidth, opts.imageHeight, opts.queryIds));
         });
       } else {
         res.writeHead(404);
