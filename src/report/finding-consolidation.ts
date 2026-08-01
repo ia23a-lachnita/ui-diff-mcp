@@ -21,6 +21,13 @@ interface OwnedFinding {
   fallbackKey: string;
 }
 
+interface StructuralMergeContext {
+  candidateById: Map<string, DiffRecord>;
+  elements: Map<string, UiElement>;
+  pairMap: Map<string, ElementPair>;
+  viewportArea: number;
+}
+
 export interface FindingConsolidationContext {
   canvas: { width: number; height: number };
   imagePairTransform?: ImagePairTransform;
@@ -79,6 +86,30 @@ function coherentDisplacement(a: DiffRecord, b: DiffRecord, tolerance = 4): bool
 function hasSharedTarget(a: OwnedFinding, b: OwnedFinding): boolean {
   const aTargets = new Set([...a.targetIds, ...(a.finding.targetIds ?? [])]);
   return [...b.targetIds, ...(b.finding.targetIds ?? [])].some(targetId => aTargets.has(targetId));
+}
+
+function sourceIdsForFinding(finding: DiffRecord): string[] {
+  return [...new Set([finding.id, ...(finding.childFindingIds ?? [])])].sort((a, b) => a.localeCompare(b));
+}
+
+function sourceRootForMerge(findings: readonly DiffRecord[], context: StructuralMergeContext): DiffRecord | undefined {
+  const sourceIds = [...new Set(findings.flatMap(sourceIdsForFinding))].sort((a, b) => a.localeCompare(b));
+  if (sourceIds.length === 0) return undefined;
+  const sources = sourceIds
+    .map(id => context.candidateById.get(id))
+    .filter((finding): finding is DiffRecord => finding !== undefined);
+  if (sources.length !== sourceIds.length) return undefined;
+  return sources.find(root => sources.every(other => root.id === other.id || classifyStructuralRelation(
+    structuralRelationInput(root, other, context.elements, context.pairMap, context.viewportArea)
+  ).action === "suppress"));
+}
+
+function sourceRootAllowsMerge(findings: readonly DiffRecord[], context: StructuralMergeContext): boolean {
+  return sourceRootForMerge(findings, context) !== undefined;
+}
+
+function sourceRootAllowsOwnedMerge(groups: readonly OwnedFinding[], context: StructuralMergeContext): boolean {
+  return sourceRootAllowsMerge(groups.map(entry => entry.finding), context);
 }
 
 function unionBoxes(boxes: Box[]): Box {
@@ -206,7 +237,7 @@ function resolveOwnership(
   };
 }
 
-function mergeGroup(group: OwnedFinding[]): DiffRecord {
+function mergeGroup(group: OwnedFinding[], context?: StructuralMergeContext): DiffRecord {
   const severityRank = { low: 0, medium: 1, high: 2 } as const;
   const reviewRank = { rejected: 0, not_reviewed: 1, accepted: 2, needs_escalation: 3 } as const;
   const primaryRank = (entry: OwnedFinding): number => {
@@ -215,7 +246,11 @@ function mergeGroup(group: OwnedFinding[]): DiffRecord {
     if (entry.finding.findingGroupKind) return 1;
     return 0;
   };
-  const primary = group.reduce((best, current) => {
+  const structuralRoot = context === undefined ? undefined : sourceRootForMerge(group.map(entry => entry.finding), context);
+  const structuralRootEntry = structuralRoot === undefined
+    ? undefined
+    : group.find(entry => sourceIdsForFinding(entry.finding).includes(structuralRoot.id));
+  const primary = structuralRootEntry ?? group.reduce((best, current) => {
     const severityDelta = severityRank[current.finding.severity] - severityRank[best.finding.severity];
     if (severityDelta !== 0) return severityDelta > 0 ? current : best;
     return primaryRank(current) > primaryRank(best) ? current : best;
@@ -273,10 +308,11 @@ function shouldMergeOwnedGroups(a: OwnedFinding[], b: OwnedFinding[]): boolean {
   ));
 }
 
-function mergeOverlappingOwnedGroups(groups: OwnedFinding[][]): OwnedFinding[][] {
+function mergeOverlappingOwnedGroups(groups: OwnedFinding[][], context: StructuralMergeContext): OwnedFinding[][] {
   const merged: OwnedFinding[][] = [];
   for (const group of groups) {
-    const existing = merged.find(candidate => shouldMergeOwnedGroups(candidate, group));
+    const existing = merged.find(candidate => shouldMergeOwnedGroups(candidate, group)
+      && sourceRootAllowsOwnedMerge([...candidate, ...group], context));
     if (existing) {
       existing.push(...group);
     } else {
@@ -292,12 +328,12 @@ function shouldMergeFinalFindings(a: DiffRecord, b: DiffRecord): boolean {
   return sharedTarget && a.criterion === b.criterion && strongOverlap(a.location, b.location);
 }
 
-function mergeFinalFindingGroup(group: DiffRecord[]): DiffRecord {
+function mergeFinalFindingGroup(group: DiffRecord[], context: StructuralMergeContext): DiffRecord {
   const merged = mergeGroup(group.map(finding => ({
     finding,
     targetIds: finding.targetIds ?? [],
     fallbackKey: `${finding.id}:${finding.criterion}`
-  })));
+  })), context);
   const retainedFindingIds = [...new Set(merged.childFindingIds ?? group.map(finding => finding.id))]
     .filter(id => id !== merged.id)
     .sort((a, b) => a.localeCompare(b));
@@ -312,17 +348,18 @@ function mergeFinalFindingGroup(group: DiffRecord[]): DiffRecord {
   };
 }
 
-function mergeFinalDuplicateFindings(findings: DiffRecord[]): DiffRecord[] {
+function mergeFinalDuplicateFindings(findings: DiffRecord[], context: StructuralMergeContext): DiffRecord[] {
   const groups: DiffRecord[][] = [];
   for (const finding of findings) {
-    const existing = groups.find(group => group.some(candidate => shouldMergeFinalFindings(candidate, finding)));
+    const existing = groups.find(group => group.some(candidate => shouldMergeFinalFindings(candidate, finding))
+      && sourceRootAllowsMerge([...group, finding], context));
     if (existing) {
       existing.push(finding);
     } else {
       groups.push([finding]);
     }
   }
-  return groups.map(group => group.length === 1 ? group[0]! : mergeFinalFindingGroup(group));
+  return groups.map(group => group.length === 1 ? group[0]! : mergeFinalFindingGroup(group, context));
 }
 
 const LAYOUT_CRITERIA = new Set<DiffRecord["criterion"]>([
@@ -433,9 +470,11 @@ function parentExplainsChildLayout(
   child: DiffRecord,
   elements: Map<string, UiElement>,
   pairMap: Map<string, ElementPair>,
-  viewportArea: number
+  viewportArea: number,
+  mergeContext?: StructuralMergeContext
 ): boolean {
   if (!isLayoutFinding(parent) || parent.criterion !== child.criterion || boxArea(parent.location) <= boxArea(child.location)) return false;
+  if (mergeContext !== undefined && !sourceRootAllowsMerge([parent, child], mergeContext)) return false;
   return classifyStructuralRelation(structuralRelationInput(parent, child, elements, pairMap, viewportArea)).action === "suppress";
 }
 
@@ -490,21 +529,23 @@ export function selectSuppressionParent(
   child: DiffRecord,
   elements: UiElement[],
   pairs: ElementPair[],
-  viewportArea: number
+  viewportArea: number,
+  mergeContext?: StructuralMergeContext
 ): DiffRecord | undefined {
   const elementMap = new Map(elements.map(element => [element.id, element]));
   const pairMap = new Map(pairs.map(pair => [pair.id, pair]));
   return candidates
     .filter(isLayoutFinding)
     .sort((a, b) => boxArea(b.location) - boxArea(a.location) || a.id.localeCompare(b.id))
-    .find(candidate => candidate.id !== child.id && parentExplainsChildLayout(candidate, child, elementMap, pairMap, viewportArea));
+    .find(candidate => candidate.id !== child.id && parentExplainsChildLayout(candidate, child, elementMap, pairMap, viewportArea, mergeContext));
 }
 
 function suppressLayoutChildrenCoveredByParent(
   findings: DiffRecord[],
   elements: UiElement[],
   pairs: ElementPair[],
-  viewportArea: number
+  viewportArea: number,
+  mergeContext?: StructuralMergeContext
 ): DiffRecord[] {
   const consumed = new Set<string>();
   const parentToChildren = new Map<string, DiffRecord[]>();
@@ -516,7 +557,8 @@ function suppressLayoutChildrenCoveredByParent(
       child,
       elements,
       pairs,
-      viewportArea
+      viewportArea,
+      mergeContext
     );
     if (!parent) continue;
     const children = parentToChildren.get(parent.id) ?? [];
@@ -552,6 +594,10 @@ function consolidateFindingsWithLedger(
   const ownershipElements = projectElementsToCanvas(elements, ownershipCanvas);
   const elementMap = new Map(ownershipElements.map(element => [element.id, element]));
   const pairMap = new Map(pairs.map(pair => [pair.id, pair]));
+  const candidateById = new Map<string, DiffRecord>();
+  for (const candidate of ledgerCandidates) candidateById.set(candidate.id, candidate);
+  for (const candidate of canonicalFindings) if (!candidateById.has(candidate.id)) candidateById.set(candidate.id, candidate);
+  const mergeContext: StructuralMergeContext = { candidateById, elements: elementMap, pairMap, viewportArea };
   const groups = new Map<string, OwnedFinding[]>();
 
   for (const finding of [...canonicalFindings].sort((a, b) => a.location.y - b.location.y || a.location.x - b.location.x || a.id.localeCompare(b.id))) {
@@ -575,14 +621,18 @@ function consolidateFindingsWithLedger(
     ))) {
       key = `${key}:${finding.id}`;
     }
+    const bucket = groups.get(key);
+    if (bucket !== undefined && !sourceRootAllowsOwnedMerge([...bucket, owned], mergeContext)) {
+      key = `${key}:${finding.id}`;
+    }
     const group = groups.get(key) ?? [];
     group.push(owned);
     groups.set(key, group);
   }
 
-  const initiallyMerged = mergeOverlappingOwnedGroups([...groups.values()]).map(mergeGroup);
-  const finalMerged = mergeFinalDuplicateFindings(initiallyMerged);
-  const diffs = suppressLayoutChildrenCoveredByParent(finalMerged, ownershipElements, pairs, viewportArea)
+  const initiallyMerged = mergeOverlappingOwnedGroups([...groups.values()], mergeContext).map(group => mergeGroup(group, mergeContext));
+  const finalMerged = mergeFinalDuplicateFindings(initiallyMerged, mergeContext);
+  const diffs = suppressLayoutChildrenCoveredByParent(finalMerged, ownershipElements, pairs, viewportArea, mergeContext)
     .map(finding => ({
       ...finding,
       childFindingIds: [...new Set(finding.childFindingIds ?? [])]
@@ -616,6 +666,7 @@ function buildStructuralLedger(
   const elementMap = new Map(elements.map(element => [element.id, element]));
   const pairMap = new Map(pairs.map(pair => [pair.id, pair]));
   const candidateIds = new Set(candidates.map(candidate => candidate.id));
+  const candidateById = new Map(candidates.map(candidate => [candidate.id, candidate]));
   const candidateRecords = candidates.map(candidate => ({
     findingId: candidate.id,
     criterion: candidate.criterion,
@@ -644,13 +695,21 @@ function buildStructuralLedger(
   }
   const decisions: StructuralSuppressionDecision[] = [];
   for (const retainedFinding of retained) {
+    const retainedSource = candidateById.get(retainedFinding.id);
+    if (retainedSource === undefined) {
+      throw new Error(`structural consolidation: retained output ${retainedFinding.id} has no original candidate`);
+    }
     for (const suppressedFindingId of retainedFinding.childFindingIds ?? []) {
       if (!candidateIds.has(suppressedFindingId)) continue;
       const suppressedFinding = candidates.find(candidate => candidate.id === suppressedFindingId);
       if (!suppressedFinding) continue;
+      const suppressedSource = candidateById.get(suppressedFinding.id);
+      if (suppressedSource === undefined) {
+        throw new Error(`structural consolidation: suppressed output ${suppressedFinding.id} has no original candidate`);
+      }
       const input = structuralRelationInput(
-        retainedFinding,
-        suppressedFinding,
+        retainedSource,
+        suppressedSource,
         elementMap,
         pairMap,
         canvas.width * canvas.height

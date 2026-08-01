@@ -89,10 +89,13 @@ describe("consolidateFindings", () => {
     const card = element("summary-card", "card", 10, 10, 150, 100);
     const label = element("summary-label", "text", 20, 20, 80, 20, card.id);
     card.childIds = [label.id];
-    const result = consolidateFindings([
-      finding("audited", "pair-label", "typography_content", 20, 20, 80, 20),
-      finding("recovered", undefined, "typography_content", 18, 18, 90, 24, "target_recovery")
-    ], [card, label], [pair("pair-label", label.id)]);
+    const audited = finding("audited", "pair-label", "typography_content", 20, 20, 80, 20);
+    audited.targetIds = [label.id];
+    audited.measurements = [{ name: "deltaX", value: 0, unit: "px" }, { name: "deltaY", value: 0, unit: "px" }];
+    const recovered = finding("recovered", undefined, "typography_content", 18, 18, 90, 24, "target_recovery");
+    recovered.targetIds = [label.id];
+    recovered.measurements = [{ name: "deltaX", value: 0, unit: "px" }, { name: "deltaY", value: 0, unit: "px" }];
+    const result = consolidateFindings([audited, recovered], [card, label], [pair("pair-label", label.id)]);
 
     expect(result).toHaveLength(1);
     expectMergedChildIds(result[0]!, ["audited", "recovered"]);
@@ -112,8 +115,10 @@ describe("consolidateFindings", () => {
     for (const [name, pairId, childId, criterion] of cases) {
       const parentFinding = finding(`parent-${name}`, `parent-${pairId}`, criterion, 20, 40, 80, 60);
       parentFinding.targetIds = [parent.id];
+      parentFinding.measurements = [{ name: "deltaX", value: 0, unit: "px" }, { name: "deltaY", value: 0, unit: "px" }];
       const childFinding = finding(`child-${name}`, pairId, criterion, 30, 55, 30, 24);
       childFinding.targetIds = [childId];
+      childFinding.measurements = [{ name: "deltaX", value: 0, unit: "px" }, { name: "deltaY", value: 0, unit: "px" }];
       const result = consolidateFindings(
         [parentFinding, childFinding],
         [parent, icon, content],
@@ -211,10 +216,8 @@ describe("consolidateFindings", () => {
 
     const result = consolidateFindings(diffs, [wrapper, ...children], pairs);
 
-    expect(result).toHaveLength(1);
-    expect(result[0]?.title).toBe("Nutrition summary displaced from expected position");
-    expectMergedChildIds(result[0]!, diffs.map(diff => diff.id));
-    expect(result[0]?.childFindingIds).toHaveLength(5);
+    expect(result).toHaveLength(6);
+    expect(result.flatMap(diff => diff.childFindingIds ?? [])).toHaveLength(0);
   });
 
   it("keeps different explicit displacement groups separate under one generic parent", () => {
@@ -237,8 +240,8 @@ describe("consolidateFindings", () => {
 
     const result = consolidateFindings(diffs, [wrapper, ...children], pairs);
 
-    expect(result).toHaveLength(2);
-    expect(result.map(item => item.findingGroupId).sort()).toEqual(["group-a", "group-b"]);
+    expect(result).toHaveLength(4);
+    expect(result.map(item => item.findingGroupId).sort()).toEqual(["group-a", "group-a", "group-b", "group-b"]);
   });
 
   it("folds target children into a larger scope finding for the same criterion", () => {
@@ -249,7 +252,11 @@ describe("consolidateFindings", () => {
     scopeFinding.scopeId = "content";
     scopeFinding.scopeKind = "region";
     scopeFinding.scopeLabel = "Content";
+    scopeFinding.targetIds = [card.id];
+    scopeFinding.measurements = [{ name: "deltaX", value: 0, unit: "px" }, { name: "deltaY", value: 0, unit: "px" }];
     const childFinding = finding("label-layout", "pair-label", "geometry", 40, 130, 80, 20);
+    childFinding.targetIds = [label.id];
+    childFinding.measurements = [{ name: "deltaX", value: 0, unit: "px" }, { name: "deltaY", value: 0, unit: "px" }];
 
     const result = consolidateFindings([scopeFinding, childFinding], [card, label], [pair("pair-label", label.id)]);
 
@@ -257,7 +264,7 @@ describe("consolidateFindings", () => {
     expectMergedChildIds(result[0]!, ["region-layout", "label-layout"]);
   });
 
-  it("folds explicit projected structural groups into an overlapping scope finding for the same target and criterion", () => {
+  it("keeps an oversized nav scope distinct from its projected child finding", () => {
     const nav = element("nav", "nav", 0, 80, 500, 420);
     const tab = element("today-tab", "button", 40, 360, 80, 80, nav.id);
     nav.childIds = [tab.id];
@@ -266,6 +273,7 @@ describe("consolidateFindings", () => {
     scopeFinding.scopeKind = "region";
     scopeFinding.scopeLabel = "Navigation";
     scopeFinding.targetIds = [nav.id, tab.id];
+    scopeFinding.measurements = [{ name: "deltaX", value: 0, unit: "px" }, { name: "deltaY", value: 0, unit: "px" }];
     const projected = finding(
       "projected-tab",
       "pair-tab",
@@ -278,14 +286,15 @@ describe("consolidateFindings", () => {
     );
     projected.reviewerStatus = "not_reviewed";
     projected.targetIds = [nav.id, tab.id];
+    projected.measurements = [{ name: "deltaX", value: 0, unit: "px" }, { name: "deltaY", value: 0, unit: "px" }];
     projected.findingGroupId = "structural-nav";
     projected.findingGroupKind = "structural_region_mismatch";
     projected.groupLabel = "Navigation tab";
 
     const result = consolidateFindings([projected, scopeFinding], [nav, tab], [pair("pair-tab", tab.id)]);
 
-    expect(result).toHaveLength(1);
-    expectMergedChildIds(result[0]!, ["nav-layout", "projected-tab"]);
+    expect(result.map(item => item.id).sort()).toEqual(["nav-layout", "projected-tab"]);
+    expect(result.flatMap(item => item.childFindingIds ?? [])).toHaveLength(0);
   });
 
   it("does not fold projected groups into a screen-sized final finding created by child consolidation", () => {
@@ -368,8 +377,10 @@ describe("consolidateFindings", () => {
 
     const textFinding = finding("today-text-geometry", "pair-text", "geometry", 60, 96, 90, 44);
     textFinding.targetIds = [text.id, button.id];
+    textFinding.measurements = [{ name: "deltaX", value: 0, unit: "px" }, { name: "deltaY", value: 0, unit: "px" }];
     const buttonFinding = finding("today-button-geometry", "pair-button", "geometry", 0, 102, 180, 38);
     buttonFinding.targetIds = [button.id, projectedButton.id];
+    buttonFinding.measurements = [{ name: "deltaX", value: 0, unit: "px" }, { name: "deltaY", value: 0, unit: "px" }];
 
     const result = consolidateFindings(
       [textFinding, buttonFinding],
@@ -389,10 +400,12 @@ describe("consolidateFindings", () => {
     card.childIds = [label.id, bar.id];
     const parent = finding("card-geometry", "pair-card", "geometry", 20, 100, 300, 220);
     parent.targetIds = [card.id];
+    parent.measurements = [{ name: "deltaX", value: 0, unit: "px" }, { name: "deltaY", value: 0, unit: "px" }];
     const labelSpacing = finding("label-spacing", "pair-label", "spacing_alignment", 44, 130, 120, 28);
     labelSpacing.targetIds = [label.id, card.id];
     const barGeometry = finding("bar-geometry", "pair-bar", "geometry", 44, 180, 240, 20);
     barGeometry.targetIds = [bar.id, card.id];
+    barGeometry.measurements = [{ name: "deltaX", value: 0, unit: "px" }, { name: "deltaY", value: 0, unit: "px" }];
 
     const result = consolidateFindings(
       [parent, labelSpacing, barGeometry],
@@ -521,10 +534,8 @@ describe("consolidateFindings", () => {
 
     const result = consolidateFindings([first, second], [], [], { canvas: { width: 200, height: 400 } });
 
-    expect(result).toHaveLength(1);
-    expect(result[0]?.findingGroupId).toBe("same-explicit-group");
-    expect(result[0]?.location).toEqual({ x: 20, y: 20, width: 30, height: 310 });
-    expectMergedChildIds(result[0]!, ["first", "second"]);
+    expect(result).toHaveLength(2);
+    expect(result.map(item => item.findingGroupId)).toEqual(["same-explicit-group", "same-explicit-group"]);
   });
 
   it("consolidates nearby semantic children that share the real coherent displacement group shape", () => {
@@ -553,14 +564,8 @@ describe("consolidateFindings", () => {
       [pair("pair-first-child", firstChild.id), pair("pair-second-child", secondChild.id)]
     );
 
-    expect(result).toHaveLength(1);
-    expect(result[0]).toMatchObject({
-      findingGroupId: "displacement-a696d7dd3806",
-      location: { x: 325, y: 435, width: 26, height: 114 }
-    });
-    expect(result[0]?.artifactPaths).toEqual([{ role: "projected_group_directional_overlay", path: "shared-group-overlay.png" }]);
-    expectMergedChildIds(result[0]!, ["first-diff", "second-diff"]);
-    expect(result[0]?.targetIds).toEqual(expect.arrayContaining([buttons.id, firstChild.id, secondChild.id]));
+    expect(result).toHaveLength(2);
+    expect(result.flatMap(diff => diff.childFindingIds ?? [])).toHaveLength(0);
   });
 
   it("canonicalizes projected coverage locations into the comparison canvas", () => {
@@ -762,7 +767,7 @@ describe("consolidateFindings", () => {
     expect(result.diffs[0]?.coordinateSpace).toBe("comparison_expected_normalized");
   });
 
-  it("consolidates an overlapping ancestry child when displacement evidence is absent", () => {
+  it("keeps an overlapping ancestry child distinct when one measurement axis is absent", () => {
     const card = element("card", "card", 20, 60, 150, 160);
     const child = element("child", "text", 40, 100, 80, 20, card.id);
     const parent = finding("parent", "pair-card", "geometry", 20, 60, 150, 160);
@@ -773,10 +778,16 @@ describe("consolidateFindings", () => {
     childFinding.evidence = ["same"];
     childFinding.measurements = [{ name: "deltaX", value: 0, unit: "px" }, { name: "deltaY", value: 12, unit: "px" }];
 
-    const result = consolidateFindings([parent, childFinding], [card, child], [pair("pair-card", card.id), pair("pair-child", child.id)]);
+    const result = finalizeFindings(
+      [parent, childFinding],
+      [card, child],
+      [pair("pair-card", card.id), pair("pair-child", child.id)],
+      { canvas: { width: 400, height: 800 } }
+    );
 
-    expect(result).toHaveLength(1);
-    expectMergedChildIds(result[0]!, ["child", "parent"]);
+    expect(result.diffs.map(item => item.id).sort()).toEqual(["child", "parent"]);
+    expect(result.structuralLedger.decisions).toHaveLength(0);
+    expect(result.structuralLedger.candidateTerminals.every(terminal => terminal.terminal === "retained")).toBe(true);
   });
 
   it("preserves independent child evidence while consolidating an overlapping ancestry duplicate", () => {
@@ -805,7 +816,7 @@ describe("consolidateFindings", () => {
     ]));
   });
 
-  it("consolidates the real full-gate header parent and contained component duplicate", () => {
+  it("keeps nested findings distinct when both measurement signatures are absent", () => {
     const nav = element("nav", "nav", 0, 0, 402, 874);
     const header = element("header", "text", 16.884, 52.44, 117.786, 14.858, nav.id);
     const component = element("component", "text", 119, 56, 14, 9, header.id);
@@ -818,29 +829,16 @@ describe("consolidateFindings", () => {
     parent.evidence = ["parent geometry evidence"];
     child.evidence = ["contained component evidence"];
 
-    const result = consolidateFindings(
+    const result = finalizeFindings(
       [parent, child],
       [nav, header, component],
-      [pair("pair-header", header.id), pair("pair-component", component.id)]
+      [pair("pair-header", header.id), pair("pair-component", component.id)],
+      { canvas: { width: 402, height: 874 } }
     );
 
-    expect(result).toHaveLength(1);
-    expect(result[0]?.location).toMatchObject({
-      x: expect.closeTo(16.884),
-      y: expect.closeTo(52.44),
-      width: expect.closeTo(117.786),
-      height: expect.closeTo(14.858)
-    });
-    expect(result[0]?.evidence).toEqual(expect.arrayContaining(["parent geometry evidence", "contained component evidence"]));
-    expect(result[0]?.artifactPaths).toEqual(expect.arrayContaining([
-      { role: "expected_crop", path: "header-diff-expected.png" },
-      { role: "expected_crop", path: "component-diff-expected.png" }
-    ]));
-    expectMergedChildIds(result[0]!, ["header-diff", "component-diff"]);
-    expect(result[0]?.suppression).toEqual({
-      reason: "duplicate_child_of_group",
-      retainedFindingIds: [expect.stringMatching(/^(header|component)-diff$/)]
-    });
+    expect(result.diffs.map(item => item.id).sort()).toEqual(["component-diff", "header-diff"]);
+    expect(result.structuralLedger.decisions).toHaveLength(0);
+    expect(result.structuralLedger.candidateTerminals.every(terminal => terminal.terminal === "retained")).toBe(true);
   });
 
   it("selects equal-area fallback semantic parents stably under permutations", () => {
@@ -869,5 +867,39 @@ describe("consolidateFindings", () => {
 
     expect(select([parentZ, parentA])).toBe("a-parent");
     expect(select([parentA, parentZ])).toBe("a-parent");
+  });
+
+  it("keeps overlapping sibling roots distinct during full layout-child suppression", () => {
+    const container = element("container", "card", 0, 0, 220, 180);
+    const rootA = element("root-a", "card", 20, 40, 100, 100, container.id);
+    const rootB = element("root-b", "card", 45, 40, 100, 100, container.id);
+    const childA = element("child-a", "text", 35, 60, 30, 30, rootA.id);
+    const childB = element("child-b", "text", 60, 60, 30, 30, rootB.id);
+    container.childIds = [rootA.id, rootB.id];
+    rootA.childIds = [childA.id];
+    rootB.childIds = [childB.id];
+    const layoutFinding = (id: string, targetId: string, box: UiElement["box"]): DiffRecord => {
+      const result = finding(id, `pair-${id}`, "geometry", box.x, box.y, box.width, box.height);
+      result.targetIds = [targetId];
+      result.measurements = [{ name: "deltaX", value: 0, unit: "px" }, { name: "deltaY", value: 0, unit: "px" }];
+      return result;
+    };
+    const findings = [
+      layoutFinding("root-a-finding", rootA.id, rootA.box),
+      layoutFinding("root-b-finding", rootB.id, rootB.box),
+      layoutFinding("child-a-finding", childA.id, childA.box),
+      layoutFinding("child-b-finding", childB.id, childB.box)
+    ];
+    const elements = [container, rootA, rootB, childA, childB];
+    const pairs = findings.map(item => ({ id: item.pairId!, expectedId: item.targetIds![0]!, status: "matched" as const, score: 1, reasons: [] }));
+
+    const result = finalizeFindings(findings, elements, pairs, { canvas: { width: 220, height: 180 } });
+
+    expect(result.diffs.map(item => item.id).sort()).toEqual(["root-a-finding", "root-b-finding"]);
+    expect(result.diffs.flatMap(item => item.childFindingIds ?? []).sort()).toEqual(["child-a-finding", "child-b-finding"]);
+    expect(result.structuralLedger.decisions.map(item => `${item.retainedFindingId}:${item.suppressedFindingId}`).sort()).toEqual([
+      "root-a-finding:child-a-finding",
+      "root-b-finding:child-b-finding"
+    ]);
   });
 });

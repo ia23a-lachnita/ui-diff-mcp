@@ -11,6 +11,7 @@ import {
   type StructuralSuppressionDecision
 } from "../../src/report/structural-invariants.js";
 import { finalizeFindings } from "../../src/report/finding-consolidation.js";
+import { buildFindingGroups } from "../../src/report/context-overlays.js";
 import type { DiffRecord, UiElement } from "../../src/schemas/core.js";
 
 const canvas = { width: 200, height: 400 };
@@ -290,6 +291,133 @@ describe("validateStructuralConsolidationLedger", () => {
 });
 
 describe("finalizeFindings structural ledger", () => {
+  function siblingFixture(overlap: boolean): { findings: DiffRecord[]; elements: UiElement[]; pairs: Array<{ id: string; expectedId: string; status: "matched"; score: number; reasons: never[] }> } {
+    const parent: UiElement = {
+      id: "parent-9aed",
+      label: "container",
+      type: "card",
+      box: { x: 20, y: 40, width: 140, height: 120 },
+      normalizedBox: { x: 0.1, y: 0.1, width: 0.7, height: 0.3 },
+      confidence: 1,
+      source: "locator",
+      childIds: ["sibling-a", "sibling-b"]
+    };
+    const firstBox = { x: 30, y: 70, width: 60, height: 50 };
+    const secondBox = overlap ? { x: 45, y: 70, width: 60, height: 50 } : { x: 110, y: 70, width: 60, height: 50 };
+    const first: UiElement = {
+      id: "sibling-a", label: "A", type: "text", box: firstBox,
+      normalizedBox: { x: firstBox.x / 200, y: firstBox.y / 400, width: firstBox.width / 200, height: firstBox.height / 400 },
+      confidence: 1, source: "locator", parentId: parent.id, childIds: []
+    };
+    const second: UiElement = {
+      id: "sibling-b", label: "B", type: "text", box: secondBox,
+      normalizedBox: { x: secondBox.x / 200, y: secondBox.y / 400, width: secondBox.width / 200, height: secondBox.height / 400 },
+      confidence: 1, source: "locator", parentId: parent.id, childIds: []
+    };
+    const finding = (id: string, targetId: string, location: DiffRecord["location"]): DiffRecord => ({
+      id,
+      pairId: `pair-${id}`,
+      criterion: "geometry",
+      severity: "medium",
+      title: id,
+      location,
+      evidence: [id],
+      measurements: [{ name: "deltaX", value: 10, unit: "px" }, { name: "deltaY", value: 10, unit: "px" }],
+      artifactPaths: [],
+      targetIds: [targetId],
+      findingGroupId: "live-motion",
+      findingGroupKind: "coherent_displacement",
+      groupLabel: "motion",
+      reviewerStatus: "accepted"
+    });
+    return {
+      findings: [finding("be36514767d1", first.id, first.box), finding("f8915256c31e", second.id, second.box)],
+      elements: [parent, first, second],
+      pairs: [
+        { id: "pair-be36514767d1", expectedId: first.id, status: "matched", score: 1, reasons: [] },
+        { id: "pair-f8915256c31e", expectedId: second.id, status: "matched", score: 1, reasons: [] }
+      ]
+    };
+  }
+
+  it.each([[false], [true]])("keeps immutable sibling findings distinct before and after overlap merging", (overlap) => {
+    const fixture = siblingFixture(overlap);
+    const result = finalizeFindings(fixture.findings, fixture.elements, fixture.pairs, { canvas });
+    expect(result.diffs.map(finding => finding.id).sort()).toEqual(["be36514767d1", "f8915256c31e"].sort());
+    expect(result.structuralLedger.decisions).toHaveLength(0);
+    expect(result.structuralLedger.candidateTerminals.map(terminal => terminal.terminal)).toEqual(["retained", "retained"]);
+    expect(validateStructuralConsolidationLedger(result.structuralLedger).status).toBe("pass");
+  });
+
+  it("allows presentation grouping of retained siblings without merging final records", () => {
+    const fixture = siblingFixture(true);
+    const result = finalizeFindings(fixture.findings, fixture.elements, fixture.pairs, { canvas });
+    const groups = buildFindingGroups(result.diffs, canvas);
+    expect(groups.some(group => group.diffIds.length === 2)).toBe(true);
+    expect(result.diffs).toHaveLength(2);
+  });
+
+  it("uses the immutable parent as the only suppression root for two children", () => {
+    const parent: UiElement = {
+      id: "parent", label: "parent", type: "card", box: { x: 20, y: 40, width: 120, height: 120 },
+      normalizedBox: { x: 0.1, y: 0.1, width: 0.6, height: 0.3 }, confidence: 1, source: "locator", childIds: ["child-a", "child-b"]
+    };
+    const child = (id: string, x: number): UiElement => ({
+      id, label: id, type: "text", box: { x, y: 60, width: 30, height: 30 },
+      normalizedBox: { x: x / 200, y: 0.15, width: 0.15, height: 0.075 }, confidence: 1, source: "locator", parentId: parent.id, childIds: []
+    });
+    const elements = [parent, child("child-a", 40), child("child-b", 90)];
+    const finding = (id: string, targetId: string, location: DiffRecord["location"]): DiffRecord => ({
+      id, pairId: `pair-${id}`, criterion: "geometry", severity: "medium", title: id, location,
+      evidence: [id], measurements: [{ name: "deltaX", value: 10, unit: "px" }, { name: "deltaY", value: 10, unit: "px" }],
+      artifactPaths: [], targetIds: [targetId], reviewerStatus: "accepted"
+    });
+    const findings = [
+      finding("parent", parent.id, parent.box),
+      finding("child-a", "child-a", elements[1]!.box),
+      finding("child-b", "child-b", elements[2]!.box)
+    ];
+    const pairs = findings.map(finding => ({ id: finding.pairId!, expectedId: finding.targetIds![0]!, status: "matched" as const, score: 1, reasons: [] }));
+    const result = finalizeFindings(findings, elements, pairs, { canvas });
+    expect(result.diffs.map(finding => finding.id)).toEqual(["parent"]);
+    expect(result.structuralLedger.decisions).toHaveLength(2);
+    expect(result.structuralLedger.decisions.every(decision => decision.retainedFindingId === "parent")).toBe(true);
+    expect(result.structuralLedger.decisions.map(decision => decision.childElementId).sort()).toEqual(["child-a", "child-b"]);
+  });
+
+  it.each([
+    ["same element explicit duplicate", "same-element", "same-element"],
+    ["true descendant explicit pair", "desc-parent", "desc-child"]
+  ])("records one valid typed suppression for %s", (_label, parentId, childId) => {
+    const parent: UiElement = {
+      id: parentId, label: parentId, type: "card", box: { x: 20, y: 40, width: 100, height: 100 },
+      normalizedBox: { x: 0.1, y: 0.1, width: 0.5, height: 0.25 }, confidence: 1, source: "locator", childIds: childId === parentId ? [] : [childId]
+    };
+    const child: UiElement = childId === parentId ? parent : {
+      id: childId, label: childId, type: "text", box: { x: 40, y: 60, width: 30, height: 30 },
+      normalizedBox: { x: 0.2, y: 0.15, width: 0.15, height: 0.075 }, confidence: 1, source: "locator", parentId: parent.id, childIds: []
+    };
+    const make = (id: string, targetId: string, location: DiffRecord["location"]): DiffRecord => ({
+      id, pairId: `pair-${id}`, criterion: "geometry", severity: "medium", title: id, location,
+      evidence: [id], measurements: [{ name: "deltaX", value: 10, unit: "px" }, { name: "deltaY", value: 10, unit: "px" }],
+      artifactPaths: [], targetIds: [targetId], findingGroupId: "explicit", findingGroupKind: "coherent_displacement", reviewerStatus: "accepted"
+    });
+    const findings = [make("parent-finding", parent.id, parent.box), make("child-finding", child.id, child.box)];
+    const pairs = findings.map(finding => ({ id: finding.pairId!, expectedId: finding.targetIds![0]!, status: "matched" as const, score: 1, reasons: [] }));
+    const result = finalizeFindings(findings, childId === parentId ? [parent] : [parent, child], pairs, { canvas });
+    expect(result.diffs).toHaveLength(1);
+    expect(result.structuralLedger.decisions).toHaveLength(1);
+    expect(result.structuralLedger.decisions[0]).toMatchObject({ action: "suppress", parentElementId: parent.id, childElementId: child.id });
+    expect(validateStructuralConsolidationLedger(result.structuralLedger).status).toBe("pass");
+  });
+
+  it("keeps live-shaped sibling ledgers byte-stable under permutation", () => {
+    const fixture = siblingFixture(true);
+    const forward = finalizeFindings(fixture.findings, fixture.elements, fixture.pairs, { canvas }).structuralLedger;
+    const reverse = finalizeFindings([...fixture.findings].reverse(), [...fixture.elements].reverse(), [...fixture.pairs].reverse(), { canvas }).structuralLedger;
+    expect(JSON.stringify(forward)).toBe(JSON.stringify(reverse));
+  });
+
   it("returns an immutable pre-candidate-to-final ledger", () => {
     const finding: DiffRecord = {
       id: "single",
@@ -697,7 +825,7 @@ describe("Task 7A decision-aware accounting", () => {
     expect(result.violations.map(violation => violation.detail?.accountingIssue)).toContain("decision_criterion_mismatch");
   });
 
-  it("finalization exposes invalid removed-child relation instead of silently accepting it", () => {
+  it("retains a child when source-root geometry proves it is distinct", () => {
     const make = (id: string, targetId: string, measurements: DiffRecord["measurements"]): DiffRecord => ({
       id,
       pairId: `pair-${id}`,
@@ -726,12 +854,10 @@ describe("Task 7A decision-aware accounting", () => {
       { id: "pair-parent", expectedId: parentElement.id, status: "matched", score: 1, reasons: [] },
       { id: "pair-child", expectedId: childElement.id, status: "matched", score: 1, reasons: [] }
     ], { canvas });
-    expect(result.structuralLedger.decisions).toEqual(expect.arrayContaining([
-      expect.objectContaining({ suppressedFindingId: "child", retainedFindingId: "parent", action: "retain_distinct" })
-    ]));
-    expect(result.diffs.map(finding => finding.id)).not.toContain("child");
-    expect(result.diffs.find(finding => finding.id === "parent")?.childFindingIds).toContain("child");
-    expect(validateStructuralConsolidationLedger(result.structuralLedger).status).toBe("fail");
+    expect(result.structuralLedger.decisions).toHaveLength(0);
+    expect(result.diffs.map(finding => finding.id).sort()).toEqual(["child", "parent"]);
+    expect(result.structuralLedger.candidateTerminals.map(terminal => terminal.terminal)).toEqual(["retained", "retained"]);
+    expect(validateStructuralConsolidationLedger(result.structuralLedger).status).toBe("pass");
   });
 
   it("persists sorted candidate element IDs and immutable element lineage", () => {
