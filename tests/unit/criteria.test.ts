@@ -4,7 +4,9 @@ import { selectTriggeredCriteria, type TriggerContext } from "../../src/audit/cr
 function ctx(overrides: Partial<TriggerContext> = {}): TriggerContext {
   return {
     pairingStatus: "matched",
-    boxDeltaPx: 0,
+    positionDeltaPx: 0,
+    geometryDeltaPx: 0,
+    comparisonComparable: true,
     textDelta: false,
     colorDelta: false,
     edgeMismatch: false,
@@ -17,6 +19,11 @@ function ctx(overrides: Partial<TriggerContext> = {}): TriggerContext {
 }
 
 describe("selectTriggeredCriteria", () => {
+  it("uses comparison-space geometry and position thresholds independently", () => {
+    expect(selectTriggeredCriteria(ctx({ geometryDeltaPx: 4, positionDeltaPx: 0 } as Partial<TriggerContext>))).toContain("geometry");
+    expect(selectTriggeredCriteria(ctx({ geometryDeltaPx: 0, positionDeltaPx: 3 } as Partial<TriggerContext>))).toContain("spacing_alignment");
+  });
+
   it("returns icon_image when edgeMismatch with icon type", () => {
     const result = selectTriggeredCriteria(ctx({ edgeMismatch: true, elementType: "icon" }));
     expect(result).toContain("icon_image");
@@ -37,8 +44,8 @@ describe("selectTriggeredCriteria", () => {
     expect(result).toContain("chart_special_geometry");
   });
 
-  it("falls back to geometry when nothing triggered on a matched pair", () => {
+  it("does not invent geometry when nothing triggered on a matched pair", () => {
     const result = selectTriggeredCriteria(ctx());
-    expect(result).toEqual(["geometry"]);
+    expect(result).toEqual([]);
   });
 });

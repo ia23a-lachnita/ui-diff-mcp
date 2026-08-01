@@ -110,6 +110,24 @@ export async function auditElementPair(
   const refEl = expectedEl ?? actualEl;
   if (!refEl) return { accepted, rejected, trace };
 
+  if (pair.status === "matched" && !ctx.triggerCtx.comparisonComparable) {
+    trace.push({
+      pairId: pair.id,
+      ...(pair.expectedId !== undefined ? { expectedId: pair.expectedId } : {}),
+      ...(pair.actualId !== undefined ? { actualId: pair.actualId } : {}),
+      targetLabel: refEl.label,
+      targetType: refEl.type,
+      criterion: "geometry",
+      status: "comparison_non_comparable",
+      evidenceCount: 0,
+      skipReason: "no_comparable_intersection",
+      rejectionReason: "no_comparable_intersection",
+      imageRoles: [],
+      artifactPaths: []
+    });
+    return { accepted, rejected, trace };
+  }
+
   const pairId = pair.id;
   const idxStr = String(ctx.auditIndex).padStart(3, "0");
   const totalStr = String(ctx.auditTotal).padStart(3, "0");

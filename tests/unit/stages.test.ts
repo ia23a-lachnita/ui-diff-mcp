@@ -32,6 +32,12 @@ describe("semantic stage outcomes", () => {
     ])).toBe(true);
   });
 
+  it("treats a non-comparable comparison as an audit-pair failure", () => {
+    expect(auditTraceHasFailure([
+      { status: "comparison_non_comparable" }
+    ])).toBe(true);
+  });
+
   it("does not treat accepted, rejected, or no-diff decisions as failures", () => {
     expect(auditTraceHasFailure([
       { status: "reviewer_accepted" },

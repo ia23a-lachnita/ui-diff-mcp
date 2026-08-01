@@ -38,7 +38,85 @@ export type ComparisonExtractionResolution =
     sourceSpace: ComparisonBoxSourceSpace;
   };
 
+export interface ComparisonSpaceDeltaInput {
+  expectedBox: Box;
+  actualBox: Box;
+  transform?: ImagePairTransform;
+}
+
+export type ComparisonSpaceDelta =
+  | {
+    comparable: true;
+    coordinateSpace: "comparison_expected_normalized";
+    dx: number;
+    dy: number;
+    dw: number;
+    dh: number;
+    positionDeltaPx: number;
+    geometryDeltaPx: number;
+  }
+  | {
+    comparable: false;
+    coordinateSpace: "comparison_expected_normalized";
+    reason: "no_comparable_intersection";
+  };
+
 const MINIMUM_ARTIFACT_SIZE = 2;
+
+function intersectBoxes(a: Box, b: Box): Box | undefined {
+  const left = Math.max(a.x, b.x);
+  const top = Math.max(a.y, b.y);
+  const right = Math.min(a.x + a.width, b.x + b.width);
+  const bottom = Math.min(a.y + a.height, b.y + b.height);
+  if (right <= left || bottom <= top) return undefined;
+  return { x: left, y: top, width: right - left, height: bottom - top };
+}
+
+function hasPositiveFiniteBox(box: Box): boolean {
+  return [box.x, box.y, box.width, box.height].every(Number.isFinite)
+    && box.width > 0 && box.height > 0;
+}
+
+export function computeComparisonSpaceDelta(input: ComparisonSpaceDeltaInput): ComparisonSpaceDelta {
+  if (!hasPositiveFiniteBox(input.expectedBox) || !hasPositiveFiniteBox(input.actualBox)) {
+    return { comparable: false, coordinateSpace: "comparison_expected_normalized", reason: "no_comparable_intersection" };
+  }
+
+  const expectedComparable = input.transform
+    ? intersectBoxes(input.expectedBox, input.transform.validRect)
+    : input.expectedBox;
+  const projectedActual = input.transform
+    ? projectActualBoxToExpectedSource(input.actualBox, input.transform)
+    : input.actualBox;
+  const actualComparable = input.transform
+    ? intersectBoxes(projectedActual, input.transform.validRect)
+    : projectedActual;
+  if (!expectedComparable || !actualComparable) {
+    return { comparable: false, coordinateSpace: "comparison_expected_normalized", reason: "no_comparable_intersection" };
+  }
+
+  const dx = actualComparable.x - expectedComparable.x;
+  const dy = actualComparable.y - expectedComparable.y;
+  const dw = actualComparable.width - expectedComparable.width;
+  const dh = actualComparable.height - expectedComparable.height;
+  return {
+    comparable: true,
+    coordinateSpace: "comparison_expected_normalized",
+    dx,
+    dy,
+    dw,
+    dh,
+    positionDeltaPx: Math.abs(dx) + Math.abs(dy),
+    geometryDeltaPx: Math.max(
+      Math.abs(dx),
+      Math.abs(dy),
+      Math.abs(dw),
+      Math.abs(dh),
+      Math.abs(dx + dw),
+      Math.abs(dy + dh)
+    )
+  };
+}
 
 export function summarizeGeometryDiagnostics(references: GeometryDiagnosticReference[]): GeometryDiagnostics {
   const emptyCounts = (): Record<ComparisonBoxRejectionReason, number> => ({

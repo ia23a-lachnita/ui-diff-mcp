@@ -708,7 +708,8 @@ export const AuditDecisionStatusSchema = z.enum([
   "reviewer_rejected",
   "reviewer_needs_escalation",
   "reviewer_error",
-  "deterministic_projected_mismatch"
+  "deterministic_projected_mismatch",
+  "comparison_non_comparable"
 ]);
 
 export const AuditCriterionTraceSchema = z.object({

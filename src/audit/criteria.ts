@@ -170,7 +170,9 @@ export const rubrics: Record<UiCriterion, CriterionRubric> = {
 
 export interface TriggerContext {
   pairingStatus: string;
-  boxDeltaPx: number;
+  positionDeltaPx: number;
+  geometryDeltaPx: number;
+  comparisonComparable: boolean;
   textDelta: boolean;
   colorDelta: boolean;
   edgeMismatch: boolean;
@@ -186,10 +188,10 @@ export function selectTriggeredCriteria(ctx: TriggerContext): UiCriterion[] {
   if (ctx.pairingStatus === "missing" || ctx.pairingStatus === "extra") {
     triggered.add("presence");
   }
-  if (ctx.boxDeltaPx > 3) {
+  if (ctx.geometryDeltaPx > 3) {
     triggered.add("geometry");
   }
-  if (ctx.boxDeltaPx > 2 && ctx.pairingStatus === "matched") {
+  if (ctx.positionDeltaPx > 2 && ctx.pairingStatus === "matched") {
     triggered.add("spacing_alignment");
   }
   if (ctx.textDelta) {
@@ -209,10 +211,6 @@ export function selectTriggeredCriteria(ctx: TriggerContext): UiCriterion[] {
   }
   if (ctx.elementType === "chart" && (ctx.edgeMismatch || ctx.colorDelta)) {
     triggered.add("chart_special_geometry");
-  }
-
-  if (triggered.size === 0 && ctx.pairingStatus === "matched") {
-    triggered.add("geometry");
   }
 
   return [...triggered];

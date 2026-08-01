@@ -1,8 +1,91 @@
 import { describe, expect, it } from "vitest";
-import { createImagePairTransform } from "../../src/images/coordinates.js";
+import { createImagePairTransform, createUniformContainImagePairTransform, projectExpectedBoxToActualSource } from "../../src/images/coordinates.js";
 import { resolveComparisonBox } from "../../src/images/comparison-geometry.js";
+import { computeComparisonSpaceDelta } from "../../src/images/comparison-geometry.js";
 
 const canvas = { width: 402, height: 874 };
+
+describe("computeComparisonSpaceDelta", () => {
+  it("compares equal boxes directly without a transform", () => {
+    expect(computeComparisonSpaceDelta({
+      expectedBox: { x: 10, y: 20, width: 30, height: 40 },
+      actualBox: { x: 10, y: 20, width: 30, height: 40 }
+    })).toMatchObject({ comparable: true, dx: 0, dy: 0, dw: 0, dh: 0, positionDeltaPx: 0, geometryDeltaPx: 0 });
+  });
+
+  it("compares stretch-mapped boxes in expected space", () => {
+    const transform = createImagePairTransform({ width: 100, height: 100 }, { width: 200, height: 300 });
+    const expectedBox = { x: 10, y: 20, width: 30, height: 40 };
+    expect(computeComparisonSpaceDelta({ expectedBox, actualBox: projectExpectedBoxToActualSource(expectedBox, transform), transform })).toMatchObject({ comparable: true, geometryDeltaPx: 0 });
+  });
+
+  it("clips the uniform-contain full-width projection to the valid rectangle", () => {
+    const transform = createUniformContainImagePairTransform({ width: 402, height: 874 }, { width: 1080, height: 2400 });
+    expect(computeComparisonSpaceDelta({
+      expectedBox: { x: 0, y: 0, width: 402, height: 874 },
+      actualBox: { x: 0, y: 0, width: 1080, height: 2400 },
+      transform
+    })).toMatchObject({ comparable: true, dx: 0, dy: 0, dw: 0, dh: 0, positionDeltaPx: 0, geometryDeltaPx: 0 });
+  });
+
+  it("keeps genuine movement and resizing nonzero inside validRect", () => {
+    const transform = createUniformContainImagePairTransform({ width: 402, height: 874 }, { width: 1080, height: 2400 });
+    const expectedBox = { x: 100, y: 200, width: 80, height: 100 };
+    const projected = projectExpectedBoxToActualSource(expectedBox, transform);
+    const moved = computeComparisonSpaceDelta({
+      expectedBox,
+      actualBox: { ...projected, x: projected.x + 20 / transform.scaleActualToExpectedX },
+      transform
+    });
+    expect(moved).toMatchObject({ comparable: true });
+    if (moved.comparable) {
+      expect(moved.dx).toBeCloseTo(20, 10);
+      expect(moved.positionDeltaPx).toBeCloseTo(20, 10);
+      expect(moved.geometryDeltaPx).toBeCloseTo(20, 10);
+    }
+    const resized = computeComparisonSpaceDelta({
+      expectedBox,
+      actualBox: { ...projected, width: projected.width + 15 / transform.scaleActualToExpectedX },
+      transform
+    });
+    expect(resized).toMatchObject({ comparable: true });
+    if (resized.comparable) {
+      expect(resized.dx).toBeCloseTo(0, 10);
+      expect(resized.dw).toBeCloseTo(15, 10);
+      expect(resized.positionDeltaPx).toBeCloseTo(0, 10);
+      expect(resized.geometryDeltaPx).toBeCloseTo(15, 10);
+    }
+  });
+
+  it("uses edge deltas when movement and resizing combine", () => {
+    const direct = computeComparisonSpaceDelta({
+      expectedBox: { x: 10, y: 20, width: 30, height: 40 },
+      actualBox: { x: 12, y: 20, width: 32, height: 40 }
+    });
+    expect(direct).toMatchObject({ comparable: true, dx: 2, dw: 2, geometryDeltaPx: 4 });
+
+    const vertical = computeComparisonSpaceDelta({
+      expectedBox: { x: 10, y: 20, width: 30, height: 40 },
+      actualBox: { x: 10, y: 22, width: 30, height: 42 }
+    });
+    expect(vertical).toMatchObject({ comparable: true, dy: 2, dh: 2, geometryDeltaPx: 4 });
+
+    const boundaryAdjacent = computeComparisonSpaceDelta({
+      expectedBox: { x: 0, y: 10, width: 20, height: 20 },
+      actualBox: { x: 1, y: 10, width: 19, height: 20 }
+    });
+    expect(boundaryAdjacent).toMatchObject({ comparable: true, dx: 1, dw: -1, geometryDeltaPx: 1 });
+  });
+
+  it("reports no comparable intersection outside the contain valid rectangle", () => {
+    const transform = createUniformContainImagePairTransform({ width: 400, height: 800 }, { width: 1000, height: 1000 });
+    expect(computeComparisonSpaceDelta({
+      expectedBox: { x: 20, y: 20, width: 50, height: 50 },
+      actualBox: { x: 50, y: 25, width: 125, height: 125 },
+      transform
+    })).toEqual({ comparable: false, coordinateSpace: "comparison_expected_normalized", reason: "no_comparable_intersection" });
+  });
+});
 
 describe("resolveComparisonBox", () => {
   it("projects actual-source boxes into expected normalized comparison space", () => {

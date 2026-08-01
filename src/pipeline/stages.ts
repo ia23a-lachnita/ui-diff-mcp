@@ -38,7 +38,8 @@ export function auditTraceHasFailure(
     "auditor_error",
     "auditor_schema_error",
     "empty_evidence",
-    "reviewer_error"
+    "reviewer_error",
+    "comparison_non_comparable"
   ].includes(entry.status));
 }
 

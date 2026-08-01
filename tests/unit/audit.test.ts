@@ -13,6 +13,8 @@ import type { VisionJsonCaller } from "../../src/models/vision-json.js";
 import { RouteExhaustedError } from "../../src/models/fallback-caller.js";
 import { writeSolidPng } from "../../src/testing/fixture-images.js";
 import { summarizeAuditPairOutcomes } from "../../src/debug/run-debug.js";
+import { createUniformContainImagePairTransform } from "../../src/images/coordinates.js";
+import { computeComparisonSpaceDelta } from "../../src/images/comparison-geometry.js";
 
 // Creates an RGBA buffer with 2-row white/blue stripes — produces real edges so
 // the content-based projected-mismatch logic can distinguish it from a solid actual.
@@ -66,7 +68,9 @@ describe("selectTriggeredCriteria", () => {
   it("triggers geometry for a shifted button", () => {
     const criteria = selectTriggeredCriteria({
       pairingStatus: "matched",
-      boxDeltaPx: 15,
+      positionDeltaPx: 15,
+      geometryDeltaPx: 15,
+      comparisonComparable: true,
       textDelta: false,
       colorDelta: false,
       edgeMismatch: false,
@@ -82,7 +86,9 @@ describe("selectTriggeredCriteria", () => {
   it("triggers typography_content for changed label text", () => {
     const criteria = selectTriggeredCriteria({
       pairingStatus: "matched",
-      boxDeltaPx: 0,
+      positionDeltaPx: 0,
+      geometryDeltaPx: 0,
+      comparisonComparable: true,
       textDelta: true,
       colorDelta: false,
       edgeMismatch: false,
@@ -97,7 +103,9 @@ describe("selectTriggeredCriteria", () => {
   it("triggers presence for missing element", () => {
     const criteria = selectTriggeredCriteria({
       pairingStatus: "missing",
-      boxDeltaPx: 0,
+      positionDeltaPx: 0,
+      geometryDeltaPx: 0,
+      comparisonComparable: true,
       textDelta: false,
       colorDelta: false,
       edgeMismatch: false,
@@ -192,6 +200,32 @@ describe("auditElementPair", () => {
       expect.objectContaining({ status: "reviewer_rejected", rejectionReason: "evidence_crop_rejected: below_minimum_artifact_size" })
     ]));
   });
+
+  it("records a non-comparable matched pair without calling a provider", async () => {
+    const auditorCaller: VisionJsonCaller = vi.fn();
+    const reviewerCaller: VisionJsonCaller = vi.fn();
+    const context = makeAuditContext({ auditorCaller, reviewerCaller });
+    const result = await auditElementPair(pair, {
+      ...context,
+      triggerCtx: {
+        ...context.triggerCtx,
+        comparisonComparable: false
+      }
+    });
+
+    expect(auditorCaller).not.toHaveBeenCalled();
+    expect(reviewerCaller).not.toHaveBeenCalled();
+    expect(result.accepted).toEqual([]);
+    expect(result.rejected).toEqual([]);
+    expect(result.trace).toEqual([
+      expect.objectContaining({
+        criterion: "geometry",
+        status: "comparison_non_comparable",
+        skipReason: "no_comparable_intersection",
+        rejectionReason: "no_comparable_intersection"
+      })
+    ]);
+  });
   let tmpDir: string;
   let grayPng: string;
 
@@ -223,7 +257,8 @@ describe("auditElementPair", () => {
   function makeAuditContext(overrides: {
     auditorCaller?: VisionJsonCaller;
     reviewerCaller?: VisionJsonCaller;
-    boxDeltaPx?: number;
+    positionDeltaPx?: number;
+    geometryDeltaPx?: number;
     expectedElements?: UiElement[];
   } = {}) {
     const auditorCaller: VisionJsonCaller = overrides.auditorCaller ?? vi.fn().mockResolvedValue({
@@ -242,7 +277,7 @@ describe("auditElementPair", () => {
       expectedImagePath: grayPng,
       actualImagePath: grayPng,
       expectedElements: overrides.expectedElements ?? [expectedEl],
-      actualElements: [{ ...expectedEl, id: "a1", box: { x: 10, y: 50 + (overrides.boxDeltaPx ?? 0), width: 80, height: 40 } }],
+      actualElements: [{ ...expectedEl, id: "a1", box: { x: 10, y: 50 + (overrides.positionDeltaPx ?? 0), width: 80, height: 40 } }],
       artifactDir: tmpDir,
       auditorCaller,
       reviewerCaller,
@@ -254,7 +289,9 @@ describe("auditElementPair", () => {
       elementSlug: "submit-button",
       triggerCtx: {
         pairingStatus: "matched" as const,
-        boxDeltaPx: overrides.boxDeltaPx ?? 0,
+        positionDeltaPx: overrides.positionDeltaPx ?? 0,
+        geometryDeltaPx: overrides.geometryDeltaPx ?? overrides.positionDeltaPx ?? 0,
+        comparisonComparable: true,
         textDelta: false,
         colorDelta: false,
         edgeMismatch: false,
@@ -301,7 +338,9 @@ describe("auditElementPair", () => {
       elementSlug: "submit-button",
       triggerCtx: {
         pairingStatus: "matched",
-        boxDeltaPx: 15,
+        positionDeltaPx: 15,
+        geometryDeltaPx: 15,
+        comparisonComparable: true,
         textDelta: false,
         colorDelta: false,
         edgeMismatch: false,
@@ -322,7 +361,7 @@ describe("auditElementPair", () => {
       parsed: { hasDiff: false }, rawContent: "", model: "m", provider: "nvidia"
     });
 
-    await auditElementPair(pair, makeAuditContext({ auditorCaller, boxDeltaPx: 15 }));
+    await auditElementPair(pair, makeAuditContext({ auditorCaller, positionDeltaPx: 15, geometryDeltaPx: 15 }));
 
     expect(auditorCaller).toHaveBeenCalled();
     expect(auditorCaller.mock.calls[0]?.[0].maxOutputTokens).toBeGreaterThanOrEqual(8192);
@@ -333,7 +372,7 @@ describe("auditElementPair", () => {
       new RouteExhaustedError(new Error("all transient routes returned empty content"), false)
     );
 
-    const result = await auditElementPair(pair, makeAuditContext({ auditorCaller, boxDeltaPx: 15 }));
+    const result = await auditElementPair(pair, makeAuditContext({ auditorCaller, positionDeltaPx: 15, geometryDeltaPx: 15 }));
 
     expect(result.accepted).toHaveLength(0);
     expect(result.trace.some(entry => entry.status === "auditor_error")).toBe(true);
@@ -369,7 +408,9 @@ describe("auditElementPair", () => {
       elementSlug: "submit-button",
       triggerCtx: {
         pairingStatus: "matched",
-        boxDeltaPx: 2,
+        positionDeltaPx: 4,
+        geometryDeltaPx: 4,
+        comparisonComparable: true,
         textDelta: false,
         colorDelta: false,
         edgeMismatch: false,
@@ -415,7 +456,9 @@ describe("auditElementPair", () => {
       elementSlug: "submit-button",
       triggerCtx: {
         pairingStatus: "matched",
-        boxDeltaPx: 0,
+        positionDeltaPx: 0,
+        geometryDeltaPx: 0,
+        comparisonComparable: true,
         textDelta: false,
         colorDelta: true,
         edgeMismatch: false,
@@ -466,7 +509,9 @@ describe("auditElementPair", () => {
       elementSlug,
       triggerCtx: {
         pairingStatus: "matched",
-        boxDeltaPx: 15,
+        positionDeltaPx: 15,
+        geometryDeltaPx: 15,
+        comparisonComparable: true,
         textDelta: false,
         colorDelta: false,
         edgeMismatch: false,
@@ -515,7 +560,7 @@ describe("auditElementPair", () => {
   it("records auditor_no_diff when model returns hasDiff false", async () => {
     const auditorCaller = vi.fn().mockResolvedValue({ parsed: { hasDiff: false }, rawContent: "", model: "audit-model", provider: "nvidia" });
     const reviewerCaller = vi.fn();
-    const result = await auditElementPair(pair, makeAuditContext({ auditorCaller, reviewerCaller, boxDeltaPx: 15 }));
+    const result = await auditElementPair(pair, makeAuditContext({ auditorCaller, reviewerCaller, positionDeltaPx: 15, geometryDeltaPx: 15 }));
     expect(result.accepted).toHaveLength(0);
     expect(result.trace.some(t => t.status === "auditor_no_diff" && t.model === "audit-model")).toBe(true);
     expect(reviewerCaller).not.toHaveBeenCalled();
@@ -523,7 +568,7 @@ describe("auditElementPair", () => {
 
   it("records empty_evidence when hasDiff true has no evidence", async () => {
     const auditorCaller = vi.fn().mockResolvedValue({ parsed: { hasDiff: true, title: "Bad" }, rawContent: "", model: "audit-model", provider: "nvidia" });
-    const result = await auditElementPair(pair, makeAuditContext({ auditorCaller, boxDeltaPx: 15 }));
+    const result = await auditElementPair(pair, makeAuditContext({ auditorCaller, positionDeltaPx: 15, geometryDeltaPx: 15 }));
     expect(result.trace.some(t => t.status === "empty_evidence")).toBe(true);
   });
 
@@ -531,7 +576,8 @@ describe("auditElementPair", () => {
     const result = await auditElementPair(pair, makeAuditContext({
       auditorCaller: vi.fn().mockResolvedValue({ parsed: { hasDiff: true, evidence: ["visible"], title: "Shift" }, rawContent: "", model: "audit-model", provider: "nvidia" }),
       reviewerCaller: vi.fn().mockResolvedValue({ parsed: { decision: "rejected", reason: "not supported" }, rawContent: "", model: "review-model", provider: "nvidia" }),
-      boxDeltaPx: 15
+      positionDeltaPx: 15,
+      geometryDeltaPx: 15
     }));
     expect(result.trace.some(t => t.status === "reviewer_rejected" && t.rejectionReason === "not supported")).toBe(true);
   });
@@ -540,7 +586,8 @@ describe("auditElementPair", () => {
     const accepted = await auditElementPair(pair, makeAuditContext({
       auditorCaller: vi.fn().mockResolvedValue({ parsed: { hasDiff: true, evidence: ["visible"], title: "Shift" }, rawContent: "", model: "audit-model", provider: "nvidia" }),
       reviewerCaller: vi.fn().mockResolvedValue({ parsed: { decision: "accepted", reason: "visible in overlay" }, rawContent: "", model: "review-model", provider: "nvidia" }),
-      boxDeltaPx: 15
+      positionDeltaPx: 15,
+      geometryDeltaPx: 15
     }));
 
     expect(accepted.accepted[0]).toMatchObject({
@@ -551,7 +598,8 @@ describe("auditElementPair", () => {
     const escalated = await auditElementPair(pair, makeAuditContext({
       auditorCaller: vi.fn().mockResolvedValue({ parsed: { hasDiff: true, evidence: ["visible"], title: "Shift" }, rawContent: "", model: "audit-model", provider: "nvidia" }),
       reviewerCaller: vi.fn().mockResolvedValue({ parsed: { decision: "needs_escalation", reason: "crop is ambiguous" }, rawContent: "", model: "review-model", provider: "nvidia" }),
-      boxDeltaPx: 15
+      positionDeltaPx: 15,
+      geometryDeltaPx: 15
     }));
 
     expect(escalated.accepted[0]).toMatchObject({
@@ -562,7 +610,7 @@ describe("auditElementPair", () => {
 
   it("records criterion_not_triggered for criteria not selected by triggers", async () => {
     const auditorCaller = vi.fn().mockResolvedValue({ parsed: { hasDiff: false }, rawContent: "", model: "m", provider: "nvidia" });
-    const result = await auditElementPair(pair, makeAuditContext({ auditorCaller, boxDeltaPx: 0 }));
+    const result = await auditElementPair(pair, makeAuditContext({ auditorCaller, positionDeltaPx: 0, geometryDeltaPx: 0 }));
     expect(result.trace.some(t => t.status === "criterion_not_triggered")).toBe(true);
   });
 
@@ -600,7 +648,9 @@ describe("auditElementPair", () => {
       elementSlug: "submit-button",
       triggerCtx: {
         pairingStatus: "matched",
-        boxDeltaPx: 15,
+        positionDeltaPx: 15,
+        geometryDeltaPx: 15,
+        comparisonComparable: true,
         textDelta: false,
         colorDelta: false,
         edgeMismatch: false,
@@ -716,19 +766,32 @@ describe("auditElementPair", () => {
     expect(nonZero).toBeLessThan(20);
   });
 
-  it("trace predicate for vlmAuditedPairs: matched pair always triggers geometry fallback", async () => {
-    // selectTriggeredCriteria adds geometry as a fallback for any matched pair with no other signals.
-    // The pipeline counts vlmAuditedPairs via trace.some(t => t.status !== "criterion_not_triggered").
-    // For matched pairs this is always true, so vlmCallCount equals the number of pairs that
-    // actually enter auditElementPair — not just the selection count (fixing the pre-audit case
-    // where auditTotal could be 3 but refEl=undefined for all, producing no real calls).
+  it("does not call a provider for an ideal full-width projected pair", async () => {
+    const transform = createUniformContainImagePairTransform(
+      { width: 402, height: 874 },
+      { width: 1080, height: 2400 }
+    );
+    const comparisonDelta = computeComparisonSpaceDelta({
+      expectedBox: { x: 0, y: 0, width: 402, height: 874 },
+      actualBox: { x: 0, y: 0, width: 1080, height: 2400 },
+      transform
+    });
+    expect(comparisonDelta).toMatchObject({ comparable: true, positionDeltaPx: 0, geometryDeltaPx: 0 });
+    if (!comparisonDelta.comparable) return;
+
     const auditorCaller = vi.fn().mockResolvedValue({ parsed: { hasDiff: false }, rawContent: "", model: "m", provider: "nvidia" });
-    const result = await auditElementPair(pair, makeAuditContext({ auditorCaller, boxDeltaPx: 0 }));
-    expect(result.trace.length).toBeGreaterThan(0);
-    // Geometry fallback fires → predicate is true → pipeline increments vlmCallCount
-    expect(result.trace.some(t => t.status !== "criterion_not_triggered")).toBe(true);
-    // Other criteria with no signals are not_triggered
-    expect(result.trace.some(t => t.status === "criterion_not_triggered")).toBe(true);
+    const context = makeAuditContext({ auditorCaller });
+    const result = await auditElementPair(pair, {
+      ...context,
+      triggerCtx: {
+        ...context.triggerCtx,
+        positionDeltaPx: comparisonDelta.positionDeltaPx,
+        geometryDeltaPx: comparisonDelta.geometryDeltaPx,
+        comparisonComparable: true
+      }
+    });
+    expect(auditorCaller).not.toHaveBeenCalled();
+    expect(result.trace.every(t => t.status === "criterion_not_triggered")).toBe(true);
   });
 
   it("trace predicate for vlmAuditedPairs: explicit criterion trigger also satisfies predicate", async () => {
@@ -739,7 +802,7 @@ describe("auditElementPair", () => {
     const reviewerCaller = vi.fn().mockResolvedValue({
       parsed: { decision: "accepted", reason: "confirmed" }, rawContent: "", model: "r", provider: "nvidia"
     });
-    const result = await auditElementPair(pair, makeAuditContext({ auditorCaller, reviewerCaller, boxDeltaPx: 15 }));
+    const result = await auditElementPair(pair, makeAuditContext({ auditorCaller, reviewerCaller, positionDeltaPx: 15, geometryDeltaPx: 15 }));
     // Geometry and spacing_alignment both fire with 15px delta; predicate must be true.
     expect(result.trace.some(t => t.status !== "criterion_not_triggered")).toBe(true);
   });
@@ -887,7 +950,7 @@ describe("projected actual element reaches VLM auditor after pre-audit stage", (
       auditTotal: 1,
       elementSlug: "nav-header",
       triggerCtx: {
-        pairingStatus: "matched", boxDeltaPx: 20, textDelta: false, colorDelta: false,
+        pairingStatus: "matched", positionDeltaPx: 20, geometryDeltaPx: 20, comparisonComparable: true, textDelta: false, colorDelta: false,
         edgeMismatch: false, overlapDetected: false, stateWordsDiffer: false,
         elementType: "text", measurements: []
       }

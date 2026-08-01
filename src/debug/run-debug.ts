@@ -70,7 +70,8 @@ export function summarizeRunDebug(trace: RunDebugTrace): RunDebugSummary {
       t.status === "auditor_error" ||
       t.status === "auditor_schema_error" ||
       t.status === "reviewer_error" ||
-      t.status === "empty_evidence"
+      t.status === "empty_evidence" ||
+      t.status === "comparison_non_comparable"
     ).length,
     coverageComponents: trace.coverage.length,
     coverageCovered: trace.coverage.filter(t => t.status === "covered_by_diff").length,

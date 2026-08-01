@@ -5,7 +5,7 @@ import sharp from "sharp";
 import { resolveInputImagePath, createRunDirectory } from "../security/paths.js";
 import { loadNormalizedImage } from "../images/normalize.js";
 import { prepareAspectPreservingComparison } from "../images/aspect-preserving-comparison.js";
-import { summarizeGeometryDiagnostics } from "../images/comparison-geometry.js";
+import { computeComparisonSpaceDelta, summarizeGeometryDiagnostics } from "../images/comparison-geometry.js";
 import { computeViewportCompatibility } from "../images/viewport.js";
 import { annotateRecoveryTraceSupersessions, buildRegionLedger, applyFindingCoverage, applyRecoveryOutcomes, markBroadVlmEvidence, unresolvedRegionsFromLedger, type RegionLedger } from "../report/region-ledger.js";
 import { finalizeFindings } from "../report/finding-consolidation.js";
@@ -1038,9 +1038,11 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
             { name: "color_dominant_actual_palette", value: JSON.stringify(colorEvidence.dominantActual) }
             ] : [];
 
-          const boxDeltaPx = expEl && actEl
-            ? Math.abs(expEl.box.x - actEl.box.x) + Math.abs(expEl.box.y - actEl.box.y)
-            : 0;
+          const comparisonDelta = expEl && actEl
+            ? computeComparisonSpaceDelta({ expectedBox: expEl.box, actualBox: actEl.box, transform: imagePairTransform })
+            : undefined;
+          const positionDeltaPx = comparisonDelta?.comparable ? comparisonDelta.positionDeltaPx : 0;
+          const geometryDeltaPx = comparisonDelta?.comparable ? comparisonDelta.geometryDeltaPx : 0;
 
           const ctx: AuditContext = {
             expectedImagePath: normalizedExpPath,
@@ -1056,7 +1058,9 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
             measurements: colorMeasurements,
             triggerCtx: {
               pairingStatus: pair.status,
-              boxDeltaPx,
+              positionDeltaPx,
+              geometryDeltaPx,
+              comparisonComparable: comparisonDelta?.comparable ?? false,
               textDelta: (expEl?.text ?? "") !== (actEl?.text ?? ""),
               colorDelta,
               edgeMismatch: edgeMask.components.length > 0,
@@ -1088,11 +1092,12 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
             recordEvidenceCropRejection("audit_evidence", entry.rejectionReason, `pair:${entry.pairId}`);
           }
           auditedDiffs.push(...accepted);
-          const providerCalled = trace.some(t => t.status !== "criterion_not_triggered");
+          const providerCalled = trace.some(t => !["criterion_not_triggered", "comparison_non_comparable"].includes(t.status));
+          const comparisonNonComparable = trace.some(t => t.status === "comparison_non_comparable");
           const reviewed = trace.some(t => ["reviewer_accepted", "reviewer_rejected", "reviewer_needs_escalation"].includes(t.status));
           const validAuditor = trace.some(t => ["auditor_no_diff", "reviewer_accepted", "reviewer_rejected", "reviewer_needs_escalation"].includes(t.status));
-          const failed = providerCalled && auditTraceHasFailure(trace);
-          auditOutcomes.push({ pairId: pair.id, entered: true, providerCalled, validAuditor, reviewed, skippedNoTrigger: !providerCalled, failed });
+          const failed = auditTraceHasFailure(trace);
+          auditOutcomes.push({ pairId: pair.id, entered: true, providerCalled, validAuditor, reviewed, skippedNoTrigger: !providerCalled && !comparisonNonComparable, failed });
         }
 
         auditScope = summarizeAuditPairOutcomes(auditOutcomes, {

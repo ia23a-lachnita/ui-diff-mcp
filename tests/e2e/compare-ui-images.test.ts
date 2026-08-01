@@ -1078,8 +1078,11 @@ describe("runUiDiff with mock sidecar and models (full mode)", () => {
   });
 
   it("routes free_opencode semantic calls through Zen and records exact model selections", async () => {
-    const expected = await writeSolidPng(tmpDir, "opencode-e.png", 200, 400, 200, 200, 200);
-    const actual = await writeSolidPng(tmpDir, "opencode-a.png", 200, 400, 200, 200, 200);
+    // A shifted-button fixture (not identical images) is required so at least one paired
+    // element has a real color/edge delta and triggers a criterion; since Task 4 removed the
+    // zero-delta geometry fallback, pixel-identical expected/actual images trigger no criteria
+    // at all and never reach the VLM auditor, which this test needs to observe.
+    const { expected, actual } = await writeTwoButtonFixture(tmpDir, "opencode-e.png", "opencode-a.png");
     sidecar = await startMockSidecar({ imageWidth: 200, imageHeight: 400 });
 
     const baseFetch = makeMockFetch([], { sidecarImageWidth: 200, sidecarImageHeight: 400 });
@@ -1151,7 +1154,7 @@ describe("runUiDiff with mock sidecar and models (full mode)", () => {
     const stageMap = Object.fromEntries(report.stages.map(stage => [stage.name, stage]));
     expect(stageMap["model_probe"]).toMatchObject({ status: "complete", outcome: "success" });
     expect(stageMap["audit"]).toMatchObject({ status: "complete", outcome: "success" });
-    expect(stageMap["target_recovery"]).toMatchObject({ status: "skipped", outcome: "not_applicable" });
+    expect(stageMap["target_recovery"]).toMatchObject({ status: "complete", outcome: "success" });
   });
 
   it("discovers elements, pairs them, and runs audit pipeline", async () => {
@@ -1551,10 +1554,9 @@ describe("runUiDiff with mock sidecar and models (full mode)", () => {
 });
 
 describe("runUiDiff auditScope.vlmAuditedPairs pipeline accounting", () => {
-  it("populates vlmAuditedPairs and preAuditDeterministicPairs that account for all paired elements", async () => {
-    // Both images are identical solid gray — detectProjectedCropMismatch finds no mismatches, so
-    // all projected pairs pass pre-audit and reach the VLM auditor. This directly exercises the
-    // accounting that sets report.auditScope.vlmAuditedPairs and preAuditDeterministicPairs.
+  it("accounts for identical projected pairs as deterministic no-trigger skips", async () => {
+    // Identical projected pairs pass pre-audit but have no semantic criterion signal. They must be
+    // recorded as no-trigger skips instead of spending VLM calls on invented geometry.
     const expected = await writeSolidPng(tmpDir, "e.png", 200, 400, 200, 200, 200);
     const actual = await writeSolidPng(tmpDir, "a.png", 200, 400, 200, 200, 200);
 
@@ -1586,6 +1588,9 @@ describe("runUiDiff auditScope.vlmAuditedPairs pipeline accounting", () => {
       auditScope?: {
         vlmAuditedPairs?: number;
         preAuditDeterministicPairs?: number;
+        selectedPairs?: number;
+        providerCalledPairs?: number;
+        skippedNoTriggeredPairs?: number;
         totalPairs: number;
       };
       projectedPreAudit?: {
@@ -1597,14 +1602,20 @@ describe("runUiDiff auditScope.vlmAuditedPairs pipeline accounting", () => {
 
     const vlm = report.auditScope?.vlmAuditedPairs ?? 0;
     const preAudit = report.auditScope?.preAuditDeterministicPairs ?? 0;
+    const selected = report.auditScope?.selectedPairs ?? 0;
+    const providerCalled = report.auditScope?.providerCalledPairs ?? 0;
+    const skippedNoTrigger = report.auditScope?.skippedNoTriggeredPairs ?? 0;
     const total = report.auditScope?.totalPairs ?? 0;
 
-    expect(vlm).toBeGreaterThan(0);
+    expect(vlm).toBe(0);
+    expect(providerCalled).toBe(0);
     expect(report.auditScope?.preAuditDeterministicPairs).toBeDefined();
-    // Pre-audit + VLM must exhaust all paired candidates
-    expect(vlm + preAudit).toBe(total);
+    expect(skippedNoTrigger).toBe(selected);
+    expect(providerCalled + skippedNoTrigger).toBe(selected);
+    expect(selected + preAudit).toBe(total);
     expect(report.projectedPreAudit).toBeDefined();
-    // Identical-content crops produce 0 pre-audit mismatches; all pairs forwarded to VLM
+    // Pre-audit forwards the pairs; the deterministic trigger stage then records that no provider
+    // call is needed for the unchanged targets.
     expect(report.projectedPreAudit?.deterministicProjectedDiffs).toBe(0);
     expect(report.projectedPreAudit?.sentToVlmPairs).toBe(total);
   });
