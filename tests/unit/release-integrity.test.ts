@@ -44,6 +44,45 @@ describe("collectReleaseIntegrityIssues", () => {
     expect(collectReleaseIntegrityIssues(input())).toEqual([]);
   });
 
+  it("accepts distinct sibling findings represented once in one presentation legend group", () => {
+    const first = diff("sibling-a", {
+      location: { x: 20, y: 40, width: 60, height: 50 },
+      targetIds: ["sibling-a"],
+      findingGroupId: "displacement-f42d88d2c4a1",
+      findingGroupKind: "coherent_displacement"
+    });
+    const second = diff("sibling-b", {
+      location: { x: 45, y: 40, width: 60, height: 50 },
+      targetIds: ["sibling-b"],
+      findingGroupId: "displacement-f42d88d2c4a1",
+      findingGroupKind: "coherent_displacement"
+    });
+    const finalDiffs = [first, second];
+    const legendGroups = [{ id: "group-001", diffIds: finalDiffs.map(item => item.id) }];
+    expect(new Set(finalDiffs.map(item => item.findingGroupId)).size).toBe(1);
+    expect(finalDiffs.every(item => item.findingGroupKind === "coherent_displacement")).toBe(true);
+    const issues = collectReleaseIntegrityIssues(input({
+      diffs: finalDiffs,
+      finalDiffCount: 2,
+      finalGroupCount: 1,
+      groups: legendGroups,
+      structuralConsolidation: {
+        status: "pass",
+        candidateCount: 2,
+        retainedCount: 2,
+        suppressedCount: 0,
+        broadExcludedCount: 0,
+        violationCount: 0
+      }
+    }));
+
+    expect(issues).toEqual([]);
+    expect(legendGroups).toHaveLength(1);
+    expect(legendGroups[0]?.diffIds).toEqual(["sibling-a", "sibling-b"]);
+    const references = finalDiffs.map(item => legendGroups.flatMap(group => group.diffIds).filter(id => id === item.id));
+    expect(references).toEqual([["sibling-a"], ["sibling-b"]]);
+  });
+
   it("rejects a missing or non-passing structural consolidation summary", () => {
     const { structuralConsolidation: _ignored, ...withoutStructural } = input();
     expect(collectReleaseIntegrityIssues(withoutStructural)).toContain("missing_structural_consolidation");

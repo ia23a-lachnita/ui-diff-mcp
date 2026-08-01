@@ -101,7 +101,6 @@ function assertFinalFindingIntegrity(report: UiDiffReport): void {
     }
   }
   const grouped = report.diffs.filter(diff => diff.findingGroupId !== undefined);
-  expect(new Set(grouped.map(diff => diff.findingGroupId)).size, "each displacement group must appear once in final findings").toBe(grouped.length);
   const groupRoles = [
     "projected_group_expected_crop",
     "projected_group_actual_crop",
