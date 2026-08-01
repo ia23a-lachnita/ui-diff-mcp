@@ -1,6 +1,13 @@
 import type { UiElement } from "../schemas/core.js";
 import { iou, intersect, area } from "../signals/geometry.js";
 
+function normalizedQueryIds(element: UiElement): string[] {
+  return [...new Set([
+    ...(element.queryIds ?? []),
+    ...(element.queryId?.split("+") ?? [])
+  ].map(value => value.trim()).filter(Boolean))].sort();
+}
+
 function mergeQueryIds(a?: string, b?: string): string | undefined {
   const parts = new Set<string>();
   for (const value of [a, b]) {
@@ -11,10 +18,12 @@ function mergeQueryIds(a?: string, b?: string): string | undefined {
 }
 
 function mergeElement(primary: UiElement, duplicate: UiElement): UiElement {
+  const queryIds = [...new Set([...normalizedQueryIds(primary), ...normalizedQueryIds(duplicate)])].sort();
   return {
     ...primary,
     confidence: Math.max(primary.confidence, duplicate.confidence),
     queryId: mergeQueryIds(primary.queryId, duplicate.queryId),
+    queryIds,
     label: primary.confidence >= duplicate.confidence ? primary.label : duplicate.label,
     text: primary.text ?? duplicate.text,
     source: "merged"
@@ -58,7 +67,9 @@ export function suppressDuplicateElements(
   options: { iouThreshold?: number; containmentThreshold?: number; maxAreaRatio?: number } = {}
 ): UiElement[] {
   const iouThreshold = options.iouThreshold ?? 0.72;
-  const sorted = [...elements].sort((a, b) => b.confidence - a.confidence);
+  const sorted = elements
+    .map(element => ({ ...element, queryIds: normalizedQueryIds(element) }))
+    .sort((a, b) => b.confidence - a.confidence);
   const kept: UiElement[] = [];
 
   for (const element of sorted) {

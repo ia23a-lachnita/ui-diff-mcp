@@ -198,6 +198,7 @@ export function buildElementMap(
         ? { compactRoleSource: candidate.compactRoleSource }
         : {}),
       queryId: raw.queryId,
+      queryIds: raw.queryId === undefined ? [] : [raw.queryId],
       box,
       normalizedBox,
       text: raw.rawText ?? undefined,
@@ -220,6 +221,7 @@ export function buildElementMap(
         label,
         type,
         ...(det.type === "button" ? { compactRoleSource: "deterministic" as const } : {}),
+        queryIds: [],
         box: detBox,
         normalizedBox,
         confidence: 1.0,

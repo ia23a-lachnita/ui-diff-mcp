@@ -36,7 +36,26 @@ describe("suppressDuplicateElements", () => {
     expect(result).toHaveLength(2);
     expect(result[0]?.queryId).toContain("ocr_text");
     expect(result[0]?.queryId).toContain("yolo_ui");
+    expect(result[0]?.queryIds).toEqual(["ocr_text", "yolo_ui"]);
     expect(result[0]?.confidence).toBe(0.95);
+  });
+
+  it("normalizes legacy and explicit query IDs into sorted unique provenance", () => {
+    const merged = suppressDuplicateElements([
+      { ...el("a", "yolo_ui+ocr_text", 10, 20, 100, 40, 0.9), queryIds: ["z_lane", "ocr_text"] },
+      { ...el("b", "ocr_text", 11, 21, 98, 38, 0.8), queryIds: ["ocr_text", "cv_components"] }
+    ]);
+
+    expect(merged).toHaveLength(1);
+    expect(merged[0]?.queryIds).toEqual(["cv_components", "ocr_text", "yolo_ui", "z_lane"]);
+  });
+
+  it("populates normalized provenance for an unmerged element", () => {
+    const result = suppressDuplicateElements([
+      { ...el("single", "yolo_ui+ocr_text", 10, 20, 20, 20, 0.9), queryIds: ["ocr_text", "z_lane"] }
+    ]);
+
+    expect(result[0]?.queryIds).toEqual(["ocr_text", "yolo_ui", "z_lane"]);
   });
 
   it("retains overlapping elements with different semantic roles for hierarchy selection", () => {

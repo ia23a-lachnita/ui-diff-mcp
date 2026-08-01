@@ -186,6 +186,7 @@ export const UiElementSchema = z.object({
   type: UiElementTypeSchema,
   compactRoleSource: CompactRoleSourceSchema.optional(),
   queryId: z.string().optional(),
+  queryIds: z.array(z.string().min(1)).optional(),
   box: BoxSchema,
   normalizedBox: NormalizedBoxSchema,
   text: z.string().optional(),

@@ -101,6 +101,9 @@ describe("core schemas", () => {
     };
 
     expect(UiElementSchema.parse(baseElement)).toMatchObject({ type: "card" });
+    expect(UiElementSchema.parse(baseElement)).not.toHaveProperty("queryIds");
+    expect(UiElementSchema.parse({ ...baseElement, queryIds: ["ocr_text", "yolo_ui"] }))
+      .toMatchObject({ queryIds: ["ocr_text", "yolo_ui"] });
     for (const compactRoleSource of ["query_mapping", "deterministic"] as const) {
       expect(() => UiElementSchema.parse({ ...baseElement, compactRoleSource })).toThrow();
     }

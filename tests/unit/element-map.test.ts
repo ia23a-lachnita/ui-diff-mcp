@@ -128,6 +128,7 @@ describe("buildElementMap", () => {
 
     expect(els).toHaveLength(1);
     expect(els[0]?.queryId).toContain("ocr_text");
+    expect(els[0]?.queryIds).toEqual(["ocr_text", "yolo_ui"]);
   });
 
   it("normalizes prompt-echo label starting with 'locate' to type-queryId-index pattern", () => {
