@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { collectReleaseIntegrityIssues } from "../helpers/release-integrity.js";
-import type { DiffRecord } from "../../src/schemas/core.js";
+import type { DiffRecord, UiElement } from "../../src/schemas/core.js";
 
 function diff(id: string, overrides: Partial<DiffRecord> = {}): DiffRecord {
   return {
@@ -18,10 +18,24 @@ function diff(id: string, overrides: Partial<DiffRecord> = {}): DiffRecord {
   };
 }
 
+function element(id: string, label: string): UiElement {
+  return {
+    id,
+    label,
+    type: "text",
+    box: { x: 10, y: 20, width: 80, height: 40 },
+    normalizedBox: { x: 0.1, y: 0.1, width: 0.4, height: 0.1 },
+    confidence: 1,
+    source: "locator",
+    childIds: []
+  };
+}
+
 function input(overrides: Partial<Parameters<typeof collectReleaseIntegrityIssues>[0]> = {}): Parameters<typeof collectReleaseIntegrityIssues>[0] {
   return {
     auditLimited: false,
     diffs: [diff("diff-1")],
+    elements: [],
     unresolvedRegions: [],
     recoveryStatusCounts: {},
     finalDiffCount: 1,
@@ -63,6 +77,7 @@ describe("collectReleaseIntegrityIssues", () => {
     expect(finalDiffs.every(item => item.findingGroupKind === "coherent_displacement")).toBe(true);
     const issues = collectReleaseIntegrityIssues(input({
       diffs: finalDiffs,
+      elements: [element("sibling-a", "First sibling"), element("sibling-b", "Second sibling")],
       finalDiffCount: 2,
       finalGroupCount: 1,
       groups: legendGroups,
@@ -149,5 +164,26 @@ describe("collectReleaseIntegrityIssues", () => {
     }));
 
     expect(issues).toContain("unsupported_accepted_claim:diff-1:unsupported_exact_color");
+  });
+
+  it("validates accepted claims against matching target elements", () => {
+    const valid = diff("diff-1", { title: "96/170mg5%", targetIds: ["macro"] });
+    expect(collectReleaseIntegrityIssues(input({ diffs: [valid], elements: [element("macro", "96/170mg5%")] }))).toEqual([]);
+
+    const invalid = diff("diff-1", { title: "5%", targetIds: ["macro"] });
+    expect(collectReleaseIntegrityIssues(input({ diffs: [invalid], elements: [element("macro", "Macro circle")] }))).toContain(
+      "unsupported_accepted_claim:diff-1:unsupported_quantitative"
+    );
+
+    const dangling = diff("diff-1", { title: "Button shifted", pairId: "pair-missing", targetIds: ["missing"] });
+    expect(collectReleaseIntegrityIssues(input({ diffs: [dangling], elements: [element("macro", "Macro circle")] }))).toContain(
+      "unsupported_accepted_claim:diff-1:missing_target_literal"
+    );
+  });
+
+  it("rejects final reviewer escalations", () => {
+    expect(collectReleaseIntegrityIssues(input({
+      diffs: [diff("diff-1", { reviewerStatus: "needs_escalation" })]
+    }))).toContain("needs_escalation:diff-1");
   });
 });

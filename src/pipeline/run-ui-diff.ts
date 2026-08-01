@@ -7,7 +7,7 @@ import { loadNormalizedImage } from "../images/normalize.js";
 import { prepareAspectPreservingComparison } from "../images/aspect-preserving-comparison.js";
 import { computeComparisonSpaceDelta, summarizeGeometryDiagnostics } from "../images/comparison-geometry.js";
 import { computeViewportCompatibility } from "../images/viewport.js";
-import { annotateRecoveryTraceSupersessions, buildRegionLedger, applyFindingCoverage, applyRecoveryOutcomes, markBroadVlmEvidence, unresolvedRegionsFromLedger, type RegionLedger } from "../report/region-ledger.js";
+import { annotateRecoveryTraceSupersessions, buildRegionLedger, applyFindingCoverage, applyRecoveryOutcomes, invalidateCoverageForEscalatedClaims, markBroadVlmEvidence, unresolvedRegionsFromLedger, type RegionLedger } from "../report/region-ledger.js";
 import { finalizeFindings } from "../report/finding-consolidation.js";
 import { mapStructuralDecisionGroups, summarizeStructuralConsolidation, validateStructuralConsolidationLedger } from "../report/structural-invariants.js";
 import { applyBroadEvidenceFragmentDeferrals, applyResidualFragmentDecisions, classifyBroadEvidenceFragmentDeferrals, classifyResidualFragments, type ResidualFragmentOptions } from "../report/residual-fragments.js";
@@ -33,7 +33,7 @@ import { makeMistralVisionCaller } from "../models/mistral-client.js";
 import { resolveVisionProviderConfig, type VisionProviderConfig } from "../models/provider-config.js";
 import { auditElementPair, makeElementSlug, type AuditContext, type ReviewerHandle } from "../audit/audit-target.js";
 import { auditScopeSummaries, type AuditScopeSummariesResult } from "../audit/audit-scope.js";
-import { deduplicateDiffs, filterAcceptedDiffs, reviewAndMergeFindings } from "../audit/review-findings.js";
+import { deduplicateDiffs, filterAcceptedDiffs, reviewAndMergeFindings, validateFinalizedClaims } from "../audit/review-findings.js";
 import { prepareRecoveryRegionArtifacts, runTargetRecovery } from "../recovery/target-recovery.js";
 import { writeRunDebugArtifacts, summarizeAuditPairOutcomes, type AuditPairOutcome, type RunDebugTrace } from "../debug/run-debug.js";
 import { buildRuntimeModelUsageLedger, parseProviderTraceEvents, ProviderTraceWriter, writeProviderTrace } from "../debug/provider-trace.js";
@@ -1411,20 +1411,29 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     imagePairTransform,
     geometryRejections
   });
-  regionLedger ??= buildRegionLedger(significantComponents, finalization.diffs, {
+  const postFinalizationClaims = validateFinalizedClaims(finalization.diffs, [...expectedElements, ...actualElements]);
+  const finalDiffs = postFinalizationClaims.diffs;
+  const eligibleFinalDiffs = filterAcceptedDiffs(finalDiffs);
+  const postFinalizationEscalated = finalDiffs.filter(diff =>
+    diff.reviewerStatus === "needs_escalation"
+      && diff.reviewerReason?.startsWith("Post-consolidation claim validation failed:")
+  );
+  regionLedger ??= buildRegionLedger(significantComponents, finalDiffs, {
     minPixelCount: 50,
     maxGapPx: 12,
     maxClusterAreaRatio: 0.5,
     imageWidth: expectedImg.width,
     imageHeight: expectedImg.height
   });
-  applyFindingCoverage(regionLedger, finalization.diffs);
-  applyResidualSuppression(regionLedger, finalization.diffs);
+  invalidateCoverageForEscalatedClaims(regionLedger, postFinalizationEscalated, eligibleFinalDiffs);
+  applyFindingCoverage(regionLedger, eligibleFinalDiffs);
+  applyResidualSuppression(regionLedger, eligibleFinalDiffs);
   debugTrace.coverage = regionLedger.coverageTrace;
   const artifactlessRegions = regionLedger.regions.filter(region =>
     region.state === "unresolved"
     && region.artifactPaths.length === 0
     && !region.unresolvedDetail?.startsWith("evidence_crop_rejected:")
+    && !region.unresolvedDetail?.startsWith("unsupported_final_claim:")
   );
   if (artifactlessRegions.length > 0) {
     const prepared = await prepareRecoveryRegionArtifacts(
@@ -1449,7 +1458,6 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
       : recoverySummary?.stoppedReason && recoverySummary.stoppedReason !== "none"
         ? "recovery_budget_exhausted" as const
         : "not_classified" as const;
-  const finalDiffs = finalization.diffs;
   const unresolvedRegions = unresolvedRegionsFromLedger(regionLedger, unresolvedReason);
 
   debugTrace.recovery = annotateRecoveryTraceSupersessions(regionLedger, debugTrace.recovery);
@@ -1466,6 +1474,10 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
     ...(recoverySummary !== undefined ? { recoverySummary } : {}),
     unresolvedRegionCount: unresolvedRegions.length
   });
+  if (postFinalizationClaims.escalatedCount > 0) {
+    visualClassificationStatus = "incomplete";
+    warnings.push(`[claim-validation] post-consolidation claim validation escalated ${postFinalizationClaims.escalatedCount} accepted finding(s)`);
+  }
   const findingGroups = buildFindingGroups(finalDiffs, { width: expectedImg.width, height: expectedImg.height });
   const structuralLedger = mapStructuralDecisionGroups(finalization.structuralLedger, findingGroups);
   const structuralValidation = validateStructuralConsolidationLedger(structuralLedger, {

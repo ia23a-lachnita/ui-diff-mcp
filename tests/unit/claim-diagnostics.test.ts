@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { validateClaim } from "../../src/audit/review-findings.js";
-import type { ClaimDiagnostics, DiffRecord, RecoveryComponentTrace, RecoveryRegionOutcome, UiArtifact } from "../../src/schemas/core.js";
-import { UnresolvedRegionSchema, RecoveryComponentTraceSchema } from "../../src/schemas/core.js";
-import { annotateRecoveryTraceSupersessions, applyFindingCoverage, applyRecoveryOutcomes, buildRegionLedger, markBroadVlmEvidence, unresolvedRegionsFromLedger } from "../../src/report/region-ledger.js";
+import { collectVisibleClaimLiterals, validateClaim, validateFinalizedClaim, validateFinalizedClaims } from "../../src/audit/review-findings.js";
+import type { ClaimDiagnostics, DiffRecord, RecoveryComponentTrace, RecoveryRegionOutcome, UiArtifact, UiElement } from "../../src/schemas/core.js";
+import { DiffRecordSchema, UnresolvedRegionSchema, RecoveryComponentTraceSchema } from "../../src/schemas/core.js";
+import { annotateRecoveryTraceSupersessions, applyFindingCoverage, applyRecoveryOutcomes, buildRegionLedger, invalidateCoverageForEscalatedClaims, markBroadVlmEvidence, unresolvedRegionsFromLedger } from "../../src/report/region-ledger.js";
 import type { CanonicalRegion, RegionLedger } from "../../src/report/region-ledger.js";
 import type { PixelComponent } from "../../src/signals/pixel-diff.js";
 
@@ -19,6 +19,20 @@ function makeDiff(overrides: Partial<DiffRecord> = {}): DiffRecord {
     measurements: [],
     artifactPaths: [],
     ...overrides
+  };
+}
+
+function makeElement(id: string, label: string, text?: string): UiElement {
+  return {
+    id,
+    label,
+    type: "text",
+    box: { x: 10, y: 20, width: 100, height: 30 },
+    normalizedBox: { x: 0.05, y: 0.05, width: 0.5, height: 0.1 },
+    confidence: 1,
+    source: "locator",
+    childIds: [],
+    ...(text !== undefined ? { text } : {})
   };
 }
 
@@ -89,6 +103,19 @@ describe("ClaimDiagnostics schema", () => {
     expect(diag.offendingExcerpt).toBeDefined();
   });
 
+  it("round-trips post-finalization claim diagnostics on DiffRecord", () => {
+    const parsed = DiffRecordSchema.parse(makeDiff({
+      claimValidationDiagnostics: {
+        code: "unsupported_quantitative",
+        message: "Unsupported quantitative claim",
+        offendingExcerpt: "5%"
+      }
+    }));
+
+    expect(parsed.claimValidationDiagnostics?.code).toBe("unsupported_quantitative");
+    expect(parsed.claimValidationDiagnostics?.offendingExcerpt).toBe("5%");
+  });
+
   it("accepts an unsupported_exact_color diagnostic", () => {
     const diag: ClaimDiagnostics = {
       code: "unsupported_exact_color",
@@ -102,6 +129,107 @@ describe("ClaimDiagnostics schema", () => {
     const result = validateClaim(makeDiff({ title: "Valid claim" }));
     expect(result.valid).toBe(true);
     expect(result.diagnostics).toBeUndefined();
+  });
+});
+
+describe("post-finalization visible claim literals", () => {
+  it("strips LocateAnything markup and preserves numeric text as one literal", () => {
+    const elements = [makeElement("target", "<ref>96/170mg5%</ref><box><622><450><882><471></box>")];
+
+    expect(collectVisibleClaimLiterals(makeDiff({ targetIds: ["target"] }), elements)).toEqual(["96/170mg5%"]);
+  });
+
+  it("deduplicates normalized label/text literals in stable order and excludes non-target elements", () => {
+    const elements = [
+      makeElement("other", "Should not be included", "outside"),
+      makeElement("b", "  Macro   circle ", "96/170mg5%"),
+      makeElement("a", "Macro circle", " 96/170mg5% ")
+    ];
+
+    expect(collectVisibleClaimLiterals(makeDiff({ targetIds: ["b", "a"] }), elements)).toEqual([
+      "96/170mg5%",
+      "Macro circle"
+    ]);
+  });
+
+  it("allows an exact visible full label but not unsupported numeric claims", () => {
+    const visible = collectVisibleClaimLiterals(
+      makeDiff({ targetIds: ["target"] }),
+      [makeElement("target", "96/170mg5%")]
+    );
+
+    expect(validateClaim(makeDiff({ title: "96/170mg5%", targetIds: ["target"] }), visible).valid).toBe(true);
+    expect(validateClaim(makeDiff({ title: "96/170mg5%", targetIds: ["target"] }), ["Macro circle"]).valid).toBe(false);
+    for (const title of ["5%", "12px", "shifted 96", "width 170"]) {
+      expect(validateClaim(makeDiff({ title, targetIds: ["target"] }), visible).valid).toBe(false);
+    }
+    expect(validateClaim(makeDiff({ title: "5%" }), []).valid).toBe(false);
+  });
+
+  it("keeps a generated parent-label title valid when the target is visible", () => {
+    const diff = makeDiff({ title: "geometry in recovered region: Submit button", targetIds: ["button"] });
+    const visible = collectVisibleClaimLiterals(diff, [makeElement("button", "Submit button")]);
+
+    expect(validateClaim(diff, visible).valid).toBe(true);
+  });
+
+  it("requires resolved literals for target-level accepted claims", () => {
+    const dangling = makeDiff({
+      title: "Button is shifted",
+      pairId: "pair-missing",
+      targetIds: ["missing-target"],
+      reviewerStatus: "accepted"
+    });
+    expect(validateFinalizedClaim(dangling, [makeElement("other", "Other button")])).toMatchObject({
+      valid: false,
+      diagnostics: { code: "missing_target_literal" }
+    });
+
+    const screenDiff = makeDiff({ title: "Navigation differs", scopeKind: "screen", reviewerStatus: "accepted" });
+    delete screenDiff.pairId;
+    expect(validateFinalizedClaim(screenDiff, []).valid).toBe(true);
+    const recovered = makeDiff({ title: "Recovered region differs", classificationSource: "target_recovery", reviewerStatus: "accepted" });
+    delete recovered.pairId;
+    expect(validateFinalizedClaim(recovered, []).valid).toBe(true);
+  });
+
+  it("escalates unsupported accepted final claims with bounded diagnostics", () => {
+    const result = validateFinalizedClaims(
+      [makeDiff({ id: "unsupported", title: "5%", targetIds: ["target"] })],
+      [makeElement("target", "Macro circle")]
+    );
+
+    expect(result.escalatedCount).toBe(1);
+    expect(result.diffs[0]).toMatchObject({
+      reviewerStatus: "needs_escalation",
+      reviewerReason: expect.stringMatching(/^Post-consolidation claim validation failed:/),
+      claimValidationDiagnostics: { code: "unsupported_quantitative" }
+    });
+
+    const missingTarget = validateFinalizedClaims(
+      [makeDiff({ id: "unsupported-without-target", title: "5%", pairId: "pair-missing", targetIds: [] })],
+      [makeElement("target", "Macro circle")]
+    );
+    expect(missingTarget.escalatedCount).toBe(1);
+    expect(missingTarget.diffs[0]).toMatchObject({
+      reviewerStatus: "needs_escalation",
+      reviewerReason: expect.stringMatching(/^Post-consolidation claim validation failed:/),
+      claimValidationDiagnostics: { code: "missing_target_literal" }
+    });
+  });
+
+  it("leaves deterministic not_reviewed findings unchanged", () => {
+    const diff = makeDiff({
+      reviewerStatus: "not_reviewed",
+      classificationSource: "deterministic_geometry",
+      title: "5%",
+      targetIds: ["target"]
+    });
+
+    expect(validateFinalizedClaims([diff], [makeElement("target", "Macro circle")])).toEqual({
+      diffs: [diff],
+      escalatedCount: 0
+    });
   });
 });
 
@@ -647,6 +775,240 @@ describe("ledger: applyFindingCoverage cannot hide unsupported_recovery_claim at
     // Must remain unresolved because different criterion
     expect(region.state).toBe("unresolved");
     expect(region.blockingRecoveryOutcome).toBeDefined();
+  });
+});
+
+describe("ledger: post-finalization claim escalation reopens dependent coverage", () => {
+  const escalated: DiffRecord = {
+    ...makeDiff({
+      id: "primary-escalated",
+      reviewerStatus: "needs_escalation",
+      artifactPaths: [{ role: "expected_crop", path: "claim-expected.png" }],
+      claimValidationDiagnostics: { code: "unsupported_quantitative", message: "Unsupported quantitative claim" },
+      childFindingIds: ["child-escalated"]
+    })
+  };
+
+  it("invalidates primary and child coverage while retaining an alternative valid cover", () => {
+    const ledger: RegionLedger = {
+      rawComponentCount: 1,
+      belowThresholdCount: 0,
+      regions: [{
+        id: "region-0001",
+        box: { x: 10, y: 10, width: 80, height: 60 },
+        pixelCount: 500,
+        sourceComponentIds: ["component-0001"],
+        state: "covered",
+        coveringFindingIds: ["primary-escalated", "valid-cover"],
+        artifactPaths: [{ role: "pixel_diff", path: "pixel.png" }]
+      }],
+      coverageTrace: [{
+        componentId: "component-0001",
+        componentBox: { x: 10, y: 10, width: 80, height: 60 },
+        pixelCount: 500,
+        status: "covered_by_diff",
+        coveringDiffId: "primary-escalated",
+        coveringCriterion: "geometry"
+      }]
+    };
+
+    invalidateCoverageForEscalatedClaims(ledger, [escalated], [makeDiff({ id: "valid-cover", title: "Valid cover" })]);
+
+    expect(ledger.regions[0]).toMatchObject({ state: "covered", coveringFindingIds: ["valid-cover"] });
+    expect(ledger.regions[0]?.relatedFindingIds).toEqual(["child-escalated", "primary-escalated"]);
+    expect(ledger.regions[0]?.artifactPaths).toEqual(expect.arrayContaining([
+      { role: "pixel_diff", path: "pixel.png" },
+      { role: "expected_crop", path: "claim-expected.png" }
+    ]));
+  });
+
+  it("reopens covered and residual-noise regions when no eligible cover remains", () => {
+    const ledger: RegionLedger = {
+      rawComponentCount: 1,
+      belowThresholdCount: 0,
+      regions: [{
+        id: "region-0001",
+        box: { x: 10, y: 10, width: 80, height: 60 },
+        pixelCount: 500,
+        sourceComponentIds: ["component-0001"],
+        state: "noise",
+        coveringFindingIds: ["child-escalated", "stale-cover"],
+        supersessionDetail: { supersedingFindingId: "primary-escalated", reason: "same_criterion_acceptance_overlap", overlapRatio: 1 },
+        artifactPaths: [{ role: "pixel_diff", path: "pixel.png" }]
+      }],
+      coverageTrace: [{
+        componentId: "component-0001",
+        componentBox: { x: 10, y: 10, width: 80, height: 60 },
+        pixelCount: 500,
+        status: "noise_residual_fragment",
+        coveringDiffId: "child-escalated",
+        coveringCriterion: "geometry"
+      }]
+    };
+
+    invalidateCoverageForEscalatedClaims(ledger, [escalated]);
+
+    expect(ledger.regions[0]).toMatchObject({
+      state: "unresolved",
+      coveringFindingIds: [],
+      unresolvedDetail: expect.stringContaining("unsupported_final_claim"),
+      claimValidationDiagnostics: { code: "unsupported_quantitative" }
+    });
+    expect(ledger.regions[0]?.supersessionDetail).toBeUndefined();
+    expect(ledger.coverageTrace[0]).toMatchObject({ status: "uncovered" });
+    expect(ledger.coverageTrace[0]?.coveringDiffId).toBeUndefined();
+    expect(ledger.regions[0]?.artifactPaths).toEqual(expect.arrayContaining([
+      { role: "pixel_diff", path: "pixel.png" },
+      { role: "expected_crop", path: "claim-expected.png" }
+    ]));
+    const unresolved = unresolvedRegionsFromLedger(ledger, "not_classified");
+    expect(unresolved[0]).toMatchObject({
+      reason: "unsupported_final_claim",
+      relatedFindingIds: ["child-escalated", "primary-escalated"],
+      diagnostics: { code: "unsupported_quantitative" }
+    });
+  });
+
+  it("does not cross-contaminate unrelated escalations or keep stale noneligible covers", () => {
+    const other: DiffRecord = {
+      ...makeDiff({
+        id: "other-escalated",
+        artifactPaths: [{ role: "actual_crop", path: "other-actual.png" }],
+        claimValidationDiagnostics: { code: "missing_target_literal", message: "Missing target literal" },
+        childFindingIds: ["other-child"]
+      })
+    };
+    const ledger: RegionLedger = {
+      rawComponentCount: 2,
+      belowThresholdCount: 0,
+      regions: [
+        {
+          id: "region-a",
+          box: { x: 10, y: 10, width: 40, height: 40 },
+          pixelCount: 100,
+          sourceComponentIds: ["component-a"],
+          state: "covered",
+          coveringFindingIds: ["primary-escalated"],
+          artifactPaths: []
+        },
+        {
+          id: "region-b",
+          box: { x: 100, y: 10, width: 40, height: 40 },
+          pixelCount: 100,
+          sourceComponentIds: ["component-b"],
+          state: "covered",
+          coveringFindingIds: ["other-escalated"],
+          artifactPaths: []
+        }
+      ],
+      coverageTrace: [
+        {
+          componentId: "component-a",
+          componentBox: { x: 10, y: 10, width: 40, height: 40 },
+          pixelCount: 100,
+          status: "covered_by_diff",
+          coveringDiffId: "primary-escalated",
+          coveringCriterion: "geometry"
+        },
+        {
+          componentId: "component-b",
+          componentBox: { x: 100, y: 10, width: 40, height: 40 },
+          pixelCount: 100,
+          status: "covered_by_diff",
+          coveringDiffId: "other-escalated",
+          coveringCriterion: "geometry"
+        }
+      ]
+    };
+
+    invalidateCoverageForEscalatedClaims(ledger, [escalated, other]);
+
+    expect(ledger.regions[0]?.artifactPaths).toEqual([{ role: "expected_crop", path: "claim-expected.png" }]);
+    expect(ledger.regions[0]?.claimValidationDiagnostics?.code).toBe("unsupported_quantitative");
+    expect(ledger.regions[0]?.relatedFindingIds).not.toContain("other-escalated");
+    expect(ledger.regions[1]?.artifactPaths).toEqual([{ role: "actual_crop", path: "other-actual.png" }]);
+    expect(ledger.regions[1]?.claimValidationDiagnostics?.code).toBe("missing_target_literal");
+    expect(ledger.regions[1]?.relatedFindingIds).not.toContain("primary-escalated");
+    expect(ledger.regions.every(region => region.state === "unresolved")).toBe(true);
+    expect(ledger.regions.every(region => region.coveringFindingIds.length === 0)).toBe(true);
+  });
+
+  it("canonicalizes an eligible parent's pre-consolidation child while removing an escalated parent", () => {
+    const eligibleParent = makeDiff({
+      id: "eligible-parent",
+      title: "Valid parent",
+      reviewerStatus: "accepted",
+      childFindingIds: ["eligible-child"]
+    });
+    const ledger: RegionLedger = {
+      rawComponentCount: 1,
+      belowThresholdCount: 0,
+      regions: [{
+        id: "region-0001",
+        box: { x: 10, y: 10, width: 80, height: 60 },
+        pixelCount: 500,
+        sourceComponentIds: ["component-0001"],
+        state: "covered",
+        coveringFindingIds: ["primary-escalated", "eligible-child"],
+        artifactPaths: []
+      }],
+      coverageTrace: [{
+        componentId: "component-0001",
+        componentBox: { x: 10, y: 10, width: 80, height: 60 },
+        pixelCount: 500,
+        status: "covered_by_diff",
+        coveringDiffId: "eligible-child",
+        coveringCriterion: "geometry"
+      }]
+    };
+
+    invalidateCoverageForEscalatedClaims(ledger, [escalated], [eligibleParent]);
+
+    expect(ledger.regions[0]).toMatchObject({ state: "covered", coveringFindingIds: ["eligible-parent"] });
+    expect(ledger.coverageTrace[0]).toMatchObject({ status: "covered_by_diff", coveringDiffId: "eligible-parent" });
+    expect(ledger.regions[0]?.unresolvedDetail).toBeUndefined();
+  });
+
+  it("keeps separate eligible child traces mapped to their own parents regardless of parent ordering", () => {
+    const parentA = makeDiff({ id: "z-parent-a", title: "Parent A", childFindingIds: ["child-a"] });
+    const parentB = makeDiff({ id: "a-parent-b", title: "Parent B", childFindingIds: ["child-b"] });
+    const ledger: RegionLedger = {
+      rawComponentCount: 2,
+      belowThresholdCount: 0,
+      regions: [{
+        id: "region-0001",
+        box: { x: 10, y: 10, width: 80, height: 60 },
+        pixelCount: 500,
+        sourceComponentIds: ["component-a", "component-b"],
+        state: "covered",
+        coveringFindingIds: ["primary-escalated", "child-a", "child-b"],
+        artifactPaths: []
+      }],
+      coverageTrace: [
+        {
+          componentId: "component-a",
+          componentBox: { x: 10, y: 10, width: 40, height: 60 },
+          pixelCount: 250,
+          status: "covered_by_diff",
+          coveringDiffId: "child-a",
+          coveringCriterion: "geometry"
+        },
+        {
+          componentId: "component-b",
+          componentBox: { x: 50, y: 10, width: 40, height: 60 },
+          pixelCount: 250,
+          status: "covered_by_diff",
+          coveringDiffId: "child-b",
+          coveringCriterion: "geometry"
+        }
+      ]
+    };
+
+    invalidateCoverageForEscalatedClaims(ledger, [escalated], [parentA, parentB]);
+
+    expect(ledger.regions[0]?.coveringFindingIds).toEqual(["a-parent-b", "z-parent-a"]);
+    expect(ledger.coverageTrace[0]).toMatchObject({ coveringDiffId: "z-parent-a", coveringCriterion: parentA.criterion });
+    expect(ledger.coverageTrace[1]).toMatchObject({ coveringDiffId: "a-parent-b", coveringCriterion: parentB.criterion });
   });
 });
 

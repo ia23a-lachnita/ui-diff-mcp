@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { consolidateFindings, finalizeFindings, selectSuppressionParent } from "../../src/report/finding-consolidation.js";
+import { validateFinalizedClaims } from "../../src/audit/review-findings.js";
 import { createImagePairTransform } from "../../src/images/coordinates.js";
 import type { DiffRecord, ElementPair, UiElement, UiElementType } from "../../src/schemas/core.js";
 
@@ -901,5 +902,32 @@ describe("consolidateFindings", () => {
       "root-a-finding:child-a-finding",
       "root-b-finding:child-b-finding"
     ]);
+  });
+
+  it("validates merged final findings against exact target labels and escalates missing target context", () => {
+    const parent = element("macro-parent", "text", 20, 60, 150, 160);
+    parent.label = "96/170mg5%";
+    const child = element("macro-child", "text", 40, 100, 80, 20, parent.id);
+    parent.childIds = [child.id];
+    const exact = finding("exact-parent", "pair-parent", "geometry", 20, 60, 150, 160);
+    exact.title = "96/170mg5%";
+    exact.targetIds = [parent.id];
+    const missing = finding("missing-target", undefined, "geometry", 240, 60, 40, 40);
+    missing.scopeKind = "target";
+    missing.title = "96/170mg5%";
+
+    const finalized = finalizeFindings(
+      [exact, missing],
+      [parent, child],
+      [pair("pair-parent", parent.id)],
+      { canvas: { width: 320, height: 400 } }
+    );
+    const validated = validateFinalizedClaims(finalized.diffs, [parent, child]);
+
+    expect(validated.diffs.find(item => item.id === "exact-parent")).toMatchObject({ reviewerStatus: "accepted" });
+    expect(validated.diffs.find(item => item.id === "missing-target")).toMatchObject({
+      reviewerStatus: "needs_escalation",
+      claimValidationDiagnostics: { code: "missing_target_literal" }
+    });
   });
 });

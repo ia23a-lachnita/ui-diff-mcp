@@ -12,7 +12,7 @@ import { writeTwoButtonFixture, writeSolidPng, writeRectPng } from "../../src/te
 import { startMockSidecar } from "../fixtures/mock-sidecar.js";
 import { makeMockFetch } from "../fixtures/mock-models.js";
 import type { MockSidecar } from "../fixtures/mock-sidecar.js";
-import type { ScopeDiffSummary } from "../../src/schemas/core.js";
+import type { DiffRecord, ScopeDiffSummary } from "../../src/schemas/core.js";
 
 vi.mock("../../src/diff/projected-preaudit.js", async importOriginal => {
   const actual = await importOriginal<typeof import("../../src/diff/projected-preaudit.js")>();
@@ -1568,6 +1568,69 @@ describe("runUiDiff with mock sidecar and models (full mode)", () => {
     const reportRaw = await import("node:fs/promises").then(fs => fs.readFile(result.reportPath, "utf8"));
     const report = JSON.parse(reportRaw) as { visualClassificationStatus: string };
     expect(report.visualClassificationStatus).toBe("incomplete");
+  });
+
+  it("escalates unsupported accepted post-consolidation claims and keeps the report incomplete", async () => {
+    vi.unstubAllGlobals();
+    const { expected, actual } = await writeTwoButtonFixture(tmpDir, "post-claim-expected.png", "post-claim-actual.png");
+    sidecar = await startMockSidecar({ imageWidth: 200, imageHeight: 400 });
+    vi.stubEnv("LOCATEANYTHING_SIDECAR_URL", sidecar.url);
+    vi.stubEnv("UI_DIFF_DETERMINISTIC_LOCATOR", "1");
+
+    const actualConsolidation = await vi.importActual<typeof import("../../src/report/finding-consolidation.js")>("../../src/report/finding-consolidation.js");
+    vi.mocked(finalizeFindings).mockImplementationOnce((_, elements, pairs, context) => {
+      expect(elements.length).toBeGreaterThan(0);
+      const invalid: DiffRecord = {
+        id: "post-consolidation-unsupported-claim",
+        criterion: "geometry",
+        severity: "medium",
+        title: "5%",
+        location: { x: 20, y: 80, width: 80, height: 40 },
+        evidence: ["The target differs."],
+        measurements: [],
+        artifactPaths: [],
+        targetIds: [elements[0]!.id],
+        reviewerStatus: "accepted",
+        classificationSource: "vlm_reviewed"
+      };
+      return actualConsolidation.finalizeFindings([invalid], elements, pairs, context);
+    });
+
+    const result = await runUiDiff({
+      expectedImagePath: expected,
+      actualImagePath: actual,
+      projectRoot: tmpDir,
+      mode: "deterministic_only"
+    });
+    const raw = JSON.parse(await fs.readFile(result.reportPath, "utf8")) as {
+      visualClassificationStatus: string;
+      diffs: Array<{ id: string; reviewerStatus: string; reviewerReason?: string; claimValidationDiagnostics?: { code: string } }>;
+      unresolvedRegions: Array<{ reason: string; diagnostics?: { code: string }; relatedFindingIds: string[] }>;
+      runArtifacts: Array<{ role: string; path: string }>;
+    };
+    const report = await hydrateReportParts(raw as Parameters<typeof hydrateReportParts>[0], result.reportPath) as typeof raw;
+
+    const escalated = report.diffs.find(diff => diff.id === "post-consolidation-unsupported-claim");
+    expect(report.visualClassificationStatus).toBe("incomplete");
+    expect(escalated).toMatchObject({
+      reviewerStatus: "needs_escalation",
+      reviewerReason: expect.stringMatching(/^Post-consolidation claim validation failed:/),
+      claimValidationDiagnostics: { code: "unsupported_quantitative" }
+    });
+    expect(report.unresolvedRegions).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        reason: "unsupported_final_claim",
+        diagnostics: expect.objectContaining({ code: "unsupported_quantitative" }),
+        relatedFindingIds: expect.arrayContaining(["post-consolidation-unsupported-claim"])
+      })
+    ]));
+    const coverageArtifact = raw.runArtifacts.find(artifact => artifact.role === "coverage_trace");
+    expect(coverageArtifact).toBeDefined();
+    const coverageRaw = JSON.parse(await fs.readFile(coverageArtifact!.path, "utf8")) as Array<{ status: string; coveringDiffId?: string }>;
+    expect(coverageRaw.some(entry =>
+      entry.coveringDiffId === "post-consolidation-unsupported-claim"
+      && (entry.status === "covered_by_diff" || entry.status === "noise_residual_fragment")
+    )).toBe(false);
   });
 });
 

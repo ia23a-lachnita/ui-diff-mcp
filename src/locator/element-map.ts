@@ -41,7 +41,7 @@ const BOX_TOKEN = /<\/?box>/g;
 const COORD_TOKEN = /<-?\d+(?:\s*,\s*-?\d+)*>/g;
 const COMPACT_CONTAINMENT_TOLERANCE = 0.5;
 
-function sanitizeElementLabel(rawLabel: string): string {
+export function sanitizeElementLabel(rawLabel: string): string {
   return rawLabel
     .replace(REF_TOKEN, "")
     .replace(BOX_TOKEN, "")

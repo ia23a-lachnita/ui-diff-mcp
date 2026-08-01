@@ -160,6 +160,8 @@ part. Every `retainedFindingId` referenced by a decision maps to exactly one sta
 - [ ] Compare trigger counts before/after, assert no same-family auditor/reviewer decisions, and record exact provider/model routes, input/output/reasoning/total tokens, errors, fallbacks, accepted/rejected/escalated/unresolved counts, and artifact coverage.
 - [ ] Do not claim production readiness unless classification is complete, the fresh run is exhaustive, zero unresolved/escalated findings remain, the structural invariant is green, coordinate/evidence contracts pass, and the report artifacts are machine-verifiably repair-grade.
 
+Task 8 execution/correction record: strict real-locator run `run-1785607623839-0ce3a6` completed the pipeline but failed the strict gate on consolidated visible-label claim `5d783ab2a06d`; raw LocateAnything grounding markup was not normalized to the target literal. The correction is implemented uncommitted atop pushed baseline `0b001f9`. `npm run verify` passes at `72` files/`1,288` TypeScript tests, `25` sidecar tests, typecheck/build, and `22` integration tests. Read-only final review was `AGREEMENT_STATUS: agree`, `MUST_FIX: none`, `SHOULD_FIX: none`; Antigravity MCP attempts around `2026-08-01 21:08 +02:00` for Gemini 3.6 Flash, 3.1 Pro, and 3.5 Flash failed before review because the wrapper passed empty `--effort`. Fresh live/full/readiness gates remain unchecked and production remains blocked.
+
 ## Review Record
 
 - Antigravity conversation: `ui-diff-ai-history-live-grouping-20260730`.

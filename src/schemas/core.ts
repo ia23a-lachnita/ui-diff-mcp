@@ -611,7 +611,8 @@ export const ClaimDiagnosticsSchema = z.object({
     "unsupported_crop_boundary",
     "unsupported_quantitative",
     "invalid_palette",
-    "unsupported_exact_color"
+    "unsupported_exact_color",
+    "missing_target_literal"
   ]),
   message: z.string().max(200),
   offendingExcerpt: z.string().max(200).optional(),
@@ -644,7 +645,8 @@ export const UnresolvedRegionSchema = z.object({
     "broad_vlm_evidence",
     "deferred_broad_evidence_fragment",
     "interrupted",
-    "unsupported_recovery_claim"
+    "unsupported_recovery_claim",
+    "unsupported_final_claim"
   ]),
   detail: z.string().max(200).optional(),
   diagnostics: ClaimDiagnosticsSchema.optional(),
@@ -692,6 +694,7 @@ export const DiffRecordSchema = z.object({
   coordinateSpace: ComparisonCoordinateSpaceSchema.optional(),
   repairLocality: RepairLocalitySchema.optional(),
   suppression: FindingSuppressionSchema.optional(),
+  claimValidationDiagnostics: ClaimDiagnosticsSchema.optional(),
   reviewerStatus: z.enum(["accepted", "rejected", "needs_escalation", "not_reviewed"]),
   reviewerReason: z.string().min(1).optional(),
   model: z.string().optional(),

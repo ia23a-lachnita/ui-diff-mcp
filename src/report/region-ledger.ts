@@ -1,4 +1,4 @@
-import type { Box, CoverageDecisionTrace, DiffRecord, UiArtifact, UnresolvedRegion, RecoveryComponentTrace, RecoveryRegionOutcome } from "../schemas/core.js";
+import type { Box, ClaimDiagnostics, CoverageDecisionTrace, DiffRecord, UiArtifact, UnresolvedRegion, RecoveryComponentTrace, RecoveryRegionOutcome } from "../schemas/core.js";
 import type { PixelComponent } from "../signals/pixel-diff.js";
 import { intersect } from "../signals/geometry.js";
 import { clusterUncoveredComponentsWithMembers } from "./component-clustering.js";
@@ -27,7 +27,9 @@ export interface CanonicalRegion {
   coveringFindingIds: string[];
   relatedBroadEvidenceIds?: string[];
   artifactPaths: UiArtifact[];
+  relatedFindingIds?: string[];
   unresolvedDetail?: string;
+  claimValidationDiagnostics?: ClaimDiagnostics;
   recoveryDeferredReason?: "deferred_broad_evidence_fragment";
   blockingRecoveryOutcome?: RecoveryRegionOutcome;
   supersessionDetail?: SupersessionDetail;
@@ -133,6 +135,117 @@ export function applyFindingCoverage(ledger: RegionLedger, findings: DiffRecord[
   }
 }
 
+function appendUniqueArtifacts(existing: UiArtifact[], additions: UiArtifact[]): UiArtifact[] {
+  const seen = new Set(existing.map(artifact => `${artifact.role}:${artifact.path}`));
+  const result = [...existing];
+  for (const artifact of additions) {
+    const key = `${artifact.role}:${artifact.path}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(artifact);
+  }
+  return result;
+}
+
+/** Reopens any region whose coverage depended on an accepted finding escalated after consolidation. */
+export function invalidateCoverageForEscalatedClaims(
+  ledger: RegionLedger,
+  escalatedFindings: readonly DiffRecord[],
+  eligibleFindings: readonly DiffRecord[] = []
+): void {
+  if (escalatedFindings.length === 0) return;
+  const ownerByInvalidatedId = new Map<string, DiffRecord>();
+  for (const finding of escalatedFindings) {
+    ownerByInvalidatedId.set(finding.id, finding);
+    for (const childId of finding.childFindingIds ?? []) ownerByInvalidatedId.set(childId, finding);
+  }
+  const eligibleById = new Map(eligibleFindings.map(finding => [finding.id, finding]));
+  const eligibleOwnerById = new Map<string, DiffRecord>();
+  for (const finding of [...eligibleFindings].sort((a, b) => a.id.localeCompare(b.id))) {
+    eligibleOwnerById.set(finding.id, finding);
+    for (const childId of finding.childFindingIds ?? []) {
+      if (!eligibleOwnerById.has(childId)) eligibleOwnerById.set(childId, finding);
+    }
+  }
+  const traceByComponent = new Map(ledger.coverageTrace.map(trace => [trace.componentId, trace]));
+
+  for (const region of ledger.regions) {
+    const traces = region.sourceComponentIds.flatMap(componentId => {
+      const trace = traceByComponent.get(componentId);
+      return trace === undefined ? [] : [trace];
+    });
+    const associatedFindings = new Map<string, DiffRecord>();
+    for (const findingId of [
+      ...region.coveringFindingIds,
+      ...traces.flatMap(trace => trace.coveringDiffId === undefined ? [] : [trace.coveringDiffId])
+    ]) {
+      const owner = ownerByInvalidatedId.get(findingId);
+      if (owner !== undefined) associatedFindings.set(owner.id, owner);
+    }
+    if (associatedFindings.size === 0) continue;
+
+    const associated = [...associatedFindings.values()].sort((a, b) => a.id.localeCompare(b.id));
+    const associatedIds = new Set(associated.flatMap(finding => [finding.id, ...(finding.childFindingIds ?? [])]));
+    const diagnostics = associated.find(finding => finding.claimValidationDiagnostics !== undefined)?.claimValidationDiagnostics;
+    const artifacts = associated.flatMap(finding => finding.artifactPaths);
+
+    const related = new Set([...(region.relatedFindingIds ?? []), ...associatedIds]);
+    region.relatedFindingIds = [...related].sort((a, b) => a.localeCompare(b));
+    region.artifactPaths = appendUniqueArtifacts(region.artifactPaths, artifacts);
+    const traceCoverIds = traces.flatMap(trace => trace.coveringDiffId === undefined ? [] : [trace.coveringDiffId]);
+    const remainingCoverIds = [...new Set([...region.coveringFindingIds, ...traceCoverIds])]
+      .filter(id => !associatedIds.has(id))
+      .flatMap(id => {
+        const owner = eligibleOwnerById.get(id);
+        return owner === undefined ? [] : [owner.id];
+      })
+      .filter((id, index, ids) => ids.indexOf(id) === index)
+      .sort((a, b) => a.localeCompare(b));
+    region.coveringFindingIds = remainingCoverIds;
+
+    if (remainingCoverIds.length > 0) {
+      region.state = "covered";
+      const remaining = eligibleById.get(remainingCoverIds[0]!);
+      for (const trace of traces) {
+        const rawId = trace.coveringDiffId;
+        const eligibleOwner = rawId === undefined ? undefined : eligibleOwnerById.get(rawId);
+        if (rawId !== undefined && !associatedIds.has(rawId) && eligibleOwner !== undefined) {
+          trace.status = "covered_by_diff";
+          trace.coveringDiffId = eligibleOwner.id;
+          trace.coveringCriterion = eligibleOwner.criterion;
+          delete trace.overlapRatio;
+          continue;
+        }
+        trace.status = "covered_by_diff";
+        trace.coveringDiffId = remainingCoverIds[0];
+        if (remaining !== undefined) trace.coveringCriterion = remaining.criterion;
+        delete trace.overlapRatio;
+      }
+      if (region.supersessionDetail !== undefined && (
+        associatedIds.has(region.supersessionDetail.supersedingFindingId)
+        || eligibleOwnerById.get(region.supersessionDetail.supersedingFindingId)?.id !== region.supersessionDetail.supersedingFindingId
+      )) {
+        delete region.supersessionDetail;
+      }
+      continue;
+    }
+
+    region.state = "unresolved";
+    region.coveringFindingIds = [];
+    delete region.supersessionDetail;
+    delete region.blockingRecoveryOutcome;
+    delete region.recoveryDeferredReason;
+    region.unresolvedDetail = `unsupported_final_claim: ${[...associatedIds].sort((a, b) => a.localeCompare(b)).join(",")}`;
+    if (diagnostics !== undefined) region.claimValidationDiagnostics = diagnostics;
+    for (const trace of traces) {
+      trace.status = "uncovered";
+      delete trace.coveringDiffId;
+      delete trace.coveringCriterion;
+      delete trace.overlapRatio;
+    }
+  }
+}
+
 export function annotateRecoveryTraceSupersessions(
   ledger: RegionLedger,
   trace: RecoveryComponentTrace[]
@@ -200,6 +313,8 @@ export function unresolvedRegionsFromLedger(
           ? "deferred_broad_evidence_fragment"
         : fullDetail?.startsWith("unsupported_recovery_claim:")
             ? "unsupported_recovery_claim"
+          : fullDetail?.startsWith("unsupported_final_claim:")
+            ? "unsupported_final_claim"
           : fullDetail?.startsWith("broad_vlm_evidence")
             ? "broad_vlm_evidence"
             : reason;
@@ -208,11 +323,12 @@ export function unresolvedRegionsFromLedger(
         location: region.box,
         pixelCount: region.pixelCount,
         sourceComponentIds: region.sourceComponentIds,
-        relatedFindingIds: region.coveringFindingIds,
+        relatedFindingIds: [...new Set([...(region.relatedFindingIds ?? []), ...region.coveringFindingIds])].sort((a, b) => a.localeCompare(b)),
         relatedBroadEvidenceIds: region.relatedBroadEvidenceIds ?? [],
         relation: region.coveringFindingIds.length > 0 || (region.relatedBroadEvidenceIds?.length ?? 0) > 0 ? "nearby_larger_finding" : "none",
         reason: resolvedReason,
         ...(region.blockingRecoveryOutcome?.diagnostics !== undefined ? { diagnostics: region.blockingRecoveryOutcome.diagnostics } : {}),
+        ...(region.claimValidationDiagnostics !== undefined ? { diagnostics: region.claimValidationDiagnostics } : {}),
         ...(detail ? { detail } : {}),
         artifactPaths: region.artifactPaths
       };

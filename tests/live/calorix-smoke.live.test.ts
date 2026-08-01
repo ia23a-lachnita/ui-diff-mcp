@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { hydrateReportParts } from "../../src/report/report-parts.js";
 import { RecoveryComponentTraceSchema, UiDiffReportSchema } from "../../src/schemas/core.js";
 import type { InputProvenanceRequest, UiDiffReport } from "../../src/schemas/core.js";
-import { validateClaim, requiredAcceptedArtifactRoles } from "../../src/audit/review-findings.js";
+import { validateFinalizedClaim, requiredAcceptedArtifactRoles } from "../../src/audit/review-findings.js";
 import {
   createCalorixInputProvenance,
   resolveCalorixActualImage
@@ -59,6 +59,7 @@ async function collectReportReleaseIntegrityIssues(report: UiDiffReport): Promis
   return collectReleaseIntegrityIssues({
     auditLimited: report.auditScope?.auditLimited ?? false,
     diffs: report.diffs,
+    elements: [...report.elements.expected, ...report.elements.actual],
     unresolvedRegions: report.unresolvedRegions,
     recoveryStatusCounts: report.recoverySummary?.statusCounts ?? {},
     finalDiffCount: report.diffSummary?.finalDiffCount ?? report.diffs.length,
@@ -111,21 +112,14 @@ function assertFinalFindingIntegrity(report: UiDiffReport): void {
     const roles = new Set(diff.artifactPaths.map(artifact => artifact.role));
     for (const role of groupRoles) expect(roles.has(role), `grouped diff ${diff.id} must have ${role}`).toBe(true);
   }
-  const elementTextById = new Map(
-    [...report.elements.expected, ...report.elements.actual]
-      .filter(element => element.text !== undefined)
-      .map(element => [element.id, element.text!] as const)
-  );
+  const reportElements = [...report.elements.expected, ...report.elements.actual];
   for (const diff of report.diffs.filter(item => item.reviewerStatus === "accepted")) {
     const roles = new Set(diff.artifactPaths.map(artifact => artifact.role));
     const requiredRoles = requiredAcceptedArtifactRoles(diff);
     for (const role of requiredRoles) {
       expect(roles.has(role), `accepted ${diff.classificationSource} diff ${diff.id} must have ${role}`).toBe(true);
     }
-    const visibleTexts = (diff.targetIds ?? [])
-      .map(targetId => elementTextById.get(targetId))
-      .filter((value): value is string => value !== undefined);
-    const validation = validateClaim(diff, visibleTexts);
+    const validation = validateFinalizedClaim(diff, reportElements);
     expect(validation.valid, `accepted diff ${diff.id} failed shared claim validation: ${validation.reason ?? "unknown reason"}`).toBe(true);
     for (const measurement of diff.measurements.filter(item => /^color_dominant_.+_palette$/i.test(item.name))) {
       expect(typeof measurement.value, `${measurement.name} must be JSON text`).toBe("string");

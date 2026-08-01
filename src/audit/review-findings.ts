@@ -1,4 +1,5 @@
-import type { ClaimDiagnostics, DeterministicMeasurement, DiffRecord, UiArtifact } from "../schemas/core.js";
+import type { ClaimDiagnostics, DeterministicMeasurement, DiffRecord, UiArtifact, UiElement } from "../schemas/core.js";
+import { sanitizeElementLabel } from "../locator/element-map.js";
 
 const CROP_BOUNDARY_PHRASES = /\b(left half|right half|cut off|cut short|cropped)\b/i;
 const CROP_QUALIFIED_PHRASES = /\b(crop|position|projected)\b/i;
@@ -105,6 +106,27 @@ interface QuantitativeAnalysis {
   excerpt: string;
 }
 
+function normalizeVisibleClaimLiteral(value: string): string {
+  return sanitizeElementLabel(value).replace(/\s+/g, " ").trim();
+}
+
+export function collectVisibleClaimLiterals(
+  diff: Pick<DiffRecord, "targetIds">,
+  elements: readonly UiElement[]
+): string[] {
+  const targetIds = new Set(diff.targetIds ?? []);
+  const literals = new Set<string>();
+  for (const element of elements) {
+    if (!targetIds.has(element.id)) continue;
+    for (const value of [element.label, element.text]) {
+      if (value === undefined) continue;
+      const normalized = normalizeVisibleClaimLiteral(value);
+      if (normalized.length > 0) literals.add(normalized);
+    }
+  }
+  return [...literals].sort((a, b) => a.localeCompare(b));
+}
+
 function stripQuotedLiterals(value: string): string {
   return value
     .replace(/"[^"\r\n]*"/g, " ")
@@ -164,14 +186,18 @@ function analyzeQuantitativeClaims(
   }
   const unqualifiedLayoutNumber = /\b(shifted|moved|offset|gap|spacing|margin|padding|font\s*size|width|height|radius|angle)\b[^.\n]{0,30}?(-?\d+(?:\.\d+)?)(?!\s*(?:px|dp|pt|degrees?|°|%|percent))/i;
   const layoutMatch = searchable.match(unqualifiedLayoutNumber);
-  if (!layoutMatch) return undefined;
-  const value = Math.abs(Number(layoutMatch[2]));
-  if (supported.some(item => item.value === value)) return undefined;
-  return {
-    offendingValue: value,
-    offendingUnit: "",
-    excerpt: extractContext(searchable, layoutMatch.index, layoutMatch[0].length)
-  };
+  if (layoutMatch) {
+    const value = Math.abs(Number(layoutMatch[2]));
+    if (!supported.some(item => item.value === value)) {
+      return {
+        offendingValue: value,
+        offendingUnit: "",
+        excerpt: extractContext(searchable, layoutMatch.index, layoutMatch[0].length)
+      };
+    }
+  }
+
+  return undefined;
 }
 
 function analyzeExactColorClaims(
@@ -238,6 +264,55 @@ export interface ClaimValidationResult {
   valid: boolean;
   reason?: string;
   diagnostics?: ClaimDiagnostics;
+}
+
+export interface FinalizedClaimValidationResult {
+  diffs: DiffRecord[];
+  escalatedCount: number;
+}
+
+const POST_FINAL_CLAIM_REASON_PREFIX = "Post-consolidation claim validation failed:";
+const MAX_POST_FINAL_CLAIM_REASON_LENGTH = 500;
+
+const MISSING_TARGET_LITERAL_MESSAGE = "Accepted target-level finding has no resolved visible target literal";
+
+export function validateFinalizedClaim(diff: DiffRecord, elements: readonly UiElement[]): ClaimValidationResult {
+  const targetIds = diff.targetIds ?? [];
+  const hasTargetContext = diff.pairId !== undefined || targetIds.length > 0;
+  const targetLevel = diff.scopeKind === "target" || hasTargetContext;
+  const visibleLiterals = collectVisibleClaimLiterals(diff, elements);
+  if (targetLevel && visibleLiterals.length === 0) {
+    return {
+      valid: false,
+      reason: MISSING_TARGET_LITERAL_MESSAGE,
+      diagnostics: {
+        code: "missing_target_literal",
+        message: MISSING_TARGET_LITERAL_MESSAGE
+      }
+    };
+  }
+  return validateClaim(diff, visibleLiterals);
+}
+
+export function validateFinalizedClaims(
+  diffs: DiffRecord[],
+  elements: readonly UiElement[]
+): FinalizedClaimValidationResult {
+  let escalatedCount = 0;
+  const validated = diffs.map(diff => {
+    if (diff.reviewerStatus !== "accepted") return diff;
+    const validation = validateFinalizedClaim(diff, elements);
+    if (validation.valid) return diff;
+    escalatedCount += 1;
+    const reason = `${POST_FINAL_CLAIM_REASON_PREFIX} ${validation.reason ?? "unsupported claim"}`;
+    return {
+      ...diff,
+      reviewerStatus: "needs_escalation" as const,
+      reviewerReason: reason.slice(0, MAX_POST_FINAL_CLAIM_REASON_LENGTH),
+      ...(validation.diagnostics !== undefined ? { claimValidationDiagnostics: validation.diagnostics } : {})
+    };
+  });
+  return { diffs: validated, escalatedCount };
 }
 
 export function validateClaim(

@@ -1,5 +1,5 @@
-import { validateClaim } from "../../src/audit/review-findings.js";
-import type { DiffRecord } from "../../src/schemas/core.js";
+import { validateFinalizedClaim } from "../../src/audit/review-findings.js";
+import type { DiffRecord, UiElement } from "../../src/schemas/core.js";
 
 type StructuralSummary = {
   status: "pass" | "fail" | "not_evaluated";
@@ -13,6 +13,7 @@ type StructuralSummary = {
 export interface ReleaseIntegrityInput {
   auditLimited: boolean;
   diffs: DiffRecord[];
+  elements: UiElement[];
   unresolvedRegions: Array<{ id: string }>;
   recoveryStatusCounts: Record<string, number>;
   finalDiffCount: number;
@@ -61,9 +62,10 @@ export function collectReleaseIntegrityIssues(input: ReleaseIntegrityInput): str
     if (count === 0) issues.push(`missing_group_diff_reference:${diff.id}`);
     if (count > 1) issues.push(`duplicate_group_diff_reference:${diff.id}`);
     if ((diff.childFindingIds ?? []).includes(diff.id)) issues.push(`self_child_reference:${diff.id}`);
+    if (diff.reviewerStatus === "needs_escalation") issues.push(`needs_escalation:${diff.id}`);
 
     if (diff.reviewerStatus === "accepted") {
-      const validation = validateClaim(diff);
+      const validation = validateFinalizedClaim(diff, input.elements);
       if (!validation.valid) {
         issues.push(`unsupported_accepted_claim:${diff.id}:${validation.diagnostics?.code ?? "unknown"}`);
       }
