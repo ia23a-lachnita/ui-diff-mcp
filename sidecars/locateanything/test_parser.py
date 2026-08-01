@@ -1,5 +1,12 @@
+import os
 import unittest
+from contextlib import ExitStack
+from unittest.mock import patch
 
+from fastapi import HTTPException
+from PIL import Image
+
+from sidecars.locateanything import server
 from sidecars.locateanything.parser import _sanitize_label, parse_elements
 from sidecars.locateanything.server import (
     _apply_worker_runtime_config,
@@ -22,6 +29,64 @@ class _FakeProcessor:
 class _FakeWorker:
     def __init__(self) -> None:
         self.processor = _FakeProcessor()
+
+
+class _PredictWorker:
+    def __init__(self, results):
+        self.results = iter(results)
+        self.calls = []
+
+    def predict(self, image, prompt, **kwargs):
+        self.calls.append((image, prompt, kwargs))
+        result = next(self.results)
+        if isinstance(result, BaseException):
+            raise result
+        return result
+
+
+def _locate_request(*query_ids):
+    return server.LocateRequest(
+        imagePath="unused.png",
+        queries=[server.LocateQuery(id=query_id, prompt=f"find {query_id}") for query_id in query_ids],
+    )
+
+
+def _cv_element(index):
+    return {
+        "queryId": "cv_components",
+        "label": f"cv-{index}",
+        "box": {"x": float(index), "y": 1.0, "width": 10.0, "height": 10.0},
+    }
+
+
+def _patched_model_server(worker, cv_elements):
+    stack = ExitStack()
+    stack.enter_context(patch.object(server.state, "worker", worker))
+    stack.enter_context(patch.object(server, "_load_image", return_value=Image.new("RGB", (200, 400))))
+    stack.enter_context(patch.object(server, "detect_cv_components", return_value=cv_elements))
+    stack.enter_context(patch.object(server, "detect_ocr_text", return_value=([], "test-ocr")))
+    stack.enter_context(
+        patch.object(
+            server,
+            "detect_omniparser",
+            return_value=([], {"status": "complete", "count": 0, "model": "test-omni"}),
+        )
+    )
+    stack.enter_context(
+        patch.object(
+            server,
+            "detect_yolo_ui",
+            return_value=([], {"status": "complete", "count": 0, "model": "test-yolo"}),
+        )
+    )
+    stack.enter_context(
+        patch.dict(
+            os.environ,
+            {"LOCATEANYTHING_SKIP_MODEL": "0", "LOCATEANYTHING_MODEL": "test/LocateAnything"},
+            clear=False,
+        )
+    )
+    return stack
 
 
 class LocateAnythingParserTests(unittest.TestCase):
@@ -184,6 +249,72 @@ class LocateAnythingServerConfigTests(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             _locateanything_max_new_tokens({"LOCATEANYTHING_MAX_NEW_TOKENS": "0"})
+
+
+class LocateAnythingEndpointTests(unittest.TestCase):
+    def test_model_lane_accumulates_boxes_across_queries(self) -> None:
+        worker = _PredictWorker(
+            [
+                {"answer": "<ref>first</ref><box><10><20><100><120></box>"},
+                {"answer": "<ref>second</ref><box><200><220><300><320></box>"},
+            ]
+        )
+        with _patched_model_server(worker, [_cv_element(1), _cv_element(2), _cv_element(3)]):
+            response = server.locate_ui_elements(_locate_request("first", "second"))
+
+        lane = response["metadata"]["lanes"]["locateanything"]
+        self.assertEqual(len(response["elements"]), 5)
+        self.assertEqual(lane, {"status": "complete", "count": 2, "model": "test/LocateAnything"})
+        self.assertEqual(len(worker.calls), 2)
+
+    def test_model_lane_reports_zero_boxes_and_preserves_parser_warnings(self) -> None:
+        worker = _PredictWorker(
+            [
+                {"answer": "<ref>reversed</ref><box><500><200><300><260></box>"},
+                {"answer": "<ref>overflow</ref><box><0><0><1005><200></box>"},
+            ]
+        )
+        with _patched_model_server(worker, [_cv_element(1), _cv_element(2), _cv_element(3)]):
+            response = server.locate_ui_elements(_locate_request("reversed", "overflow"))
+
+        lane = response["metadata"]["lanes"]["locateanything"]
+        self.assertEqual(len(response["elements"]), 3)
+        self.assertEqual(lane, {"status": "complete", "count": 0, "model": "test/LocateAnything"})
+        self.assertTrue(any("invalid coordinate order" in warning for warning in response["warnings"]))
+        self.assertTrue(any("out of normalized bounds" in warning for warning in response["warnings"]))
+
+    def test_runtime_model_error_maps_to_503(self) -> None:
+        worker = _PredictWorker([RuntimeError("predict failed")])
+        with _patched_model_server(worker, []):
+            with self.assertRaises(HTTPException) as raised:
+                server.locate_ui_elements(_locate_request("failure"))
+
+        self.assertEqual(raised.exception.status_code, 503)
+        self.assertIn("model inference failed", str(raised.exception.detail))
+
+    def test_later_model_error_does_not_return_partial_response_or_lane(self) -> None:
+        worker = _PredictWorker(
+            [
+                {"answer": "<ref>first</ref><box><10><20><100><120></box>"},
+                RuntimeError("second query failed"),
+            ]
+        )
+        with _patched_model_server(worker, []):
+            with self.assertRaises(HTTPException) as raised:
+                server.locate_ui_elements(_locate_request("first", "second"))
+
+        self.assertEqual(raised.exception.status_code, 503)
+        self.assertIn("model inference failed", str(raised.exception.detail))
+        self.assertEqual(len(worker.calls), 2)
+
+    def test_adapter_model_error_maps_to_500(self) -> None:
+        worker = _PredictWorker([ValueError("adapter failed")])
+        with _patched_model_server(worker, []):
+            with self.assertRaises(HTTPException) as raised:
+                server.locate_ui_elements(_locate_request("failure"))
+
+        self.assertEqual(raised.exception.status_code, 500)
+        self.assertIn("adapter inference error", str(raised.exception.detail))
 
 
 class CvComponentLaneTests(unittest.TestCase):

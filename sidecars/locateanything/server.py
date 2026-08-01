@@ -207,9 +207,11 @@ def locate_ui_elements(request: LocateRequest) -> dict[str, Any]:
         lane_metadata["yolo_ui"] = {"status": "failed", "count": 0, "detail": str(exc), "model": "local-yolo-ui"}
 
     skip_model = os.environ.get("LOCATEANYTHING_SKIP_MODEL", "").lower() in {"1", "true", "yes"}
+    locateanything_model = os.environ.get("LOCATEANYTHING_MODEL", "nvidia/LocateAnything-3B")
     if skip_model:
-        lane_metadata["locateanything"] = {"status": "skipped", "count": 0, "model": os.environ.get("LOCATEANYTHING_MODEL", "nvidia/LocateAnything-3B")}
+        lane_metadata["locateanything"] = {"status": "skipped", "count": 0, "model": locateanything_model}
     else:
+        model_element_count = 0
         for query in request.queries:
             try:
                 result = state.worker.predict(
@@ -234,10 +236,16 @@ def locate_ui_elements(request: LocateRequest) -> dict[str, Any]:
                 max_boxes=request.maxBoxesPerQuery,
             )
             all_elements.extend(elements)
+            model_element_count += len(elements)
             warnings.extend(parse_warnings)
+        lane_metadata["locateanything"] = {
+            "status": "complete",
+            "count": model_element_count,
+            "model": locateanything_model,
+        }
 
     return {
-        "model": os.environ.get("LOCATEANYTHING_MODEL", "nvidia/LocateAnything-3B"),
+        "model": locateanything_model,
         "image": {"width": image_width, "height": image_height},
         "elements": all_elements,
         "warnings": warnings,
