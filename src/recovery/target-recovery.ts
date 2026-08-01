@@ -18,6 +18,7 @@ import {
 } from "../images/crop.js";
 import { resolveComparisonExtraction, type ComparisonExtractionBounds } from "../images/comparison-geometry.js";
 import { modelFamilyKey } from "../models/model-registry.js";
+import { validateReviewerHandle, type ReviewerHandle } from "../audit/audit-target.js";
 
 const CLASSIFIABLE_CRITERIA = UiCriterionSchema.exclude(["unclassified_visual_change"]);
 const MIN_RECOVERY_CONTEXT_SIZE = 64;
@@ -121,8 +122,7 @@ export interface RecoveryContext {
   directionalOverlayPath: string;
   artifactDir: string;
   recoveryCaller: VisionJsonCaller;
-  reviewerCaller: VisionJsonCaller;
-  reviewerResolver?: (recoveryProvider: string, recoveryModel: string) => VisionJsonCaller | undefined;
+  reviewerResolver: (recoveryProvider: string, recoveryModel: string) => ReviewerHandle | null;
 }
 
 function extractRgbaCrop(
@@ -627,9 +627,11 @@ export async function runTargetRecovery(
     const recoveryDurationMs = Date.now() - recoveryStarted;
 
     // Resolve independent reviewer based on actual recovery provider/model
-    const resolvedReviewer = ctx.reviewerResolver
-      ? ctx.reviewerResolver(componentRecoveryProvider, componentRecoveryModel)
-      : ctx.reviewerCaller;
+    const resolvedHandle = ctx.reviewerResolver(componentRecoveryProvider, componentRecoveryModel);
+    const resolvedReviewer = resolvedHandle?.caller;
+    const handleValidationError = resolvedHandle === null
+      ? "No independent reviewer available"
+      : validateReviewerHandle(resolvedHandle, componentRecoveryProvider, componentRecoveryModel);
 
     const baseMeasurements = (vlmResponse.measurements ?? []).map(m => ({
       name: m.name,
@@ -1148,14 +1150,18 @@ export async function runTargetRecovery(
       continue;
     }
 
-    // Check if resolver returned undefined (no independent route available)
-    if (ctx.reviewerResolver && resolvedReviewer === undefined) {
+    // Check if resolver returned null (no independent route available) or a
+    // handle whose complete declared route set is not independent. Do this
+    // before invoking the caller so prohibited routes are never called.
+    if (resolvedHandle === null || handleValidationError !== undefined) {
       countStatus("independent_reviewer_unavailable");
       trace.push({
         ...baseTrace,
         status: "independent_reviewer_unavailable",
         model: componentRecoveryModel,
         provider: componentRecoveryProvider,
+        reviewerModel: resolvedHandle?.routes[0]?.model,
+        reviewerProvider: resolvedHandle?.routes[0]?.provider,
         recoveryDurationMs,
         criterion: activeCandidate.criterion,
         ...(activeCandidate.isRepaired ? {
@@ -1174,7 +1180,7 @@ export async function runTargetRecovery(
       regionOutcomes.push({
         regionId: componentId,
         state: "unresolved",
-        reason: "independent_reviewer_unavailable",
+        reason: handleValidationError ?? "independent_reviewer_unavailable",
         artifactPaths: artifacts,
         provider: componentRecoveryProvider,
         ...(activeCandidate.isRepaired ? {
@@ -1218,6 +1224,7 @@ export async function runTargetRecovery(
     let reviewerModel = "unknown";
     let reviewerProvider: string | undefined;
     let reviewReason: string | undefined;
+    let reviewerResponseReceived = false;
     try {
       const reviewerRemainingMs = budget.deadlineMs - Date.now();
       if (reviewerRemainingMs <= 0) {
@@ -1251,6 +1258,9 @@ export async function runTargetRecovery(
         initialAttemptReserved: true
       });
       modelCallsUsed = modelCallsUsedRef.value;
+      reviewerResponseReceived = true;
+      reviewerModel = reviewRes.model;
+      reviewerProvider = reviewRes.provider;
       if (Date.now() >= budget.deadlineMs) {
         stoppedReason = "deadline_exceeded";
         countStatus("deadline_exceeded");
@@ -1263,8 +1273,6 @@ export async function runTargetRecovery(
       const parsed = ReviewDecisionSchema.parse(reviewRes.parsed);
       reviewDecision = parsed.decision;
       reviewReason = parsed.reason;
-      reviewerModel = reviewRes.model;
-      reviewerProvider = reviewRes.provider;
     } catch (err) {
       modelCallsUsed = modelCallsUsedRef.value;
       if (err instanceof BudgetExhaustedError) {
@@ -1293,11 +1301,19 @@ export async function runTargetRecovery(
     }
     const reviewerDurationMs = Date.now() - reviewerStarted;
 
-    // Independence check: reviewer must not use same provider+model or same model family as recovery
+    // Independence check: the response must identify one of the declared
+    // routes and must still be independent from the actual recovery route.
     const reviewerFamily = modelFamilyKey(reviewerModel);
     const recoveryFamilyActual = modelFamilyKey(componentRecoveryModel);
-    if ((reviewerProvider === componentRecoveryProvider && reviewerModel === componentRecoveryModel)
-        || reviewerFamily === recoveryFamilyActual) {
+    const declaredReviewerRoute = resolvedHandle?.routes.find(route =>
+      route.provider === reviewerProvider && route.model === reviewerModel
+    );
+    if (reviewerResponseReceived && (
+      declaredReviewerRoute === undefined ||
+      (reviewerProvider === componentRecoveryProvider && reviewerModel === componentRecoveryModel) ||
+      reviewerFamily === recoveryFamilyActual ||
+      (declaredReviewerRoute !== undefined && reviewerFamily !== declaredReviewerRoute.familyKey)
+    )) {
       countStatus("independent_reviewer_unavailable");
       trace.push({
         ...baseTrace,

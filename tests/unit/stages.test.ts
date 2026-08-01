@@ -46,6 +46,12 @@ describe("semantic stage outcomes", () => {
     ])).toBe(false);
   });
 
+  it("treats independent_reviewer_unavailable as an audit-pair failure", () => {
+    expect(auditTraceHasFailure([
+      { status: "independent_reviewer_unavailable" }
+    ])).toBe(true);
+  });
+
   it("marks audit route exhaustion incomplete even though the stage returned", () => {
     expect(deriveAuditStageOutcome({
       auditedPairs: 2,

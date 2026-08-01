@@ -30,9 +30,9 @@ import { makeOpenCodeVisionCaller } from "../models/opencode-client.js";
 import { makeGeminiVisionCaller } from "../models/gemini-client.js";
 import { makeMistralVisionCaller } from "../models/mistral-client.js";
 import { resolveVisionProviderConfig, type VisionProviderConfig } from "../models/provider-config.js";
-import { auditElementPair, makeElementSlug, type AuditContext } from "../audit/audit-target.js";
+import { auditElementPair, makeElementSlug, type AuditContext, type ReviewerHandle } from "../audit/audit-target.js";
 import { auditScopeSummaries } from "../audit/audit-scope.js";
-import { filterAcceptedDiffs, reviewAndMergeFindings } from "../audit/review-findings.js";
+import { deduplicateDiffs, filterAcceptedDiffs, reviewAndMergeFindings } from "../audit/review-findings.js";
 import { prepareRecoveryRegionArtifacts, runTargetRecovery } from "../recovery/target-recovery.js";
 import { writeRunDebugArtifacts, summarizeAuditPairOutcomes, type AuditPairOutcome, type RunDebugTrace } from "../debug/run-debug.js";
 import { buildRuntimeModelUsageLedger, parseProviderTraceEvents, ProviderTraceWriter, writeProviderTrace } from "../debug/provider-trace.js";
@@ -982,24 +982,72 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
           : undefined;
 
         // Build independent recovery reviewer resolver from REVIEWER candidates.
-        // Always provided — returns undefined (fail-closed) when no independent route exists.
-        const recoveryReviewerResolver = (recoveryProvider: string, recoveryModel: string) => {
+        // Always provided — returns null (fail-closed) when no independent route exists.
+        const recoveryReviewerResolver = (recoveryProvider: string, recoveryModel: string): ReviewerHandle | null => {
           const independentCandidates = orderIndependentReviewerCandidates(
             reviewerCandidates,
             recoveryProvider,
             recoveryModel
           );
-          if (independentCandidates.length === 0) return undefined;
-          return makeFallbackVisionCaller(
-            independentCandidates.map(e => ({
-              caller: makeVisionCaller(e as ModelEntry, providerConfig),
-              provider: e.provider,
-              model: e.model,
-              phase: "reviewer" as const
-            })),
-            makeFallbackWarning("recovery_reviewer"),
-            providerTrace.sink
+          if (independentCandidates.length === 0) return null;
+          return {
+            caller: makeFallbackVisionCaller(
+              independentCandidates.map(e => ({
+                caller: makeVisionCaller(e as ModelEntry, providerConfig),
+                provider: e.provider,
+                model: e.model,
+                phase: "reviewer" as const
+              })),
+              makeFallbackWarning("recovery_reviewer"),
+              providerTrace.sink
+            ),
+            routes: independentCandidates.map(candidate => ({
+              provider: candidate.provider,
+              model: candidate.model,
+              familyKey: modelFamilyKey(candidate.model)
+            }))
+          };
+        };
+
+        // Build independent normal-audit reviewer resolver from REVIEWER candidates.
+        // Returns null (fail-closed) when no independent route exists for the
+        // given auditor provider/model pair. Resolved per-auditor-response, not static.
+        // Cache created handles by actual auditor provider+model key so
+        // sticky route health persists across criteria/pairs. Cache null too.
+        const normalAuditReviewerCache = new Map<string, ReviewerHandle | null>();
+        const normalAuditReviewerResolver = (auditorProvider: string, auditorModel: string): ReviewerHandle | null => {
+          const cacheKey = `${auditorProvider}/${auditorModel}`;
+          if (normalAuditReviewerCache.has(cacheKey)) {
+            return normalAuditReviewerCache.get(cacheKey)!;
+          }
+          const independentCandidates = orderIndependentReviewerCandidates(
+            reviewerCandidates,
+            auditorProvider,
+            auditorModel
           );
+          if (independentCandidates.length === 0) {
+            normalAuditReviewerCache.set(cacheKey, null);
+            return null;
+          }
+          const handle: ReviewerHandle = {
+            caller: makeFallbackVisionCaller(
+              independentCandidates.map(e => ({
+                caller: makeVisionCaller(e as ModelEntry, providerConfig),
+                provider: e.provider,
+                model: e.model,
+                phase: "reviewer" as const
+              })),
+              makeFallbackWarning("normal_audit_reviewer"),
+              providerTrace.sink
+            ),
+            routes: independentCandidates.map(candidate => ({
+              provider: candidate.provider,
+              model: candidate.model,
+              familyKey: modelFamilyKey(candidate.model)
+            }))
+          };
+          normalAuditReviewerCache.set(cacheKey, handle);
+          return handle;
         };
 
         visualClassificationStatus = "incomplete";
@@ -1076,7 +1124,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
             actualElements,
             artifactDir: artifactRoot,
             auditorCaller,
-            reviewerCaller,
+            reviewerResolver: normalAuditReviewerResolver,
             expectedRgba: { data: expectedImg.rgba, width: expectedImg.width, height: expectedImg.height },
             actualRgba: { data: actualImg.rgba, width: actualImg.width, height: actualImg.height },
             imagePairTransform,
@@ -1120,7 +1168,7 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
           const providerCalled = trace.some(t => !["criterion_not_triggered", "comparison_non_comparable"].includes(t.status));
           const comparisonNonComparable = trace.some(t => t.status === "comparison_non_comparable");
           const reviewed = trace.some(t => ["reviewer_accepted", "reviewer_rejected", "reviewer_needs_escalation"].includes(t.status));
-          const validAuditor = trace.some(t => ["auditor_no_diff", "reviewer_accepted", "reviewer_rejected", "reviewer_needs_escalation"].includes(t.status));
+          const validAuditor = trace.some(t => ["auditor_no_diff", "reviewer_accepted", "reviewer_rejected", "reviewer_needs_escalation", "independent_reviewer_unavailable"].includes(t.status));
           const failed = auditTraceHasFailure(trace);
           auditOutcomes.push({ pairId: pair.id, entered: true, providerCalled, validAuditor, reviewed, skippedNoTrigger: !providerCalled && !comparisonNonComparable, failed });
         }
@@ -1147,7 +1195,10 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
         });
 
         const merged = reviewAndMergeFindings(auditedDiffs);
-        allDiffs.push(...merged);
+        // Keep unresolved audit records visible in the final report without treating them as accepted coverage.
+        const escalations = deduplicateDiffs(auditedDiffs.filter(diff => diff.reviewerStatus === "needs_escalation"));
+        const mergedIds = new Set(merged.map(diff => diff.id));
+        allDiffs.push(...merged, ...escalations.filter(diff => !mergedIds.has(diff.id)));
         const auditStageOutcome = deriveAuditStageOutcome(auditScope);
         await checkpoint("audit", "complete", auditStageOutcome.outcome, auditStageOutcome.detail, pairs, modelHealth);
 
@@ -1294,7 +1345,6 @@ export async function runUiDiff(input: RunInput, opts?: { probeOverride?: ProbeO
             directionalOverlayPath,
             artifactDir: artifactRoot,
             recoveryCaller,
-            reviewerCaller,
             reviewerResolver: recoveryReviewerResolver
           });
           debugTrace.recovery.push(...recoveryResult.trace);

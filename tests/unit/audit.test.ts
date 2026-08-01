@@ -6,11 +6,25 @@ import sharp from "sharp";
 import { rubrics, selectTriggeredCriteria } from "../../src/audit/criteria.js";
 import { buildAuditorPrompt, buildRecoveryPrompt, buildReviewerPrompt } from "../../src/audit/prompts.js";
 import { auditElementPair } from "../../src/audit/audit-target.js";
+import type { ReviewerHandle } from "../../src/audit/audit-target.js";
+import { modelFamilyKey } from "../../src/models/model-registry.js";
+
+function makeReviewerHandle(
+  caller: VisionJsonCaller,
+  provider = "test-reviewer-provider",
+  model = "test-reviewer-model",
+  additionalRoutes: ReviewerHandle["routes"] = []
+): ReviewerHandle {
+  return {
+    caller,
+    routes: [{ provider, model, familyKey: modelFamilyKey(model) }, ...additionalRoutes]
+  };
+}
 import { reviewAndMergeFindings, hasUnsupportedCropBoundaryClaim, requiredAcceptedArtifactRoles } from "../../src/audit/review-findings.js";
 import { UiCriterionSchema } from "../../src/schemas/core.js";
 import type { ElementPair, UiElement, DiffRecord, UiArtifact } from "../../src/schemas/core.js";
 import type { VisionJsonCaller } from "../../src/models/vision-json.js";
-import { RouteExhaustedError } from "../../src/models/fallback-caller.js";
+import { makeFallbackVisionCaller, RouteExhaustedError } from "../../src/models/fallback-caller.js";
 import { writeSolidPng } from "../../src/testing/fixture-images.js";
 import { summarizeAuditPairOutcomes } from "../../src/debug/run-debug.js";
 import { createUniformContainImagePairTransform, createImagePairTransform } from "../../src/images/coordinates.js";
@@ -203,8 +217,7 @@ describe("auditElementPair", () => {
 
   it("records a non-comparable matched pair without calling a provider", async () => {
     const auditorCaller: VisionJsonCaller = vi.fn();
-    const reviewerCaller: VisionJsonCaller = vi.fn();
-    const context = makeAuditContext({ auditorCaller, reviewerCaller });
+    const context = makeAuditContext({ auditorCaller });
     const result = await auditElementPair(pair, {
       ...context,
       triggerCtx: {
@@ -214,7 +227,6 @@ describe("auditElementPair", () => {
     });
 
     expect(auditorCaller).not.toHaveBeenCalled();
-    expect(reviewerCaller).not.toHaveBeenCalled();
     expect(result.accepted).toEqual([]);
     expect(result.rejected).toEqual([]);
     expect(result.trace).toEqual([
@@ -256,7 +268,7 @@ describe("auditElementPair", () => {
 
   function makeAuditContext(overrides: {
     auditorCaller?: VisionJsonCaller;
-    reviewerCaller?: VisionJsonCaller;
+    reviewerResolver?: (auditorProvider: string, auditorModel: string) => ReviewerHandle | null;
     positionDeltaPx?: number;
     geometryDeltaPx?: number;
     expectedElements?: UiElement[];
@@ -267,12 +279,13 @@ describe("auditElementPair", () => {
       model: "default-auditor",
       provider: "nvidia"
     });
-    const reviewerCaller: VisionJsonCaller = overrides.reviewerCaller ?? vi.fn().mockResolvedValue({
+    const defaultReviewer: VisionJsonCaller = vi.fn().mockResolvedValue({
       parsed: { decision: "accepted", reason: "confirmed" },
       rawContent: "",
       model: "default-reviewer",
       provider: "nvidia"
     });
+    const reviewerResolver = overrides.reviewerResolver ?? (() => makeReviewerHandle(defaultReviewer, "nvidia", "default-reviewer"));
     return {
       expectedImagePath: grayPng,
       actualImagePath: grayPng,
@@ -280,7 +293,7 @@ describe("auditElementPair", () => {
       actualElements: [{ ...expectedEl, id: "a1", box: { x: 10, y: 50 + (overrides.positionDeltaPx ?? 0), width: 80, height: 40 } }],
       artifactDir: tmpDir,
       auditorCaller,
-      reviewerCaller,
+      reviewerResolver,
       expectedRgba: { data: new Uint8Array(200 * 400 * 4), width: 200, height: 400 },
       actualRgba: { data: new Uint8Array(200 * 400 * 4), width: 200, height: 400 },
       measurements: [],
@@ -329,7 +342,7 @@ describe("auditElementPair", () => {
       actualElements: [{ ...expectedEl, id: "a1", box: { x: 10, y: 65, width: 80, height: 40 } }],
       artifactDir: tmpDir,
       auditorCaller,
-      reviewerCaller,
+      reviewerResolver: () => makeReviewerHandle(reviewerCaller, "openrouter", "test-reviewer"),
       expectedRgba: { data: new Uint8Array(200 * 400 * 4), width: 200, height: 400 },
       actualRgba: { data: new Uint8Array(200 * 400 * 4), width: 200, height: 400 },
       measurements: [],
@@ -399,7 +412,7 @@ describe("auditElementPair", () => {
       actualElements: [{ ...expectedEl, id: "a1" }],
       artifactDir: tmpDir,
       auditorCaller,
-      reviewerCaller,
+      reviewerResolver: () => makeReviewerHandle(reviewerCaller, "openrouter", "test-reviewer"),
       expectedRgba: { data: new Uint8Array(200 * 400 * 4), width: 200, height: 400 },
       actualRgba: { data: new Uint8Array(200 * 400 * 4), width: 200, height: 400 },
       measurements: [],
@@ -447,7 +460,7 @@ describe("auditElementPair", () => {
       actualElements: [{ ...expectedEl, id: "a1" }],
       artifactDir: tmpDir,
       auditorCaller: nvidiaCaller,
-      reviewerCaller,
+      reviewerResolver: () => makeReviewerHandle(reviewerCaller, "nvidia", "nvidia/nemotron-nano-12b-v2-vl"),
       expectedRgba: { data: new Uint8Array(200 * 400 * 4), width: 200, height: 400 },
       actualRgba: { data: new Uint8Array(200 * 400 * 4), width: 200, height: 400 },
       measurements: [],
@@ -500,7 +513,7 @@ describe("auditElementPair", () => {
       actualElements: [{ ...expectedEl, id: "a1", box: { x: 10, y: 65, width: 80, height: 40 } }],
       artifactDir: tmpDir,
       auditorCaller,
-      reviewerCaller,
+      reviewerResolver: () => makeReviewerHandle(reviewerCaller, "openrouter", "test-reviewer"),
       expectedRgba: { data: new Uint8Array(200 * 400 * 4), width: 200, height: 400 },
       actualRgba: { data: new Uint8Array(200 * 400 * 4), width: 200, height: 400 },
       measurements: [],
@@ -559,11 +572,11 @@ describe("auditElementPair", () => {
 
   it("records auditor_no_diff when model returns hasDiff false", async () => {
     const auditorCaller = vi.fn().mockResolvedValue({ parsed: { hasDiff: false }, rawContent: "", model: "audit-model", provider: "nvidia" });
-    const reviewerCaller = vi.fn();
-    const result = await auditElementPair(pair, makeAuditContext({ auditorCaller, reviewerCaller, positionDeltaPx: 15, geometryDeltaPx: 15 }));
+    const defaultReviewer = vi.fn();
+    const result = await auditElementPair(pair, makeAuditContext({ auditorCaller, reviewerResolver: () => makeReviewerHandle(defaultReviewer, "nvidia", "default-reviewer"), positionDeltaPx: 15, geometryDeltaPx: 15 }));
     expect(result.accepted).toHaveLength(0);
     expect(result.trace.some(t => t.status === "auditor_no_diff" && t.model === "audit-model")).toBe(true);
-    expect(reviewerCaller).not.toHaveBeenCalled();
+    expect(defaultReviewer).not.toHaveBeenCalled();
   });
 
   it("records empty_evidence when hasDiff true has no evidence", async () => {
@@ -575,7 +588,7 @@ describe("auditElementPair", () => {
   it("records reviewer_rejected with reason", async () => {
     const result = await auditElementPair(pair, makeAuditContext({
       auditorCaller: vi.fn().mockResolvedValue({ parsed: { hasDiff: true, evidence: ["visible"], title: "Shift" }, rawContent: "", model: "audit-model", provider: "nvidia" }),
-      reviewerCaller: vi.fn().mockResolvedValue({ parsed: { decision: "rejected", reason: "not supported" }, rawContent: "", model: "review-model", provider: "nvidia" }),
+      reviewerResolver: () => makeReviewerHandle(vi.fn().mockResolvedValue({ parsed: { decision: "rejected", reason: "not supported" }, rawContent: "", model: "review-model", provider: "nvidia" }), "nvidia", "review-model"),
       positionDeltaPx: 15,
       geometryDeltaPx: 15
     }));
@@ -585,7 +598,7 @@ describe("auditElementPair", () => {
   it("persists reviewer reason on final accepted and escalated diff records", async () => {
     const accepted = await auditElementPair(pair, makeAuditContext({
       auditorCaller: vi.fn().mockResolvedValue({ parsed: { hasDiff: true, evidence: ["visible"], title: "Shift" }, rawContent: "", model: "audit-model", provider: "nvidia" }),
-      reviewerCaller: vi.fn().mockResolvedValue({ parsed: { decision: "accepted", reason: "visible in overlay" }, rawContent: "", model: "review-model", provider: "nvidia" }),
+      reviewerResolver: () => makeReviewerHandle(vi.fn().mockResolvedValue({ parsed: { decision: "accepted", reason: "visible in overlay" }, rawContent: "", model: "review-model", provider: "nvidia" }), "nvidia", "review-model"),
       positionDeltaPx: 15,
       geometryDeltaPx: 15
     }));
@@ -597,7 +610,7 @@ describe("auditElementPair", () => {
 
     const escalated = await auditElementPair(pair, makeAuditContext({
       auditorCaller: vi.fn().mockResolvedValue({ parsed: { hasDiff: true, evidence: ["visible"], title: "Shift" }, rawContent: "", model: "audit-model", provider: "nvidia" }),
-      reviewerCaller: vi.fn().mockResolvedValue({ parsed: { decision: "needs_escalation", reason: "crop is ambiguous" }, rawContent: "", model: "review-model", provider: "nvidia" }),
+      reviewerResolver: () => makeReviewerHandle(vi.fn().mockResolvedValue({ parsed: { decision: "needs_escalation", reason: "crop is ambiguous" }, rawContent: "", model: "review-model", provider: "nvidia" }), "nvidia", "review-model"),
       positionDeltaPx: 15,
       geometryDeltaPx: 15
     }));
@@ -639,7 +652,7 @@ describe("auditElementPair", () => {
       actualElements: [{ ...expectedEl, id: "a1", box: { x: 10, y: 65, width: 80, height: 40 } }],
       artifactDir: tmpDir,
       auditorCaller,
-      reviewerCaller,
+      reviewerResolver: () => makeReviewerHandle(reviewerCaller, "openrouter", "test-reviewer"),
       expectedRgba: { data: new Uint8Array(200 * 400 * 4), width: 200, height: 400 },
       actualRgba: { data: new Uint8Array(200 * 400 * 4), width: 200, height: 400 },
       measurements: [],
@@ -799,10 +812,7 @@ describe("auditElementPair", () => {
       parsed: { hasDiff: true, severity: "high", title: "Shift", evidence: ["y offset"] },
       rawContent: "", model: "m", provider: "nvidia"
     });
-    const reviewerCaller = vi.fn().mockResolvedValue({
-      parsed: { decision: "accepted", reason: "confirmed" }, rawContent: "", model: "r", provider: "nvidia"
-    });
-    const result = await auditElementPair(pair, makeAuditContext({ auditorCaller, reviewerCaller, positionDeltaPx: 15, geometryDeltaPx: 15 }));
+    const result = await auditElementPair(pair, makeAuditContext({ auditorCaller, positionDeltaPx: 15, geometryDeltaPx: 15 }));
     // Geometry and spacing_alignment both fire with 15px delta; predicate must be true.
     expect(result.trace.some(t => t.status !== "criterion_not_triggered")).toBe(true);
   });
@@ -848,6 +858,32 @@ describe("prompt builders — Evidence discipline", () => {
     const prompt = buildReviewerPrompt("geometry", "Header", "Text is cut off", ["left half of text is cut"]);
     expect(prompt).toContain("crop/position mismatch");
     expect(prompt).toMatch(/reject.*title.*evidence.*not visible/i);
+  });
+
+  it("auditor prompt explains synthetic contain padding transparent bands", () => {
+    const prompt = buildAuditorPrompt({
+      criterion: "color_appearance",
+      rubric: rubrics["color_appearance"],
+      elementLabel: "Card",
+      elementType: "card",
+      pairingStatus: "matched",
+      measurements: []
+    });
+    expect(prompt).toContain("Transparent bands or pixels in the normalized actual comparison crop are synthetic contain padding");
+    expect(prompt).toContain("pillarbox/letterbox");
+    expect(prompt).toContain("they are not missing UI and must not be reported as a difference");
+  });
+
+  it("reviewer prompt explains synthetic contain padding transparent bands", () => {
+    const prompt = buildReviewerPrompt(
+      "color_appearance",
+      "Card",
+      "Color shift",
+      ["background changed"]
+    );
+    expect(prompt).toContain("Transparent bands or pixels in the normalized actual comparison crop are synthetic contain padding");
+    expect(prompt).toContain("pillarbox/letterbox");
+    expect(prompt).toContain("they are not missing UI and must not be reported as a difference");
   });
 });
 
@@ -933,7 +969,6 @@ describe("projected actual element reaches VLM auditor after pre-audit stage", (
       model: "test-model",
       usage: { input_tokens: 1, output_tokens: 1 }
     });
-    const reviewerCaller: VisionJsonCaller = vi.fn();
 
     await auditElementPair(pair, {
       expectedImagePath: tmpDir,
@@ -942,7 +977,7 @@ describe("projected actual element reaches VLM auditor after pre-audit stage", (
       actualElements: [projectedEl],
       artifactDir: tmpDir,
       auditorCaller,
-      reviewerCaller,
+      reviewerResolver: () => makeReviewerHandle(vi.fn(), "nvidia", "test-reviewer"),
       expectedRgba: { data: makeStripedRgba(200, 400), width: 200, height: 400 },
       actualRgba: { data: new Uint8Array(200 * 400 * 4).fill(128), width: 200, height: 400 },
       measurements: [],
@@ -1024,7 +1059,7 @@ describe("Task 5: Normalized Target Evidence", () => {
 
   function makeTask5Context(overrides: {
     auditorCaller?: VisionJsonCaller;
-    reviewerCaller?: VisionJsonCaller;
+    reviewerResolver?: (auditorProvider: string, auditorModel: string) => ReviewerHandle | null;
     expectedRgba?: Uint8Array;
     actualRgba?: Uint8Array;
     expectedWidth?: number;
@@ -1048,10 +1083,11 @@ describe("Task 5: Normalized Target Evidence", () => {
       parsed: { hasDiff: true, severity: "medium", title: "Color shift", evidence: ["background changed"] },
       rawContent: "", model: "test-auditor", provider: "nvidia"
     });
-    const reviewerCaller: VisionJsonCaller = overrides.reviewerCaller ?? vi.fn().mockResolvedValue({
+    const defaultReviewer: VisionJsonCaller = vi.fn().mockResolvedValue({
       parsed: { decision: "accepted", reason: "confirmed" },
       rawContent: "", model: "test-reviewer", provider: "nvidia"
     });
+    const reviewerResolver = overrides.reviewerResolver ?? (() => makeReviewerHandle(defaultReviewer, "nvidia", "test-reviewer"));
 
     // Expected box 80x40, actual box projected 120x60 (stretched via transform)
     const actualBox = overrides.actualBox ?? { x: 15, y: 75, width: 120, height: 60 };
@@ -1063,7 +1099,7 @@ describe("Task 5: Normalized Target Evidence", () => {
       actualElements: overrides.actualElements ?? [{ ...expectedElDef, id: "a1", box: actualBox }],
       artifactDir: tmpDir,
       auditorCaller,
-      reviewerCaller,
+      reviewerResolver,
       expectedRgba: { data: expectedRgbaData, width: expectedW, height: expectedH },
       actualRgba: { data: actualRgbaData, width: actualW, height: actualH },
       imagePairTransform: overrides.imagePairTransform ?? createImagePairTransform({ width: expectedW, height: expectedH }, { width: actualW, height: actualH }),
@@ -1135,7 +1171,7 @@ describe("Task 5: Normalized Target Evidence", () => {
       rawContent: "", model: "test-reviewer", provider: "nvidia"
     });
 
-    const result = await auditElementPair(pairDef, makeTask5Context({ auditorCaller, reviewerCaller }));
+    const result = await auditElementPair(pairDef, makeTask5Context({ auditorCaller, reviewerResolver: () => makeReviewerHandle(reviewerCaller, "nvidia", "test-reviewer") }));
 
     expect(capturedImages.length).toBeGreaterThanOrEqual(1);
     const images = capturedImages[0]!;
@@ -1263,6 +1299,32 @@ describe("Task 5: Normalized Target Evidence", () => {
     expect(prompt).not.toMatch(/ACTUAL crop — the actual screenshot/);
   });
 
+  it("auditor prompt includes synthetic padding explanation wording", () => {
+    const prompt = buildAuditorPrompt({
+      criterion: "presence",
+      rubric: rubrics["presence"],
+      elementLabel: "Card",
+      elementType: "card",
+      pairingStatus: "matched",
+      measurements: []
+    });
+    expect(prompt).toContain("synthetic contain padding");
+    expect(prompt).toContain("pillarbox/letterbox");
+    expect(prompt).toContain("not missing UI");
+  });
+
+  it("reviewer prompt includes synthetic padding explanation wording", () => {
+    const prompt = buildReviewerPrompt(
+      "geometry",
+      "Card",
+      "Card shifted",
+      ["visible shift"]
+    );
+    expect(prompt).toContain("synthetic contain padding");
+    expect(prompt).toContain("pillarbox/letterbox");
+    expect(prompt).toContain("not missing UI");
+  });
+
   it("differing-aspect actual crops with transparent contain padding", async () => {
     // Actual source box 120x80 (taller than expected 80x40). Under uniform-contain
     // normalization the comparison_crop must be 80x40 with transparent padding on
@@ -1321,5 +1383,265 @@ describe("Task 5: Normalized Target Evidence", () => {
     expect(gC).toBeLessThanOrEqual(205);
     expect(bC).toBeLessThanOrEqual(5);
     expect(aC).toBeGreaterThanOrEqual(250);
+  });
+});
+
+describe("Task 6A: Runtime Independent Reviewer Routing", () => {
+  let tmpDir: string;
+  let grayPng: string;
+
+  const expectedEl: UiElement = {
+    id: "e1",
+    label: "Submit Button",
+    type: "button",
+    box: { x: 10, y: 50, width: 80, height: 40 },
+    normalizedBox: { x: 0.05, y: 0.125, width: 0.4, height: 0.1 },
+    confidence: 0.95,
+    source: "locator",
+    childIds: []
+  };
+
+  const pair: ElementPair = {
+    id: "pair-ind",
+    expectedId: "e1",
+    actualId: "a1",
+    status: "matched",
+    score: 0.8,
+    reasons: []
+  };
+
+  const shiftedElements = [{ ...expectedEl, id: "a1", box: { x: 10, y: 65, width: 80, height: 40 } }];
+
+  function makeAuditResponse(model: string, provider: string) {
+    return {
+      parsed: { hasDiff: true, severity: "high" as const, title: "Shift", evidence: ["visible shift"] },
+      rawContent: "",
+      model,
+      provider
+    };
+  }
+
+  function makeReviewResponse(model: string, provider: string, decision: "accepted" | "rejected" | "needs_escalation" = "accepted", reason = "confirmed") {
+    return {
+      parsed: { decision, reason },
+      rawContent: "",
+      model,
+      provider
+    };
+  }
+
+  function makeTriggerCtx(overrides: Partial<{ positionDeltaPx: number; geometryDeltaPx: number; comparisonComparable: boolean }> = {}) {
+    return {
+      pairingStatus: "matched" as const,
+      positionDeltaPx: overrides.positionDeltaPx ?? 15,
+      geometryDeltaPx: overrides.geometryDeltaPx ?? 15,
+      comparisonComparable: overrides.comparisonComparable ?? true,
+      textDelta: false,
+      colorDelta: false,
+      edgeMismatch: false,
+      overlapDetected: false,
+      stateWordsDiffer: false,
+      elementType: "button" as const,
+      measurements: []
+    };
+  }
+
+  function makeTask6AContext(overrides: {
+    auditorCaller?: VisionJsonCaller;
+    reviewerResolver?: (auditorProvider: string, auditorModel: string) => ReviewerHandle | null;
+    positionDeltaPx?: number;
+    geometryDeltaPx?: number;
+    comparisonComparable?: boolean;
+  } = {}) {
+    const auditorCaller: VisionJsonCaller = overrides.auditorCaller ?? vi.fn().mockResolvedValue(
+      makeAuditResponse("mistral-8b", "openrouter")
+    );
+    const defaultReviewer: VisionJsonCaller = vi.fn().mockResolvedValue(
+      makeReviewResponse("ministral-14b", "nvidia")
+    );
+    const reviewerResolver = overrides.reviewerResolver ?? (() => makeReviewerHandle(defaultReviewer, "nvidia", "ministral-14b"));
+    return {
+      expectedImagePath: grayPng,
+      actualImagePath: grayPng,
+      expectedElements: [expectedEl],
+      actualElements: shiftedElements,
+      artifactDir: tmpDir,
+      auditorCaller,
+      reviewerResolver,
+      expectedRgba: { data: new Uint8Array(200 * 400 * 4), width: 200, height: 400 },
+      actualRgba: { data: new Uint8Array(200 * 400 * 4), width: 200, height: 400 },
+      measurements: [],
+      auditIndex: 1,
+      auditTotal: 1,
+      elementSlug: "submit-button",
+      triggerCtx: makeTriggerCtx(overrides)
+    };
+  }
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ui-diff-task6a-"));
+    grayPng = await writeSolidPng(tmpDir, "gray.png", 200, 400, 128, 128, 128);
+  });
+
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it("resolves reviewer via reviewerResolver using actual auditor provider/model", async () => {
+    const independentReviewer: VisionJsonCaller = vi.fn().mockResolvedValue(
+      makeReviewResponse("ministral-14b", "nvidia")
+    );
+    const reviewerResolver = vi.fn().mockReturnValue(makeReviewerHandle(independentReviewer, "nvidia", "ministral-14b"));
+    const auditorCaller: VisionJsonCaller = vi.fn().mockResolvedValue(
+      makeAuditResponse("mistral-8b", "openrouter")
+    );
+
+    const result = await auditElementPair(pair, makeTask6AContext({ auditorCaller, reviewerResolver }));
+
+    expect(reviewerResolver).toHaveBeenCalledWith("openrouter", "mistral-8b");
+    expect(independentReviewer).toHaveBeenCalled();
+    expect(result.accepted.length).toBeGreaterThanOrEqual(1);
+    const reviewerTrace = result.trace.find(t => t.status === "reviewer_accepted");
+    expect(reviewerTrace).toBeDefined();
+    expect(reviewerTrace!.reviewerModel).toBe("ministral-14b");
+  });
+
+  it("passes the trusted auditor fallback route to the independent reviewer resolver", async () => {
+    const firstAuditor: VisionJsonCaller = vi.fn().mockRejectedValue(new Error("HTTP 429: rate limited"));
+    const secondAuditor: VisionJsonCaller = vi.fn().mockResolvedValue(
+      makeAuditResponse("spoofed-provider-model", "spoofed-provider")
+    );
+    const auditorCaller = makeFallbackVisionCaller([
+      { caller: firstAuditor, provider: "nvidia", model: "auditor-first" },
+      { caller: secondAuditor, provider: "openrouter", model: "auditor-second" }
+    ]);
+    const reviewer: VisionJsonCaller = vi.fn().mockResolvedValue(
+      makeReviewResponse("reviewer-independent", "nvidia")
+    );
+    const reviewerResolver = vi.fn().mockReturnValue(
+      makeReviewerHandle(reviewer, "nvidia", "reviewer-independent")
+    );
+
+    const result = await auditElementPair(pair, makeTask6AContext({ auditorCaller, reviewerResolver }));
+
+    expect(reviewerResolver).toHaveBeenCalledWith("openrouter", "auditor-second");
+    expect(reviewer).toHaveBeenCalled();
+    expect(result.trace.some(entry => entry.status === "reviewer_accepted")).toBe(true);
+  });
+
+  it("resolver is called after auditor response, not before", async () => {
+    const callOrder: string[] = [];
+    const auditorCaller: VisionJsonCaller = vi.fn().mockImplementation(async () => {
+      callOrder.push("auditor");
+      return makeAuditResponse("mistral-8b", "openrouter");
+    });
+    const independentReviewer: VisionJsonCaller = vi.fn().mockImplementation(async () => {
+      callOrder.push("reviewer");
+      return makeReviewResponse("ministral-14b", "nvidia");
+    });
+    const reviewerResolver = vi.fn().mockImplementation((_prov: string, _model: string) => {
+      callOrder.push("resolver");
+      return makeReviewerHandle(independentReviewer, "nvidia", "ministral-14b");
+    });
+
+    await auditElementPair(pair, makeTask6AContext({ auditorCaller, reviewerResolver, positionDeltaPx: 0 }));
+
+    expect(callOrder).toEqual(["auditor", "resolver", "reviewer"]);
+  });
+
+  it("undefined exactly-one: one needs_escalation record + one independent_reviewer_unavailable trace per criterion", async () => {
+    const auditorCaller: VisionJsonCaller = vi.fn().mockResolvedValue(
+      makeAuditResponse("mistral-8b", "openrouter")
+    );
+    const reviewerResolver = vi.fn().mockReturnValue(null);
+    const triggerCtx = makeTriggerCtx();
+    const triggeredCriteria = selectTriggeredCriteria(triggerCtx);
+
+    const result = await auditElementPair(pair, makeTask6AContext({
+      auditorCaller,
+      reviewerResolver,
+      positionDeltaPx: triggerCtx.positionDeltaPx,
+      geometryDeltaPx: triggerCtx.geometryDeltaPx
+    }));
+
+    const needsEscalationRecords = result.accepted.filter(r => r.reviewerStatus === "needs_escalation");
+    const unavailableTraces = result.trace.filter(t => t.status === "independent_reviewer_unavailable");
+    expect(needsEscalationRecords).toHaveLength(triggeredCriteria.length);
+    expect(unavailableTraces).toHaveLength(triggeredCriteria.length);
+    const recordIds = needsEscalationRecords.map(record => record.id);
+    const traceIds = unavailableTraces.map(trace => trace.diffId);
+    expect(new Set(recordIds).size).toBe(triggeredCriteria.length);
+    expect(traceIds.every(id => typeof id === "string")).toBe(true);
+    expect(new Set(traceIds)).toEqual(new Set(recordIds));
+    for (const recordId of recordIds) {
+      expect(traceIds.filter(id => id === recordId)).toHaveLength(1);
+    }
+    expect(reviewerResolver).toHaveBeenCalled();
+    // Escalation record has reviewerReason
+    expect(needsEscalationRecords[0]!.reviewerReason).toBeDefined();
+    expect(needsEscalationRecords[0]!.reviewerReason).toContain("No independent reviewer available");
+  });
+
+  it("same-family defense: different provider but same model family → needs_escalation", async () => {
+    const auditorCaller: VisionJsonCaller = vi.fn().mockResolvedValue(
+      makeAuditResponse("mistral-8b:free", "openrouter")
+    );
+    const sameFamilyReviewer: VisionJsonCaller = vi.fn().mockResolvedValue(
+      makeReviewResponse("mistral-8b", "openrouter")
+    );
+    const reviewerResolver = vi.fn().mockReturnValue(makeReviewerHandle(sameFamilyReviewer, "openrouter", "mistral-8b"));
+
+    const result = await auditElementPair(pair, makeTask6AContext({ auditorCaller, reviewerResolver }));
+
+    expect(sameFamilyReviewer).not.toHaveBeenCalled();
+    expect(result.accepted).toHaveLength(result.trace.filter(t => t.status === "independent_reviewer_unavailable").length);
+    expect(result.accepted.length).toBeGreaterThan(0);
+    expect(result.accepted[0]!.reviewerStatus).toBe("needs_escalation");
+    const trace = result.trace.find(t => t.status === "independent_reviewer_unavailable");
+    expect(trace).toBeDefined();
+    expect(trace!.rejectionReason).toContain("not independent");
+    expect(trace!.rejectionReason).toContain("openrouter/mistral-8b");
+  });
+
+  it("exact-route defense: same provider+model → needs_escalation + independent_reviewer_unavailable", async () => {
+    const auditorCaller: VisionJsonCaller = vi.fn().mockResolvedValue(
+      makeAuditResponse("nvidia/nemotron-nano-12b", "nvidia")
+    );
+    const spoofedReviewer: VisionJsonCaller = vi.fn().mockResolvedValue(
+      makeReviewResponse("nvidia/nemotron-nano-12b", "nvidia")
+    );
+    const reviewerResolver = vi.fn().mockReturnValue(makeReviewerHandle(spoofedReviewer, "nvidia", "nvidia/nemotron-nano-12b"));
+
+    const result = await auditElementPair(pair, makeTask6AContext({ auditorCaller, reviewerResolver }));
+
+    expect(spoofedReviewer).not.toHaveBeenCalled();
+    expect(result.accepted[0]!.reviewerStatus).toBe("needs_escalation");
+    const trace = result.trace.find(t => t.status === "independent_reviewer_unavailable");
+    expect(trace).toBeDefined();
+    expect(trace!.rejectionReason).toContain("nvidia/nvidia/nemotron-nano-12b");
+  });
+
+  it("different-family accepted: different provider + different family → normal accepted path", async () => {
+    const auditorCaller: VisionJsonCaller = vi.fn().mockResolvedValue(
+      makeAuditResponse("mistral-8b", "openrouter")
+    );
+    const independentReviewer: VisionJsonCaller = vi.fn().mockResolvedValue(
+      makeReviewResponse("google/gemini-2.5-flash", "openrouter")
+    );
+    const reviewerResolver = vi.fn().mockReturnValue(makeReviewerHandle(independentReviewer, "openrouter", "google/gemini-2.5-flash"));
+
+    const result = await auditElementPair(pair, makeTask6AContext({ auditorCaller, reviewerResolver }));
+
+    expect(result.accepted.length).toBeGreaterThanOrEqual(1);
+    expect(result.accepted[0]!.reviewerStatus).toBe("accepted");
+    const reviewerTrace = result.trace.find(t => t.status === "reviewer_accepted");
+    expect(reviewerTrace).toBeDefined();
+    expect(reviewerTrace!.reviewerModel).toBe("google/gemini-2.5-flash");
+  });
+
+  it("independent_reviewer_unavailable is a failure in auditTraceHasFailure", async () => {
+    const { auditTraceHasFailure } = await import("../../src/pipeline/stages.js");
+    expect(auditTraceHasFailure([{ status: "independent_reviewer_unavailable" }])).toBe(true);
   });
 });

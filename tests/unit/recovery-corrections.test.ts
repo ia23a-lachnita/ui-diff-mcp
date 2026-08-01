@@ -10,9 +10,15 @@ import type { VisionJsonCaller } from "../../src/models/vision-json.js";
 import { makeFallbackVisionCaller } from "../../src/models/fallback-caller.js";
 import { RecoveryComponentTraceSchema, RecoveryRegionOutcomeSchema, type DeterministicMeasurement } from "../../src/schemas/core.js";
 import { validateClaim } from "../../src/audit/review-findings.js";
+import type { ReviewerHandle } from "../../src/audit/audit-target.js";
+import { modelFamilyKey } from "../../src/models/model-registry.js";
 
 let tmpDir: string;
 let overlayPath: string;
+
+function makeReviewerHandle(caller: VisionJsonCaller, provider: string, model: string): ReviewerHandle {
+  return { caller, routes: [{ provider, model, familyKey: modelFamilyKey(model) }] };
+}
 
 beforeEach(async () => {
   tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "recovery-corrections-test-"));
@@ -40,7 +46,12 @@ function makeMask(width: number, height: number, value = 1): Uint8Array {
   return new Uint8Array(width * height).fill(value);
 }
 
-function makeCtx(overrides: Partial<RecoveryContext> = {}): RecoveryContext {
+type RecoveryTestOverrides = Omit<Partial<RecoveryContext>, "reviewerResolver"> & {
+  reviewerCaller?: VisionJsonCaller;
+  reviewerResolver?: RecoveryContext["reviewerResolver"];
+};
+
+function makeCtx(overrides: RecoveryTestOverrides = {}): RecoveryContext {
   const recoveryCaller: VisionJsonCaller = vi.fn().mockResolvedValue({
     parsed: { classified: false },
     rawContent: "",
@@ -53,6 +64,13 @@ function makeCtx(overrides: Partial<RecoveryContext> = {}): RecoveryContext {
     model: "test-reviewer",
     provider: "openrouter"
   });
+  const customReviewer = overrides.reviewerCaller;
+  const reviewerResolver = overrides.reviewerResolver ?? (() => makeReviewerHandle(
+    customReviewer ?? reviewerCaller,
+    customReviewer ? "opencode" : "openrouter",
+    customReviewer ? "reviewer-model" : "test-reviewer"
+  ));
+  const { reviewerCaller: _reviewerCaller, reviewerResolver: _reviewerResolver, ...contextOverrides } = overrides;
   return {
     expectedRgba: makeRgba(200, 200),
     actualRgba: makeRgba(200, 200),
@@ -60,8 +78,8 @@ function makeCtx(overrides: Partial<RecoveryContext> = {}): RecoveryContext {
     directionalOverlayPath: overlayPath,
     artifactDir: tmpDir,
     recoveryCaller,
-    reviewerCaller,
-    ...overrides
+    reviewerResolver,
+    ...contextOverrides
   };
 }
 
@@ -270,7 +288,10 @@ describe("recovery-corrections: model measurements untrusted", () => {
         provider: "mistral"
       });
     const reviewerCaller: VisionJsonCaller = vi.fn().mockResolvedValue(acceptedReviewerResponse());
-    const ctx = makeCtx({ recoveryCaller, reviewerCaller });
+    const ctx = makeCtx({
+      recoveryCaller,
+      reviewerCaller,
+    });
     const result = await runTargetRecovery([invalidComponent], ctx, unlimitedBudget);
     expect(result.recovered).toHaveLength(1);
     const record = result.recovered[0]!;
@@ -298,7 +319,10 @@ describe("recovery-corrections: model measurements untrusted", () => {
       provider: "mistral"
     });
     const reviewerCaller: VisionJsonCaller = vi.fn().mockResolvedValue(acceptedReviewerResponse());
-    const ctx = makeCtx({ recoveryCaller, reviewerCaller });
+    const ctx = makeCtx({
+      recoveryCaller,
+      reviewerCaller,
+    });
     const result = await runTargetRecovery([invalidComponent], ctx, unlimitedBudget);
     // Candidate has #FF0000 in evidence but no deterministic color measurement
     // validateClaim should reject it, repair flow attempted
@@ -620,7 +644,11 @@ describe("recovery-corrections: independent reviewer route", () => {
       model: "mimo-v2.5",
       provider: "opencode"
     });
-    const ctx = makeCtx({ recoveryCaller, reviewerCaller });
+    const ctx = makeCtx({
+      recoveryCaller,
+      reviewerCaller,
+      reviewerResolver: () => makeReviewerHandle(reviewerCaller, "opencode", "mimo-v2.5")
+    });
     const result = await runTargetRecovery([component], ctx, unlimitedBudget);
     expect(result.recovered).toHaveLength(1);
     const trace = result.trace[0];
@@ -644,7 +672,11 @@ describe("recovery-corrections: independent reviewer route", () => {
       model: "mimo-v2.5",
       provider: "opencode"
     });
-    const ctx = makeCtx({ recoveryCaller, reviewerCaller });
+    const ctx = makeCtx({
+      recoveryCaller,
+      reviewerCaller,
+      reviewerResolver: () => makeReviewerHandle(reviewerCaller, "opencode", "mimo-v2.5")
+    });
     const result = await runTargetRecovery([component], ctx, unlimitedBudget);
     const outcome = result.regionOutcomes[0];
     expect(outcome?.reviewerProvider).toBe("opencode");
@@ -687,7 +719,11 @@ describe("recovery-corrections: independent reviewer route", () => {
       model: "reviewer-model",
       provider: "reviewer-provider"
     });
-    const ctx = makeCtx({ recoveryCaller, reviewerCaller });
+    const ctx = makeCtx({
+      recoveryCaller,
+      reviewerCaller,
+      reviewerResolver: () => makeReviewerHandle(reviewerCaller, "reviewer-provider", "reviewer-model")
+    });
     const result = await runTargetRecovery([component], ctx, unlimitedBudget);
     expect(result.recovered).toHaveLength(1);
     // Reviewer provider must differ from actual recovery provider
@@ -1423,7 +1459,9 @@ describe("recovery-corrections: trace/outcome completeness", () => {
       parsed: { decision: "accepted", reason: "ok" },
       rawContent: "", model: "ministral-14b-2512:free", provider: "openrouter"
     });
-    const reviewerResolver = vi.fn().mockReturnValue(reviewerCaller);
+    const reviewerResolver = vi.fn().mockReturnValue(
+      makeReviewerHandle(reviewerCaller, "openrouter", "ministral-14b-2512:free")
+    );
     const result = await runTargetRecovery([component], makeCtx({ recoveryCaller, reviewerCaller, reviewerResolver }), unlimitedBudget);
     const trace = result.trace[0]!;
     expect(trace.status).toBe("independent_reviewer_unavailable");
@@ -1431,6 +1469,42 @@ describe("recovery-corrections: trace/outcome completeness", () => {
     expect(trace.reviewerProvider).toBe("openrouter");
     expect(trace.reviewerModel).toBe("ministral-14b-2512:free");
     expect(trace.rawModelProposedMeasurements).toBeDefined();
+  });
+
+  it.each([
+    {
+      label: "undeclared response route",
+      response: { model: "openrouter/other-reviewer", provider: "openrouter" }
+    },
+    {
+      label: "same-family response route",
+      response: { model: "mistral-14b-2512:free", provider: "openrouter" }
+    }
+  ])("post-response defense rejects $label", async ({ response }) => {
+    const recoveryCaller: VisionJsonCaller = vi.fn().mockResolvedValue({
+      parsed: { classified: true, criterion: "geometry", severity: "medium", label: "Button", evidence: ["shifted"] },
+      rawContent: "",
+      model: "mistral-14b-2512",
+      provider: "mistral"
+    });
+    const reviewerCaller: VisionJsonCaller = vi.fn().mockResolvedValue({
+      parsed: { decision: "accepted", reason: "ok" },
+      rawContent: "",
+      ...response
+    });
+    const result = await runTargetRecovery([component], makeCtx({
+      recoveryCaller,
+      reviewerCaller,
+      reviewerResolver: () => makeReviewerHandle(reviewerCaller, "openrouter", "google/gemma-4-31b-it")
+    }), unlimitedBudget);
+
+    expect(reviewerCaller).toHaveBeenCalledOnce();
+    expect(result.statusCounts["independent_reviewer_unavailable"]).toBe(1);
+    expect(result.recovered).toHaveLength(0);
+    expect(result.trace).toEqual(expect.arrayContaining([
+      expect.objectContaining({ status: "independent_reviewer_unavailable" })
+    ]));
+    expect(result.regionOutcomes[0]).toMatchObject({ state: "unresolved", reason: "independent_reviewer_unavailable" });
   });
 });
 

@@ -710,7 +710,8 @@ export const AuditDecisionStatusSchema = z.enum([
   "reviewer_needs_escalation",
   "reviewer_error",
   "deterministic_projected_mismatch",
-  "comparison_non_comparable"
+  "comparison_non_comparable",
+  "independent_reviewer_unavailable"
 ]);
 
 export const AuditCriterionTraceSchema = z.object({
@@ -723,6 +724,8 @@ export const AuditCriterionTraceSchema = z.object({
   status: AuditDecisionStatusSchema,
   model: z.string().optional(),
   reviewerModel: z.string().optional(),
+  auditorProvider: z.string().optional(),
+  reviewerProvider: z.string().optional(),
   auditorDurationMs: z.number().int().min(0).optional(),
   reviewerDurationMs: z.number().int().min(0).optional(),
   evidenceCount: z.number().int().min(0).default(0),

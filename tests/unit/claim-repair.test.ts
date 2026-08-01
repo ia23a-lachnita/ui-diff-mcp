@@ -8,9 +8,15 @@ import { writeSolidPng } from "../../src/testing/fixture-images.js";
 import type { PixelComponent } from "../../src/signals/pixel-diff.js";
 import type { VisionJsonCaller } from "../../src/models/vision-json.js";
 import { RecoveryComponentTraceSchema, RecoveryRegionOutcomeSchema } from "../../src/schemas/core.js";
+import type { ReviewerHandle } from "../../src/audit/audit-target.js";
+import { modelFamilyKey } from "../../src/models/model-registry.js";
 
 let tmpDir: string;
 let overlayPath: string;
+
+function makeReviewerHandle(caller: VisionJsonCaller, provider: string, model: string): ReviewerHandle {
+  return { caller, routes: [{ provider, model, familyKey: modelFamilyKey(model) }] };
+}
 
 beforeEach(async () => {
   tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "claim-repair-test-"));
@@ -45,7 +51,12 @@ const unlimitedBudget: RecoveryBudget = {
   minComponentPixels: 1
 };
 
-function makeCtx(overrides: Partial<RecoveryContext> = {}): RecoveryContext {
+type RecoveryTestOverrides = Omit<Partial<RecoveryContext>, "reviewerResolver"> & {
+  reviewerCaller?: VisionJsonCaller;
+  reviewerResolver?: RecoveryContext["reviewerResolver"];
+};
+
+function makeCtx(overrides: RecoveryTestOverrides = {}): RecoveryContext {
   const recoveryCaller: VisionJsonCaller = vi.fn().mockResolvedValue({
     parsed: { classified: false },
     rawContent: "",
@@ -58,6 +69,13 @@ function makeCtx(overrides: Partial<RecoveryContext> = {}): RecoveryContext {
     model: "test-reviewer",
     provider: "openrouter"
   });
+  const customReviewer = overrides.reviewerCaller;
+  const reviewerResolver = overrides.reviewerResolver ?? (() => makeReviewerHandle(
+    customReviewer ?? reviewerCaller,
+    "openrouter",
+    "test-reviewer"
+  ));
+  const { reviewerCaller: _reviewerCaller, reviewerResolver: _reviewerResolver, ...contextOverrides } = overrides;
   return {
     expectedRgba: makeRgba(200, 200),
     actualRgba: makeRgba(200, 200),
@@ -65,8 +83,8 @@ function makeCtx(overrides: Partial<RecoveryContext> = {}): RecoveryContext {
     directionalOverlayPath: overlayPath,
     artifactDir: tmpDir,
     recoveryCaller,
-    reviewerCaller,
-    ...overrides
+    reviewerResolver,
+    ...contextOverrides
   };
 }
 

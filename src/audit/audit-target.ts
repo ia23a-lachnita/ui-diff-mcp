@@ -16,11 +16,39 @@ import { resolveComparisonExtraction, type ComparisonExtractionBounds } from "..
 import type { ImagePairTransform } from "../images/coordinates.js";
 import { hasUnsupportedQuantitativeClaim } from "./review-findings.js";
 import { RouteExhaustedError } from "../models/fallback-caller.js";
+import { modelFamilyKey } from "../models/model-registry.js";
 
 const ReviewDecisionSchema = z.object({
   decision: z.enum(["accepted", "rejected", "needs_escalation"]),
   reason: z.string()
 });
+
+export interface ReviewerHandle {
+  caller: VisionJsonCaller;
+  routes: readonly ReviewerRoute[];
+}
+
+export interface ReviewerRoute {
+  provider: string;
+  model: string;
+  familyKey: string;
+}
+
+/** Returns a reason when any declared reviewer route is not independent. */
+export function validateReviewerHandle(
+  handle: ReviewerHandle,
+  auditorProvider: string,
+  auditorModel: string
+): string | undefined {
+  if (handle.routes.length === 0) return "reviewer handle declares no routes";
+  const auditorFamily = modelFamilyKey(auditorModel);
+  const prohibited = handle.routes.find(route =>
+    (route.provider === auditorProvider && route.model === auditorModel) ||
+    route.familyKey === auditorFamily
+  );
+  if (prohibited === undefined) return undefined;
+  return `declared reviewer route ${prohibited.provider}/${prohibited.model} is not independent from auditor ${auditorProvider}/${auditorModel}`;
+}
 
 export interface AuditContext {
   expectedImagePath: string;
@@ -29,7 +57,7 @@ export interface AuditContext {
   actualElements: UiElement[];
   artifactDir: string;
   auditorCaller: VisionJsonCaller;
-  reviewerCaller: VisionJsonCaller;
+  reviewerResolver: (auditProvider: string, auditorModel: string) => ReviewerHandle | null;
   expectedRgba: { data: Uint8Array; width: number; height: number };
   actualRgba: { data: Uint8Array; width: number; height: number };
   imagePairTransform?: ImagePairTransform;
@@ -331,17 +359,19 @@ export async function auditElementPair(
 
     let auditResult: z.infer<typeof AuditResultSchema>;
     let auditModel = "unknown";
+    let auditProvider = "unknown";
     const started = Date.now();
     try {
-      const response = await ctx.auditorCaller({
+      const auditResponse = await ctx.auditorCaller({
         prompt: auditorPrompt,
         images,
         jsonSchema: { name: `audit_${criterion}`, schema: rubric.jsonSchema },
         timeoutMs: 60000,
         maxOutputTokens: 8192
       });
-      auditModel = response.model;
-      auditResult = AuditResultSchema.parse(response.parsed);
+      auditModel = auditResponse.model;
+      auditProvider = auditResponse.provider;
+      auditResult = AuditResultSchema.parse(auditResponse.parsed);
     } catch (err) {
       if (err instanceof RouteExhaustedError && err.permanent) throw err;
       pushTrace(criterion, err instanceof z.ZodError ? "auditor_schema_error" : "auditor_error", {
@@ -397,77 +427,207 @@ export async function auditElementPair(
       ctx.measurements
     );
 
+    // Resolve independent reviewer based on actual auditor response.
+    const handle = ctx.reviewerResolver(auditProvider, auditModel);
+
     let reviewDecision: "accepted" | "rejected" | "needs_escalation" = "accepted";
     const reviewerStarted = Date.now();
     let reviewModel = "unknown";
+    let reviewProvider = "unknown";
     let reviewReason: string | undefined;
     let reviewerTraceStatus: AuditCriterionTrace["status"] = "reviewer_needs_escalation";
     let reviewerErrorMsg: string | undefined;
-    try {
-      const reviewResponse = await ctx.reviewerCaller({
-        prompt: reviewerPrompt,
-        images,
-        jsonSchema: {
-          name: "review_decision",
-          schema: {
-            type: "object",
-            properties: {
-              decision: { type: "string", enum: ["accepted", "rejected", "needs_escalation"] },
-              reason: { type: "string" }
-            },
-            required: ["decision", "reason"],
-            additionalProperties: false
-          }
-        },
-        timeoutMs: 30000
-      });
-      const parsed = ReviewDecisionSchema.parse(reviewResponse.parsed);
-      reviewDecision = parsed.decision;
-      reviewModel = reviewResponse.model;
-      reviewReason = parsed.reason;
-      reviewerTraceStatus = reviewDecision === "accepted" ? "reviewer_accepted"
-        : reviewDecision === "rejected" ? "reviewer_rejected"
-        : "reviewer_needs_escalation";
-    } catch (err) {
-      console.error(`Reviewer call failed for criterion ${criterion}:`, err);
+
+    if (handle === null) {
+      // No independent reviewer available — fail-closed: one record + one trace
       reviewDecision = "needs_escalation";
-      reviewerTraceStatus = "reviewer_error";
-      reviewerErrorMsg = err instanceof Error ? err.message.slice(0, 500) : String(err).slice(0, 500);
+      reviewerTraceStatus = "independent_reviewer_unavailable";
+      const reviewerDurationMs = Date.now() - reviewerStarted;
+      const escalationReason = "No independent reviewer available";
+      const record: DiffRecord = {
+        id: diffId(),
+        pairId: pair.id,
+        criterion,
+        severity: auditResult.severity ?? "medium",
+        title: auditResult.title ?? `${criterion} difference in ${refEl.label}`,
+        location: refComparisonBox,
+        evidence,
+        measurements: ctx.measurements,
+        artifactPaths: auditArtifacts,
+        reviewerStatus: "needs_escalation",
+        model: auditModel,
+        classificationSource: "vlm_reviewed",
+        reviewerReason: escalationReason
+      };
+      accepted.push(record);
+      pushTrace(criterion, reviewerTraceStatus, {
+        model: auditModel,
+        auditorProvider: auditProvider,
+        auditorDurationMs,
+        reviewerDurationMs,
+        evidenceCount: evidence.length,
+        diffId: record.id,
+        rejectionReason: "no independent reviewer route available for auditor provider/model"
+      });
+    } else {
+      const handleValidationError = validateReviewerHandle(handle, auditProvider, auditModel);
+      if (handleValidationError !== undefined) {
+      reviewDecision = "needs_escalation";
+      reviewerTraceStatus = "independent_reviewer_unavailable";
+      const reviewerDurationMs = Date.now() - reviewerStarted;
+      const escalationReason = `Reviewer route validation failed: ${handleValidationError}`;
+      const record: DiffRecord = {
+        id: diffId(),
+        pairId: pair.id,
+        criterion,
+        severity: auditResult.severity ?? "medium",
+        title: auditResult.title ?? `${criterion} difference in ${refEl.label}`,
+        location: refComparisonBox,
+        evidence,
+        measurements: ctx.measurements,
+        artifactPaths: auditArtifacts,
+        reviewerStatus: "needs_escalation",
+        model: auditModel,
+        classificationSource: "vlm_reviewed",
+        reviewerReason: escalationReason
+      };
+      accepted.push(record);
+      pushTrace(criterion, reviewerTraceStatus, {
+        model: auditModel,
+        reviewerModel: handle.routes[0]?.model,
+        auditorProvider: auditProvider,
+        reviewerProvider: handle.routes[0]?.provider,
+        auditorDurationMs,
+        reviewerDurationMs,
+        evidenceCount: evidence.length,
+        diffId: record.id,
+        rejectionReason: escalationReason
+      });
+      } else {
+      try {
+        const reviewResponse = await handle.caller({
+          prompt: reviewerPrompt,
+          images,
+          jsonSchema: {
+            name: "review_decision",
+            schema: {
+              type: "object",
+              properties: {
+                decision: { type: "string", enum: ["accepted", "rejected", "needs_escalation"] },
+                reason: { type: "string" }
+              },
+              required: ["decision", "reason"],
+              additionalProperties: false
+            }
+          },
+          timeoutMs: 30000
+        });
+        reviewModel = reviewResponse.model;
+        reviewProvider = reviewResponse.provider;
+
+        // Post-response defense: require the exact declared route and independently
+        // verify the response against the auditor route.
+        const responseFamily = modelFamilyKey(reviewModel);
+        const declaredRoute = handle.routes.find(route =>
+          route.provider === reviewProvider && route.model === reviewModel
+        );
+        const responseIndependent =
+          !(reviewProvider === auditProvider && reviewModel === auditModel) &&
+          responseFamily !== modelFamilyKey(auditModel) &&
+          declaredRoute !== undefined &&
+          responseFamily === declaredRoute.familyKey;
+        if (responseIndependent) {
+          // Trusted handle identity matches a declared independent route.
+          const parsed = ReviewDecisionSchema.parse(reviewResponse.parsed);
+          reviewDecision = parsed.decision;
+          reviewReason = parsed.reason;
+          reviewerTraceStatus = reviewDecision === "accepted" ? "reviewer_accepted"
+            : reviewDecision === "rejected" ? "reviewer_rejected"
+            : "reviewer_needs_escalation";
+        } else {
+          // Caller output is untrusted — identity mismatch with the prevalidated handle.
+          reviewDecision = "needs_escalation";
+          reviewerTraceStatus = "independent_reviewer_unavailable";
+          const reviewerDurationMs = Date.now() - reviewerStarted;
+          const escalationReason = declaredRoute === undefined
+            ? `Reviewer response identity mismatch: responded ${reviewProvider}/${reviewModel} but did not match any declared route`
+            : `Reviewer response was not independent: responded ${reviewProvider}/${reviewModel} with family ${responseFamily}, auditor is ${auditProvider}/${auditModel}`;
+          const record: DiffRecord = {
+            id: diffId(),
+            pairId: pair.id,
+            criterion,
+            severity: auditResult.severity ?? "medium",
+            title: auditResult.title ?? `${criterion} difference in ${refEl.label}`,
+            location: refComparisonBox,
+            evidence,
+            measurements: ctx.measurements,
+            artifactPaths: auditArtifacts,
+            reviewerStatus: "needs_escalation",
+            model: auditModel,
+            classificationSource: "vlm_reviewed",
+            reviewerReason: escalationReason
+          };
+          accepted.push(record);
+          pushTrace(criterion, reviewerTraceStatus, {
+            model: auditModel,
+            reviewerModel: reviewModel,
+            auditorProvider: auditProvider,
+            reviewerProvider: reviewProvider,
+            auditorDurationMs,
+            reviewerDurationMs,
+            evidenceCount: evidence.length,
+            diffId: record.id,
+            rejectionReason: escalationReason
+          });
+        }
+      } catch (err) {
+        console.error(`Reviewer call failed for criterion ${criterion}:`, err);
+        reviewDecision = "needs_escalation";
+        reviewerTraceStatus = "reviewer_error";
+        reviewerErrorMsg = err instanceof Error ? err.message.slice(0, 500) : String(err).slice(0, 500);
+        reviewReason = `Reviewer call failed: ${reviewerErrorMsg}`;
+      }
+      }
     }
     const reviewerDurationMs = Date.now() - reviewerStarted;
 
-    const record: DiffRecord = {
-      id: diffId(),
-      pairId: pair.id,
-      criterion,
-      severity: auditResult.severity ?? "medium",
-      title: auditResult.title ?? `${criterion} difference in ${refEl.label}`,
-      location: refComparisonBox,
-      evidence,
-      measurements: ctx.measurements,
-      artifactPaths: auditArtifacts,
-      reviewerStatus: reviewDecision === "needs_escalation" ? "needs_escalation" : reviewDecision,
-      model: auditModel,
-      classificationSource: "vlm_reviewed",
-      ...(reviewReason !== undefined ? { reviewerReason: reviewReason } : {})
-    };
+    // Only create a record if we didn't already push one in the no-independent or same-family path
+    if (reviewerTraceStatus !== "independent_reviewer_unavailable") {
+      const record: DiffRecord = {
+        id: diffId(),
+        pairId: pair.id,
+        criterion,
+        severity: auditResult.severity ?? "medium",
+        title: auditResult.title ?? `${criterion} difference in ${refEl.label}`,
+        location: refComparisonBox,
+        evidence,
+        measurements: ctx.measurements,
+        artifactPaths: auditArtifacts,
+        reviewerStatus: reviewDecision === "needs_escalation" ? "needs_escalation" : reviewDecision,
+        model: auditModel,
+        classificationSource: "vlm_reviewed",
+        ...(reviewReason !== undefined ? { reviewerReason: reviewReason } : {})
+      };
 
-    if (reviewDecision === "rejected") {
-      rejected.push(record);
-    } else {
-      accepted.push(record);
+      if (reviewDecision === "rejected") {
+        rejected.push(record);
+      } else {
+        accepted.push(record);
+      }
+
+      pushTrace(criterion, reviewerTraceStatus, {
+        model: auditModel,
+        reviewerModel: reviewModel,
+        auditorProvider: auditProvider,
+        reviewerProvider: reviewProvider,
+        auditorDurationMs,
+        reviewerDurationMs,
+        evidenceCount: evidence.length,
+        diffId: record.id,
+        ...(reviewReason !== undefined ? { rejectionReason: reviewReason } : {}),
+        ...(reviewerErrorMsg !== undefined ? { errorKind: "provider" as const, errorMessage: reviewerErrorMsg } : {})
+      });
     }
-
-    pushTrace(criterion, reviewerTraceStatus, {
-      model: auditModel,
-      reviewerModel: reviewModel,
-      auditorDurationMs,
-      reviewerDurationMs,
-      evidenceCount: evidence.length,
-      diffId: record.id,
-      ...(reviewReason !== undefined ? { rejectionReason: reviewReason } : {}),
-      ...(reviewerErrorMsg !== undefined ? { errorKind: "provider" as const, errorMessage: reviewerErrorMsg } : {})
-    });
   }
 
   return { accepted, rejected, trace };

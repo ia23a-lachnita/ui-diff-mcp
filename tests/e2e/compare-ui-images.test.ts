@@ -1619,6 +1619,67 @@ describe("runUiDiff auditScope.vlmAuditedPairs pipeline accounting", () => {
     expect(report.projectedPreAudit?.deterministicProjectedDiffs).toBe(0);
     expect(report.projectedPreAudit?.sentToVlmPairs).toBe(total);
   });
+
+  it("retains target-audit escalation when no independent reviewer route exists", async () => {
+    const expected = await writeRectPng(tmpDir, "no-reviewer-expected.png", 200, 400, 240, 240, 240, 20, 50, 160, 44, 0, 120, 255);
+    const actual = await writeRectPng(tmpDir, "no-reviewer-actual.png", 200, 400, 240, 240, 240, 20, 50, 160, 44, 255, 30, 30);
+    sidecar = await startMockSidecar({ imageWidth: 200, imageHeight: 400 });
+    vi.stubEnv("LOCATEANYTHING_SIDECAR_URL", sidecar.url);
+    vi.stubEnv("OPENROUTER_API_KEY", "sk-test-no-independent-reviewer");
+    vi.stubGlobal("fetch", makeMockFetch([
+      {
+        criterion: "color_appearance",
+        hasDiff: true,
+        severity: "high",
+        title: "Button color differs",
+        evidence: ["The expected button is blue while the actual button is red."],
+        reviewerDecision: "accepted"
+      }
+    ], { sidecarImageWidth: 200, sidecarImageHeight: 400 }));
+
+    const sameRoute = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free";
+    const probeOverride = async () => [
+      { role: "auditor", provider: "openrouter", model: sameRoute, status: "pass" as const, checkedAt: new Date().toISOString(), schemaValid: true, contentAccurate: true, maxImagesSupported: 5 },
+      { role: "reviewer", provider: "openrouter", model: sameRoute, status: "pass" as const, checkedAt: new Date().toISOString(), schemaValid: true, contentAccurate: true, maxImagesSupported: 5 }
+    ];
+
+    const result = await runUiDiff({
+      expectedImagePath: expected,
+      actualImagePath: actual,
+      projectRoot: tmpDir,
+      mode: "full",
+      diffScope: { kind: "target", query: "Sign in button" }
+    }, { probeOverride });
+
+    const persistedReport = JSON.parse(await fs.readFile(result.reportPath, "utf8")) as {
+      visualClassificationStatus: string;
+      auditScope?: { failedPairs?: number; selectedPairs?: number; providerCalledPairs?: number };
+      diffs: Array<{ id: string; reviewerStatus: string }>;
+      runArtifacts: Array<{ role: string; path: string }>;
+    };
+    const report = await hydrateReportParts(persistedReport as Parameters<typeof hydrateReportParts>[0], result.reportPath);
+    const auditTraceArtifact = report.runArtifacts.find(artifact => artifact.role === "audit_trace");
+    expect(auditTraceArtifact).toBeDefined();
+    const auditTrace = JSON.parse(await fs.readFile(auditTraceArtifact!.path, "utf8")) as Array<{
+      status: string;
+      diffId?: string;
+    }>;
+    const debugSummaryArtifact = report.runArtifacts.find(artifact => artifact.role === "debug_summary");
+    expect(debugSummaryArtifact).toBeDefined();
+    const debugSummary = JSON.parse(await fs.readFile(debugSummaryArtifact!.path, "utf8")) as { auditErrors: number };
+    const unavailable = auditTrace.filter(entry => entry.status === "independent_reviewer_unavailable");
+    expect(result.status).toBe("complete");
+    expect(report.visualClassificationStatus).toBe("incomplete");
+    expect(report.auditScope?.selectedPairs).toBeGreaterThan(0);
+    expect(report.auditScope?.providerCalledPairs).toBeGreaterThan(0);
+    expect(report.auditScope?.failedPairs).toBeGreaterThan(0);
+    expect(unavailable).toHaveLength(1);
+    expect(unavailable[0]?.diffId).toBeTruthy();
+    expect(debugSummary.auditErrors).toBeGreaterThan(0);
+    const escalation = report.diffs.find(diff => diff.id === unavailable[0]!.diffId);
+    expect(escalation).toBeDefined();
+    expect(escalation?.reviewerStatus).toBe("needs_escalation");
+  });
 });
 
 describe("runUiDiff viewport mismatch detection", () => {

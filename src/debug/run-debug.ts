@@ -63,15 +63,17 @@ export function summarizeRunDebug(trace: RunDebugTrace): RunDebugSummary {
   const summary: RunDebugSummary = {
     auditPairs: new Set(trace.audit.map(t => t.pairId)).size,
     auditCriterionCalls: trace.audit.filter(t => t.status !== "criterion_not_triggered").length,
-    auditAccepted: trace.audit.filter(t => t.status === "reviewer_accepted" || t.status === "reviewer_needs_escalation" || t.status === "deterministic_projected_mismatch").length,
+    auditAccepted: trace.audit.filter(t => t.status === "reviewer_accepted" || t.status === "deterministic_projected_mismatch").length,
     auditRejected: trace.audit.filter(t => t.status === "reviewer_rejected").length,
     auditNoDiff: trace.audit.filter(t => t.status === "auditor_no_diff").length,
     auditErrors: trace.audit.filter(t =>
       t.status === "auditor_error" ||
       t.status === "auditor_schema_error" ||
       t.status === "reviewer_error" ||
+      t.status === "reviewer_needs_escalation" ||
       t.status === "empty_evidence" ||
-      t.status === "comparison_non_comparable"
+      t.status === "comparison_non_comparable" ||
+      t.status === "independent_reviewer_unavailable"
     ).length,
     coverageComponents: trace.coverage.length,
     coverageCovered: trace.coverage.filter(t => t.status === "covered_by_diff").length,

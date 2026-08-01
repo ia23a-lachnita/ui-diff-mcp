@@ -10,9 +10,15 @@ import type { PixelComponent } from "../../src/signals/pixel-diff.js";
 import type { VisionJsonCaller } from "../../src/models/vision-json.js";
 import { writeSolidPng } from "../../src/testing/fixture-images.js";
 import { RecoveryComponentTraceSchema, RecoveryRegionOutcomeSchema } from "../../src/schemas/core.js";
+import type { ReviewerHandle } from "../../src/audit/audit-target.js";
+import { modelFamilyKey } from "../../src/models/model-registry.js";
 
 let tmpDir: string;
 let overlayPath: string;
+
+function makeReviewerHandle(caller: VisionJsonCaller, provider: string, model: string): ReviewerHandle {
+  return { caller, routes: [{ provider, model, familyKey: modelFamilyKey(model) }] };
+}
 
 beforeEach(async () => {
   tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "recovery-test-"));
@@ -40,7 +46,12 @@ function makeMask(width: number, height: number, value = 1): Uint8Array {
   return new Uint8Array(width * height).fill(value);
 }
 
-function makeCtx(overrides: Partial<RecoveryContext> = {}): RecoveryContext {
+type RecoveryTestOverrides = Omit<Partial<RecoveryContext>, "reviewerResolver"> & {
+  reviewerCaller?: VisionJsonCaller;
+  reviewerResolver?: RecoveryContext["reviewerResolver"];
+};
+
+function makeCtx(overrides: RecoveryTestOverrides = {}): RecoveryContext {
   const recoveryCaller: VisionJsonCaller = vi.fn().mockResolvedValue({
     parsed: { classified: false },
     rawContent: "",
@@ -53,6 +64,13 @@ function makeCtx(overrides: Partial<RecoveryContext> = {}): RecoveryContext {
     model: "test-reviewer",
     provider: "openrouter"
   });
+  const customReviewer = overrides.reviewerCaller;
+  const reviewerResolver = overrides.reviewerResolver ?? (() => makeReviewerHandle(
+    customReviewer ?? reviewerCaller,
+    "openrouter",
+    "test-reviewer"
+  ));
+  const { reviewerCaller: _reviewerCaller, reviewerResolver: _reviewerResolver, ...contextOverrides } = overrides;
   return {
     expectedRgba: makeRgba(200, 200),
     actualRgba: makeRgba(200, 200),
@@ -60,8 +78,8 @@ function makeCtx(overrides: Partial<RecoveryContext> = {}): RecoveryContext {
     directionalOverlayPath: overlayPath,
     artifactDir: tmpDir,
     recoveryCaller,
-    reviewerCaller,
-    ...overrides
+    reviewerResolver,
+    ...contextOverrides
   };
 }
 
@@ -71,6 +89,38 @@ const component: PixelComponent = {
 };
 
 describe("runTargetRecovery", () => {
+  it("requires a resolver and has no static reviewer field in RecoveryContext", () => {
+    const completeContext = makeCtx();
+    const { reviewerResolver: _resolver, ...withoutResolver } = completeContext;
+    // @ts-expect-error RecoveryContext requires reviewerResolver.
+    const omittedResolver: RecoveryContext = withoutResolver;
+    // @ts-expect-error RecoveryContext does not accept reviewerCaller as a static fallback.
+    const staticReviewer: RecoveryContext = { ...completeContext, reviewerCaller: vi.fn() };
+    void omittedResolver;
+    void staticReviewer;
+  });
+
+  it("fails closed when the required reviewer resolver returns null without calling a reviewer", async () => {
+    const recoveryCaller: VisionJsonCaller = vi.fn().mockResolvedValue({
+      parsed: { classified: true, criterion: "geometry", severity: "medium", label: "Button", evidence: ["shifted"] },
+      rawContent: "",
+      model: "recovery-model",
+      provider: "mistral"
+    });
+    const reviewerCaller: VisionJsonCaller = vi.fn();
+    const result = await runTargetRecovery([component], makeCtx({
+      recoveryCaller,
+      reviewerCaller,
+      reviewerResolver: () => null
+    }), unlimitedBudget);
+
+    expect(reviewerCaller).not.toHaveBeenCalled();
+    expect(result.statusCounts["independent_reviewer_unavailable"]).toBe(1);
+    expect(result.trace).toEqual(expect.arrayContaining([
+      expect.objectContaining({ status: "independent_reviewer_unavailable", provider: "mistral" })
+    ]));
+  });
+
   it("retains an unresolved reason and skips model input for invalid recovery crops", async () => {
     const recoveryCaller: VisionJsonCaller = vi.fn();
     const invalidComponent: PixelComponent = { box: { x: 250, y: 10, width: 80, height: 60 }, pixelCount: 500 };
@@ -462,7 +512,15 @@ describe("runTargetRecovery", () => {
       reviewerCaller: vi.fn().mockResolvedValue({
         parsed: { decision: "rejected", reason: "not supported" },
         rawContent: "", model: "review-model", provider: "nvidia"
-      })
+      }),
+      reviewerResolver: (provider, model) => makeReviewerHandle(
+        vi.fn().mockResolvedValue({
+          parsed: { decision: "rejected", reason: "not supported" },
+          rawContent: "", model: "review-model", provider: "nvidia"
+        }),
+        "nvidia",
+        "review-model"
+      )
     }), unlimitedBudget);
     expect(result.trace[0]).toMatchObject({
       status: "recovery_rejected",
@@ -537,7 +595,15 @@ describe("runTargetRecovery", () => {
       reviewerCaller: vi.fn().mockResolvedValue({
         parsed: { decision: "accepted", reason: "confirmed" },
         rawContent: "", model: "review-model", provider: "nvidia"
-      })
+      }),
+      reviewerResolver: (provider, model) => makeReviewerHandle(
+        vi.fn().mockResolvedValue({
+          parsed: { decision: "accepted", reason: "confirmed" },
+          rawContent: "", model: "review-model", provider: "nvidia"
+        }),
+        "nvidia",
+        "review-model"
+      )
     }), unlimitedBudget);
     expect(result.trace[0]).toMatchObject({ status: "recovery_accepted", criterion: "geometry" });
     expect(result.trace[0]?.diffId).toBeTruthy();
@@ -684,7 +750,11 @@ describe("runTargetRecovery", () => {
     const reviewerCaller: VisionJsonCaller = vi.fn()
       .mockResolvedValue({ parsed: { decision: "accepted", reason: "ok" }, rawContent: "", model: "r1", provider: "p1" });
 
-    const result = await runTargetRecovery(components, makeCtx({ recoveryCaller, reviewerCaller }), unlimitedBudget);
+    const result = await runTargetRecovery(components, makeCtx({
+      recoveryCaller,
+      reviewerCaller,
+      reviewerResolver: () => makeReviewerHandle(reviewerCaller, "p1", "r1")
+    }), unlimitedBudget);
 
     expect(result.recovered).toHaveLength(2);
     expect(result.eligibleComponents).toBe(2);

@@ -39,7 +39,9 @@ export function auditTraceHasFailure(
     "auditor_schema_error",
     "empty_evidence",
     "reviewer_error",
-    "comparison_non_comparable"
+    "reviewer_needs_escalation",
+    "comparison_non_comparable",
+    "independent_reviewer_unavailable"
   ].includes(entry.status));
 }
 

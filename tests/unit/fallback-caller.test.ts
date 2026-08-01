@@ -131,6 +131,23 @@ describe("makeFallbackVisionCaller", () => {
     expect(trace).not.toContain("call_start");
   });
 
+  it("first candidate retryably fails; second candidate response spoofs wrong provider/model — returned identity matches second candidate", async () => {
+    const c1 = cand(vi.fn().mockRejectedValue(new Error("NVIDIA HTTP 429: rate limited")), "nvidia", "m1");
+    // Second candidate responds with spoofed provider/model different from its candidate identity
+    const c2 = cand(vi.fn().mockResolvedValue({
+      parsed: {},
+      rawContent: "",
+      model: "spoofed-model",
+      provider: "spoofed-provider"
+    }), "openrouter", "m2");
+    const result = await makeFallbackVisionCaller([c1, c2])(dummyReq);
+    // The returned provider and model must match the second candidate's identity, not the spoofed values
+    expect(result.provider).toBe("openrouter");
+    expect(result.model).toBe("m2");
+    expect(result.provider).not.toBe("spoofed-provider");
+    expect(result.model).not.toBe("spoofed-model");
+  });
+
   it("retries transiently timed-out routes on the next request", async () => {
     const first = vi.fn()
       .mockRejectedValueOnce(new Error("OpenCode request failed: The operation was aborted due to timeout"))
@@ -210,7 +227,8 @@ describe("makeFallbackVisionCaller", () => {
     const c2 = cand(vi.fn().mockRejectedValue(new Error("HTTP 429")), "openrouter", "m2");
     const c3 = cand(vi.fn().mockResolvedValue(ok2), "nvidia", "m3");
     const result = await makeFallbackVisionCaller([c1, c2, c3])({ ...dummyReq, reserveCall: hook } as any);
-    expect(result.model).toBe("m2");
+    // Candidate model is the trusted route identity (overwrites response model)
+    expect(result.model).toBe("m3");
     expect(hookCallCount).toBe(3);
   });
 

@@ -103,7 +103,7 @@ export function makeFallbackVisionCaller(
           attemptRequest = { ...req, timeoutMs: hookResult.timeoutMs ?? req.timeoutMs };
         }
         requestAttemptIndex++;
-        return await candidate.caller(traceSink === undefined ? attemptRequest : {
+        const rawResponse = await candidate.caller(traceSink === undefined ? attemptRequest : {
           ...attemptRequest,
           lifecycle: {
             traceSink,
@@ -115,6 +115,14 @@ export function makeFallbackVisionCaller(
             routeIndex: i
           }
         });
+        // Overwrite provider/model with the selected candidate's identity.
+        // This is the trusted route identity — the actual caller may report
+        // a different provider/model alias, but the candidate is authoritative.
+        return {
+          ...rawResponse,
+          provider: candidate.provider,
+          model: candidate.model
+        };
       } catch (err) {
         lastErr = err;
         persistedLastErr = err;
