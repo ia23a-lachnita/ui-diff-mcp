@@ -82,9 +82,10 @@ When a blocker is detected, scripts must print a clear message identifying the e
 - Modify: `docs/implementation-status.md` (Pi migration becomes current bounded prerequisite; Task 8 resumes after)
 - Create: `scripts/lib/android-env-common.sh` shared helpers for path detection, loopback bind checks, and failure formatting
 - Create: `scripts/lib/package-bin-policy.mjs` executable Node ESM module exporting `checkPackageBinPolicy` and `isPackageBinPolicyOk`; used by `scripts/verify-package-bin-lock.sh` (bash fetcher) and `tests/unit/package-bin-lock.test.ts` (Vitest)
-- Create: `scripts/lib/calorix-actions-apk-policy.mjs` executable Node ESM module exporting the APK provenance decision (`decideCalorixActionsApkFetch`) and CLI JSON interface; invoked by `scripts/fetch-calorix-actions-apk.sh` and imported by Vitest
+- Create: `scripts/lib/calorix-actions-apk-policy.mjs` executable Node ESM module exporting the APK provenance decision (`decideCalorixActionsApkFetch`); invoked by the fetcher and imported by Vitest
 - Create: `scripts/install-android-platform-tools.sh`
 - Create: `scripts/check-adb.sh`
+- Create: `tests/contract/android-env.test.sh` shell contract tests for android-env-common, install-android-platform-tools, and check-adb scripts (63 tests across 12 groups)
 - Create: `scripts/start-redroid.sh`
 - Create: `scripts/stop-redroid.sh`
 - Create: `scripts/reset-redroid.sh`
@@ -133,6 +134,8 @@ When a blocker is detected, scripts must print a clear message identifying the e
 #   UI_DIFF_REDROID_ADB_PORT=5555
 #   UI_DIFF_REDROID_DATA_DIR=${XDG_STATE_HOME:-$HOME/.local/state}/ui-diff-mcp/redroid-data
 # Functions:
+#   try_resolve_adb_bin                     # nonfatal: same resolution rules, returns 1 (no exit) when unusable
+#   resolve_adb_bin                         # fatal wrapper over try_resolve_adb_bin; if UI_DIFF_ADB_BIN set, require exact path usable, no PATH fallback; else command -v adb; exports ADB_BIN + ADB_VERSION; exits with remediation on failure
 #   require_cmd <name>
 #   assert_loopback_publish <publish_spec>   # accepts only 127.0.0.1:5555:5555
 #   fail <message>                          # stderr + non-zero exit
@@ -609,7 +612,7 @@ No response body, no repository mutation, no green review claimed.
 - Produces: `check-adb.sh` that verifies binary presence/version and optional ReDroid visibility.
 - Produces: shared loopback-publish assertion used by ReDroid scripts.
 
-- [ ] **Step 1: Write failing shell contract checks**
+- [x] **Step 1: Write failing shell contract checks**
 
 Create a focused manual/scripted checklist encoded as comments and executable asserts inside the scripts' `--self-test` or a small `scripts/check-android-env-contract.sh` that fails when:
 
@@ -619,7 +622,11 @@ Create a focused manual/scripted checklist encoded as comments and executable as
 
 Prefer pure bash assertions over network.
 
-- [ ] **Step 2: Run RED for missing helpers**
+**Actual:** Created `tests/contract/android-env.test.sh` with 41 contract tests across 10 groups covering loopback publish, missing-adb check-only, usable-adb no-op, devices output, --expect-redroid pass/fail, cwd independence, fake adb/apt via PATH, no public publish string, script structure, and ReDroid defaults. Contract test file added to plan file map.
+
+**Step 1 correction (2026-08-08):** The original 41-test suite used two separate `mktemp -d` temp dirs (the first leaked past the trap, which only cleaned the second), and its one no-override PATH-resolution test still set `UI_DIFF_ADB_BIN` (an override), so it never genuinely exercised PATH-only resolution or proved the installer's no-override/missing-adb privilege-check branch was reachable — the two assertions that should have caught the Step-4 unreachable-install-path bug (`install mentions root requirement`, `install uses resolved binary`) were themselves wrong/vacuous and were among the only 2 failures out of 49 actually-executed tests. Rewritten to: one shared temp dir; a `_path_without_adb` PATH fixture that keeps real shell utilities but filters out any directory containing a host `adb`, used for genuine no-override PATH-resolution and installer no-op tests; a genuine no-override/no-PATH-adb/non-root/no-sudo test proving the installer reaches and fails in the apt-get/privilege branch specifically (not the earlier override-fail-closed path); an invalid-explicit-override test proving apt-get is never invoked (file-based call log, not stdout grep); and an installer-with-override assertion on the exact resolved path/version rather than `adb devices` output (the installer never calls `adb devices`; that is `check-adb.sh`'s responsibility). Now 63 tests across 12 groups.
+
+- [x] **Step 2: Run RED for missing helpers**
 
 Run:
 
@@ -630,7 +637,9 @@ bash scripts/check-adb.sh
 
 Expected before implementation: missing script or missing adb failure with a clear remediation message.
 
-- [ ] **Step 3: Implement common helpers**
+**Actual RED:** `tests/contract/android-env.test.sh` — 41 run, 14 passed, 27 failed. All failures expected: scripts not yet implemented.
+
+- [x] **Step 3: Implement common helpers**
 
 `scripts/lib/android-env-common.sh` must:
 
@@ -638,7 +647,9 @@ Expected before implementation: missing script or missing adb failure with a cle
 - implement `require_cmd`, `assert_loopback_publish`, and `fail`
 - reject any publish spec that is not exactly `127.0.0.1:5555:5555` or an equivalent explicit loopback form documented in the script header
 
-- [ ] **Step 4: Implement installer and checker**
+**Actual:** Implemented with `set -euo pipefail`, REPO_ROOT resolution from BASH_SOURCE, all ReDroid defaults pinned, `fail` (stderr + exit 1), `require_cmd`, and `assert_loopback_publish` (accepts only exactly `127.0.0.1:5555:5555`).
+
+- [x] **Step 4: Implement installer and checker**
 
 `scripts/install-android-platform-tools.sh`:
 
@@ -655,7 +666,11 @@ Expected before implementation: missing script or missing adb failure with a cle
 - with `--expect-redroid`, require a device on `127.0.0.1:5555` or the connected emulator serial used by start-redroid
 - never attempt to bind or rebind ADB to a public interface
 
-- [ ] **Step 5: Run GREEN on the Pi host**
+**Actual:** `install-android-platform-tools.sh` --check-only exits 0 with version or exits 1 with remediation. Real install: Debian/Ubuntu via apt-get, root or noninteractive sudo required, no-op if adb usable (reports udev state), never curls platform-tools. `check-adb.sh` prints version and devices, --expect-redroid requires `127.0.0.1:5555\tdevice` line.
+
+**Step 4 correction (2026-08-08, unreachable-install-path bug):** Root cause: `resolve_adb_bin` was fatal and was called unconditionally at the top of the installer before any install logic; when adb was absent it exited the whole process immediately, so the apt-get install branch (already unreachable a second time behind an earlier stray `exit 0`) could never run. Fix: `android-env-common.sh` now exports `try_resolve_adb_bin` (nonfatal — returns 1, no output, no exit; same override/PATH resolution rules, same fail-closed/no-PATH-fallback behavior for an explicit `UI_DIFF_ADB_BIN`) plus `resolve_adb_bin` as a thin fatal wrapper around it. The version-string match also stopped piping `adb version` output through `head -1 | grep -qi` under `set -o pipefail`, since a `grep -q` reader that exits early can SIGPIPE the upstream writer and make pipefail report failure even when the pattern matched; it now uses parameter-expansion first-line extraction plus a `case` glob match instead. `install-android-platform-tools.sh` was restructured: `--check-only` or any explicit `UI_DIFF_ADB_BIN` override now call fatal `resolve_adb_bin` and never attempt install; with no override, a nonfatal `try_resolve_adb_bin` decides between the already-usable no-op path and the apt-get install path (root/noninteractive-sudo check → `apt-get update`/`install` → fatal `resolve_adb_bin` verification), and the previously-dead code after the old inline `exit 0` was removed. RED (this correction): `timeout 60 bash tests/contract/android-env.test.sh` — with the pre-fix scripts, the rewritten contract suite (see Step 1 update) failed 3 of the 3 new no-override/missing-PATH-adb privilege-branch assertions (installer exited 0 immediately via the fatal top-of-script `resolve_adb_bin` "adb not on PATH" message instead of reaching the apt-get attempt/root remediation). GREEN: `timeout 60 bash tests/contract/android-env.test.sh` — 63 run, 63 passed, 0 failed. `bash -n` syntax check PASS for `scripts/lib/android-env-common.sh`, `scripts/install-android-platform-tools.sh`, `scripts/check-adb.sh`, and `tests/contract/android-env.test.sh`. `git diff --check` PASS (no whitespace errors). `check-adb.sh` was not modified (it already only ever needs a usable adb and has no install branch). Full `npm run verify` and live gates were not run for this bounded shell-only correction; no production-readiness claim.
+
+- [ ] **Step 5: Run GREEN on the Pi host** (partial/blocked)
 
 Run:
 
@@ -667,6 +682,12 @@ bash scripts/install-android-platform-tools.sh
 ```
 
 Expected: first install succeeds or no-ops correctly; second install is idempotent; check passes binary presence even if no device is connected yet.
+
+**Actual (2026-08-08):** `--check-only` correctly exits 1 with exact remediation message (`adb is not installed or not usable. Install with: sudo apt-get install adb android-sdk-platform-tools-common`). This host lacks adb and root/noninteractive sudo — expected environment blocker, not test failure. Contract tests GREEN 41/41 with fake adb. Syntax checks PASS. `git diff --check` PASS.
+
+**Actual (2026-08-08, post-correction):** Re-ran on this host after the Step 4 unreachable-install-path fix and the Step 1 test-suite correction: `bash scripts/install-android-platform-tools.sh --check-only` still exits 1 with the same remediation message (no adb on PATH); a genuine no-override, no-fake-adb, no-root, no-working-sudo run of `bash scripts/install-android-platform-tools.sh` (no `UI_DIFF_ADB_BIN` set) now correctly reaches and prints `adb not found on PATH; installing via apt-get...` before failing closed on the root/noninteractive-sudo requirement, proving the previously-unreachable branch is reachable. Still blocked on this host by the same environment prerequisite (no root/noninteractive sudo, no real network apt-get run) — environment blocker, not a code/test failure. Contract suite GREEN 63/63 (`timeout 60 bash tests/contract/android-env.test.sh`). Syntax checks PASS for all 3 scripts plus the test file. `git diff --check` PASS. Full `npm run verify` and live gates were not run for this bounded correction; no production-readiness claim.
+
+**Host re-verification (2026-08-08):** Host reran the syntax and shell contract checks — 63/63 PASS. Real Pi `--check-only` run exited 1 with the adb-missing remediation. Real Pi normal no-override run reached `adb not found on PATH; installing via apt-get...` then exited 1 on the root/noninteractive-sudo requirement before `apt-get` ran, confirming the apt-get branch is reachable and still fails closed without root. Full `PATH=/home/agent-runner/projects/.venvs/ui-diff-mcp-locateanything/bin:/home/agent-runner/.local/bin:/home/agent-runner/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/games:/usr/games npm run verify` PASS: typecheck clean; 74 files / 1,389 TypeScript tests; 25 Python sidecar tests; build clean; 3 integration files / 22 tests. `git diff --check` PASS. Post-implementation Antigravity MCP review attempts on 2026-08-08 all failed before a review body because the wrapper passed an empty `--effort`: Gemini 3.6 Flash (low/medium/high available), Gemini 3.1 Pro (low/high available), Gemini 3.5 Flash (low/medium/high available); no response body, no repository mutation, no green review. The Step 4 unreachable-install-path fix was implemented by Claude Sonnet as the final available delegated editing fallback after the recorded MiMo/DeepSeek/Fable failures (see `docs/implementation-status.md`); the host reviewed and verified it. The real adb install smoke on this Pi host is still not complete — Step 5 remains partial/blocked. Step 6 (host commit/push checkpoint) remains pending; no production-readiness claim.
 
 - [ ] **Step 6: Host checkpoint**
 
