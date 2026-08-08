@@ -284,7 +284,7 @@ Expected: all PASS (line-ending warnings only are acceptable for `--check`).
 
 **Full verify result (2026-08-08):** First plain `npm run verify` passed 73 files / 1,296 TS tests; `test:sidecar` failed because system Python lacked fastapi. Host created uncommitted external venv `/home/agent-runner/projects/.venvs/ui-diff-mcp-locateanything` using Python 3.11 with parser-only deps (fastapi, pillow, numpy, opencv-python-headless). With `PATH` prepend: `npm run test:sidecar` passed 25 tests; `npm run verify` passed all stages: typecheck clean; 73 files / 1,296 TypeScript tests; 25 Python parser tests; build clean; 3 integration files / 22 tests; `git diff --check` clean. Parser-only venv; no full LocateAnything model environment or production readiness claimed.
 
-- [ ] **Step 8: Host commit and push checkpoint**
+- [x] **Step 8: Host commit and push checkpoint**
 
 Host only:
 
@@ -295,6 +295,8 @@ git push origin HEAD
 ```
 
 Workers stop before this step.
+
+**Implemented:** Implementation commit `536c4f0` pushed to `origin/master`.
 
 ---
 
