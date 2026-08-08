@@ -175,6 +175,9 @@ scripts/verify-package-bin-lock.sh
 - Create: `scripts/verify-package-bin-lock.sh`
 - Create: `tests/unit/package-bin-lock.test.ts`
 - Modify: `package-lock.json` only if still needed to keep root bin `dist/src/index.js`
+- Modify (migration prerequisite): `tests/helpers/calorix-device.ts` — cross-platform `DEFAULT_CALORIX_PROJECT_ROOT`
+- Modify (migration prerequisite): `tests/e2e/compare-ui-images.test.ts` — replace hardcoded Windows literal
+- Modify (migration prerequisite): `tests/unit/calorix-device.test.ts` — add sibling-path assertion
 
 **Interfaces:**
 - Produces: executable Node ESM helper `checkPackageBinPolicy(pkgPath, lockPath)` in `scripts/lib/package-bin-policy.mjs` returning `{ ok, pkg, lock, error? }`.
@@ -182,7 +185,7 @@ scripts/verify-package-bin-lock.sh
 - Produces: status text stating Pi migration is the current bounded prerequisite and Task 8 structural source-facts resumes after migration.
 - Preserves: intentional pre-existing lock bin correction at HEAD working tree.
 
-- [ ] **Step 1: Write the failing package-bin lock test**
+- [x] **Step 1: Write the failing package-bin lock test**
 
 Add `tests/unit/package-bin-lock.test.ts` that imports `checkPackageBinPolicy` from `../../scripts/lib/package-bin-policy.mjs` and asserts:
 
@@ -198,7 +201,7 @@ expect(result.lock).not.toBe("dist/index.js");
 
 Also add `scripts/verify-package-bin-lock.sh` that calls `node --input-type=module` to import the ESM helper and exits non-zero if the result is not ok.
 
-- [ ] **Step 2: Run focused RED for missing ESM helper**
+- [x] **Step 2: Run focused RED for missing ESM helper**
 
 Run:
 
@@ -209,7 +212,9 @@ bash scripts/verify-package-bin-lock.sh
 
 Expected before implementation: fail because `package-bin-policy.mjs` does not exist or import fails.
 
-- [ ] **Step 3: Implement the ESM policy helper**
+**Actual RED:** `npx vitest run tests/unit/package-bin-lock.test.ts` — `1` failed test file, `0` tests executed, `Cannot find module '../../scripts/lib/package-bin-policy.mjs'`. Bash guard not run (module missing).
+
+- [x] **Step 3: Implement the ESM policy helper**
 
 Create `scripts/lib/package-bin-policy.mjs`:
 
@@ -224,7 +229,7 @@ export function checkPackageBinPolicy(pkgPath, lockPath) {
 
 Make executable: `chmod +x scripts/lib/package-bin-policy.mjs`.
 
-- [ ] **Step 4: Run focused GREEN**
+- [x] **Step 4: Run focused GREEN**
 
 Run:
 
@@ -235,7 +240,9 @@ bash scripts/verify-package-bin-lock.sh
 
 Expected: PASS with the intentional working-tree correction already present; test guards against future reversion.
 
-- [ ] **Step 5: Ensure the intentional lock bin correction is present**
+**Actual GREEN:** Vitest `1` file passed, `4` tests passed. Bash guard `PASS: package-bin policy check OK`.
+
+- [x] **Step 5: Ensure the intentional lock bin correction is present**
 
 Confirm `package-lock.json` root package bin is exactly:
 
@@ -247,28 +254,35 @@ Confirm `package-lock.json` root package bin is exactly:
 
 Do not run a blind `npm install` that reverts it. If a later dependency change rewrites the lock, re-apply only the root bin path and re-run the focused test.
 
-- [ ] **Step 6: Update status for the scope split**
+**Confirmed:** `package-lock.json` root bin is `"dist/src/index.js"` matching `package.json` `"./dist/src/index.js"`.
+
+- [x] **Step 6: Update status for the scope split**
 
 In `docs/implementation-status.md` set:
 
 - Current task: Raspberry Pi development environment migration (bounded prerequisite)
-- Actual HEAD: `782119e`
+- Actual HEAD: `8ca68dd`
 - Pre-existing intentional package-lock bin synchronization: `dist/src/index.js`
 - Task 8 structural source-facts resumes after migration
 - No production-readiness claim
 
-- [ ] **Step 7: Focused green and repository verify**
+- [x] **Step 7: Focused green and repository verify**
 
 Run:
 
 ```bash
 npx vitest run tests/unit/package-bin-lock.test.ts
+npx vitest run tests/unit/calorix-device.test.ts tests/e2e/compare-ui-images.test.ts
 bash scripts/verify-package-bin-lock.sh
 npm run verify
 git diff --check
 ```
 
 Expected: all PASS (line-ending warnings only are acceptable for `--check`).
+
+**Migration prerequisite correction (2026-08-08):** `DEFAULT_CALORIX_PROJECT_ROOT` was hardcoded to `C:/Users/xursc/projects/calorix` and failed on Linux. Fixed by deriving it via `import.meta.url` + `fileURLToPath` + `path.resolve` to find the sibling `../calorix` checkout. E2E test `copyFile` Windows literal replaced with imported constants. Sibling-path assertion added. Focused `2` files `62` tests GREEN; typecheck PASS; git diff --check PASS.
+
+**Full verify result (2026-08-08):** First plain `npm run verify` passed 73 files / 1,296 TS tests; `test:sidecar` failed because system Python lacked fastapi. Host created uncommitted external venv `/home/agent-runner/projects/.venvs/ui-diff-mcp-locateanything` using Python 3.11 with parser-only deps (fastapi, pillow, numpy, opencv-python-headless). With `PATH` prepend: `npm run test:sidecar` passed 25 tests; `npm run verify` passed all stages: typecheck clean; 73 files / 1,296 TypeScript tests; 25 Python parser tests; build clean; 3 integration files / 22 tests; `git diff --check` clean. Parser-only venv; no full LocateAnything model environment or production readiness claimed.
 
 - [ ] **Step 8: Host commit and push checkpoint**
 
@@ -988,7 +1002,7 @@ No external green pre-review is claimed for this drafting stage. Implementation 
 
 | Stage | Focused command | Repository gate | Host/live |
 |---|---|---|---|
-| Task 1 | `npx vitest run tests/unit/package-bin-lock.test.ts` + `bash scripts/verify-package-bin-lock.sh` | `npm run verify` | none |
+| Task 1 | `npx vitest run tests/unit/package-bin-lock.test.ts` + `bash scripts/verify-package-bin-lock.sh` + cross-platform `DEFAULT_CALORIX_PROJECT_ROOT` (import.meta.url derivation) + E2E Windows-literal replacement + sibling-path assertion | `npm run verify` PASS: typecheck clean; 73 files / 1,296 TS tests; 25 Python parser tests (sidecar); build clean; 3 integration files / 22 tests; `git diff --check` clean | parser-only venv; no full LocateAnything model env |
 | Task 2 | `npx vitest run tests/unit/calorix-actions-apk-policy.test.ts` | `npm run verify` | none |
 | Task 3 | `bash scripts/install-android-platform-tools.sh --check-only` + `bash scripts/check-adb.sh` | `npm run verify` | Pi package install |
 | Task 4 | `bash scripts/start-redroid.sh` + `bash scripts/check-adb.sh --expect-redroid` | `npm run verify` | Docker/ReDroid smoke |

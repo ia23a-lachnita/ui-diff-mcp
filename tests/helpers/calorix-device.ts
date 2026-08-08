@@ -4,13 +4,16 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
+import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 import { captureMobileScreen, type CaptureResult } from "../../src/capture/mobile-capture.js";
 import type { InputProvenanceRequest } from "../../src/schemas/core.js";
 
 const execFileAsync = promisify(execFile);
 
-export const DEFAULT_CALORIX_PROJECT_ROOT = "C:/Users/xursc/projects/calorix";
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const UI_DIFF_PROJECT_ROOT = path.resolve(__dirname, "..", "..");
+export const DEFAULT_CALORIX_PROJECT_ROOT = path.resolve(UI_DIFF_PROJECT_ROOT, "..", "calorix");
 export const DEFAULT_CALORIX_EXPECTED_IMAGE = "docs/design-handoff/placeholder-app/reference-images/today--dark.png";
 export const CALORIX_REFERENCE_IMAGES_MANIFEST = "docs/design-handoff/placeholder-app/reference-images-manifest.json";
 export const CANONICAL_CALORIX_TODAY_DARK_SHA256 = "73ba85f25489c8d45beab57dd1b317138870ce8360fe0f4399ab0737a5e505f1";

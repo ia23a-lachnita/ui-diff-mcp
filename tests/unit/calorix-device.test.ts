@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -90,6 +91,11 @@ describe("calorix-device helpers", () => {
     const root = await makeProject();
 
     expect(getCalorixExpectedImagePath(root)).toBe(path.join(root, "docs/design-handoff/placeholder-app/reference-images/today--dark.png"));
+  });
+
+  it("derives DEFAULT_CALORIX_PROJECT_ROOT as an absolute sibling calorix checkout", () => {
+    const expected = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "calorix");
+    expect(DEFAULT_CALORIX_PROJECT_ROOT).toBe(expected);
   });
 
   it("validates the restored Calorix canonical expected reference against its manifest", async () => {

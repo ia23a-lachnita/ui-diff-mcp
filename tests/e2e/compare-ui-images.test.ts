@@ -11,6 +11,7 @@ import { buildUsageSummaryFromLedger } from "../../src/debug/usage-summary.js";
 import { writeTwoButtonFixture, writeSolidPng, writeRectPng } from "../../src/testing/fixture-images.js";
 import { startMockSidecar } from "../fixtures/mock-sidecar.js";
 import { makeMockFetch } from "../fixtures/mock-models.js";
+import { DEFAULT_CALORIX_PROJECT_ROOT, DEFAULT_CALORIX_EXPECTED_IMAGE } from "../helpers/calorix-device.js";
 import type { MockSidecar } from "../fixtures/mock-sidecar.js";
 import type { DiffRecord, ScopeDiffSummary } from "../../src/schemas/core.js";
 
@@ -275,7 +276,7 @@ describe("runUiDiff end-to-end (deterministic_only mode)", () => {
 
   it("verifies a canonical manifest entry against the computed expected bytes", async () => {
     const expected = path.join(tmpDir, "today--dark.png");
-    await fs.copyFile("C:/Users/xursc/projects/calorix/docs/design-handoff/placeholder-app/reference-images/today--dark.png", expected);
+    await fs.copyFile(path.join(DEFAULT_CALORIX_PROJECT_ROOT, DEFAULT_CALORIX_EXPECTED_IMAGE), expected);
     const actual = await writeSolidPng(tmpDir, "manifest-actual.png", 402, 874, 30, 40, 50);
     const manifestPath = path.join(tmpDir, "reference-images-manifest.json");
     await fs.writeFile(manifestPath, JSON.stringify({
