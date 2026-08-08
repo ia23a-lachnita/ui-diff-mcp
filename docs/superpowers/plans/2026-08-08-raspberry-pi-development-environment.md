@@ -1102,9 +1102,14 @@ Update `docs/implementation-status.md` so that after migration completion:
 - Live/readiness checkboxes remain unchecked until Task 8 and fresh gates complete
 - No production-readiness claim
 
-- [ ] **Step 6: Host final commit and push**
+- [x] **Step 6: Host final commit and push**
 
 Host commit message: `Complete Pi development environment setup docs and scripts`
+
+**Checkpoint:** documentation, verification, and handoff committed and pushed at
+`33f1f67`. Host bootstrap remains partial/blocked as recorded in Step 4; Task 8
+can resume for platform-independent implementation without claiming live Android
+or production readiness.
 
 Then resume Task 8 structural source-facts implementation under the structural plan, not this plan.
 
