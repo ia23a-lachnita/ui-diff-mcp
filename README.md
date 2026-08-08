@@ -111,6 +111,22 @@ For Calorix release evidence, do not set `UI_DIFF_LIVE_ACTUAL_IMAGE` by default.
 
 ReDroid evidence is valid for platform-independent UI, layout, state, and navigation assertions. Phone-only properties remain phone-gated, including OEM rendering, physical-camera behavior, device-specific insets, and device-specific performance. The absence of a physical phone does not globally block production validation when ReDroid covers the property being asserted.
 
+### Verified Calorix Actions APKs
+
+Calorix's GitHub Actions workflow [`.github/workflows/android-build.yml`](../calorix/.github/workflows/android-build.yml) is named `Build Android APK`. A successful run publishes an artifact named `android-apk-<commit-sha>` containing the versioned release APK (`calorix-<version>-android-release.apk`) and its matching `.sha256` file.
+
+Use the fetcher only for a committed source revision whose cleanliness has already been established by the caller:
+
+```bash
+bash scripts/fetch-calorix-actions-apk.sh \
+  --repo ia23a-lachnita/calorix \
+  --source-sha 1f538641f5e5f5c4a48c95cdfb97462838187106 \
+  --source-clean \
+  --output "$HOME/Downloads/calorix-release.apk"
+```
+
+`--source-clean` is an affirmative trust-boundary attestation. The script intentionally does not inspect any local Calorix checkout, so an omitted clean proof or `--source-dirty` rejects with `uncommitted_source`. This prevents the known dirty local `.mcp.json` from being mistaken for clean, current APK evidence. The script queries only the exact successful `Build Android APK` run for the requested SHA, downloads the named artifact from its immutable numeric run ID, accepts exactly the APK plus same-basename checksum, verifies the SHA-256, then atomically writes the APK and an adjacent `.verified.json` provenance record. It never overwrites an existing output or verification record.
+
 Calorix live gates validate the canonical default expected reference before any device or pipeline work: `C:\Users\xursc\projects\calorix\docs\design-handoff\placeholder-app\reference-images\today--dark.png`, its adjacent `reference-images-manifest.json`, and SHA-256 `73BA85F25489C8D45BEAB57DD1B317138870CE8360FE0F4399AB0737A5E505F1`. An explicit `UI_DIFF_LIVE_EXPECTED_IMAGE` remains supported, but must be readable; `reference-images-buggy` and `good-screenshots` are never fallback sources.
 
 Calorix reports persist a report-safe `inputProvenance` record whose expected and actual SHA-256 identities are computed from the exact image bytes by the pipeline. A manifest entry is included only after the pipeline verifies that its recorded hash matches the expected image bytes. Acquisition sources such as `auto_capture` and `env_override` are stored separately with `verification:"caller_attested"`; they are not presented as independently verified facts. Public MCP requests cannot supply computed hashes. On resume, omitted provenance inherits the stored effective record; an explicit replacement is accepted only when the recomputed expected and actual image identities match the resumed report.

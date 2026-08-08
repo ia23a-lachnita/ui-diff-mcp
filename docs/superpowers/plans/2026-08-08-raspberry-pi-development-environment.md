@@ -797,7 +797,7 @@ Host commit message: `Add ReDroid lifecycle scripts with loopback-only ADB`
 - Produces: optional APK download path that is current evidence only after source-SHA equality and checksum verification.
 - Rejects: dirty requested source, workflow SHA mismatch, checksum mismatch.
 
-- [ ] **Step 1: Write failing CLI contract cases**
+- [x] **Step 1: Write failing CLI contract cases**
 
 Using a temporary fixture directory, assert the script exits non-zero when:
 
@@ -808,7 +808,9 @@ Using a temporary fixture directory, assert the script exits non-zero when:
 
 No real GitHub network is required for these fixture cases. Networked success path is a separate optional live check.
 
-- [ ] **Step 2: Implement the fetch script**
+**Actual RED (2026-08-08):** before the script existed, `timeout 60s bash tests/contract/calorix-actions-apk-fetch.test.sh` produced `2 run, 2 passed, 0 failed`: the expected command-not-found exit (`127`) and no output-file side effect. The suite then became the deterministic GREEN harness; it fakes `gh` through `PATH` and performs no network I/O.
+
+- [x] **Step 2: Implement the fetch script**
 
 Required flow:
 
@@ -834,13 +836,27 @@ Required flow:
 
 Never label an unverified file as current evidence.
 
-- [ ] **Step 3: Fixture GREEN**
+**Implemented:** `scripts/fetch-calorix-actions-apk.sh` accepts only the canonical `android-build.yml` identifier, exact 40-hex source SHA, and affirmative `--source-clean` proof. It uses only `gh api --method GET` with the requested SHA and workflow identifier, selects exactly one completed successful `Build Android APK` run at `.github/workflows/android-build.yml`, validates its numeric immutable run ID, downloads the requested artifact by that ID, rejects every recursive layout other than one versioned APK plus same-basename checksum, applies the existing policy helper as the final decision, and atomically publishes the APK plus provenance sidecar only on allow. Output paths must end in `.apk`, have an existing parent, and cannot overwrite an existing output or record.
+
+- [x] **Step 3: Fixture GREEN**
 
 Run the fixture denial/acceptance cases without network.
 
-- [ ] **Step 4: Optional networked check when credentials exist**
+**Actual GREEN (2026-08-09):** `bash -n scripts/fetch-calorix-actions-apk.sh tests/contract/calorix-actions-apk-fetch.test.sh` PASS; `timeout 120s bash tests/contract/calorix-actions-apk-fetch.test.sh` - `65 run, 65 passed, 0 failed`; the prior `npx vitest run tests/unit/calorix-actions-apk-policy.test.ts` result remains `1` file, `93` tests PASS. The shell fixture covers a genuine single empty-SHA argument with no GitHub call/output; malformed/duplicate/unknown arguments; omitted/dirty clean proof; no/multiple/mismatched/failed/wrong-name/wrong-path runs; wrong artifact/download failure; extra/missing/symlink/nested files; malformed/mismatched/multi-line checksum; all typed verification-record fields and exact output APK digest; spaces in output; uppercase SHA normalization; temporary cleanup; explicit GET; numeric run-ID download; and missing `awk` failing dependency preflight before GitHub access. Missing-`awk` RED was `50/53`: the script reached line 218 with `awk: command not found` after the fake GitHub call. Real-checksum-format RED was `63/65`: the safe `dist/calorix-1.0.0+1-android-release.apk` checksum target alone failed as `malformed_expected_sha256`. The parser now accepts safe relative target components only when the basename exactly equals the flattened APK filename; it rejects absolute paths, backslashes, empty/dot/dotdot components, traversal, and different basenames without using that target to open a file.
+
+- [x] **Step 4: Optional networked check when credentials exist**
 
 If `gh` auth and a known Calorix release workflow are available, run one real fetch against a committed SHA and record run id, source SHA, and checksum result in status. If unavailable, record the exact blocker (missing auth, missing workflow, network error) and do not invent success.
+
+**Live RED (2026-08-09):** the first fetch against a clean detached Calorix worktree at source SHA `1f538641f5e5f5c4a48c95cdfb97462838187106` and Actions run `31182023073` failed `malformed_expected_sha256`. The checksum line retained the safe target `87475182256c6733eb80fed0b35afe3a53a1ca2ef91ce010d016d3fbb3717e92  dist/calorix-1.0.0+1-android-release.apk`, while upload-artifact flattened the uploaded files to `calorix-1.0.0+1-android-release.apk` and its matching checksum file. New TDD was RED `63/65`; GREEN `65/65`. The parser accepts safe relative prefixes only when the basename exactly matches the flattened APK filename and rejects absolute, backslash, empty, dot, dotdot, traversal, or different-basename targets.
+
+**Live GREEN (2026-08-09):** rerun passed for workflow `Build Android APK` at `.github/workflows/android-build.yml`, source SHA `1f538641f5e5f5c4a48c95cdfb97462838187106`, and artifact `android-apk-1f538641f5e5f5c4a48c95cdfb97462838187106`. The artifact contained APK `calorix-1.0.0+1-android-release.apk` and checksum `calorix-1.0.0+1-android-release.apk.sha256`; APK size was `64446420` bytes and verified digest was `87475182256c6733eb80fed0b35afe3a53a1ca2ef91ce010d016d3fbb3717e92`. Independent verification-record validation passed (`true`), and the temporary worktree and downloaded artifacts were cleaned.
+
+**Final Task 5 verification (2026-08-09, Europe/Zurich):** `npm run verify` exited `0`; typecheck was clean; 74 files / 1,389 TypeScript tests passed; 25 Python parser tests passed; the build was clean; and 3 integration files / 22 tests passed. Focused shell verification remained `65/65`; policy verification remained `93/93`.
+
+**Task 5 post-review attempts (2026-08-09, Europe/Zurich):** Gemini 3.6 Flash, Gemini 3.1 Pro, and Gemini 3.5 Flash all failed before review because the Antigravity wrapper supplied empty effort. Their available sets were respectively `low`/`medium`/`high`, `low`/`high`, and `low`/`medium`/`high`. No response body, repository mutation, or green review was produced.
+
+Task 5 Steps 1-4 are complete and verified. Step 5 remains pending the host commit/push checkpoint. Current task: Task 5 checkpoint. No production-readiness claim.
 
 - [ ] **Step 5: Host checkpoint**
 
