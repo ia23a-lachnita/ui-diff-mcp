@@ -878,7 +878,7 @@ Host commit message: `Add verified Calorix Actions APK fetch script`
 - Health-checks `/health` endpoint before declaring ready.
 - Never exposes the sidecar on `0.0.0.0` or LAN interfaces.
 
-- [ ] **Step 1: Write failing contract checks**
+- [x] **Step 1: Write failing contract checks**
 
 Create `tests/contract/locateanything-sidecar-launcher.test.sh` that asserts:
 - Script exits non-zero when `LOCATEANYTHING_PYTHON` is unset and no `/home/agent-runner/projects/.venvs/ui-diff-mcp-locateanything/bin/python` exists and system `python3` is absent
@@ -886,7 +886,7 @@ Create `tests/contract/locateanything-sidecar-launcher.test.sh` that asserts:
 - When run with a temp fake python executable (a script that starts a local HTTP server responding to `/health` with 200 OK), script exits 0 and reports ready
 - All tests must use temp directories, fake executables, and a local fake health endpoint; no dependency on real sidecar, real model, or network
 
-- [ ] **Step 2: Run RED for missing launcher**
+- [x] **Step 2: Run RED for missing launcher**
 
 Run:
 ```bash
@@ -894,7 +894,7 @@ bash tests/contract/locateanything-sidecar-launcher.test.sh
 ```
 Expected: fail because `start-locateanything-sidecar.sh` does not exist.
 
-- [ ] **Step 3: Implement the launcher**
+- [x] **Step 3: Implement the launcher**
 
 Create `scripts/start-locateanything-sidecar.sh`:
 - Parse `--check-only` flag (verify python and dir exist without starting)
@@ -905,7 +905,7 @@ Create `scripts/start-locateanything-sidecar.sh`:
 - Print PID for caller tracking
 - Be idempotent: if already running and healthy, exit 0
 
-- [ ] **Step 4: Run GREEN**
+- [x] **Step 4: Run GREEN**
 
 Run:
 ```bash
@@ -920,9 +920,61 @@ In the final documentation task (Task 7), update AGENTS.md environment section t
 - `LOCATEANYTHING_EAGLE_EMBODIED_DIR` default path on Linux: `/home/agent-runner/projects/Eagle/Embodied`
 - LocateAnything sidecar start command: `bash scripts/start-locateanything-sidecar.sh`
 
+**Actual (2026-08-09):**
+- [x] README Linux launcher usage is complete.
+- [ ] `AGENTS.md` remains intentionally pending Task 7, which owns the complete Pi environment and delegation-policy migration.
+
 - [ ] **Step 6: Host checkpoint**
 
 Host commit message: `Add LocateAnything sidecar Linux bash launcher`
+
+**Task 6 verification (2026-08-09):** RED: before the launcher existed,
+`bash tests/contract/locateanything-sidecar-launcher.test.sh` exited `1` with
+`1 run, 0 passed, 1 failed` because the launcher command returned `127`.
+GREEN: `bash -n scripts/start-locateanything-sidecar.sh tests/contract/locateanything-sidecar-launcher.test.sh` and
+`timeout 90s bash tests/contract/locateanything-sidecar-launcher.test.sh`
+passed with `68 run, 68 passed, 0 failed`. The host `--check-only` command
+exited `1` without starting a process. The selected parser-only venv reports
+Python `3.11.15` and can import `sidecars.locateanything.server`, but lacks
+`uvicorn`; install `sidecars/locateanything/requirements.txt`. Separately,
+`/home/agent-runner/projects/Eagle/Embodied` is absent or lacks
+`locateanything_worker`; install a valid Eagle Embodied checkout or set the
+explicit directory override. This is not a full sidecar environment.
+
+**Full repository verification (2026-08-09):** `npm run verify` exited `0`:
+typecheck clean; 74 files / 1,389 TypeScript tests; 25 Python parser tests;
+build clean; 3 integration files / 22 tests. `bash -n`, ASCII, and
+`git diff --check` also passed.
+
+**Idempotence ordering correction (2026-08-09):** RED was `54 run, 49 passed,
+5 failed`: invalid explicit Python/Eagle and unavailable `nohup` prevented an
+already-healthy no-op, and startup validation hid a pre-existing health error.
+GREEN was `54 run, 54 passed, 0 failed`. Normal invocation now validates
+settings and `curl`/`node`, checks `/health`, returns or surfaces its error, and
+only then resolves Python/Eagle and requires `nohup` when a start is needed.
+`--check-only` still validates health plus startup dependencies without any
+health request or process start.
+
+**Launch-surface preflight correction (2026-08-09):** RED was `68 run, 61
+passed, 7 failed`: check-only accepted an interpreter lacking `uvicorn`, and
+an unready normal run spawned then polled instead of failing before launch.
+GREEN was `68 run, 68 passed, 0 failed`. After Python selection, startup now
+imports `uvicorn` and `sidecars.locateanything.server` from `REPO_ROOT`; failure
+names the selected interpreter and the exact requirements install command.
+Already-healthy normal invocation still bypasses Python/module/Eagle/nohup
+checks. Host confirmation: Python version exit `0`, uvicorn exit `1`, server
+import exit `0`, launcher check-only exit `1`; the Eagle checkout is also
+separately missing. No full-sidecar-environment claim.
+
+**Task 6 post-review attempts (2026-08-09):** Gemini 3.6 Flash, Gemini 3.1
+Pro, and Gemini 3.5 Flash all failed before review because the wrapper supplied
+empty effort. Their available effort sets were respectively
+`low`/`medium`/`high`, `low`/`high`, and `low`/`medium`/`high`. No response
+body, repository mutation, or green review was produced.
+
+Task 6 Steps 1-4 are complete. Step 5's README portion is complete; its
+`AGENTS.md` portion remains pending Task 7. Step 6 remains pending the host
+commit/push checkpoint. No production-readiness claim.
 
 ---
 

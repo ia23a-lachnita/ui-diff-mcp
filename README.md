@@ -282,6 +282,30 @@ The startup script and Calorix live-test helper prefer `LOCATEANYTHING_PYTHON`, 
 the interpreter it selected; if `/health` returns an `error`, live tests fail fast with that load error instead of
 waiting for the full readiness timeout.
 
+### Linux (Raspberry Pi)
+
+The Linux launcher binds only to `127.0.0.1:39731`. It resolves an explicit
+`LOCATEANYTHING_PYTHON` without fallback, then
+`/home/agent-runner/projects/.venvs/ui-diff-mcp-locateanything/bin/python`,
+then `python3`. It likewise requires an explicit
+`LOCATEANYTHING_EAGLE_EMBODIED_DIR`, or the default
+`/home/agent-runner/projects/Eagle/Embodied`, to contain the
+`locateanything_worker` package supplied by Eagle Embodied.
+
+```bash
+# Validate Python, Eagle Embodied, and the loopback-only configuration only.
+bash scripts/start-locateanything-sidecar.sh --check-only
+
+# Start or reuse a healthy local sidecar. It prints the child PID and log path.
+bash scripts/start-locateanything-sidecar.sh
+```
+
+The launcher accepts no host override. `UI_DIFF_LOCATEANYTHING_PORT_INTERNAL`
+is an internal diagnostic/test hook only; production uses port `39731`.
+`LOCATEANYTHING_TIMEOUT_MS` and `LOCATEANYTHING_POLL_MS` configure bounded
+readiness polling. A sidecar health response is accepted only when its JSON
+object contains `"ready": true`; a nonempty `error` is reported immediately.
+
 `LOCATEANYTHING_SKIP_MODEL=1` is only a diagnostic shortcut. It makes `/health.ready` true without loading the 3B model
 and still runs CV/OCR/optional lanes, but a run made with that flag is not full LocateAnything-model release evidence.
 
