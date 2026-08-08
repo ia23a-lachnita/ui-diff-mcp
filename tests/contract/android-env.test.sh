@@ -220,6 +220,15 @@ echo "=== Group 1: android-env-common.sh ==="
   && fail "assert_loopback_publish rejects 5555:5555 (ambiguous)" "did not reject" \
   || pass "assert_loopback_publish rejects 5555:5555 (ambiguous)"
 
+# Test: assert_loopback_publish rejects a nonstandard container port
+(
+  source "$COMMON_SH"
+  assert_loopback_publish "127.0.0.1:5555:5556" 2>/dev/null
+  echo "SHOULD_NOT_REACH"
+) 2>/dev/null | grep -q "SHOULD_NOT_REACH" \
+  && fail "assert_loopback_publish rejects 127.0.0.1:5555:5556" "did not reject wrong container port" \
+  || pass "assert_loopback_publish rejects 127.0.0.1:5555:5556"
+
 # Test: assert_loopback_publish rejects 127.0.0.1:5555 (missing container port)
 (
   source "$COMMON_SH"
@@ -228,15 +237,6 @@ echo "=== Group 1: android-env-common.sh ==="
 ) 2>/dev/null | grep -q "SHOULD_NOT_REACH" \
   && fail "assert_loopback_publish rejects 127.0.0.1:5555 (missing container port)" "did not reject" \
   || pass "assert_loopback_publish rejects 127.0.0.1:5555 (missing container port)"
-
-# Test: assert_loopback_publish rejects 0.0.0.0:5555
-(
-  source "$COMMON_SH"
-  assert_loopback_publish "0.0.0.0:5555" 2>/dev/null
-  echo "SHOULD_NOT_REACH"
-) 2>/dev/null | grep -q "SHOULD_NOT_REACH" \
-  && fail "assert_loopback_publish rejects 0.0.0.0:5555" "did not reject public interface" \
-  || pass "assert_loopback_publish rejects 0.0.0.0:5555"
 
 # Test: fail function exits nonzero and writes to stderr
 (

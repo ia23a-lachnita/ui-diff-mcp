@@ -107,6 +107,10 @@ npm run benchmark:locator
 
 For Calorix release evidence, do not set `UI_DIFF_LIVE_ACTUAL_IMAGE` by default. The live gates build the debug APK only when stale, install it when needed, open `calorix://debug/reseed`, and capture a fresh ADB screenshot into `C:\Users\xursc\projects\calorix\.ui-diff\captures`. Set `UI_DIFF_LIVE_ACTUAL_IMAGE` only when you intentionally want to compare against a historical file; that path is logged as an explicit override and is not fresh release evidence.
 
+### Raspberry Pi/ReDroid Evidence Policy
+
+ReDroid evidence is valid for platform-independent UI, layout, state, and navigation assertions. Phone-only properties remain phone-gated, including OEM rendering, physical-camera behavior, device-specific insets, and device-specific performance. The absence of a physical phone does not globally block production validation when ReDroid covers the property being asserted.
+
 Calorix live gates validate the canonical default expected reference before any device or pipeline work: `C:\Users\xursc\projects\calorix\docs\design-handoff\placeholder-app\reference-images\today--dark.png`, its adjacent `reference-images-manifest.json`, and SHA-256 `73BA85F25489C8D45BEAB57DD1B317138870CE8360FE0F4399AB0737A5E505F1`. An explicit `UI_DIFF_LIVE_EXPECTED_IMAGE` remains supported, but must be readable; `reference-images-buggy` and `good-screenshots` are never fallback sources.
 
 Calorix reports persist a report-safe `inputProvenance` record whose expected and actual SHA-256 identities are computed from the exact image bytes by the pipeline. A manifest entry is included only after the pipeline verifies that its recorded hash matches the expected image bytes. Acquisition sources such as `auto_capture` and `env_override` are stored separately with `verification:"caller_attested"`; they are not presented as independently verified facts. Public MCP requests cannot supply computed hashes. On resume, omitted provenance inherits the stored effective record; an explicit replacement is accepted only when the recomputed expected and actual image identities match the resumed report.

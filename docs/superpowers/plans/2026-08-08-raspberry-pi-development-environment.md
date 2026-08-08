@@ -687,11 +687,13 @@ Expected: first install succeeds or no-ops correctly; second install is idempote
 
 **Actual (2026-08-08, post-correction):** Re-ran on this host after the Step 4 unreachable-install-path fix and the Step 1 test-suite correction: `bash scripts/install-android-platform-tools.sh --check-only` still exits 1 with the same remediation message (no adb on PATH); a genuine no-override, no-fake-adb, no-root, no-working-sudo run of `bash scripts/install-android-platform-tools.sh` (no `UI_DIFF_ADB_BIN` set) now correctly reaches and prints `adb not found on PATH; installing via apt-get...` before failing closed on the root/noninteractive-sudo requirement, proving the previously-unreachable branch is reachable. Still blocked on this host by the same environment prerequisite (no root/noninteractive sudo, no real network apt-get run) — environment blocker, not a code/test failure. Contract suite GREEN 63/63 (`timeout 60 bash tests/contract/android-env.test.sh`). Syntax checks PASS for all 3 scripts plus the test file. `git diff --check` PASS. Full `npm run verify` and live gates were not run for this bounded correction; no production-readiness claim.
 
-**Host re-verification (2026-08-08):** Host reran the syntax and shell contract checks — 63/63 PASS. Real Pi `--check-only` run exited 1 with the adb-missing remediation. Real Pi normal no-override run reached `adb not found on PATH; installing via apt-get...` then exited 1 on the root/noninteractive-sudo requirement before `apt-get` ran, confirming the apt-get branch is reachable and still fails closed without root. Full `PATH=/home/agent-runner/projects/.venvs/ui-diff-mcp-locateanything/bin:/home/agent-runner/.local/bin:/home/agent-runner/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/games:/usr/games npm run verify` PASS: typecheck clean; 74 files / 1,389 TypeScript tests; 25 Python sidecar tests; build clean; 3 integration files / 22 tests. `git diff --check` PASS. Post-implementation Antigravity MCP review attempts on 2026-08-08 all failed before a review body because the wrapper passed an empty `--effort`: Gemini 3.6 Flash (low/medium/high available), Gemini 3.1 Pro (low/high available), Gemini 3.5 Flash (low/medium/high available); no response body, no repository mutation, no green review. The Step 4 unreachable-install-path fix was implemented by Claude Sonnet as the final available delegated editing fallback after the recorded MiMo/DeepSeek/Fable failures (see `docs/implementation-status.md`); the host reviewed and verified it. The real adb install smoke on this Pi host is still not complete — Step 5 remains partial/blocked. Step 6 (host commit/push checkpoint) remains pending; no production-readiness claim.
+**Host re-verification (2026-08-08):** Host reran the syntax and shell contract checks — 63/63 PASS. Real Pi `--check-only` run exited 1 with the adb-missing remediation. The normal no-override run reached the apt-get path then failed closed on the root/noninteractive-sudo prerequisite. The earlier full `npm run verify` result remains recorded in status. Step 5 remains partial/blocked; Step 6 is complete at `40f91e0` on `origin/master`. No production-readiness claim.
 
-- [ ] **Step 6: Host checkpoint**
+- [x] **Step 6: Host checkpoint**
 
 Host commit message: `Add adb and udev setup scripts for Pi host`
+
+**Implemented:** Host committed and pushed at `40f91e0` on `origin/master`.
 
 ---
 
@@ -707,7 +709,7 @@ Host commit message: `Add adb and udev setup scripts for Pi host`
 - Produces: Docker ReDroid ARM64 container with software rendering, persistent data directory/volume, `/dev/kvm` and binder device access when present, ADB published only to `127.0.0.1:5555`.
 - Produces: stop without data loss; reset with explicit data wipe.
 
-- [ ] **Step 1: Encode failing security/contract assertions**
+- [x] **Step 1: Encode failing security/contract assertions**
 
 Before implementation, add script-level preflight tests that fail if start would:
 
@@ -718,7 +720,9 @@ Before implementation, add script-level preflight tests that fail if start would
 
 Document the exact docker run shape in the start script header, including image tag, restart policy, and device mounts.
 
-- [ ] **Step 2: Implement `start-redroid.sh`**
+**Actual RED and test audit (2026-08-08):** The initial delegated worker left a contract suite but no lifecycle scripts. After auditing it, the suite was corrected to avoid real host state-directory writes, to verify successful baseline launch before inspecting its fake Docker command, to model Docker state transitions through stop/remove/run, and to fail closed rather than reward an attempted `mknod` over a binderfs directory. Reset coverage was extended to reject dot components and both parent and leaf symlink escapes. Against the missing scripts it ran `82` checks: `33` passed and `49` failed for the expected absent lifecycle behaviors and reset guards.
+
+- [x] **Step 2: Implement `start-redroid.sh`**
 
 Required behavior:
 
@@ -733,11 +737,15 @@ Required behavior:
 - wait until `adb connect 127.0.0.1:5555` succeeds or time out with a clear error
 - be idempotent: if the named container is already running and healthy on loopback ADB, exit 0
 
-- [ ] **Step 3: Implement `stop-redroid.sh` and `reset-redroid.sh`**
+**Implemented:** `scripts/start-redroid.sh` sources the shared helper, performs Docker CLI/API preflight before adb resolution, handles a healthy named container as an idempotent no-op, removes stopped/unhealthy containers, validates/creates the persistent data directory, creates only missing binder character nodes from validated sysfs values, conditionally maps a real character `/dev/kvm`, launches exactly the pinned digest with `--restart unless-stopped`, `--privileged`, the exact loopback publish, `/data` mount, and the two guest-rendering flags, then performs bounded `adb connect` plus `get-state` readiness. The header documents the source tag, manifest-list digest, and privileged-access risk.
+
+- [x] **Step 3: Implement `stop-redroid.sh` and `reset-redroid.sh`**
 
 - `stop-redroid.sh` stops/removes the container but keeps persistent data
 - `reset-redroid.sh --yes` stops, deletes persistent data, and starts clean
 - `reset-redroid.sh` without `--yes` must refuse to wipe data
+
+**Implemented:** `scripts/stop-redroid.sh` is a Docker-preflighted no-op for an absent container and otherwise stops/removes it while preserving data. `scripts/reset-redroid.sh` refuses all invocations other than `--yes`, validates the complete data-directory path before deletion (including root, relative, dot, shallow, basename, and symlink-escape guards), stops/removes the container, recreates the data directory, and execs the start script.
 
 - [ ] **Step 4: Run focused host verification**
 
@@ -761,13 +769,17 @@ Expected:
 - listening address for 5555 is local-only (`127.0.0.1`), never a public bind
 - stop leaves data; reset recreates a clean instance
 
-- [ ] **Step 5: Evidence-policy note in README/status**
+**Partial (2026-08-08):** host-independent shell verification is green: `bash -n` passed for the common helper, all lifecycle scripts, and both contract suites; `tests/contract/redroid-lifecycle.test.sh` passed `102/102`; `tests/contract/android-env.test.sh` passed `63/63`; ASCII and `git diff --check` passed. Full `PATH=/home/agent-runner/projects/.venvs/ui-diff-mcp-locateanything/bin:$PATH npm run verify` passed: typecheck; 74 files / 1,389 TypeScript tests; 25 Python parser tests; build; 3 integration files / 22 tests. The added guards accept `aarch64`/`arm64`, reject `x86_64` before `docker run`, and require `UI_DIFF_KERNEL_CONFIG` or `/boot/config-$(uname -r)` to contain `CONFIG_ANDROID_BINDER_IPC=y` plus binder, hwbinder, and vndbinder. Real `bash scripts/start-redroid.sh` exited `1` because `docker info` was inaccessible. Pi evidence: `aarch64`, kernel `6.18.34+rpt-rpi-v8`, readable boot config with those values, unavailable `/proc/config.gz`, absent binder device files and sysfs registrations, present `/dev/kvm` character device, and absent Docker access/noninteractive sudo/adb. The image provenance remains `redroid/redroid:14.0.0_64only-latest`, manifest-list `sha256:0a611199ba2e0b5d60af39b3327a517f6407231f4352114ed3bd3cbfe2be69aa`, and runtime digest `sha256:46478a567194aed24cd0877d4434a9e58b534d4aad30931eb21999a52f2ce131`. These are host/bootstrap blockers, not a contract-test pass or production-readiness claim.
+
+- [x] **Step 5: Evidence-policy note in README/status**
 
 Record explicitly:
 
 - ReDroid evidence is valid for platform-independent UI/layout/state/navigation
 - phone-only properties remain phone-gated
 - missing phone does not globally block production validation
+
+**Implemented:** README, status, and this plan state the evidence boundary. ReDroid is valid for platform-independent UI/layout/state/navigation assertions; phone-only properties remain phone-gated; missing physical-phone access does not globally block validation for properties ReDroid covers.
 
 - [ ] **Step 6: Host checkpoint**
 
