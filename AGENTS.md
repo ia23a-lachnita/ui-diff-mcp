@@ -29,33 +29,63 @@ Before implementation work, read in order:
 
 ### Delegation Policy
 
-All repository file edits and token-heavy implementation work are performed by OpenCode headless mode using model `opencode/mimo-v2.5-free`. The main host retains requirements interpretation, architecture and tradeoffs, synthesis, verification judgment, production-readiness decisions, final reporting, commits, and pushes.
+All repository file edits and token-heavy implementation work are performed by workers in the following strongest-first Linux route order. The main host retains requirements interpretation, architecture and tradeoffs, synthesis, verification judgment, production-readiness decisions, final reporting, commits, and pushes.
 
-Canonical invocation:
+Worker route order (literal commands):
 
-```
+```bash
+# 1. grok-4.5 high (primary)
+~/.grok/bin/grok -p "<prompt>" --model grok-4.5 --reasoning-effort high --cwd <repo> --permission-mode bypassPermissions --output-format plain
+
+# 2. qwen3.7-max
+qwen -p "<prompt>" --model qwen3.7-max --output-format text
+
+# 3. opencode/nemotron-3-ultra-free
+opencode run --model opencode/nemotron-3-ultra-free --auto --dir <repo> "<prompt>"
+
+# 4. opencode/mimo-v2.5-free
 opencode run --model opencode/mimo-v2.5-free --auto --dir <repo> "<prompt>"
+
+# 5. opencode/deepseek-v4-flash-free
+opencode run --model opencode/deepseek-v4-flash-free --auto --dir <repo> "<prompt>"
+
+# 6. Claude paid (last) — literal model name: claude-fable-5
+claude -p "<prompt>" --model claude-fable-5 --dangerously-skip-permissions --output-format text
 ```
 
 Workers never commit or push; the main agent reviews, verifies, commits, and pushes.
 
-Codex host instances and Codex child agents remain allowed for read-only research, investigation, review, planning, and sub-orchestration. If OpenCode explicitly reports quota exhaustion or is unavailable, record the exact failure (category, message, timestamp); only then may Codex be used as the editing fallback. The main agent's native tools remain preferred except for the explicit OpenCode headless editing route described above.
+Codex host instances and Codex child agents remain allowed for read-only research, investigation, review, planning, and sub-orchestration. If a worker explicitly reports quota exhaustion or is unavailable, record the exact failure (category, message, ISO timestamp) before falling back to the next route. The main agent's native tools remain preferred except for the explicit worker editing route described above.
 
 Use the host agent's native tools; do not shell out to another CLI to do what a native tool already does.
 
-| Capability | OpenCode headless | Codex CLI (read-only) |
+| Capability | Worker (Linux routes) | Codex CLI (read-only) |
 |---|---|---|
-| Read/edit files | `opencode run` with model `opencode/mimo-v2.5-free` | shell reads only; no repository edits |
+| Read/edit files | Worker route commands above | shell reads only; no repository edits |
 | Search | `Grep`, `Glob`, semantic search | `shell_command` (rg), MCP search tools |
-| Shell | `Bash` (Git Bash) and `PowerShell` | `shell_command` (PowerShell on this machine) |
+| Shell | `Bash` on the Pi | `shell_command` (`bash` on this machine) |
 | Plans/tracking | TaskCreate/TaskUpdate + status file | `update_plan` + status file |
 | External review | `mcp__antigravity-mcp__ask-ai` | `mcp__antigravity_mcp__ask_ai` |
 
 Notes:
-- This is an explicit exception to the do-not-shell-out note for the OpenCode headless editing route.
+- Workers edit; host reviews/verifies/commits/pushes.
+- Before each fallback, log ISO timestamp, exact model, category, and exact provider/tool message.
+- Grok, Qwen, and OpenCode free editing routes are runtime- and quota-gated. `claude-fable-5` is the explicit paid, last-resort editing route; this worker policy is separate from the UI-diff pipeline's provider routing.
 - The Antigravity review tool is the same MCP server; only the tool-name separator differs per host. Both forms in this contract refer to that one tool.
 - Long verification commands (`npm run verify`, live gates) should run in the background where the host supports it, with results collected before reporting.
 - Google MCP connectors (`gcloud`, `firebase`) are intentionally disabled by default on this machine. Do not re-enable them silently; if a task genuinely needs them, say so and let the user enable them for that session.
+
+### Raspberry Pi ARM64 Debian/bash Environment
+
+Target host: Raspberry Pi 4 ARM64 Debian, bash shell.
+
+- Docker with `/dev/kvm` (optional, detected/reported) and binder device support for ReDroid.
+- ReDroid ARM64 container with software rendering, loopback-only ADB (`127.0.0.1:5555`), persistent data at `${XDG_STATE_HOME:-$HOME/.local/state}/ui-diff-mcp/redroid-data`.
+- platform-tools/adb and Linux udev for future physical phone.
+- LocateAnything sidecar: Linux bash launcher (`scripts/start-locateanything-sidecar.sh`); resolves `LOCATEANYTHING_PYTHON` → `/home/agent-runner/projects/.venvs/ui-diff-mcp-locateanything/bin/python` (sibling project venv) → `python3`; resolves `LOCATEANYTHING_EAGLE_EMBODIED_DIR` → `/home/agent-runner/projects/Eagle/Embodied`; starts uvicorn at loopback port `39731`.
+- Calorix Actions APK fetcher: source-SHA match + SHA256 verification required (`--source-sha`, `--source-clean`, `--workflow android-build.yml`, `--artifact-name android-apk-<sha>`, checksum `.sha256`).
+- `package-lock.json` root bin must stay `dist/src/index.js`.
+- Root/bootstrap blockers: adb install, docker-group membership, binder node setup, and ReDroid smoke may require root/sudo; scripts must record exact blocker and remediation.
 
 ## 5. External Review Contract (Antigravity MCP)
 
@@ -72,7 +102,7 @@ Notes:
 - Work in bounded stages. After each meaningful implementation stage, update `docs/implementation-status.md`, commit the code/docs for that stage, and push to `origin`.
 - Do not keep long-running or multi-stage implementation work uncommitted unless a verification command is actively running or the change is intentionally being reverted.
 - Use test-first development for behavior changes and bug fixes. Record the focused red/green verification when the fix is not purely documentation.
-- After implementation, run `npm run verify`. If the change touches providers, model routing, report semantics, image processing, MCP tools, or live-gate behavior, also run every relevant live gate that the available credentials/sidecar/quota permit:
+- After implementation, run `npm run verify`. On this Pi, prefix the sibling parser venv (`PATH=/home/agent-runner/projects/.venvs/ui-diff-mcp-locateanything/bin:$PATH npm run verify`) unless the shell already resolves its Python; plain system Python currently lacks FastAPI. If the change touches providers, model routing, report semantics, image processing, MCP tools, or live-gate behavior, also run every relevant live gate that the available credentials/sidecar/quota permit:
   - `npm run verify:gemini-live`
   - `npm run verify:mistral-live`
   - `npm run verify:nvidia-live`
@@ -110,12 +140,22 @@ These must be set in the shell before running live tests or the sidecar. They ar
 | `OPENROUTER_API_KEY` | Live model tests, free-mode pipeline | OpenRouter secret key |
 | `NVIDIA_API_KEY` | NVIDIA model probes and free-mode inference | NVIDIA API secret key |
 | `LOCATEANYTHING_SIDECAR_URL` | Any non-deterministic run | `http://127.0.0.1:39731` (default) |
-| `LOCATEANYTHING_PYTHON` | Sidecar interpreter override | `C:\Users\xursc\projects\.venvs\ui-diff-mcp-locateanything\Scripts\python.exe` |
-| `LOCATEANYTHING_EAGLE_EMBODIED_DIR` | Sidecar startup | `C:\Users\xursc\projects\Eagle\Embodied` |
+| `LOCATEANYTHING_PYTHON` | Sidecar interpreter override | `/home/agent-runner/projects/.venvs/ui-diff-mcp-locateanything/bin/python` |
+| `LOCATEANYTHING_EAGLE_EMBODIED_DIR` | Sidecar startup | `/home/agent-runner/projects/Eagle/Embodied` |
 | `UI_DIFF_LIVE_EXPECTED_IMAGE` | Calorix live tests | Path to expected screenshot |
 | `UI_DIFF_LIVE_ACTUAL_IMAGE` | Historical-override only; leave unset for fresh release evidence | Path to actual screenshot |
 
-### Starting the LocateAnything sidecar
+### Starting the LocateAnything sidecar (Linux / Raspberry Pi)
+
+```bash
+# From the ui-diff-mcp project root:
+bash scripts/start-locateanything-sidecar.sh
+```
+
+The script resolves Python as `LOCATEANYTHING_PYTHON` → known LocateAnything venv → plain `python3`, and defaults `LOCATEANYTHING_EAGLE_EMBODIED_DIR` to `/home/agent-runner/projects/Eagle/Embodied`.
+The live tests (`RUN_CALORIX_UI_DIFF_LIVE=1`) auto-start the sidecar via `ensureSidecarRunning()` in `tests/helpers/sidecar-manager.ts` — no manual startup needed as long as `LOCATEANYTHING_EAGLE_EMBODIED_DIR` is set.
+
+### Starting the LocateAnything sidecar (legacy / Windows)
 
 ```powershell
 # From the ui-diff-mcp project root:
@@ -123,9 +163,23 @@ These must be set in the shell before running live tests or the sidecar. They ar
 ```
 
 The script resolves Python as `LOCATEANYTHING_PYTHON` → known LocateAnything venv → plain `python`, and defaults `LOCATEANYTHING_EAGLE_EMBODIED_DIR` to `C:\Users\xursc\projects\Eagle\Embodied`.
-The live tests (`RUN_CALORIX_UI_DIFF_LIVE=1`) auto-start the sidecar via `ensureSidecarRunning()` in `tests/helpers/sidecar-manager.ts` — no manual startup needed as long as `LOCATEANYTHING_EAGLE_EMBODIED_DIR` is set.
 
-### Running live gates
+### Running live gates (Linux / Raspberry Pi)
+
+```bash
+# OpenRouter free-mode smoke (fixture images, ~5 min):
+export RUN_OPENROUTER_FREE_LIVE="1"
+export OPENROUTER_API_KEY="sk-..."
+export LOCATEANYTHING_SIDECAR_URL="http://127.0.0.1:39731"
+npx vitest run tests/live/mcp-openrouter-free.live.test.ts
+
+# Calorix smoke (real project images, sidecar auto-starts, ~20 min):
+export RUN_CALORIX_UI_DIFF_LIVE="1"
+export LOCATEANYTHING_EAGLE_EMBODIED_DIR="/home/agent-runner/projects/Eagle/Embodied"
+npx vitest run tests/live/calorix-smoke.live.test.ts
+```
+
+### Running live gates (legacy / Windows)
 
 ```powershell
 # OpenRouter free-mode smoke (fixture images, ~5 min):

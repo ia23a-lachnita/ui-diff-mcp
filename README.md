@@ -259,7 +259,7 @@ $env:RUN_FREE_LIVE="1"
 npm run verify:free-live
 ```
 
-## LocateAnything Sidecar
+## LocateAnything Sidecar (Windows)
 
 The MCP calls a sidecar endpoint at `POST /v1/locate-ui-elements`. Start the local wrapper after installing NVIDIA's Eagle Embodied package:
 
@@ -282,7 +282,7 @@ The startup script and Calorix live-test helper prefer `LOCATEANYTHING_PYTHON`, 
 the interpreter it selected; if `/health` returns an `error`, live tests fail fast with that load error instead of
 waiting for the full readiness timeout.
 
-### Linux (Raspberry Pi)
+### LocateAnything Sidecar (Linux / Raspberry Pi)
 
 The Linux launcher binds only to `127.0.0.1:39731`. It resolves an explicit
 `LOCATEANYTHING_PYTHON` without fallback, then
@@ -313,9 +313,51 @@ The TypeScript client sends image bytes with each locator request, so `LOCATEANY
 
 Parser-only sidecar tests:
 
-```powershell
-C:\Users\xursc\projects\.venvs\ui-diff-mcp-locateanything\Scripts\python.exe -m unittest sidecars.locateanything.test_parser
+```bash
+/home/agent-runner/projects/.venvs/ui-diff-mcp-locateanything/bin/python -m unittest sidecars.locateanything.test_parser
 ```
+
+### Raspberry Pi Operator Commands
+
+```bash
+# Install Android platform tools and udev rules (may require root/sudo)
+bash scripts/install-android-platform-tools.sh
+
+# Start ReDroid ARM64 container with software rendering, loopback-only ADB
+bash scripts/start-redroid.sh
+
+# Verify ADB connects to ReDroid on loopback
+bash scripts/check-adb.sh --expect-redroid
+
+# Validate, then start or reuse, the loopback-only LocateAnything sidecar
+bash scripts/start-locateanything-sidecar.sh --check-only
+bash scripts/start-locateanything-sidecar.sh
+
+# Fetch verified Calorix Actions APK (source-SHA + SHA256 required)
+# Workflow: .github/workflows/android-build.yml (named "Build Android APK")
+# Artifact: android-apk-<sha>
+bash scripts/fetch-calorix-actions-apk.sh \
+  --repo ia23a-lachnita/calorix \
+  --source-sha 1f538641f5e5f5c4a48c95cdfb97462838187106 \
+  --source-clean \
+  --workflow android-build.yml \
+  --artifact-name android-apk-1f538641f5e5f5c4a48c95cdfb97462838187106 \
+  --output "$HOME/Downloads/calorix-release.apk"
+
+# Stop ReDroid (preserves persistent data)
+bash scripts/stop-redroid.sh
+
+# Reset ReDroid (wipes data, starts clean)
+bash scripts/reset-redroid.sh --yes
+
+# Verify package-lock.json root bin is dist/src/index.js
+bash scripts/verify-package-bin-lock.sh
+
+# Full repository verification with the sidecar parser environment
+PATH=/home/agent-runner/projects/.venvs/ui-diff-mcp-locateanything/bin:$PATH npm run verify
+```
+
+> **Evidence boundary:** ReDroid is sufficient for platform-independent UI, layout, state, and navigation assertions. Phone-only properties remain phone-gated, including OEM rendering, physical-camera behavior, device-specific insets, and device-specific performance. The absence of a physical phone does not globally block production validation when ReDroid covers the property being asserted.
 
 ## MCP Integration
 

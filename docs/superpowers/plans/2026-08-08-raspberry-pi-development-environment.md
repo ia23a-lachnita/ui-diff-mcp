@@ -90,7 +90,7 @@ When a blocker is detected, scripts must print a clear message identifying the e
 - Create: `scripts/stop-redroid.sh`
 - Create: `scripts/reset-redroid.sh`
 - Create: `scripts/fetch-calorix-actions-apk.sh`
-- Create: `scripts/start-locateanything-sidecar.sh` Linux bash launcher for LocateAnything sidecar; resolves `LOCATEANYTHING_PYTHON` → `/home/agent-runner/projects/.venvs/ui-diff-mcp-locateanything/bin/python` (repo-local venv) → `python3`; resolves `LOCATEANYTHING_EAGLE_EMBODIED_DIR` → `/home/agent-runner/projects/Eagle/Embodied`; starts `uvicorn sidecars.locateanything.server:app` at loopback port 39731; health-checks; never exposes publicly
+- Create: `scripts/start-locateanything-sidecar.sh` Linux bash launcher for LocateAnything sidecar; resolves `LOCATEANYTHING_PYTHON` → `/home/agent-runner/projects/.venvs/ui-diff-mcp-locateanything/bin/python` (sibling shared venv) → `python3`; resolves `LOCATEANYTHING_EAGLE_EMBODIED_DIR` → `/home/agent-runner/projects/Eagle/Embodied`; starts `uvicorn sidecars.locateanything.server:app` at loopback port 39731; health-checks; never exposes publicly
 - Create: `scripts/verify-package-bin-lock.sh` focused lockfile bin assertion
 - Create: `tests/unit/package-bin-lock.test.ts` Node assertion that package and lock root bins agree on `dist/src/index.js`
 - Create: `tests/unit/calorix-actions-apk-policy.test.ts` pure policy tests for source-SHA and checksum gates (imports from `scripts/lib/calorix-actions-apk-policy.mjs`)
@@ -781,9 +781,12 @@ Record explicitly:
 
 **Implemented:** README, status, and this plan state the evidence boundary. ReDroid is valid for platform-independent UI/layout/state/navigation assertions; phone-only properties remain phone-gated; missing physical-phone access does not globally block validation for properties ReDroid covers.
 
-- [ ] **Step 6: Host checkpoint**
+- [x] **Step 6: Host checkpoint**
 
 Host commit message: `Add ReDroid lifecycle scripts with loopback-only ADB`
+
+**Checkpoint:** committed and pushed at `c182cf6`. Step 4 remains partial and
+blocked by the recorded Pi root/Docker/adb prerequisites.
 
 ---
 
@@ -856,9 +859,10 @@ If `gh` auth and a known Calorix release workflow are available, run one real fe
 
 **Task 5 post-review attempts (2026-08-09, Europe/Zurich):** Gemini 3.6 Flash, Gemini 3.1 Pro, and Gemini 3.5 Flash all failed before review because the Antigravity wrapper supplied empty effort. Their available sets were respectively `low`/`medium`/`high`, `low`/`high`, and `low`/`medium`/`high`. No response body, repository mutation, or green review was produced.
 
-Task 5 Steps 1-4 are complete and verified. Step 5 remains pending the host commit/push checkpoint. Current task: Task 5 checkpoint. No production-readiness claim.
+Task 5 Steps 1-5 are complete and verified. The host checkpoint was committed
+and pushed at `fab303a`. No production-readiness claim.
 
-- [ ] **Step 5: Host checkpoint**
+- [x] **Step 5: Host checkpoint**
 
 Host commit message: `Add verified Calorix Actions APK fetch script`
 
@@ -913,20 +917,22 @@ bash tests/contract/locateanything-sidecar-launcher.test.sh
 ```
 Expected: PASS.
 
-- [ ] **Step 5: Update Linux env variables/paths in AGENTS.md and README**
+- [x] **Step 5: Update Linux env variables/paths in AGENTS.md and README**
 
 In the final documentation task (Task 7), update AGENTS.md environment section to include:
-- `LOCATEANYTHING_PYTHON` default path on Linux: `/home/agent-runner/projects/.venvs/ui-diff-mcp-locateanything/bin/python` (repo-local venv), fallback `python3`
+- `LOCATEANYTHING_PYTHON` default path on Linux: `/home/agent-runner/projects/.venvs/ui-diff-mcp-locateanything/bin/python` (sibling shared venv), fallback `python3`
 - `LOCATEANYTHING_EAGLE_EMBODIED_DIR` default path on Linux: `/home/agent-runner/projects/Eagle/Embodied`
 - LocateAnything sidecar start command: `bash scripts/start-locateanything-sidecar.sh`
 
 **Actual (2026-08-09):**
 - [x] README Linux launcher usage is complete.
-- [ ] `AGENTS.md` remains intentionally pending Task 7, which owns the complete Pi environment and delegation-policy migration.
+- [x] `AGENTS.md` now contains the complete Pi environment and delegation-policy migration from Task 7.
 
-- [ ] **Step 6: Host checkpoint**
+- [x] **Step 6: Host checkpoint**
 
 Host commit message: `Add LocateAnything sidecar Linux bash launcher`
+
+**Checkpoint:** committed and pushed at `026fc19`.
 
 **Task 6 verification (2026-08-09):** RED: before the launcher existed,
 `bash tests/contract/locateanything-sidecar-launcher.test.sh` exited `1` with
@@ -991,14 +997,14 @@ commit/push checkpoint. No production-readiness claim.
 - Produces: operator docs for Pi setup, ReDroid lifecycle, adb/udev, and APK fetch
 - Produces: status handoff that resumes Task 8 Stage A structural source-facts after migration is green
 
-- [ ] **Step 1: Update AGENTS.md with Pi/bash environment, delegation policy, and worker route**
+- [x] **Step 1: Update AGENTS.md with Pi/bash environment, delegation policy, and worker route**
 
 In `AGENTS.md`, add a Pi/bash environment section documenting:
 - Target host: Raspberry Pi 4 ARM64 Debian, bash shell
 - Docker with `/dev/kvm` (optional, detected/reported) and binder device support for ReDroid
 - ReDroid ARM64 container with software rendering, loopback-only ADB (`127.0.0.1:5555`), persistent data
 - platform-tools/adb and Linux udev for future physical phone
-- LocateAnything sidecar: Linux bash launcher (`scripts/start-locateanything-sidecar.sh`); resolves `LOCATEANYTHING_PYTHON` → `/home/agent-runner/projects/.venvs/ui-diff-mcp-locateanything/bin/python` (repo-local venv) → `python3`; resolves `LOCATEANYTHING_EAGLE_EMBODIED_DIR` → `/home/agent-runner/projects/Eagle/Embodied`; starts uvicorn at loopback port 39731
+- LocateAnything sidecar: Linux bash launcher (`scripts/start-locateanything-sidecar.sh`); resolves `LOCATEANYTHING_PYTHON` → `/home/agent-runner/projects/.venvs/ui-diff-mcp-locateanything/bin/python` (sibling shared venv) → `python3`; resolves `LOCATEANYTHING_EAGLE_EMBODIED_DIR` → `/home/agent-runner/projects/Eagle/Embodied`; starts uvicorn at loopback port 39731
 - Calorix Actions APK fetcher: source-SHA match + SHA256 verification required
 - `package-lock.json` root bin must stay `dist/src/index.js`
 - Root/bootstrap blockers: adb install, docker-group membership, binder node setup, and ReDroid smoke may require root/sudo; record exact blocker and remediation
@@ -1022,12 +1028,12 @@ opencode run --model opencode/mimo-v2.5-free --auto --dir <repo> "<prompt>"
 opencode run --model opencode/deepseek-v4-flash-free --auto --dir <repo> "<prompt>"
 
 # 6. Claude paid (last)
-claude -p "<prompt>" --model <approved-model> --dangerously-skip-permissions --output-format text
+claude -p "<prompt>" --model claude-fable-5 --dangerously-skip-permissions --output-format text
 ```
 
 Record that exact failure timestamp, model, category, and message must be logged before each fallback. Do not merely append a conflicting route; replace the old policy entirely.
 
-- [ ] **Step 2: Document operator commands**
+- [x] **Step 2: Document operator commands**
 
 README must include exact commands:
 
@@ -1035,27 +1041,36 @@ README must include exact commands:
 bash scripts/install-android-platform-tools.sh
 bash scripts/start-redroid.sh
 bash scripts/check-adb.sh --expect-redroid
-bash scripts/fetch-calorix-actions-apk.sh --repo <owner/calorix> --source-sha <sha> --workflow <name> --artifact-name <apk> --output /path/app-release.apk
+bash scripts/start-locateanything-sidecar.sh --check-only
+bash scripts/start-locateanything-sidecar.sh
+bash scripts/fetch-calorix-actions-apk.sh --repo ia23a-lachnita/calorix --source-sha <40-hex-sha> --source-clean --workflow android-build.yml --artifact-name android-apk-<40-hex-sha> --output /path/calorix-release.apk
 bash scripts/stop-redroid.sh
 bash scripts/reset-redroid.sh --yes
 bash scripts/verify-package-bin-lock.sh
-npm run verify
+PATH=/home/agent-runner/projects/.venvs/ui-diff-mcp-locateanything/bin:$PATH npm run verify
 ```
 
-- [ ] **Step 3: Final deterministic verification**
+- [x] **Step 3: Final deterministic verification**
 
 Run:
 
 ```bash
 bash scripts/verify-package-bin-lock.sh
 npx vitest run tests/unit/package-bin-lock.test.ts tests/unit/calorix-actions-apk-policy.test.ts
-npm run verify
+PATH=/home/agent-runner/projects/.venvs/ui-diff-mcp-locateanything/bin:$PATH npm run verify
 git diff --check
 ```
 
-Expected: PASS. Record exact test counts from `npm run verify`.
+**Actual (2026-08-09):** package-bin guard PASS; focused package/APK
+policy tests `98/98`; Android environment `63/63`; ReDroid lifecycle
+`102/102`; Actions APK fetch `65/65`; sidecar launcher `68/68`. Plain
+`npm run verify` first passed typecheck and `74` files / `1,389` TypeScript
+tests, then failed because system Python 3.13 lacked FastAPI. The documented
+PATH-prefixed command passed: typecheck; `74` files / `1,389` TypeScript tests;
+`25` Python parser tests; build; `3` integration files / `22` tests.
+`git diff --check` passed.
 
-- [ ] **Step 4: Final host environment smoke on Pi**
+- [ ] **Step 4: Final host environment smoke on Pi** (partial/blocked)
 
 Run:
 
@@ -1068,7 +1083,16 @@ bash scripts/stop-redroid.sh
 
 Record whether `/dev/kvm` was present (optional) and whether binder nodes were present (required). If binder setup required root, record whether root/sudo was available. If a physical phone is absent, record that phone-only claims remain blocked while ReDroid platform-independent evidence remains usable.
 
-- [ ] **Step 5: Status handoff back to Task 8**
+**Actual (2026-08-09):** `aarch64`, kernel `6.18.34+rpt-rpi-v8`, and
+`/dev/kvm` present. adb is absent. Docker is installed but inaccessible to this
+user. binder/hwbinder/vndbinder device nodes and sysfs registrations are
+absent. Noninteractive sudo is unavailable. The sidecar parser venv lacks
+`uvicorn`, and the Eagle Embodied checkout is absent. Start/stop/check commands
+all failed closed with exact remediation; no container or sidecar was started.
+Physical-phone-only claims remain blocked, while the hermetic ReDroid contracts
+remain valid evidence for the platform-independent implementation.
+
+- [x] **Step 5: Status handoff back to Task 8**
 
 Update `docs/implementation-status.md` so that after migration completion:
 
@@ -1104,7 +1128,7 @@ Worker order:
 3. `opencode/nemotron-3-ultra-free`
 4. `opencode/mimo-v2.5-free`
 5. `opencode/deepseek-v4-flash-free`
-6. Claude paid
+6. `claude-fable-5` paid
 
 ## Antigravity Review Record For This Plan Stage
 
@@ -1113,6 +1137,9 @@ Worker order:
 | 2026-08-08 | `gemini-3.6-flash` | rejected empty `--effort` before review; no response; not green |
 | 2026-08-08 | `gemini-3.1-pro` | rejected empty `--effort` before review; no response; not green |
 | 2026-08-08 | `gemini-3.5-flash` | rejected empty `--effort` before review; no response; not green |
+| 2026-08-09 | `gemini-3.6-flash` (available `low`/`medium`/`high`) | rejected empty `--effort` before review; no response body; no repository mutation; not green |
+| 2026-08-09 | `gemini-3.1-pro` (available `low`/`high`) | rejected empty `--effort` before review; no response body; no repository mutation; not green |
+| 2026-08-09 | `gemini-3.5-flash` (available `low`/`medium`/`high`) | rejected empty `--effort` before review; no response body; no repository mutation; not green |
 
 No external green pre-review is claimed for this drafting stage. Implementation tasks still require host verification and, when the review tool works, post-implementation Antigravity review with the separate model order above.
 
