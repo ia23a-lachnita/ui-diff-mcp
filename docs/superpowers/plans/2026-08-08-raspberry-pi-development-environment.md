@@ -117,9 +117,8 @@ When a blocker is detected, scripts must print a clear message identifying the e
 // scripts/lib/calorix-actions-apk-policy.mjs
 // Executable Node ESM module (type: module).
 // Exports:
-//   decideCalorixActionsApkFetch(request) → { allowed: boolean, reason: string }
-//   normalizeGitSha(value) → string
-//   buildApkFetchCliJson(argv) → object  (CLI JSON interface for the bash fetcher)
+//   decideCalorixActionsApkFetch(input: unknown) → { allowed: true } | { allowed: false; reason: CalorixActionsApkFetchRejectionReason }
+//   normalizeGitSha(value) → string  (throws on malformed input)
 // Used by: scripts/fetch-calorix-actions-apk.sh (via node --input-type=module) and tests/unit/calorix-actions-apk-policy.test.ts (direct import)
 // Pure policy: no network I/O, case-insensitive SHA/checksum normalization, closed reason strings only.
 // Artifact contract: one artifact named android-apk-<40-char-source-sha> containing exactly one .apk and its matching .apk.sha256.
@@ -304,15 +303,17 @@ Workers stop before this step.
 
 **Files:**
 - Create: `scripts/lib/calorix-actions-apk-policy.mjs` (replaces `src/env/calorix-actions-apk-policy.ts`)
+- Create: `scripts/lib/calorix-actions-apk-policy.d.mts` (TypeScript declaration file for the MJS)
 - Create: `tests/unit/calorix-actions-apk-policy.test.ts`
 
 **Interfaces:**
-- Produces: `decideCalorixActionsApkFetch` and `normalizeGitSha` as specified above.
-- Rejects: uncommitted source, mismatched source SHAs, mismatched checksums, empty fields.
+- Produces: `decideCalorixActionsApkFetch` and `normalizeGitSha` as specified above; both pure, no I/O. `decideCalorixActionsApkFetch` never throws (fail-closed on malformed input); `normalizeGitSha` throws on malformed standalone input.
+- Rejects: malformed SHAs/checksums (case-insensitive normalization), uncommitted source, mismatched source SHAs, mismatched checksums, wrong workflow identity, wrong artifact structure.
+- Actual test coverage: `90` tests across `17` describe blocks covering every terminal reason, uppercase acceptance, type-invalid/no-throw inputs, order independence, precedence, and never-throw semantics.
 
-- [ ] **Step 1: Write failing policy tests**
+- [x] **Step 1: Write failing policy tests**
 
-Cover exactly. All SHA/checksum values must be valid 40-char or 64-char lowercase hex. The policy must fail closed on every malformed input.
+Cover exactly. All SHA/checksum values must be exact 40 or 64 hex characters in either case, normalized to lowercase by the policy. The policy must fail closed on every malformed input.
 
 **Closed reason strings** (the policy must return exactly these strings, never throw):
 
@@ -328,9 +329,8 @@ Cover exactly. All SHA/checksum values must be valid 40-char or 64-char lowercas
 | `wrong_workflow_name` | `workflowName` is not the expected workflow name |
 | `wrong_workflow_path` | `workflowPath` is not the expected workflow file path |
 | `wrong_artifact_name` | `artifactName` does not match `android-apk-<requestedSourceSha>` |
-| `artifact_file_count_invalid` | artifact does not contain exactly one `.apk` file and one matching `<apk-basename>.sha256` |
+| `artifact_file_count_invalid` | artifact does not contain exactly one `.apk` file and one matching `<apk-basename>.sha256`; rejects nonstrings, extras, duplicates, nested paths, and dot segments |
 | `checksum_mismatch` | SHA256 of the APK file does not match the expected checksum |
-| `dirty_source_sha` | requested source SHA contains uppercase or non-hex characters |
 
 ```ts
 // ── Allowed path ──────────────────────────────────────────────
@@ -340,7 +340,7 @@ expect(decideCalorixActionsApkFetch({
   workflowSourceSha:  "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
   workingTreeClean:   true,
   workflowConclusion: "success",
-  workflowName:       "android-build",
+  workflowName:       "Build Android APK",
   workflowPath:       ".github/workflows/android-build.yml",
   artifactName:       "android-apk-a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
   artifactFiles:      ["app-release.apk", "app-release.apk.sha256"],
@@ -354,7 +354,7 @@ expect(decideCalorixActionsApkFetch({
   workflowSourceSha:  "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
   workingTreeClean:   true,
   workflowConclusion: "success",
-  workflowName:       "android-build",
+  workflowName:       "Build Android APK",
   workflowPath:       ".github/workflows/android-build.yml",
   artifactName:       "android-apk-a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
   artifactFiles:      ["app-release.apk", "app-release.apk.sha256"],
@@ -368,7 +368,7 @@ expect(decideCalorixActionsApkFetch({
   workflowSourceSha:  "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
   workingTreeClean:   true,
   workflowConclusion: "success",
-  workflowName:       "android-build",
+  workflowName:       "Build Android APK",
   workflowPath:       ".github/workflows/android-build.yml",
   artifactName:       "android-apk-a1b2c3",
   artifactFiles:      ["app-release.apk", "app-release.apk.sha256"],
@@ -382,7 +382,7 @@ expect(decideCalorixActionsApkFetch({
   workflowSourceSha:  "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b000",
   workingTreeClean:   true,
   workflowConclusion: "success",
-  workflowName:       "android-build",
+  workflowName:       "Build Android APK",
   workflowPath:       ".github/workflows/android-build.yml",
   artifactName:       "android-apk-a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
   artifactFiles:      ["app-release.apk", "app-release.apk.sha256"],
@@ -396,7 +396,7 @@ expect(decideCalorixActionsApkFetch({
   workflowSourceSha:  "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
   workingTreeClean:   true,
   workflowConclusion: "success",
-  workflowName:       "android-build",
+  workflowName:       "Build Android APK",
   workflowPath:       ".github/workflows/android-build.yml",
   artifactName:       "android-apk-a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
   artifactFiles:      ["app-release.apk", "app-release.apk.sha256"],
@@ -410,7 +410,7 @@ expect(decideCalorixActionsApkFetch({
   workflowSourceSha:  "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
   workingTreeClean:   true,
   workflowConclusion: "success",
-  workflowName:       "android-build",
+  workflowName:       "Build Android APK",
   workflowPath:       ".github/workflows/android-build.yml",
   artifactName:       "android-apk-a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
   artifactFiles:      ["app-release.apk", "app-release.apk.sha256"],
@@ -424,7 +424,7 @@ expect(decideCalorixActionsApkFetch({
   workflowSourceSha:  "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
   workingTreeClean:   false,
   workflowConclusion: "success",
-  workflowName:       "android-build",
+  workflowName:       "Build Android APK",
   workflowPath:       ".github/workflows/android-build.yml",
   artifactName:       "android-apk-a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
   artifactFiles:      ["app-release.apk", "app-release.apk.sha256"],
@@ -438,7 +438,7 @@ expect(decideCalorixActionsApkFetch({
   workflowSourceSha:  "b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0a1",
   workingTreeClean:   true,
   workflowConclusion: "success",
-  workflowName:       "android-build",
+  workflowName:       "Build Android APK",
   workflowPath:       ".github/workflows/android-build.yml",
   artifactName:       "android-apk-a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
   artifactFiles:      ["app-release.apk", "app-release.apk.sha256"],
@@ -452,7 +452,7 @@ expect(decideCalorixActionsApkFetch({
   workflowSourceSha:  "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
   workingTreeClean:   true,
   workflowConclusion: "failure",
-  workflowName:       "android-build",
+  workflowName:       "Build Android APK",
   workflowPath:       ".github/workflows/android-build.yml",
   artifactName:       "android-apk-a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
   artifactFiles:      ["app-release.apk", "app-release.apk.sha256"],
@@ -480,7 +480,7 @@ expect(decideCalorixActionsApkFetch({
   workflowSourceSha:  "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
   workingTreeClean:   true,
   workflowConclusion: "success",
-  workflowName:       "android-build",
+  workflowName:       "Build Android APK",
   workflowPath:       ".github/workflows/ci.yml",
   artifactName:       "android-apk-a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
   artifactFiles:      ["app-release.apk", "app-release.apk.sha256"],
@@ -494,7 +494,7 @@ expect(decideCalorixActionsApkFetch({
   workflowSourceSha:  "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
   workingTreeClean:   true,
   workflowConclusion: "success",
-  workflowName:       "android-build",
+  workflowName:       "Build Android APK",
   workflowPath:       ".github/workflows/android-build.yml",
   artifactName:       "some-other-artifact",
   artifactFiles:      ["app-release.apk", "app-release.apk.sha256"],
@@ -508,7 +508,7 @@ expect(decideCalorixActionsApkFetch({
   workflowSourceSha:  "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
   workingTreeClean:   true,
   workflowConclusion: "success",
-  workflowName:       "android-build",
+  workflowName:       "Build Android APK",
   workflowPath:       ".github/workflows/android-build.yml",
   artifactName:       "android-apk-a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
   artifactFiles:      ["app-release.apk"],
@@ -522,7 +522,7 @@ expect(decideCalorixActionsApkFetch({
   workflowSourceSha:  "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
   workingTreeClean:   true,
   workflowConclusion: "success",
-  workflowName:       "android-build",
+  workflowName:       "Build Android APK",
   workflowPath:       ".github/workflows/android-build.yml",
   artifactName:       "android-apk-a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
   artifactFiles:      ["app-release.apk", "app-release.apk.sha256", "extra.txt"],
@@ -536,7 +536,7 @@ expect(decideCalorixActionsApkFetch({
   workflowSourceSha:  "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
   workingTreeClean:   true,
   workflowConclusion: "success",
-  workflowName:       "android-build",
+  workflowName:       "Build Android APK",
   workflowPath:       ".github/workflows/android-build.yml",
   artifactName:       "android-apk-a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
   artifactFiles:      ["app-release.apk", "app-release.apk.sha256"],
@@ -545,7 +545,7 @@ expect(decideCalorixActionsApkFetch({
 })).toMatchObject({ allowed: false, reason: "checksum_mismatch" });
 ```
 
-- [ ] **Step 2: Run focused RED**
+- [x] **Step 2: Run focused RED**
 
 Run:
 
@@ -555,11 +555,13 @@ npx vitest run tests/unit/calorix-actions-apk-policy.test.ts
 
 Expected: fail because the module is missing or decisions are unimplemented.
 
-- [ ] **Step 3: Implement the pure policy module**
+**Actual RED:** `npx vitest run tests/unit/calorix-actions-apk-policy.test.ts` — `1` failed test file, `0` tests executed, `Error: Cannot find module '../../scripts/lib/calorix-actions-apk-policy.mjs'`.
 
-Implement `scripts/lib/calorix-actions-apk-policy.mjs` with case-insensitive SHA/checksum normalization, no network I/O, and closed reason strings only.
+- [x] **Step 3: Implement the pure policy module**
 
-- [ ] **Step 4: Run focused GREEN**
+Implement `scripts/lib/calorix-actions-apk-policy.mjs` with case-insensitive SHA/checksum normalization, no network I/O, and closed reason strings only. Also create `scripts/lib/calorix-actions-apk-policy.d.mts` with typed declarations: `normalizeGitSha(value: string): string` (throws on malformed input), `CalorixActionsApkFetchRejectionReason` union of the 12 rejection strings, discriminated `CalorixActionsApkFetchResult`, and `decideCalorixActionsApkFetch(input: unknown)` (never throws, fail-closed).
+
+- [x] **Step 4: Run focused GREEN**
 
 Run:
 
@@ -569,7 +571,9 @@ npx vitest run tests/unit/calorix-actions-apk-policy.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 5: Repository verify and host checkpoint**
+**Actual GREEN:** Vitest `1` file passed, `90` tests passed. `npm run typecheck` PASS. `git diff --check` PASS. Combined focused `npx vitest run tests/unit/package-bin-lock.test.ts tests/unit/calorix-actions-apk-policy.test.ts` — `2` files, `95` tests PASS.
+
+- [x] **Step 5: Repository verify and host checkpoint**
 
 Run:
 
@@ -579,6 +583,17 @@ git diff --check
 ```
 
 Host commit message: `Add Calorix Actions APK fetch policy guards`
+
+**Actual full verify (2026-08-08, via parser-only LocateAnything venv):** `PATH=/home/agent-runner/projects/.venvs/ui-diff-mcp-locateanything/bin:$PATH npm run verify` PASS: typecheck clean; 74 files / 1,389 TypeScript tests; 25 Python parser tests (sidecar); build clean; 3 integration files / 22 tests; `git diff --check` PASS. Focused policy: 93 tests. Combined package-bin + APK policy: 98 tests.
+
+**Task 2 pre-review failures (2026-08-08):** Antigravity MCP `ask-ai` rejected before review for all three model routes:
+1. `gemini-3.6-flash`: rejected `--effort ""` — available low/medium/high
+2. `gemini-3.1-pro`: rejected `--effort ""` — available low/high
+3. `gemini-3.5-flash`: rejected `--effort ""` — available low/medium/high
+
+No response body, no repository mutation, no green review claimed.
+
+**Task 2 post-review (2026-08-08):** same three routes (`gemini-3.6-flash`, `gemini-3.1-pro`, `gemini-3.5-flash`) all failed before review again — wrapper passed empty effort with same available sets; no response body, no mutation, no green review.
 
 ---
 
@@ -766,7 +781,7 @@ Required flow:
 
 1. Parse `--repo`, `--source-sha`, optional `--workflow` (default `android-build.yml`), optional `--artifact-name` (default `android-apk-<source-sha>`), `--output`
 2. Resolve the single workflow run whose head SHA equals the requested committed source SHA. The run must satisfy all of:
-   - Workflow name is exactly `android-build`
+   - Workflow name is exactly `Build Android APK`
    - Workflow file path is exactly `.github/workflows/android-build.yml`
    - Workflow conclusion is exactly `success`
    - Head commit SHA equals the requested source SHA exactly
