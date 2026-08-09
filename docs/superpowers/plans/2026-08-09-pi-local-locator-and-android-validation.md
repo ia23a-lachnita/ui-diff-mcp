@@ -16,12 +16,12 @@
 - Modify: `docs/implementation-status.md`
 - Modify: this plan
 
-- [ ] Record the exact host, command shape, input dimensions, prompt, mode, threads, engine commit, model hashes, elapsed time, detection count, peak RSS, process swap, and visual-review boundary for official BF16, Q4_K, and Q5_K.
-- [ ] Record Q4_K as the sole Pi candidate: `473.506s`, `4,797,980 KiB`, `21` detections at 276x600.
-- [ ] Record Q5_K as rejected: `591.213s`, `5,127,908 KiB`, `13` detections, about 245 MiB process swap under concurrent load, and lower visible coverage.
-- [ ] Record that the saved annotated outputs were visually inspected, while model labels were not treated as OCR truth.
-- [ ] Run `git diff --check`.
-- [ ] Update tracking, commit, and push.
+- [x] Record the exact host, command shape, input dimensions, prompt, mode, threads, engine commit, model hashes, elapsed time, detection count, peak RSS, process swap, and visual-review boundary for official BF16, Q4_K, and Q5_K.
+- [x] Record Q4_K as the sole Pi candidate: `473.506s`, `4,797,980 KiB`, `21` detections at 276x600.
+- [x] Record Q5_K as rejected: `591.213s`, `5,127,908 KiB`, `13` detections, about 245 MiB process swap under concurrent load, and lower visible coverage.
+- [x] Record that the saved annotated outputs were visually inspected, while model labels were not treated as OCR truth.
+- [x] Run `git diff --check`.
+- [x] Update tracking, commit, and push.
 
 **Acceptance:** There is one model choice, one provider/backend identity, and no duplicate ranking that can be read as a runtime fallback.
 
