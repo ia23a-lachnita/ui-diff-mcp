@@ -236,8 +236,8 @@ class LocateAnythingServerConfigTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             _locateanything_generation_mode("hybrid", {"LOCATEANYTHING_GENERATION_MODE": "invalid"})
 
-    def test_top_k_is_none_unless_positive_env_value_is_set(self) -> None:
-        self.assertIsNone(_locateanything_top_k({}))
+    def test_top_k_is_zero_unless_positive_env_value_is_set(self) -> None:
+        self.assertEqual(_locateanything_top_k({}), 0)
         self.assertEqual(_locateanything_top_k({"LOCATEANYTHING_TOP_K": "5"}), 5)
 
         with self.assertRaises(ValueError):

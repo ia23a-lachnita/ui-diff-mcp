@@ -8,6 +8,27 @@ POST /v1/locate-ui-elements
 
 It wraps NVIDIA's `LocateAnythingWorker` from `NVlabs/Eagle/Embodied` and converts model box tokens into the MCP locator schema.
 
+## Backend Selection
+
+The sidecar supports two inference backends:
+
+- **`official`**: The original NVIDIA `LocateAnythingWorker` (requires PyTorch, Eagle/Embodied, and CUDA).
+- **`cpp`**: A native C++ worker via ctypes (no PyTorch dependency; requires `sidecars.locateanything.cpp_worker` and the shared library).
+
+Set `LOCATEANYTHING_BACKEND` to select explicitly:
+
+```bash
+export LOCATEANYTHING_BACKEND="official"   # or "cpp"
+```
+
+When unset, the sidecar auto-selects:
+- ARM64 (`aarch64`/`arm64`) → `cpp`
+- Other architectures → `official`
+
+Diagnostic skip is controlled separately by `LOCATEANYTHING_SKIP_MODEL` (not `LOCATEANYTHING_BACKEND`). Setting `LOCATEANYTHING_BACKEND=skip` is rejected.
+
+The `/health` endpoint reports the active `backend` field and remains stable even for invalid backend values. Load errors include the selected backend name for diagnostics.
+
 ## Setup
 
 Clone Eagle and install the Embodied package in a Python environment with CUDA support:
@@ -57,10 +78,10 @@ The helper script sets `LOCATEANYTHING_IN_TOKEN_LIMIT=4096`, `LOCATEANYTHING_GEN
 
 ## Verification
 
-Parser-only tests do not load the model:
+Parser and server tests do not load the model:
 
 ```powershell
-python -m unittest sidecars.locateanything.test_parser
+python -m unittest sidecars.locateanything.test_parser sidecars.locateanything.test_server
 ```
 
 ### OCR lane

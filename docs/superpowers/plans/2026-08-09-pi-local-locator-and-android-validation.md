@@ -34,13 +34,15 @@
 - Modify: `sidecars/locateanything/README.md`
 - Modify: `package.json` if sidecar test discovery must include the new module
 
-- [ ] RED: add tests proving unset `LOCATEANYTHING_TOP_K` returns integer `0`, explicit positive values pass, and zero/negative explicit values fail.
-- [ ] GREEN: change `_locateanything_top_k` without altering explicit-value validation.
-- [ ] RED: add backend-selection tests for explicit `official`, explicit `cpp`, ARM automatic selection, non-ARM official selection, diagnostic skip, and invalid explicit override.
-- [ ] RED: prove `_apply_worker_runtime_config` applies processor/token-limit settings to the official worker but bypasses PyTorch-specific `processor.image_processor` access for `CppLocateAnythingWorker` without raising when `LOCATEANYTHING_IN_TOKEN_LIMIT` is set.
-- [ ] GREEN: isolate official imports inside the official factory so the C++ path never imports Torch, Eagle, or Decord.
-- [ ] Ensure load errors include selected backend and exact remediation without exposing secrets.
-- [ ] Run:
+- [x] RED: add tests proving unset `LOCATEANYTHING_TOP_K` returns integer `0`, explicit positive values pass, and zero/negative explicit values fail.
+- [x] GREEN: change `_locateanything_top_k` without altering explicit-value validation.
+- [x] RED: add backend-selection tests for explicit `official`, explicit `cpp`, ARM automatic selection, non-ARM official selection, and invalid explicit override; `LOCATEANYTHING_BACKEND` accepts only `official` or `cpp`.
+- [x] RED: prove `_apply_worker_runtime_config` applies processor/token-limit settings to the official worker but bypasses PyTorch-specific `processor.image_processor` access for an explicitly identifiable `CppLocateAnythingWorker` (tagged with `_backend="cpp"`) without raising; malformed official workers that lack `processor` raise `AttributeError`.
+- [x] GREEN: isolate official imports inside the official factory so the C++ path never imports Torch, Eagle, or Decord; C++ import path is `sidecars.locateanything.cpp_worker`; `sys.path` is not mutated for cpp.
+- [x] Ensure load errors include selected backend and exact remediation without exposing secrets; `AppState` retains resolved `backend`; lifespan resolves backend exactly once, passes it to `_create_worker(backend)`, resets state at startup, and on invalid selection captures `backend=unknown` plus the `ValueError` without a second resolve; health uses retained state when available and remains nonthrowing before lifespan.
+- [x] Health endpoint handles invalid backend gracefully (reports `backend: "unknown"` instead of crashing); lifecycle tests use `IsolatedAsyncioTestCase` with real `async with lifespan(app)` so teardown executes; import-failure tests use `sys.modules` patching.
+- [x] `LOCATEANYTHING_SKIP_MODEL` controls diagnostic skip; `LOCATEANYTHING_BACKEND` does not accept `skip`/`none`/`disabled`.
+- [x] Run:
 
 ```bash
 PATH=/home/agent-runner/projects/.venvs/ui-diff-mcp-locateanything/bin:$PATH \
@@ -48,9 +50,9 @@ PATH=/home/agent-runner/projects/.venvs/ui-diff-mcp-locateanything/bin:$PATH \
 npm run typecheck
 ```
 
-- [ ] Update tracking, commit, and push.
+- [x] Update tracking, commit, and push.
 
-**Acceptance:** Current upstream official code receives `top_k=0`; backend selection is explicit, deterministic, and fail-closed.
+**Acceptance:** Current upstream official code receives `top_k=0`; backend selection is explicit, deterministic, and fail-closed; `LOCATEANYTHING_BACKEND` accepts only `official`/`cpp`; skip is controlled by `LOCATEANYTHING_SKIP_MODEL`; C++ import path is `sidecars.locateanything.cpp_worker`; `AppState` retains resolved `backend`; lifespan resolves exactly once and resets state; health uses retained state and is nonthrowing before lifespan. Focused 57 server + 25 parser tests and full `npm run verify` pass.
 
 ## Stage 3: Implement The ctypes Worker And Contract Conversion
 

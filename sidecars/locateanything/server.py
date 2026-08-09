@@ -1,6 +1,7 @@
 import base64
 import io
 import os
+import platform
 import sys
 from contextlib import asynccontextmanager
 from typing import Any, Literal
@@ -33,9 +34,14 @@ class LocateRequest(BaseModel):
 class AppState:
     worker: Any | None = None
     load_error: str | None = None
+    backend: str | None = None
 
 
 state = AppState()
+
+
+def _is_cpp_worker(worker: Any) -> bool:
+    return getattr(worker, "_backend", None) == "cpp"
 
 
 def _apply_worker_runtime_config(worker: Any, env: dict[str, str]) -> None:
@@ -51,10 +57,11 @@ def _apply_worker_runtime_config(worker: Any, env: dict[str, str]) -> None:
     if token_limit < 64 or token_limit > 25600:
         raise ValueError("LOCATEANYTHING_IN_TOKEN_LIMIT must be between 64 and 25600")
 
-    image_processor = getattr(getattr(worker, "processor", None), "image_processor", None)
-    if image_processor is None or not hasattr(image_processor, "in_token_limit"):
-        raise ValueError("LocateAnything worker does not expose processor.image_processor.in_token_limit")
+    if _is_cpp_worker(worker):
+        return
 
+    processor = worker.processor
+    image_processor = processor.image_processor
     image_processor.in_token_limit = token_limit
 
 
@@ -82,10 +89,10 @@ def _locateanything_generation_mode(mode: str, env: dict[str, str]) -> str:
     return "hybrid"
 
 
-def _locateanything_top_k(env: dict[str, str]) -> int | None:
+def _locateanything_top_k(env: dict[str, str]) -> int:
     raw_top_k = env.get("LOCATEANYTHING_TOP_K")
     if not raw_top_k:
-        return None
+        return 0
 
     try:
         top_k = int(raw_top_k)
@@ -109,31 +116,79 @@ def _locateanything_max_new_tokens(env: dict[str, str]) -> int:
     return max_new_tokens
 
 
-def _create_worker() -> Any:
+def _resolve_backend(env: dict[str, str]) -> str:
+    backend = env.get("LOCATEANYTHING_BACKEND", "").lower().strip()
+    if not backend:
+        machine = platform.machine().lower()
+        if machine in {"aarch64", "arm64"}:
+            return "cpp"
+        return "official"
+    if backend == "official":
+        return "official"
+    if backend == "cpp":
+        return "cpp"
+    raise ValueError(
+        f"LOCATEANYTHING_BACKEND must be 'official' or 'cpp'; got '{backend}'"
+    )
+
+
+def _create_worker(backend: str) -> Any:
     embodied_dir = os.environ.get("LOCATEANYTHING_EAGLE_EMBODIED_DIR")
+
+    if backend == "cpp":
+        try:
+            from sidecars.locateanything.cpp_worker import CppLocateAnythingWorker
+        except ImportError as exc:
+            raise ImportError(
+                f"backend=cpp: CppLocateAnythingWorker not importable; "
+                f"ensure the shared library is installed: {exc}"
+            ) from exc
+        worker = CppLocateAnythingWorker()
+        worker._backend = "cpp"
+        _apply_worker_runtime_config(worker, os.environ)
+        return worker
+
     if embodied_dir:
         sys.path.insert(0, embodied_dir)
 
-    import torch
-    from locateanything_worker import LocateAnythingWorker
+    try:
+        import torch
+        from locateanything_worker import LocateAnythingWorker
+    except ImportError as exc:
+        raise ImportError(
+            f"backend=official: LocateAnythingWorker not importable; "
+            f"ensure Eagle/Embodied and PyTorch are installed: {exc}"
+        ) from exc
 
     model = os.environ.get("LOCATEANYTHING_MODEL", "nvidia/LocateAnything-3B")
     device = os.environ.get("LOCATEANYTHING_DEVICE", "cuda")
     dtype_name = os.environ.get("LOCATEANYTHING_DTYPE", "bfloat16")
     dtype = torch.bfloat16 if dtype_name == "bfloat16" else torch.float16
     worker = LocateAnythingWorker(model, device=device, dtype=dtype)
+    worker._backend = "official"
     _apply_worker_runtime_config(worker, os.environ)
     return worker
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    state.worker = None
+    state.load_error = None
+    state.backend = None
     skip_model = os.environ.get("LOCATEANYTHING_SKIP_MODEL", "").lower() in {"1", "true", "yes"}
     if not skip_model:
         try:
-            state.worker = _create_worker()
+            backend = _resolve_backend(os.environ)
+        except ValueError as exc:
+            state.backend = "unknown"
+            state.load_error = f"backend=unknown: {type(exc).__name__}: {exc}"
+            yield
+            return
+        state.backend = backend
+        try:
+            state.worker = _create_worker(backend)
         except Exception as exc:
-            state.load_error = f"{type(exc).__name__}: {exc}"
+            state.load_error = f"backend={backend}: {type(exc).__name__}: {exc}"
     yield
 
 
@@ -142,9 +197,16 @@ app = FastAPI(title="LocateAnything UI Diff Sidecar", version="0.1.0", lifespan=
 
 @app.get("/health")
 def health() -> dict[str, Any]:
+    backend = state.backend
+    if backend is None:
+        try:
+            backend = _resolve_backend(os.environ)
+        except ValueError:
+            backend = "unknown"
     skip_model = os.environ.get("LOCATEANYTHING_SKIP_MODEL", "").lower() in {"1", "true", "yes"}
     return {
         "model": os.environ.get("LOCATEANYTHING_MODEL", "nvidia/LocateAnything-3B"),
+        "backend": backend,
         "ready": skip_model or state.worker is not None,
         "error": state.load_error,
         "inTokenLimit": getattr(
