@@ -81,7 +81,7 @@ npx vitest run tests/unit/locateanything-client.test.ts
 npm run typecheck
 ```
 
-- [ ] Update tracking, commit, and push.
+- [x] Update tracking, commit, and push.
 
 **Acceptance:** A fake and a real ABI can use the existing sidecar contract with correct ownership, bounds, identity, and locking.
 

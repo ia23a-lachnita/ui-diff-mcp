@@ -862,22 +862,9 @@ MEMINFO
 
   new_case check-only-missing-nohup 40230
   make_python "$CASE_DIR/known-python"
+  make_health_only_path
   export UI_DIFF_LOCATEANYTHING_MACHINE_INTERNAL="x86_64"
-  # Build a restricted PATH that has bash, curl, node, python but no nohup.
-  mkdir -p "$CASE_DIR/nohup-missing-bin"
-  cp "$BASH_BIN" "$CASE_DIR/nohup-missing-bin/bash"
-  real_curl="$(command -v curl)"
-  real_node="$(command -v node)"
-  cp "$real_curl" "$CASE_DIR/nohup-missing-bin/curl"
-  cp "$real_node" "$CASE_DIR/nohup-missing-bin/node"
-  chmod +x "$CASE_DIR/nohup-missing-bin/"*
-  LAUNCHER_PATH="$CASE_DIR/nohup-missing-bin"
-  if ! PATH="$LAUNCHER_PATH" command -v nohup >/dev/null 2>&1; then
-    :
-  else
-    # nohup is on the restricted PATH; skip this test
-    pass "check-only-missing-nohup: nohup present on host, skipping"
-  fi
+  export LOCATEANYTHING_BACKEND="official"
   run_launcher --check-only
   assert_status 1 "$STATUS" "check-only fails when nohup is absent"
   assert_contains "nohup" "$OUTPUT" "error names missing nohup"
