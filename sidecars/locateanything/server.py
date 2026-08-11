@@ -3,6 +3,7 @@ import io
 import os
 import platform
 import sys
+import time
 from contextlib import asynccontextmanager
 from typing import Any, Literal
 
@@ -189,7 +190,14 @@ async def lifespan(_app: FastAPI):
             state.worker = _create_worker(backend)
         except Exception as exc:
             state.load_error = f"backend={backend}: {type(exc).__name__}: {exc}"
-    yield
+    try:
+        yield
+    finally:
+        if state.worker is not None:
+            try:
+                state.worker.close()
+            except Exception:
+                pass
 
 
 app = FastAPI(title="LocateAnything UI Diff Sidecar", version="0.1.0", lifespan=lifespan)
@@ -204,8 +212,19 @@ def health() -> dict[str, Any]:
         except ValueError:
             backend = "unknown"
     skip_model = os.environ.get("LOCATEANYTHING_SKIP_MODEL", "").lower() in {"1", "true", "yes"}
+
+    model_name = "nvidia/LocateAnything-3B"
+    if _is_cpp_worker(state.worker):
+        from sidecars.locateanything.cpp_worker import _MODEL_IDENTITY
+        model_name = _MODEL_IDENTITY
+
+    if _is_cpp_worker(state.worker):
+        model_for_response = model_name
+    else:
+        model_for_response = os.environ.get("LOCATEANYTHING_MODEL", model_name)
+
     return {
-        "model": os.environ.get("LOCATEANYTHING_MODEL", "nvidia/LocateAnything-3B"),
+        "model": model_for_response,
         "backend": backend,
         "ready": skip_model or state.worker is not None,
         "error": state.load_error,
@@ -269,42 +288,100 @@ def locate_ui_elements(request: LocateRequest) -> dict[str, Any]:
         lane_metadata["yolo_ui"] = {"status": "failed", "count": 0, "detail": str(exc), "model": "local-yolo-ui"}
 
     skip_model = os.environ.get("LOCATEANYTHING_SKIP_MODEL", "").lower() in {"1", "true", "yes"}
-    locateanything_model = os.environ.get("LOCATEANYTHING_MODEL", "nvidia/LocateAnything-3B")
+    if _is_cpp_worker(state.worker):
+        from sidecars.locateanything.cpp_worker import _MODEL_IDENTITY
+        locateanything_model = _MODEL_IDENTITY
+    else:
+        locateanything_model = os.environ.get("LOCATEANYTHING_MODEL", "nvidia/LocateAnything-3B")
     if skip_model:
         lane_metadata["locateanything"] = {"status": "skipped", "count": 0, "model": locateanything_model}
     else:
         model_element_count = 0
-        for query in request.queries:
+        if _is_cpp_worker(state.worker):
             try:
-                result = state.worker.predict(
+                t0 = time.monotonic()
+                results = state.worker.predict_many(
                     image,
-                    query.prompt,
+                    [{"id": q.id, "prompt": q.prompt} for q in request.queries],
                     generation_mode=_locateanything_generation_mode(request.generationMode, os.environ),
                     max_new_tokens=_locateanything_max_new_tokens(os.environ),
                     top_k=_locateanything_top_k(os.environ),
                     verbose=False,
+                    max_boxes=request.maxBoxesPerQuery,
                 )
+                elapsed_s = time.monotonic() - t0
             except RuntimeError as exc:
                 raise HTTPException(status_code=503, detail=f"model inference failed: {exc}") from exc
             except Exception as exc:
                 raise HTTPException(status_code=500, detail=f"adapter inference error: {exc}") from exc
 
-            answer = str(result.get("answer", ""))
-            elements, parse_warnings = parse_elements(
-                query_id=query.id,
-                answer=answer,
-                image_width=image_width,
-                image_height=image_height,
-                max_boxes=request.maxBoxesPerQuery,
-            )
-            all_elements.extend(elements)
-            model_element_count += len(elements)
-            warnings.extend(parse_warnings)
-        lane_metadata["locateanything"] = {
-            "status": "complete",
-            "count": model_element_count,
-            "model": locateanything_model,
-        }
+            if len(results) != len(request.queries):
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"result count mismatch: expected {len(request.queries)}, got {len(results)}",
+                )
+
+            for query, result in zip(request.queries, results):
+                answer = str(result.get("answer", ""))
+                result_warnings = result.get("warnings", [])
+                elements, parse_warnings = parse_elements(
+                    query_id=query.id,
+                    answer=answer,
+                    image_width=image_width,
+                    image_height=image_height,
+                    max_boxes=request.maxBoxesPerQuery,
+                )
+                all_elements.extend(elements)
+                model_element_count += len(elements)
+                warnings.extend(result_warnings)
+                warnings.extend(parse_warnings)
+
+            lane_metadata["locateanything"] = {
+                "status": "complete",
+                "count": model_element_count,
+                "model": locateanything_model,
+                "backend": "cpp",
+                "abiVersion": getattr(state.worker, "abi_version", None),
+                "elapsedMs": round(elapsed_s * 1000),
+                "quantization": getattr(state.worker, "provenance", {}).get("quantization"),
+                "modelSha256": getattr(state.worker, "provenance", {}).get("modelSha256"),
+                "engineCommit": getattr(state.worker, "provenance", {}).get("engineCommit"),
+            }
+        else:
+            for query in request.queries:
+                try:
+                    t0 = time.monotonic()
+                    result = state.worker.predict(
+                        image,
+                        query.prompt,
+                        generation_mode=_locateanything_generation_mode(request.generationMode, os.environ),
+                        max_new_tokens=_locateanything_max_new_tokens(os.environ),
+                        top_k=_locateanything_top_k(os.environ),
+                        verbose=False,
+                    )
+                    _ = time.monotonic() - t0
+                except RuntimeError as exc:
+                    raise HTTPException(status_code=503, detail=f"model inference failed: {exc}") from exc
+                except Exception as exc:
+                    raise HTTPException(status_code=500, detail=f"adapter inference error: {exc}") from exc
+
+                answer = str(result.get("answer", ""))
+                elements, parse_warnings = parse_elements(
+                    query_id=query.id,
+                    answer=answer,
+                    image_width=image_width,
+                    image_height=image_height,
+                    max_boxes=request.maxBoxesPerQuery,
+                )
+                all_elements.extend(elements)
+                model_element_count += len(elements)
+                warnings.extend(parse_warnings)
+
+            lane_metadata["locateanything"] = {
+                "status": "complete",
+                "count": model_element_count,
+                "model": locateanything_model,
+            }
 
     return {
         "model": locateanything_model,

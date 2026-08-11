@@ -31,6 +31,8 @@ The `/health` endpoint reports the active `backend` field and remains stable eve
 
 ## Setup
 
+### Official NVIDIA backend (Windows/Linux with CUDA)
+
 Clone Eagle and install the Embodied package in a Python environment with CUDA support:
 
 ```powershell
@@ -52,6 +54,26 @@ $env:LOCATEANYTHING_IN_TOKEN_LIMIT="4096"
 $env:LOCATEANYTHING_GENERATION_MODE="hybrid"
 $env:LOCATEANYTHING_MAX_NEW_TOKENS="512"
 C:\Users\xursc\projects\.venvs\ui-diff-mcp-locateanything\Scripts\python.exe -m uvicorn sidecars.locateanything.server:app --host 127.0.0.1 --port 39731
+```
+
+### C++ backend (Linux ARM64)
+
+No PyTorch, no Eagle, no GPU. Requires `sidecars.locateanything.cpp_worker` and the `locate-anything.cpp` shared library.
+
+```bash
+# Build locate-anything.cpp (see its README for details)
+cd /home/agent-runner/projects/locate-anything.cpp
+mkdir -p build-shared && cd build-shared
+cmake .. -DLA_SHARED=ON && cmake --build . -j"4"
+
+# The sidecar auto-selects cpp on aarch64/arm64.
+# Default paths (override via LOCATEANYTHING_CPP_LIBRARY_PATH / LOCATEANYTHING_CPP_MODEL_PATH):
+#   lib:  /home/agent-runner/projects/locate-anything.cpp/build-shared/liblocate_anything.so
+#   model: /home/agent-runner/projects/locate-anything.cpp/models/locate-anything-q4_k.gguf
+
+# Start the sidecar
+export LOCATEANYTHING_BACKEND="cpp"
+python -m uvicorn sidecars.locateanything.server:app --host 127.0.0.1 --port 39731
 ```
 
 The default URL is:
@@ -81,7 +103,7 @@ The helper script sets `LOCATEANYTHING_IN_TOKEN_LIMIT=4096`, `LOCATEANYTHING_GEN
 Parser and server tests do not load the model:
 
 ```powershell
-python -m unittest sidecars.locateanything.test_parser sidecars.locateanything.test_server
+python -m unittest sidecars.locateanything.test_parser sidecars.locateanything.test_server sidecars.locateanything.test_cpp_worker
 ```
 
 ### OCR lane

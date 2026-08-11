@@ -477,4 +477,50 @@ describe("locateUiElements", () => {
     expect(result.model).toBe("screen-parser-v2");
     expect(result.metadata?.lanes?.ocr_text?.count).toBe(12);
   });
+
+  it("parses C++ lane metadata with backend, abiVersion, and elapsedMs", async () => {
+    const body = JSON.stringify({
+      model: "locate-anything.cpp/Q4_K",
+      image: { width: 276, height: 600 },
+      elements: [],
+      warnings: [],
+      metadata: {
+        lanes: {
+          locateanything: {
+            status: "complete",
+            count: 21,
+            model: "locate-anything.cpp/Q4_K",
+            backend: "cpp",
+            abiVersion: 1,
+            elapsedMs: 473506,
+            quantization: "Q4_K",
+            modelSha256: "894088a00a2cd2bbb7f34b12893988dd0376c8ed92213a9f2cf6420f1e3901da",
+            engineCommit: "77376ab332de918220f7a7e391542eefb5407c9f"
+          }
+        }
+      }
+    });
+
+    const { server: s, port } = await startServer((_req, res) => {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(body);
+    });
+    server = s;
+
+    const result = await locateUiElements({
+      endpoint: `http://127.0.0.1:${port}`,
+      request: BASE_REQUEST,
+      timeoutMs: 5000
+    });
+
+    expect(result.model).toBe("locate-anything.cpp/Q4_K");
+    expect(result.metadata?.lanes?.locateanything).toMatchObject({
+      backend: "cpp",
+      abiVersion: 1,
+      elapsedMs: 473506,
+      quantization: "Q4_K",
+      modelSha256: "894088a00a2cd2bbb7f34b12893988dd0376c8ed92213a9f2cf6420f1e3901da",
+      engineCommit: "77376ab332de918220f7a7e391542eefb5407c9f"
+    });
+  });
 });

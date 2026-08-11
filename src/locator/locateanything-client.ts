@@ -43,7 +43,13 @@ const LaneMetadataSchema = z.object({
   count: z.number().int().nonnegative(),
   detail: z.string().optional(),
   model: z.string().optional(),
-  license: z.string().optional()
+  license: z.string().optional(),
+  backend: z.string().optional(),
+  abiVersion: z.number().int().nonnegative().optional(),
+  elapsedMs: z.number().nonnegative().optional(),
+  quantization: z.string().optional(),
+  modelSha256: z.string().optional(),
+  engineCommit: z.string().optional()
 });
 
 export const LocateAnythingResponseSchema = z.object({

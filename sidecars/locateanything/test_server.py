@@ -1,9 +1,13 @@
+import base64
+import io
 import os
 import platform
 import sys
 import unittest
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
+
+from PIL import Image
 
 from sidecars.locateanything.server import (
     _apply_worker_runtime_config,
@@ -18,7 +22,12 @@ from sidecars.locateanything.server import (
 class _CppWorkerStub:
     """Stub for CppLocateAnythingWorker — no processor.image_processor."""
 
-    pass
+    def __init__(self):
+        self._closed = False
+        self.abi_version = 1
+
+    def close(self):
+        self._closed = True
 
 
 class _IdentifiableCppWorkerStub(_CppWorkerStub):
@@ -33,6 +42,9 @@ class _OfficialWorkerStub:
     def __init__(self):
         self.processor = MagicMock()
         self.processor.image_processor.in_token_limit = 25600
+
+    def close(self):
+        pass
 
 
 class _MalformedOfficialWorkerStub:
@@ -231,9 +243,10 @@ class CreateWorkerTests(unittest.TestCase):
 
     def test_cpp_worker_receives_backend_argument(self) -> None:
         stub = _IdentifiableCppWorkerStub()
+        mock_worker_cls = MagicMock(return_value=stub)
         with (
             patch("sidecars.locateanything.server._is_cpp_worker", return_value=True),
-            patch.dict(sys.modules, {"sidecars.locateanything.cpp_worker": MagicMock(CppLocateAnythingWorker=MagicMock(return_value=stub))}),
+            patch.dict(sys.modules, {"sidecars.locateanything.cpp_worker": MagicMock(CppLocateAnythingWorker=mock_worker_cls)}),
         ):
             worker = _create_worker("cpp")
         self.assertIs(worker, stub)
@@ -261,7 +274,6 @@ class CreateWorkerTests(unittest.TestCase):
 
 class LifecycleTests(unittest.IsolatedAsyncioTestCase):
     def _swap_state(self, new_state: AppState):
-        """Return a context manager that swaps srv.state and restores on exit."""
         from sidecars.locateanything import server as srv
         original = srv.state
         srv.state = new_state
@@ -445,6 +457,188 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
         finally:
             srv.state = original_state
 
+    async def test_lifespan_close_called_on_worker(self) -> None:
+        """Worker.close() is invoked in the lifespan finally block."""
+        from sidecars.locateanything import server as srv
+
+        original_state = srv.state
+        try:
+            test_state = AppState()
+            srv.state = test_state
+            stub = _IdentifiableCppWorkerStub()
+            with (
+                patch("sidecars.locateanything.server._resolve_backend", return_value="cpp"),
+                patch("sidecars.locateanything.server._create_worker", return_value=stub),
+            ):
+                async with srv.lifespan(srv.app):
+                    self.assertFalse(stub._closed)
+            self.assertTrue(stub._closed)
+        finally:
+            srv.state = original_state
+
+    async def test_cpp_worker_endpoint_predict_many_path(self) -> None:
+        """C++ branch: predict_many is called once for all queries."""
+        from sidecars.locateanything import server as srv
+
+        original_state = srv.state
+        try:
+            test_state = AppState()
+            srv.state = test_state
+            stub = _IdentifiableCppWorkerStub()
+            stub.predict_many = MagicMock(return_value=[
+                {"answer": '<ref>btn</ref><box><100><100><500><500></box>', "warnings": [], "metadata": {"backend": "cpp", "abiVersion": 1}},
+                {"answer": '<ref>icon</ref><box><200><200><600><600></box>', "warnings": [], "metadata": {"backend": "cpp", "abiVersion": 1}},
+            ])
+            stub.provenance = {"backend": "cpp", "model": "locate-anything.cpp/Q4_K", "quantization": "Q4_K", "modelSha256": "abc", "engineCommit": "def"}
+            test_state.worker = stub
+            test_state.backend = "cpp"
+
+            img = Image.new("RGB", (100, 100))
+            from sidecars.locateanything.server import LocateRequest, LocateQuery
+            req = LocateRequest(
+                imagePath="/tmp/test.png",
+                imageBase64=base64.b64encode(img.tobytes()).decode(),
+                queries=[LocateQuery(id="q1", prompt="button"), LocateQuery(id="q2", prompt="icon")],
+            )
+
+            with patch("sidecars.locateanything.server._load_image", return_value=img):
+                with patch("sidecars.locateanything.server._is_cpp_worker", return_value=True):
+                    from sidecars.locateanything.server import locate_ui_elements
+                    result = locate_ui_elements(req)
+
+            stub.predict_many.assert_called_once()
+            lane = result["metadata"]["lanes"]["locateanything"]
+            self.assertEqual(lane["backend"], "cpp")
+            self.assertEqual(lane["count"], 2)
+            self.assertEqual(lane["model"], "locate-anything.cpp/Q4_K")
+            self.assertIn("abiVersion", lane)
+            self.assertIn("elapsedMs", lane)
+            self.assertNotIn("abi_version", lane)
+            self.assertNotIn("elapsed_s", lane)
+        finally:
+            srv.state = original_state
+
+    async def test_cpp_endpoint_result_count_mismatch_raises_500(self) -> None:
+        """Result count mismatch between queries and results raises HTTP 500."""
+        from fastapi import HTTPException
+        from sidecars.locateanything import server as srv
+
+        original_state = srv.state
+        try:
+            test_state = AppState()
+            srv.state = test_state
+            stub = _IdentifiableCppWorkerStub()
+            stub.predict_many = MagicMock(return_value=[
+                {"answer": "only_one", "warnings": [], "metadata": {}},
+            ])
+            test_state.worker = stub
+            test_state.backend = "cpp"
+
+            img = Image.new("RGB", (100, 100))
+            from sidecars.locateanything.server import LocateRequest, LocateQuery
+            req = LocateRequest(
+                imagePath="/tmp/test.png",
+                imageBase64=base64.b64encode(img.tobytes()).decode(),
+                queries=[LocateQuery(id="q1", prompt="button"), LocateQuery(id="q2", prompt="icon")],
+            )
+
+            with patch("sidecars.locateanything.server._load_image", return_value=img):
+                with patch("sidecars.locateanything.server._is_cpp_worker", return_value=True):
+                    from sidecars.locateanything.server import locate_ui_elements
+                    with self.assertRaises(HTTPException) as ctx:
+                        locate_ui_elements(req)
+                    self.assertEqual(ctx.exception.status_code, 500)
+                    self.assertIn("result count mismatch", ctx.exception.detail)
+        finally:
+            srv.state = original_state
+
+    async def test_cpp_endpoint_top_level_model_is_cpp_identity(self) -> None:
+        """Top-level response model must be locate-anything.cpp/Q4_K, never nvidia default."""
+        from sidecars.locateanything import server as srv
+
+        original_state = srv.state
+        try:
+            test_state = AppState()
+            srv.state = test_state
+            stub = _IdentifiableCppWorkerStub()
+            stub.predict_many = MagicMock(return_value=[
+                {"answer": '<ref>btn</ref><box><100><100><500><500></box>', "warnings": [], "metadata": {}},
+            ])
+            stub.provenance = {"backend": "cpp", "model": "locate-anything.cpp/Q4_K", "quantization": "Q4_K", "modelSha256": "abc", "engineCommit": "def"}
+            test_state.worker = stub
+            test_state.backend = "cpp"
+
+            img = Image.new("RGB", (100, 100))
+            from sidecars.locateanything.server import LocateRequest, LocateQuery
+            req = LocateRequest(
+                imagePath="/tmp/test.png",
+                imageBase64=base64.b64encode(img.tobytes()).decode(),
+                queries=[LocateQuery(id="q1", prompt="button")],
+            )
+
+            with patch("sidecars.locateanything.server._load_image", return_value=img):
+                with patch("sidecars.locateanything.server._is_cpp_worker", return_value=True):
+                    from sidecars.locateanything.server import locate_ui_elements
+                    result = locate_ui_elements(req)
+
+            self.assertEqual(result["model"], "locate-anything.cpp/Q4_K")
+            self.assertNotEqual(result["model"], "nvidia/LocateAnything-3B")
+        finally:
+            srv.state = original_state
+
+    async def test_cpp_endpoint_model_not_overridden_by_env(self) -> None:
+        """LOCATEANYTHING_MODEL=nvidia/wrong must NOT override C++ worker identity."""
+        from sidecars.locateanything import server as srv
+
+        original_state = srv.state
+        try:
+            test_state = AppState()
+            srv.state = test_state
+            stub = _IdentifiableCppWorkerStub()
+            stub.predict_many = MagicMock(return_value=[
+                {"answer": '<ref>btn</ref><box><100><100><500><500></box>', "warnings": [], "metadata": {}},
+            ])
+            stub.provenance = {"backend": "cpp", "model": "locate-anything.cpp/Q4_K", "quantization": "Q4_K", "modelSha256": "abc", "engineCommit": "def"}
+            test_state.worker = stub
+            test_state.backend = "cpp"
+
+            img = Image.new("RGB", (100, 100))
+            from sidecars.locateanything.server import LocateRequest, LocateQuery
+            req = LocateRequest(
+                imagePath="/tmp/test.png",
+                imageBase64=base64.b64encode(img.tobytes()).decode(),
+                queries=[LocateQuery(id="q1", prompt="button")],
+            )
+
+            with patch.dict(os.environ, {"LOCATEANYTHING_MODEL": "nvidia/wrong"}):
+                with patch("sidecars.locateanything.server._load_image", return_value=img):
+                    with patch("sidecars.locateanything.server._is_cpp_worker", return_value=True):
+                        from sidecars.locateanything.server import locate_ui_elements
+                        result = locate_ui_elements(req)
+
+            self.assertEqual(result["model"], "locate-anything.cpp/Q4_K")
+            self.assertNotEqual(result["model"], "nvidia/wrong")
+        finally:
+            srv.state = original_state
+
+    async def test_cpp_health_model_not_overridden_by_env(self) -> None:
+        """LOCATEANYTHING_MODEL=nvidia/wrong must NOT override C++ health model."""
+        from sidecars.locateanything import server as srv
+
+        original_state = srv.state
+        try:
+            test_state = AppState()
+            srv.state = test_state
+            stub = _IdentifiableCppWorkerStub()
+            test_state.worker = stub
+            test_state.backend = "cpp"
+            srv.state = test_state
+            with patch.dict(os.environ, {"LOCATEANYTHING_MODEL": "nvidia/wrong"}, clear=False):
+                result = srv.health()
+            self.assertEqual(result["model"], "locate-anything.cpp/Q4_K")
+        finally:
+            srv.state = original_state
+
 
 # ---------------------------------------------------------------------------
 # Health endpoint tests
@@ -587,6 +781,21 @@ class HealthEndpointTests(unittest.TestCase):
             srv.state = test_state
             result = srv.health()
             self.assertIsNone(result["inTokenLimit"])
+        finally:
+            srv.state = original_state
+
+    def test_health_reports_cpp_model_identity(self) -> None:
+        from sidecars.locateanything import server as srv
+
+        original_state = srv.state
+        try:
+            test_state = AppState()
+            stub = _IdentifiableCppWorkerStub()
+            test_state.worker = stub
+            test_state.backend = "cpp"
+            srv.state = test_state
+            result = srv.health()
+            self.assertEqual(result["model"], "locate-anything.cpp/Q4_K")
         finally:
             srv.state = original_state
 

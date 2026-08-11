@@ -64,15 +64,15 @@ npm run typecheck
 - Modify: `src/locator/locateanything-client.ts` only if additive lane metadata requires schema support
 - Modify: `tests/unit/locateanything-client.test.ts` when the TypeScript schema changes
 
-- [ ] RED: inject a fake CDLL and assert configured signatures for only `la_capi_abi_version`, `la_capi_load`, `la_capi_free`, `la_capi_locate_buffer`, `la_capi_free_string`, and `la_capi_last_error`.
-- [ ] RED: cover ABI mismatch, null load, null inference result, invalid UTF-8/JSON, missing fields, non-finite coordinates, unordered/empty boxes, out-of-bounds boxes, and over-cap detections.
-- [ ] RED: prove every successful C string is freed exactly once and the context is freed exactly once at shutdown.
-- [ ] RED: run concurrent calls against a blocking fake library and prove one `threading.Lock` serializes the complete multi-query request.
-- [ ] RED: verify pixel `xyxy` conversion to `box`, 0..1000 `rawBox1000`, exact `queryId`, `label`/`rawText`, confidence policy, warnings, and received image dimensions.
-- [ ] GREEN: implement persistent `CppLocateAnythingWorker` with dependency injection for hermetic tests.
-- [ ] GREEN: wire the worker into the existing locateanything lane without changing endpoint inputs or required response fields.
-- [ ] Add backend/model/quant/hash/ABI and timing fields additively to lane metadata; update TypeScript schemas test-first if those fields cross the client boundary.
-- [ ] Run:
+- [x] RED: inject a fake CDLL and assert configured signatures for only `la_capi_abi_version`, `la_capi_load`, `la_capi_free`, `la_capi_locate_buffer`, `la_capi_free_string`, and `la_capi_last_error`.
+- [x] RED: cover ABI mismatch, null load, null inference result, invalid UTF-8/JSON, missing fields, non-finite coordinates, unordered/empty boxes, out-of-bounds boxes, and over-cap detections.
+- [x] RED: prove every successful C string is freed exactly once and the context is freed exactly once at shutdown.
+- [x] RED: run concurrent calls against a blocking fake library and prove one `threading.Lock` serializes the complete multi-query request.
+- [x] RED: verify pixel `xyxy` conversion to `box`, 0..1000 `rawBox1000`, exact `queryId`, `label`/`rawText`, confidence policy, warnings, and received image dimensions.
+- [x] GREEN: implement persistent `CppLocateAnythingWorker` with dependency injection for hermetic tests.
+- [x] GREEN: wire the worker into the existing locateanything lane without changing endpoint inputs or required response fields.
+- [x] Add backend/model/quant/hash/ABI and timing fields additively to lane metadata; update TypeScript schemas test-first if those fields cross the client boundary.
+- [x] Run:
 
 ```bash
 PATH=/home/agent-runner/projects/.venvs/ui-diff-mcp-locateanything/bin:$PATH \
