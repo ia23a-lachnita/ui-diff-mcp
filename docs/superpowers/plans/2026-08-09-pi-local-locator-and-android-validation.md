@@ -111,7 +111,7 @@ git diff --check
 
 Result: `275/275` shell assertions pass; `bash -n` syntax OK; `git diff --check` clean. `PATH`-prefixed `npm run verify` PASS: 74 files / 1390 TypeScript tests, 154 Python sidecar tests, build/typecheck clean, 3 integration files / 22 tests. Real Pi check-only PASS in `2m11.669s` with `backend=cpp`, `MemAvailable 6227220 kB` (required `5322268 kB`), `startup_timeout_ms=600000`.
 
-- [ ] Update tracking, commit, and push.
+- [x] Update tracking, commit, and push (`fa109c3`).
 
 **Acceptance:** Automatic ARM startup is reproducible, provenance-checked, resource-aware, and cannot silently fall back to a diagnostic model.
 
