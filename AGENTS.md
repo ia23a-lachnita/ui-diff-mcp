@@ -49,13 +49,17 @@ opencode run --model opencode/mimo-v2.5-free --auto --dir <repo> "<prompt>"
 # 5. opencode/deepseek-v4-flash-free
 opencode run --model opencode/deepseek-v4-flash-free --auto --dir <repo> "<prompt>"
 
-# 6. Claude paid (last) — literal model name: claude-fable-5
-claude -p "<prompt>" --model claude-fable-5 --dangerously-skip-permissions --output-format text
+# 6. Claude paid (last) — literal model name: claude-sonnet-5
+claude -p "<prompt>" --model claude-sonnet-5 --dangerously-skip-permissions --output-format text
 ```
 
 Workers never commit or push; the main agent reviews, verifies, commits, and pushes.
 
+`claude-opus-5` is not an editing worker route. It is read-only consultation/second-opinion only: it may inspect, reason, and report findings, but it never edits repository files. Its findings supplement but never replace the mandatory Antigravity MCP review in Section 5 — a `claude-opus-5` consultation cannot substitute for `AGREEMENT_STATUS: agree` / `MUST_FIX: none` from Antigravity MCP.
+
 Codex host instances and Codex child agents remain allowed for read-only research, investigation, review, planning, and sub-orchestration. If a worker explicitly reports quota exhaustion or is unavailable, record the exact failure (category, message, ISO timestamp) before falling back to the next route. The main agent's native tools remain preferred except for the explicit worker editing route described above.
+
+Before interpreting a Claude CLI "monthly spend limit" (or similar extra-usage cap) message as whole-account or subscription exhaustion, run the literal command `claude -p /usage --output-format text` and record current 5-hour/session usage and weekly subscription status separately from extra-usage spend-cap status. A spend-cap message can mean only the extra-usage budget is exhausted while session and weekly subscription quotas remain available. Never expose credentials, API keys, or account tokens when recording usage diagnostics.
 
 Use the host agent's native tools; do not shell out to another CLI to do what a native tool already does.
 
@@ -70,7 +74,7 @@ Use the host agent's native tools; do not shell out to another CLI to do what a 
 Notes:
 - Workers edit; host reviews/verifies/commits/pushes.
 - Before each fallback, log ISO timestamp, exact model, category, and exact provider/tool message.
-- Grok, Qwen, and OpenCode free editing routes are runtime- and quota-gated. `claude-fable-5` is the explicit paid, last-resort editing route; this worker policy is separate from the UI-diff pipeline's provider routing.
+- Grok, Qwen, and OpenCode free editing routes are runtime- and quota-gated. `claude-sonnet-5` is the explicit paid, last-resort editing route; this worker policy is separate from the UI-diff pipeline's provider routing.
 - The Antigravity review tool is the same MCP server; only the tool-name separator differs per host. Both forms in this contract refer to that one tool.
 - Long verification commands (`npm run verify`, live gates) should run in the background where the host supports it, with results collected before reporting.
 - Google MCP connectors (`gcloud`, `firebase`) are intentionally disabled by default on this machine. Do not re-enable them silently; if a task genuinely needs them, say so and let the user enable them for that session.

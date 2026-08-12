@@ -94,20 +94,22 @@ npm run typecheck
 - Modify: `.env.example`
 - Modify: `sidecars/locateanything/README.md`
 
-- [ ] RED: add hermetic cases for explicit library/model overrides, bad override with no fallback, ARM known paths, wrong checkout commit, wrong model hash, missing shared library, ABI mismatch, wrong architecture, and official non-ARM path.
-- [ ] RED: prove C++ check-only does not require Eagle or Torch but still requires usable Python, uvicorn, Pillow, the external library, and the pinned model.
-- [ ] GREEN: build guidance uses external commit `77376ab332de918220f7a7e391542eefb5407c9f` and `cmake -DLA_SHARED=ON`; no build or GGUF enters Git.
-- [ ] GREEN: verify Q4 SHA-256 `894088a00a2cd2bbb7f34b12893988dd0376c8ed92213a9f2cf6420f1e3901da` and ABI `1` before startup.
-- [ ] RED/GREEN: preflight `MemAvailable`; record process RSS/peak and process-swap delta; fail on insufficient headroom, new swap use, or page-thrashing evidence. Do not require host swap to be disabled.
-- [ ] RED/GREEN: reject concurrent ReDroid plus C++ locator on this host unless an explicit measured co-location evidence flag/file is present.
-- [ ] Ensure all paths bind only to `127.0.0.1` and logs contain no credentials.
-- [ ] Run:
+- [x] RED: add hermetic cases for explicit library/model overrides, bad override with no fallback, ARM known paths, wrong checkout commit, wrong model hash, missing shared library, ABI mismatch, wrong architecture, and official non-ARM path.
+- [x] RED: prove C++ check-only does not require Eagle or Torch but still requires usable Python, uvicorn, Pillow, the external library, and the pinned model.
+- [x] GREEN: build guidance uses external commit `77376ab332de918220f7a7e391542eefb5407c9f` and `cmake -DLA_SHARED=ON`; no build or GGUF enters Git.
+- [x] GREEN: verify Q4 SHA-256 `894088a00a2cd2bbb7f34b12893988dd0376c8ed92213a9f2cf6420f1e3901da` and ABI `1` before startup.
+- [x] RED/GREEN: preflight `MemAvailable`; record process RSS/peak and process-swap delta; fail on insufficient headroom, new swap use, or page-thrashing evidence. Do not require host swap to be disabled.
+- [x] RED/GREEN: reject concurrent ReDroid plus C++ locator on this host unless an explicit measured co-location evidence flag/file is present. This gate now applies to both real startup and `--check-only`.
+- [x] Ensure all paths bind only to `127.0.0.1` and logs contain no credentials.
+- [x] Run:
 
 ```bash
 bash tests/contract/locateanything-sidecar-launcher.test.sh
 bash -n scripts/start-locateanything-sidecar.sh
 git diff --check
 ```
+
+Result: `275/275` shell assertions pass; `bash -n` syntax OK; `git diff --check` clean. `PATH`-prefixed `npm run verify` PASS: 74 files / 1390 TypeScript tests, 154 Python sidecar tests, build/typecheck clean, 3 integration files / 22 tests. Real Pi check-only PASS in `2m11.669s` with `backend=cpp`, `MemAvailable 6227220 kB` (required `5322268 kB`), `startup_timeout_ms=600000`.
 
 - [ ] Update tracking, commit, and push.
 

@@ -60,9 +60,27 @@ C:\Users\xursc\projects\.venvs\ui-diff-mcp-locateanything\Scripts\python.exe -m 
 
 No PyTorch, no Eagle, no GPU. Requires `sidecars.locateanything.cpp_worker` and the `locate-anything.cpp` shared library.
 
+Stage 4 pins exact provenance. The launcher (`scripts/start-locateanything-sidecar.sh`) enforces these
+values and refuses to start (or, with `--check-only`, refuses to report ready) if the built library or
+model do not match:
+
+- **Engine commit**: `locate-anything.cpp` must be built from commit
+  `77376ab332de918220f7a7e391542eefb5407c9f`. Other commits are not verified against this launcher's
+  co-location and metrics contract.
+- **Build flag**: build with `cmake -DLA_SHARED=ON` (a shared library, not a static one).
+- **C API ABI**: the built library must report ABI version `1`. The launcher checks this and fails with
+  a rebuild-at-pinned-commit message on mismatch.
+- **Model**: the Q4_K quantization only, pinned to SHA-256
+  `894088a00a2cd2bbb7f34b12893988dd0376c8ed92213a9f2cf6420f1e3901da`. Q4_K was selected from measured Pi
+  evidence over Q5_K (lower detection count, longer runtime, and higher process swap under concurrent
+  load); see `docs/implementation-status.md` for the measurements.
+- **No model or build output enters Git.** The shared library and `.gguf` model file are build/download
+  artifacts; keep them outside the repository (or gitignored) on every host.
+
 ```bash
-# Build locate-anything.cpp (see its README for details)
+# Build locate-anything.cpp at the pinned commit (see its README for full detail)
 cd /home/agent-runner/projects/locate-anything.cpp
+git checkout 77376ab332de918220f7a7e391542eefb5407c9f
 mkdir -p build-shared && cd build-shared
 cmake .. -DLA_SHARED=ON && cmake --build . -j"4"
 
@@ -71,10 +89,46 @@ cmake .. -DLA_SHARED=ON && cmake --build . -j"4"
 #   lib:  /home/agent-runner/projects/locate-anything.cpp/build-shared/liblocate_anything.so
 #   model: /home/agent-runner/projects/locate-anything.cpp/models/locate-anything-q4_k.gguf
 
-# Start the sidecar
 export LOCATEANYTHING_BACKEND="cpp"
+
+# Recommended Pi production path: validate provenance/ABI/co-location, then start via the launcher.
+bash scripts/start-locateanything-sidecar.sh --check-only
+bash scripts/start-locateanything-sidecar.sh
+```
+
+Direct `uvicorn` invocation is a diagnostic/developer path only — it skips the launcher's engine-commit,
+model-SHA-256, ABI, RAM-preflight, startup-metrics, and ReDroid co-location checks. Do not use it as the
+production path on the Pi:
+
+```bash
+# Diagnostic/developer only — bypasses launcher provenance and co-location gating.
 python -m uvicorn sidecars.locateanything.server:app --host 127.0.0.1 --port 39731
 ```
+
+#### Startup readiness vs. inference timeout
+
+`LOCATEANYTHING_STARTUP_TIMEOUT_MS` (architecture default `600000` on ARM64/Pi / `aarch64`,
+`120000` on all other supported architectures; max `600000`) and `LOCATEANYTHING_STARTUP_POLL_MS`
+(default `500`, max `10000`) are public launcher variables that control only how long
+`scripts/start-locateanything-sidecar.sh` polls `/health` for `"ready": true` before failing. The longer
+ARM64 default exists because measured Pi Q4 cold start is about 473 seconds. They are unrelated to
+`LOCATEANYTHING_TIMEOUT_MS`, the separate Node-side inference-request timeout the MCP client uses for
+each `/v1/locate-ui-elements` call; that variable does not affect launcher startup at all.
+
+#### ReDroid co-location evidence
+
+On the C++ backend, if a co-located ReDroid container is detected, the launcher requires
+`LOCATEANYTHING_COLOCATION_EVIDENCE` to point at a file proving a prior measured concurrent run stayed
+within resource bounds. The file has an exact 9-key `key=value` schema (`schema_version`, `engine_commit`,
+`model_sha256`, `abi_version`, `quantization`, `host_machine`, `concurrent_peak_rss_kib`,
+`concurrent_swap_delta_kib`, `status`) — see the root `README.md` "ReDroid Co-Location Evidence" section
+for the authoritative field table and rejection rules (shell-metacharacter lines are rejected without ever
+being evaluated as shell code).
+
+`locateanything-startup.metrics`, written by the launcher after the sidecar becomes ready, is a **separate**
+post-ready artifact: it records only that one locator process's own RSS/swap, measured after startup with
+no ReDroid workload necessarily running concurrently. It is not proof of concurrent ReDroid co-location and
+must never be substituted for `LOCATEANYTHING_COLOCATION_EVIDENCE`.
 
 The default URL is:
 

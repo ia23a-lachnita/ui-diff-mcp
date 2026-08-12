@@ -47,6 +47,11 @@ assert_not_contains() {
   if [[ "$haystack" != *"$needle"* ]]; then pass "$label"; else fail "$label (unexpected present: $needle)"; fi
 }
 
+assert_exact() {
+  local expected="$1" actual="$2" label="$3"
+  if [ "$expected" = "$actual" ]; then pass "$label"; else fail "$label (expected exactly '$expected', got '$actual')"; fi
+}
+
 # Pinned provenance constants (must match launcher/server/cpp_worker).
 PINNED_ENGINE_COMMIT="77376ab332de918220f7a7e391542eefb5407c9f"
 PINNED_MODEL_SHA256="894088a00a2cd2bbb7f34b12893988dd0376c8ed92213a9f2cf6420f1e3901da"
@@ -81,9 +86,10 @@ new_case() {
   unset UI_DIFF_LOCATEANYTHING_CPP_MODEL_INTERNAL
   unset UI_DIFF_LOCATEANYTHING_CPP_LIB_MACHINE_INTERNAL
   unset UI_DIFF_LOCATEANYTHING_MEMINFO_INTERNAL
+  unset UI_DIFF_LOCATEANYTHING_MUTATE_MEMINFO_INTERNAL
   unset UI_DIFF_LOCATEANYTHING_COLOCATION_EVIDENCE_INTERNAL
   unset UI_DIFF_LOCATEANYTHING_REDROID_NAME_INTERNAL
-  unset UI_DIFF_LOCATEANYTHING_PROC_PID_INTERNAL
+  unset UI_DIFF_LOCATEANYTHING_PROC_STATUS_FILE_INTERNAL
   unset FAKE_PYTHON_PREFLIGHT_MODE FAKE_PYTHON_PREFLIGHT_MARKER
   unset FAKE_GIT_HEAD FAKE_SHA256_HASH FAKE_DOCKER_STATE FAKE_PYTHON_ABI FAKE_PYTHON_ABI_CODE_LOG
   unset FAKE_CURL_COUNT FAKE_CURL_RESPONSES FAKE_STATIC_HEALTH
@@ -417,6 +423,117 @@ if [ -x "$LAUNCHER" ]; then
   export UI_DIFF_LOCATEANYTHING_TIMEOUT_MS=160 UI_DIFF_LOCATEANYTHING_POLL_MS=999999
   run_launcher --check-only
   assert_status 1 "$STATUS" "oversized poll rejected"
+
+  # ── Public startup timeout/poll variables ─────────────────────────────
+
+  new_case public-startup-timeout-poll-validated 40122
+  make_python "$CASE_DIR/known-python"
+  unset UI_DIFF_LOCATEANYTHING_TIMEOUT_MS UI_DIFF_LOCATEANYTHING_POLL_MS
+  export LOCATEANYTHING_STARTUP_TIMEOUT_MS=0
+  run_launcher --check-only
+  assert_status 1 "$STATUS" "invalid public LOCATEANYTHING_STARTUP_TIMEOUT_MS rejected"
+  assert_contains "LOCATEANYTHING_STARTUP_TIMEOUT_MS" "$OUTPUT" "error names the public startup timeout variable"
+  unset LOCATEANYTHING_STARTUP_TIMEOUT_MS
+  export LOCATEANYTHING_STARTUP_TIMEOUT_MS=160 LOCATEANYTHING_STARTUP_POLL_MS=999999
+  run_launcher --check-only
+  assert_status 1 "$STATUS" "invalid public LOCATEANYTHING_STARTUP_POLL_MS rejected"
+  assert_contains "LOCATEANYTHING_STARTUP_POLL_MS" "$OUTPUT" "error names the public startup poll variable"
+
+  new_case public-startup-timeout-poll-honored 40123
+  make_python "$CASE_DIR/known-python"; make_curl
+  unset UI_DIFF_LOCATEANYTHING_TIMEOUT_MS UI_DIFF_LOCATEANYTHING_POLL_MS
+  export LOCATEANYTHING_STARTUP_TIMEOUT_MS=100 LOCATEANYTHING_STARTUP_POLL_MS=20
+  printf '{"ready":false,"error":null}\n' > "$CASE_DIR/responses"
+  export FAKE_CURL_COUNT="$CASE_DIR/count" FAKE_CURL_RESPONSES="$CASE_DIR/responses"
+  export FAKE_PYTHON_CWD="$CASE_DIR/cwd" FAKE_PYTHON_ARGS="$CASE_DIR/args" FAKE_PYTHON_ENV="$CASE_DIR/env"
+  run_launcher
+  assert_status 1 "$STATUS" "startup times out using the public LOCATEANYTHING_STARTUP_TIMEOUT_MS when no internal hook is set"
+  assert_contains "within 100ms" "$OUTPUT" "timeout error reports the public startup timeout value"
+
+  new_case internal-timeout-poll-precedence-over-public 40124
+  make_python "$CASE_DIR/known-python"
+  # new_case already sets UI_DIFF_LOCATEANYTHING_TIMEOUT_MS/POLL_MS to valid values.
+  export LOCATEANYTHING_STARTUP_TIMEOUT_MS=0 LOCATEANYTHING_STARTUP_POLL_MS=999999999
+  run_launcher --check-only
+  assert_status 0 "$STATUS" "internal UI_DIFF_LOCATEANYTHING_TIMEOUT_MS/POLL_MS take precedence over invalid public startup values"
+
+  # ── Architecture-aware startup-timeout defaults (fast hermetic) ─────
+  # Measured Pi ARM64 Q4 cold start is 473.506s; a 120s default would kill a
+  # healthy ARM load. Defaults: aarch64/ARM64 → 600000ms; non-ARM → 120000ms.
+  # --check-only prints startup_timeout_ms= so we never wait on real timeouts.
+
+  # Static: both architecture default constants exist and are associated with
+  # the aarch64 branch via default_startup_timeout_ms / resolve_arch.
+  if grep -q 'DEFAULT_TIMEOUT_MS_ARM="600000"' "$LAUNCHER"; then
+    pass "launcher defines DEFAULT_TIMEOUT_MS_ARM=600000"
+  else
+    fail "launcher defines DEFAULT_TIMEOUT_MS_ARM=600000"
+  fi
+  if grep -q 'DEFAULT_TIMEOUT_MS_NON_ARM="120000"' "$LAUNCHER"; then
+    pass "launcher defines DEFAULT_TIMEOUT_MS_NON_ARM=120000"
+  else
+    fail "launcher defines DEFAULT_TIMEOUT_MS_NON_ARM=120000"
+  fi
+  if grep -A6 'default_startup_timeout_ms()' "$LAUNCHER" | grep -q 'aarch64).*DEFAULT_TIMEOUT_MS_ARM'; then
+    pass "default_startup_timeout_ms associates aarch64 with DEFAULT_TIMEOUT_MS_ARM"
+  else
+    fail "default_startup_timeout_ms associates aarch64 with DEFAULT_TIMEOUT_MS_ARM"
+  fi
+  if grep -A8 'default_startup_timeout_ms()' "$LAUNCHER" | grep -q '\*).*DEFAULT_TIMEOUT_MS_NON_ARM'; then
+    pass "default_startup_timeout_ms associates non-ARM with DEFAULT_TIMEOUT_MS_NON_ARM"
+  else
+    fail "default_startup_timeout_ms associates non-ARM with DEFAULT_TIMEOUT_MS_NON_ARM"
+  fi
+  if grep -q 'default_startup_timeout_ms' "$LAUNCHER" && grep -A3 'default_startup_timeout_ms()' "$LAUNCHER" | grep -q 'resolve_arch'; then
+    pass "default_startup_timeout_ms uses resolve_arch (no raw uname duplication)"
+  else
+    fail "default_startup_timeout_ms uses resolve_arch (no raw uname duplication)"
+  fi
+
+  new_case arch-default-timeout-aarch64 40125
+  make_python "$CASE_DIR/known-python"
+  unset UI_DIFF_LOCATEANYTHING_TIMEOUT_MS UI_DIFF_LOCATEANYTHING_POLL_MS
+  unset LOCATEANYTHING_STARTUP_TIMEOUT_MS LOCATEANYTHING_STARTUP_POLL_MS
+  export UI_DIFF_LOCATEANYTHING_MACHINE_INTERNAL="aarch64"
+  export LOCATEANYTHING_BACKEND="official"
+  run_launcher --check-only
+  assert_status 0 "$STATUS" "aarch64 architecture default check-only passes"
+  assert_contains "startup_timeout_ms=600000" "$OUTPUT" "aarch64 default startup timeout is 600000ms"
+
+  new_case arch-default-timeout-x86_64 40126
+  make_python "$CASE_DIR/known-python"
+  unset UI_DIFF_LOCATEANYTHING_TIMEOUT_MS UI_DIFF_LOCATEANYTHING_POLL_MS
+  unset LOCATEANYTHING_STARTUP_TIMEOUT_MS LOCATEANYTHING_STARTUP_POLL_MS
+  export UI_DIFF_LOCATEANYTHING_MACHINE_INTERNAL="x86_64"
+  run_launcher --check-only
+  assert_status 0 "$STATUS" "x86_64 architecture default check-only passes"
+  assert_contains "startup_timeout_ms=120000" "$OUTPUT" "x86_64 default startup timeout is 120000ms"
+
+  new_case public-startup-timeout-overrides-arch-default 40127
+  make_python "$CASE_DIR/known-python"
+  unset UI_DIFF_LOCATEANYTHING_TIMEOUT_MS UI_DIFF_LOCATEANYTHING_POLL_MS
+  unset LOCATEANYTHING_STARTUP_POLL_MS
+  export UI_DIFF_LOCATEANYTHING_MACHINE_INTERNAL="aarch64"
+  export LOCATEANYTHING_BACKEND="official"
+  export LOCATEANYTHING_STARTUP_TIMEOUT_MS=90000
+  run_launcher --check-only
+  assert_status 0 "$STATUS" "public LOCATEANYTHING_STARTUP_TIMEOUT_MS override check-only passes"
+  assert_contains "startup_timeout_ms=90000" "$OUTPUT" "public LOCATEANYTHING_STARTUP_TIMEOUT_MS overrides aarch64 architecture default"
+  assert_not_contains "startup_timeout_ms=600000" "$OUTPUT" "public override does not leave aarch64 architecture default"
+
+  new_case internal-timeout-overrides-public-and-arch 40128
+  make_python "$CASE_DIR/known-python"
+  # Internal hook has highest precedence over both public override and arch default.
+  export UI_DIFF_LOCATEANYTHING_TIMEOUT_MS=160
+  export UI_DIFF_LOCATEANYTHING_POLL_MS=20
+  export LOCATEANYTHING_STARTUP_TIMEOUT_MS=90000
+  export UI_DIFF_LOCATEANYTHING_MACHINE_INTERNAL="aarch64"
+  export LOCATEANYTHING_BACKEND="official"
+  run_launcher --check-only
+  assert_status 0 "$STATUS" "internal timeout precedence check-only passes"
+  assert_contains "startup_timeout_ms=160" "$OUTPUT" "internal UI_DIFF_LOCATEANYTHING_TIMEOUT_MS has highest precedence"
+  assert_not_contains "startup_timeout_ms=90000" "$OUTPUT" "internal hook wins over public LOCATEANYTHING_STARTUP_TIMEOUT_MS"
+  assert_not_contains "startup_timeout_ms=600000" "$OUTPUT" "internal hook wins over aarch64 architecture default"
 
   new_case ready-spawn 40109
   make_python "$CASE_DIR/known-python"; make_curl
@@ -881,6 +998,666 @@ MEMINFO
   assert_status 1 "$STATUS" "cpp check-only fails when cpp_worker import fails"
   assert_contains "cpp_worker" "$OUTPUT" "error mentions cpp_worker module"
   assert_contains "C++ sidecar modules" "$OUTPUT" "error identifies C++ sidecar context"
+
+  # ── ARM normal startup: cpp backend, skips Eagle, exports paths ─────
+
+  new_case arm-unready-normal-startup-cpp 40301
+  make_python "$CASE_DIR/known-python"; make_curl
+  setup_cpp_hermetic_defaults
+  export UI_DIFF_LOCATEANYTHING_MACHINE_INTERNAL="aarch64"
+  # Record child env to verify LOCATEANYTHING_BACKEND and library/model paths.
+  export FAKE_PYTHON_CWD="$CASE_DIR/cwd" FAKE_PYTHON_ARGS="$CASE_DIR/args" FAKE_PYTHON_ENV="$CASE_DIR/env"
+  export FAKE_PYTHON_CALLS="$CASE_DIR/calls"
+  export FAKE_CURL_COUNT="$CASE_DIR/count"
+  printf '{"ready":false,"error":null}\n{"ready":true,"error":null}\n' > "$CASE_DIR/responses"
+  export FAKE_CURL_RESPONSES="$CASE_DIR/responses" FAKE_PYTHON_SLEEP=5
+  # Remove Eagle entirely — cpp backend must not require it.
+  rm -rf "$CASE_DIR/eagle"
+  unset UI_DIFF_LOCATEANYTHING_EAGLE_DIR_INTERNAL
+  export LOCATEANYTHING_EAGLE_EMBODIED_DIR=""
+  run_launcher
+  assert_status 0 "$STATUS" "arm unready startup selects cpp and reaches ready"
+  assert_contains "backend=cpp" "$OUTPUT" "startup reports backend=cpp"
+  assert_not_contains "Eagle" "$OUTPUT" "cpp startup skips Eagle reference"
+  # Verify child environment contains LOCATEANYTHING_BACKEND=cpp.
+  if [ -f "$CASE_DIR/env" ]; then
+    child_env="$(cat "$CASE_DIR/env")"
+    assert_contains "LOCATEANYTHING_BACKEND=cpp" "$child_env" "child env exports LOCATEANYTHING_BACKEND=cpp"
+    assert_contains "LOCATEANYTHING_CPP_LIBRARY_PATH=$CASE_DIR/lib/liblocate_anything.so" "$child_env" "child env exports exact library path"
+    assert_contains "LOCATEANYTHING_CPP_MODEL_PATH=$CASE_DIR/models/locate-anything-q4_k.gguf" "$child_env" "child env exports exact model path"
+    assert_contains "LOCATEANYTHING_CPP_CHECKOUT_DIR=$CASE_DIR/checkout" "$child_env" "child env exports checkout dir"
+  else
+    fail "child env file missing for arm startup"
+  fi
+  pid="$(sed -n 's/^PID: //p' <<<"$OUTPUT")"; PIDS+=("$pid")
+
+  # ── Explicit official on ARM uses Eagle ──────────────────────────────
+
+  new_case arm-explicit-official-uses-eagle 40302
+  make_python "$CASE_DIR/known-python"; make_curl
+  export UI_DIFF_LOCATEANYTHING_MACHINE_INTERNAL="aarch64"
+  export LOCATEANYTHING_BACKEND="official"
+  export FAKE_PYTHON_CWD="$CASE_DIR/cwd" FAKE_PYTHON_ARGS="$CASE_DIR/args" FAKE_PYTHON_ENV="$CASE_DIR/env"
+  export FAKE_PYTHON_CALLS="$CASE_DIR/calls"
+  export FAKE_CURL_COUNT="$CASE_DIR/count"
+  printf '{"ready":false,"error":null}\n{"ready":true,"error":null}\n' > "$CASE_DIR/responses"
+  export FAKE_CURL_RESPONSES="$CASE_DIR/responses" FAKE_PYTHON_SLEEP=5
+  run_launcher
+  assert_status 0 "$STATUS" "arm explicit official uses Eagle and reaches ready"
+  assert_contains "backend=official" "$OUTPUT" "startup reports backend=official"
+  assert_contains "Eagle" "$OUTPUT" "official backend references Eagle"
+  assert_contains "Eagle=$CASE_DIR/eagle" "$OUTPUT" "ARM startup output asserts exact Eagle path"
+  if [ -f "$CASE_DIR/env" ]; then
+    child_env="$(cat "$CASE_DIR/env")"
+    assert_contains "LOCATEANYTHING_BACKEND=official" "$child_env" "child env exports LOCATEANYTHING_BACKEND=official"
+    assert_not_contains "LOCATEANYTHING_CPP_LIBRARY_PATH" "$child_env" "official backend does not export library path"
+  else
+    fail "child env file missing for official startup"
+  fi
+  pid="$(sed -n 's/^PID: //p' <<<"$OUTPUT")"; PIDS+=("$pid")
+
+  # ── ReDroid co-location: missing evidence fails before spawn ─────────
+
+  make_docker_running() {
+    cat > "$CASE_DIR/bin/docker" <<'DOCKER'
+#!/bin/bash
+set -euo pipefail
+if [ "${1:-}" = "inspect" ]; then
+  printf 'true\n'; exit 0
+fi
+exit 1
+DOCKER
+    chmod +x "$CASE_DIR/bin/docker"
+  }
+
+  new_case redroid-no-evidence-fails 40401
+  make_python "$CASE_DIR/known-python"
+  setup_cpp_hermetic_defaults
+  export UI_DIFF_LOCATEANYTHING_MACHINE_INTERNAL="aarch64"
+  export UI_DIFF_LOCATEANYTHING_COLOCATION_EVIDENCE_INTERNAL="$CASE_DIR/evidence"
+  export UI_DIFF_LOCATEANYTHING_REDROID_NAME_INTERNAL="redroid"
+  make_docker_running
+  export FAKE_PYTHON_CWD="$CASE_DIR/cwd" FAKE_PYTHON_ARGS="$CASE_DIR/args" FAKE_PYTHON_ENV="$CASE_DIR/env"
+  run_launcher
+  assert_status 1 "$STATUS" "redroid running with no evidence fails before spawn"
+  assert_contains "co-location evidence" "$OUTPUT" "error names co-location evidence"
+  assert_not_exists "$CASE_DIR/args" "no evidence failure occurs before spawn"
+
+  # ── ReDroid co-location: malformed evidence fails ────────────────────
+
+  new_case redroid-malformed-evidence-fails 40402
+  make_python "$CASE_DIR/known-python"
+  setup_cpp_hermetic_defaults
+  export UI_DIFF_LOCATEANYTHING_MACHINE_INTERNAL="aarch64"
+  export UI_DIFF_LOCATEANYTHING_COLOCATION_EVIDENCE_INTERNAL="$CASE_DIR/evidence"
+  export UI_DIFF_LOCATEANYTHING_REDROID_NAME_INTERNAL="redroid"
+  printf 'this is not valid evidence {{{\n' > "$CASE_DIR/evidence"
+  make_docker_running
+  export FAKE_PYTHON_CWD="$CASE_DIR/cwd" FAKE_PYTHON_ARGS="$CASE_DIR/args" FAKE_PYTHON_ENV="$CASE_DIR/env"
+  run_launcher
+  assert_status 1 "$STATUS" "malformed evidence fails before spawn"
+  assert_contains "co-location evidence" "$OUTPUT" "error references evidence for malformed"
+
+  # ── ReDroid co-location: duplicate key fails ─────────────────────────
+
+  new_case redroid-duplicate-key-evidence-fails 40403
+  make_python "$CASE_DIR/known-python"
+  setup_cpp_hermetic_defaults
+  export UI_DIFF_LOCATEANYTHING_MACHINE_INTERNAL="aarch64"
+  export UI_DIFF_LOCATEANYTHING_COLOCATION_EVIDENCE_INTERNAL="$CASE_DIR/evidence"
+  export UI_DIFF_LOCATEANYTHING_REDROID_NAME_INTERNAL="redroid"
+  write_colocation_evidence "$CASE_DIR/evidence" "aarch64"
+  # Append a duplicate key
+  printf 'schema_version=99\n' >> "$CASE_DIR/evidence"
+  make_docker_running
+  export FAKE_PYTHON_CWD="$CASE_DIR/cwd" FAKE_PYTHON_ARGS="$CASE_DIR/args" FAKE_PYTHON_ENV="$CASE_DIR/env"
+  run_launcher
+  assert_status 1 "$STATUS" "duplicate key in evidence fails"
+
+  # ── ReDroid co-location: missing field fails ─────────────────────────
+
+  new_case redroid-missing-field-evidence-fails 40404
+  make_python "$CASE_DIR/known-python"
+  setup_cpp_hermetic_defaults
+  export UI_DIFF_LOCATEANYTHING_MACHINE_INTERNAL="aarch64"
+  export UI_DIFF_LOCATEANYTHING_COLOCATION_EVIDENCE_INTERNAL="$CASE_DIR/evidence"
+  export UI_DIFF_LOCATEANYTHING_REDROID_NAME_INTERNAL="redroid"
+  # Write evidence missing model_sha256
+  cat > "$CASE_DIR/evidence" <<EVIDENCE
+schema_version=1
+engine_commit=${PINNED_ENGINE_COMMIT}
+abi_version=${PINNED_ABI_VERSION}
+quantization=Q4_K
+host_machine=aarch64
+concurrent_peak_rss_kib=5100000
+concurrent_swap_delta_kib=0
+status=pass
+EVIDENCE
+  make_docker_running
+  export FAKE_PYTHON_CWD="$CASE_DIR/cwd" FAKE_PYTHON_ARGS="$CASE_DIR/args" FAKE_PYTHON_ENV="$CASE_DIR/env"
+  run_launcher
+  assert_status 1 "$STATUS" "missing model_sha256 field in evidence fails"
+
+  # ── ReDroid co-location: wrong schema version fails ──────────────────
+
+  new_case redroid-wrong-schema-version-fails 40405
+  make_python "$CASE_DIR/known-python"
+  setup_cpp_hermetic_defaults
+  export UI_DIFF_LOCATEANYTHING_MACHINE_INTERNAL="aarch64"
+  export UI_DIFF_LOCATEANYTHING_COLOCATION_EVIDENCE_INTERNAL="$CASE_DIR/evidence"
+  export UI_DIFF_LOCATEANYTHING_REDROID_NAME_INTERNAL="redroid"
+  write_colocation_evidence "$CASE_DIR/evidence" "aarch64"
+  sed -i 's/^schema_version=1$/schema_version=2/' "$CASE_DIR/evidence"
+  make_docker_running
+  export FAKE_PYTHON_CWD="$CASE_DIR/cwd" FAKE_PYTHON_ARGS="$CASE_DIR/args" FAKE_PYTHON_ENV="$CASE_DIR/env"
+  run_launcher
+  assert_status 1 "$STATUS" "wrong schema_version in evidence fails"
+  assert_contains "schema_version" "$OUTPUT" "error names schema_version"
+
+  # ── ReDroid co-location: wrong engine commit fails ───────────────────
+
+  new_case redroid-wrong-engine-commit-fails 40406
+  make_python "$CASE_DIR/known-python"
+  setup_cpp_hermetic_defaults
+  export UI_DIFF_LOCATEANYTHING_MACHINE_INTERNAL="aarch64"
+  export UI_DIFF_LOCATEANYTHING_COLOCATION_EVIDENCE_INTERNAL="$CASE_DIR/evidence"
+  export UI_DIFF_LOCATEANYTHING_REDROID_NAME_INTERNAL="redroid"
+  write_colocation_evidence "$CASE_DIR/evidence" "aarch64" "deadbeef00000000000000000000000000000000"
+  make_docker_running
+  export FAKE_PYTHON_CWD="$CASE_DIR/cwd" FAKE_PYTHON_ARGS="$CASE_DIR/args" FAKE_PYTHON_ENV="$CASE_DIR/env"
+  run_launcher
+  assert_status 1 "$STATUS" "wrong engine_commit in evidence fails"
+  assert_contains "engine_commit" "$OUTPUT" "error names engine_commit"
+
+  # ── ReDroid co-location: wrong model sha fails ───────────────────────
+
+  new_case redroid-wrong-model-sha-fails 40407
+  make_python "$CASE_DIR/known-python"
+  setup_cpp_hermetic_defaults
+  export UI_DIFF_LOCATEANYTHING_MACHINE_INTERNAL="aarch64"
+  export UI_DIFF_LOCATEANYTHING_COLOCATION_EVIDENCE_INTERNAL="$CASE_DIR/evidence"
+  export UI_DIFF_LOCATEANYTHING_REDROID_NAME_INTERNAL="redroid"
+  write_colocation_evidence "$CASE_DIR/evidence" "aarch64" "$PINNED_ENGINE_COMMIT" "0000000000000000000000000000000000000000000000000000000000000000"
+  make_docker_running
+  export FAKE_PYTHON_CWD="$CASE_DIR/cwd" FAKE_PYTHON_ARGS="$CASE_DIR/args" FAKE_PYTHON_ENV="$CASE_DIR/env"
+  run_launcher
+  assert_status 1 "$STATUS" "wrong model_sha256 in evidence fails"
+  assert_contains "model_sha256" "$OUTPUT" "error names model_sha256"
+
+  # ── ReDroid co-location: wrong ABI fails ─────────────────────────────
+
+  new_case redroid-wrong-abi-fails 40408
+  make_python "$CASE_DIR/known-python"
+  setup_cpp_hermetic_defaults
+  export UI_DIFF_LOCATEANYTHING_MACHINE_INTERNAL="aarch64"
+  export UI_DIFF_LOCATEANYTHING_COLOCATION_EVIDENCE_INTERNAL="$CASE_DIR/evidence"
+  export UI_DIFF_LOCATEANYTHING_REDROID_NAME_INTERNAL="redroid"
+  cat > "$CASE_DIR/evidence" <<EVIDENCE
+schema_version=1
+engine_commit=${PINNED_ENGINE_COMMIT}
+model_sha256=${PINNED_MODEL_SHA256}
+abi_version=99
+quantization=Q4_K
+host_machine=aarch64
+concurrent_peak_rss_kib=5100000
+concurrent_swap_delta_kib=0
+status=pass
+EVIDENCE
+  make_docker_running
+  export FAKE_PYTHON_CWD="$CASE_DIR/cwd" FAKE_PYTHON_ARGS="$CASE_DIR/args" FAKE_PYTHON_ENV="$CASE_DIR/env"
+  run_launcher
+  assert_status 1 "$STATUS" "wrong abi_version in evidence fails"
+  assert_contains "abi_version" "$OUTPUT" "error names abi_version"
+
+  # ── ReDroid co-location: wrong host machine fails ────────────────────
+
+  new_case redroid-wrong-host-machine-fails 40409
+  make_python "$CASE_DIR/known-python"
+  setup_cpp_hermetic_defaults
+  export UI_DIFF_LOCATEANYTHING_MACHINE_INTERNAL="aarch64"
+  export UI_DIFF_LOCATEANYTHING_COLOCATION_EVIDENCE_INTERNAL="$CASE_DIR/evidence"
+  export UI_DIFF_LOCATEANYTHING_REDROID_NAME_INTERNAL="redroid"
+  write_colocation_evidence "$CASE_DIR/evidence" "x86_64"
+  make_docker_running
+  export FAKE_PYTHON_CWD="$CASE_DIR/cwd" FAKE_PYTHON_ARGS="$CASE_DIR/args" FAKE_PYTHON_ENV="$CASE_DIR/env"
+  run_launcher
+  assert_status 1 "$STATUS" "wrong host_machine in evidence fails"
+  assert_contains "host_machine" "$OUTPUT" "error names host_machine"
+
+  # ── ReDroid co-location: wrong status fails ──────────────────────────
+
+  new_case redroid-wrong-status-fails 40410
+  make_python "$CASE_DIR/known-python"
+  setup_cpp_hermetic_defaults
+  export UI_DIFF_LOCATEANYTHING_MACHINE_INTERNAL="aarch64"
+  export UI_DIFF_LOCATEANYTHING_COLOCATION_EVIDENCE_INTERNAL="$CASE_DIR/evidence"
+  export UI_DIFF_LOCATEANYTHING_REDROID_NAME_INTERNAL="redroid"
+  write_colocation_evidence "$CASE_DIR/evidence" "aarch64" "$PINNED_ENGINE_COMMIT" "$PINNED_MODEL_SHA256" "fail"
+  make_docker_running
+  export FAKE_PYTHON_CWD="$CASE_DIR/cwd" FAKE_PYTHON_ARGS="$CASE_DIR/args" FAKE_PYTHON_ENV="$CASE_DIR/env"
+  run_launcher
+  assert_status 1 "$STATUS" "wrong status in evidence fails"
+  assert_contains "status" "$OUTPUT" "error names status"
+
+  # ── ReDroid co-location: nonzero swap delta fails ────────────────────
+
+  new_case redroid-nonzero-swap-delta-fails 40411
+  make_python "$CASE_DIR/known-python"
+  setup_cpp_hermetic_defaults
+  export UI_DIFF_LOCATEANYTHING_MACHINE_INTERNAL="aarch64"
+  export UI_DIFF_LOCATEANYTHING_COLOCATION_EVIDENCE_INTERNAL="$CASE_DIR/evidence"
+  export UI_DIFF_LOCATEANYTHING_REDROID_NAME_INTERNAL="redroid"
+  write_colocation_evidence "$CASE_DIR/evidence" "aarch64" "$PINNED_ENGINE_COMMIT" "$PINNED_MODEL_SHA256" "pass" "1024"
+  make_docker_running
+  export FAKE_PYTHON_CWD="$CASE_DIR/cwd" FAKE_PYTHON_ARGS="$CASE_DIR/args" FAKE_PYTHON_ENV="$CASE_DIR/env"
+  run_launcher
+  assert_status 1 "$STATUS" "nonzero concurrent_swap_delta_kib in evidence fails"
+  assert_contains "concurrent_swap_delta_kib" "$OUTPUT" "error names concurrent_swap_delta_kib"
+
+  # ── ReDroid co-location: exact valid evidence permits startup ────────
+
+  new_case redroid-exact-valid-evidence-permits 40412
+  make_python "$CASE_DIR/known-python"; make_curl
+  setup_cpp_hermetic_defaults
+  export UI_DIFF_LOCATEANYTHING_MACHINE_INTERNAL="aarch64"
+  export UI_DIFF_LOCATEANYTHING_COLOCATION_EVIDENCE_INTERNAL="$CASE_DIR/evidence"
+  export UI_DIFF_LOCATEANYTHING_REDROID_NAME_INTERNAL="redroid"
+  write_colocation_evidence "$CASE_DIR/evidence" "aarch64"
+  make_docker_running
+  export FAKE_PYTHON_CWD="$CASE_DIR/cwd" FAKE_PYTHON_ARGS="$CASE_DIR/args" FAKE_PYTHON_ENV="$CASE_DIR/env" FAKE_PYTHON_CALLS="$CASE_DIR/calls"
+  export FAKE_CURL_COUNT="$CASE_DIR/count"
+  printf '{"ready":false,"error":null}\n{"ready":true,"error":null}\n' > "$CASE_DIR/responses"
+  export FAKE_CURL_RESPONSES="$CASE_DIR/responses" FAKE_PYTHON_SLEEP=5
+  run_launcher
+  assert_status 0 "$STATUS" "exact valid evidence permits startup"
+  assert_contains "PID:" "$OUTPUT" "startup prints child PID after valid evidence"
+  pid="$(sed -n 's/^PID: //p' <<<"$OUTPUT")"; PIDS+=("$pid")
+
+  # ── Evidence shell-injection safety ──────────────────────────────────
+
+  new_case evidence-shell-injection-not-executed 40413
+  make_python "$CASE_DIR/known-python"
+  setup_cpp_hermetic_defaults
+  export UI_DIFF_LOCATEANYTHING_MACHINE_INTERNAL="aarch64"
+  export UI_DIFF_LOCATEANYTHING_COLOCATION_EVIDENCE_INTERNAL="$CASE_DIR/evidence"
+  export UI_DIFF_LOCATEANYTHING_REDROID_NAME_INTERNAL="redroid"
+  # Sentinel lives under CASE_DIR (never /tmp) so a real evaluation of the
+  # injection payload is the only way this exact path is ever created.
+  INJECTION_SENTINEL="$CASE_DIR/injection-sentinel-40413"
+  rm -f "$INJECTION_SENTINEL"
+  # Evidence with shell metacharacters that must never be evaluated. Written
+  # via a quoted heredoc plus sed substitution so the *test* shell never
+  # itself executes the embedded command substitution/backticks/semicolon.
+  cat > "$CASE_DIR/evidence" <<'EVIDENCE'
+schema_version=1
+engine_commit=$(echo PWNED > __INJECTION_SENTINEL__)
+model_sha256=`echo PWNED`
+abi_version=1
+quantization=Q4_K; rm -rf __INJECTION_SENTINEL__
+host_machine=aarch64
+concurrent_peak_rss_kib=5100000
+concurrent_swap_delta_kib=0
+status=pass
+EVIDENCE
+  sed -i "s|__INJECTION_SENTINEL__|$INJECTION_SENTINEL|g" "$CASE_DIR/evidence"
+  make_docker_running
+  export FAKE_PYTHON_CWD="$CASE_DIR/cwd" FAKE_PYTHON_ARGS="$CASE_DIR/args" FAKE_PYTHON_ENV="$CASE_DIR/env"
+  run_launcher
+  # The launcher must fail on evidence validation, not execute the injection.
+  assert_status 1 "$STATUS" "shell-injection evidence is rejected, not executed"
+  # Assert BEFORE cleanup: a vacuous assertion would pass even if the
+  # injection ran, since cleanup would delete the sentinel either way.
+  assert_not_exists "$INJECTION_SENTINEL" "shell injection payload was never executed"
+  rm -f "$INJECTION_SENTINEL"
+
+  # ── ReDroid co-location: check-only enforces the same gate ───────────
+
+  new_case cpp-check-only-redroid-no-evidence-fails 40414
+  make_python "$CASE_DIR/known-python"
+  setup_cpp_hermetic_defaults
+  export FAKE_PYTHON_PREFLIGHT_MARKER="$CASE_DIR/preflight"
+  export UI_DIFF_LOCATEANYTHING_REDROID_NAME_INTERNAL="redroid"
+  make_docker_running
+  run_launcher --check-only
+  assert_status 1 "$STATUS" "check-only fails when ReDroid is running with no co-location evidence"
+  assert_contains "co-location evidence" "$OUTPUT" "check-only error names co-location evidence"
+  if [ -f "$CASE_DIR/preflight" ]; then pass "check-only redroid failure occurs after python preflight ran"; else fail "check-only redroid failure occurs after python preflight ran"; fi
+  assert_not_exists "$CASE_DIR/metrics/locateanything-startup.metrics" "check-only redroid failure writes no metrics file"
+
+  new_case cpp-check-only-redroid-valid-evidence-passes 40415
+  make_python "$CASE_DIR/known-python"
+  setup_cpp_hermetic_defaults
+  export UI_DIFF_LOCATEANYTHING_COLOCATION_EVIDENCE_INTERNAL="$CASE_DIR/evidence"
+  export UI_DIFF_LOCATEANYTHING_REDROID_NAME_INTERNAL="redroid"
+  write_colocation_evidence "$CASE_DIR/evidence" "aarch64"
+  make_docker_running
+  run_launcher --check-only
+  assert_status 0 "$STATUS" "check-only passes when ReDroid is running with valid co-location evidence"
+
+  # ── Metrics: baseline swap captured, atomic final file, no temp ──────
+
+  new_case metrics-baseline-swap-captured 40501
+  make_python "$CASE_DIR/known-python"; make_curl
+  setup_cpp_hermetic_defaults
+  export UI_DIFF_LOCATEANYTHING_MACHINE_INTERNAL="aarch64"
+  # Mutable meminfo: baseline SwapFree=1542648, after-ready SwapFree=1542648 (zero delta)
+  write_meminfo "$CASE_DIR/meminfo" "$REQUIRED_MEM_AVAILABLE_KIB"
+  export UI_DIFF_LOCATEANYTHING_MEMINFO_INTERNAL="$CASE_DIR/meminfo"
+  export FAKE_PYTHON_CWD="$CASE_DIR/cwd" FAKE_PYTHON_ARGS="$CASE_DIR/args" FAKE_PYTHON_ENV="$CASE_DIR/env"
+  export FAKE_PYTHON_CALLS="$CASE_DIR/calls"
+  export FAKE_CURL_COUNT="$CASE_DIR/count"
+  printf '{"ready":false,"error":null}\n{"ready":true,"error":null}\n' > "$CASE_DIR/responses"
+  export FAKE_CURL_RESPONSES="$CASE_DIR/responses" FAKE_PYTHON_SLEEP=5
+  run_launcher
+  assert_status 0 "$STATUS" "metrics test reaches ready"
+  # The launcher must write an atomic metrics file in $CASE_DIR/metrics.
+  metrics_files="$(ls "$CASE_DIR/metrics/" 2>/dev/null || true)"
+  if [ -n "$metrics_files" ]; then
+    pass "metrics directory contains output files"
+    # Check no .tmp or .part files remain.
+    tmp_files="$(ls "$CASE_DIR/metrics/"*.tmp "$CASE_DIR/metrics/"*.part 2>/dev/null || true)"
+    if [ -z "$tmp_files" ]; then pass "no temp residue in metrics dir"; else fail "temp residue in metrics dir: $tmp_files"; fi
+  else
+    fail "metrics directory is empty after startup"
+  fi
+  pid="$(sed -n 's/^PID: //p' <<<"$OUTPUT")"; PIDS+=("$pid")
+
+  # ── Metrics: positive swap delta fails and cleans child ───────────────
+
+  new_case metrics-positive-swap-delta-fails 40502
+  make_python "$CASE_DIR/known-python"; make_curl
+  setup_cpp_hermetic_defaults
+  export UI_DIFF_LOCATEANYTHING_MACHINE_INTERNAL="aarch64"
+  write_meminfo "$CASE_DIR/meminfo" "$REQUIRED_MEM_AVAILABLE_KIB"
+  export UI_DIFF_LOCATEANYTHING_MEMINFO_INTERNAL="$CASE_DIR/meminfo"
+  export FAKE_PYTHON_CWD="$CASE_DIR/cwd" FAKE_PYTHON_ARGS="$CASE_DIR/args" FAKE_PYTHON_ENV="$CASE_DIR/env"
+  export FAKE_PYTHON_CALLS="$CASE_DIR/calls"
+  export FAKE_CURL_COUNT="$CASE_DIR/count"
+  printf '{"ready":false,"error":null}\n{"ready":true,"error":null}\n' > "$CASE_DIR/responses"
+  export FAKE_CURL_RESPONSES="$CASE_DIR/responses" FAKE_PYTHON_SLEEP=5
+  # Mutate meminfo to increase swap usage (reduce SwapFree) after spawn
+  # by writing a post-ready meminfo with lower SwapFree.
+  export UI_DIFF_LOCATEANYTHING_MUTATE_MEMINFO_INTERNAL="$CASE_DIR/meminfo-mutated"
+  cat > "$CASE_DIR/meminfo-mutated" <<EOF
+MemTotal:        8007460 kB
+MemFree:          191540 kB
+MemAvailable:    ${REQUIRED_MEM_AVAILABLE_KIB} kB
+SwapTotal:       2097148 kB
+SwapFree:        1541648 kB
+EOF
+  run_launcher
+  assert_status 1 "$STATUS" "positive system swap delta fails"
+  assert_contains "swap" "$OUTPUT" "error references swap delta"
+  pid="$(sed -n 's/^PID: //p' <<<"$OUTPUT" || true)"
+  sleep 0.05
+  if [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; then pass "positive swap delta cleans child"; else fail "positive swap delta cleans child"; fi
+
+  # ── Metrics: zero swap delta passes ───────────────────────────────────
+
+  new_case metrics-zero-swap-delta-passes 40503
+  make_python "$CASE_DIR/known-python"; make_curl
+  setup_cpp_hermetic_defaults
+  export UI_DIFF_LOCATEANYTHING_MACHINE_INTERNAL="aarch64"
+  write_meminfo "$CASE_DIR/meminfo" "$REQUIRED_MEM_AVAILABLE_KIB"
+  export UI_DIFF_LOCATEANYTHING_MEMINFO_INTERNAL="$CASE_DIR/meminfo"
+  export FAKE_PYTHON_CWD="$CASE_DIR/cwd" FAKE_PYTHON_ARGS="$CASE_DIR/args" FAKE_PYTHON_ENV="$CASE_DIR/env"
+  export FAKE_PYTHON_CALLS="$CASE_DIR/calls"
+  export FAKE_CURL_COUNT="$CASE_DIR/count"
+  printf '{"ready":false,"error":null}\n{"ready":true,"error":null}\n' > "$CASE_DIR/responses"
+  export FAKE_CURL_RESPONSES="$CASE_DIR/responses" FAKE_PYTHON_SLEEP=5
+  run_launcher
+  assert_status 0 "$STATUS" "zero swap delta permits startup"
+  pid="$(sed -n 's/^PID: //p' <<<"$OUTPUT")"; PIDS+=("$pid")
+
+  # ── Metrics: no tokens or keys in output ──────────────────────────────
+
+  new_case metrics-no-tokens-or-keys 40504
+  make_python "$CASE_DIR/known-python"; make_curl
+  setup_cpp_hermetic_defaults
+  export UI_DIFF_LOCATEANYTHING_MACHINE_INTERNAL="aarch64"
+  export FAKE_PYTHON_CWD="$CASE_DIR/cwd" FAKE_PYTHON_ARGS="$CASE_DIR/args" FAKE_PYTHON_ENV="$CASE_DIR/env"
+  export FAKE_PYTHON_CALLS="$CASE_DIR/calls"
+  export FAKE_CURL_COUNT="$CASE_DIR/count"
+  printf '{"ready":false,"error":null}\n{"ready":true,"error":null}\n' > "$CASE_DIR/responses"
+  export FAKE_CURL_RESPONSES="$CASE_DIR/responses" FAKE_PYTHON_SLEEP=5
+  run_launcher
+  assert_status 0 "$STATUS" "startup reaches ready for token check"
+  # Check that output does not contain common token/key patterns.
+  assert_not_contains "OPENROUTER_API_KEY" "$OUTPUT" "no API key leaked in output"
+  assert_not_contains "NVIDIA_API_KEY" "$OUTPUT" "no NVIDIA key leaked in output"
+  assert_not_contains "OPENCODE_API_KEY" "$OUTPUT" "no OpenCode key leaked in output"
+  assert_not_contains "sk-" "$OUTPUT" "no secret key prefix leaked in output"
+  pid="$(sed -n 's/^PID: //p' <<<"$OUTPUT")"; PIDS+=("$pid")
+
+  # ── Metrics: child VmRSS/VmHWM/VmSwap recorded ──────────────────────
+
+  new_case metrics-child-process-stats-recorded 40505
+  make_python "$CASE_DIR/known-python"; make_curl
+  setup_cpp_hermetic_defaults
+  export UI_DIFF_LOCATEANYTHING_MACHINE_INTERNAL="aarch64"
+  # Provide a fake proc-status file for the child process metrics.
+  cat > "$CASE_DIR/proc-status" <<'PROCSTATUS'
+Name:   python3
+State:  S (sleeping)
+VmRSS:     123456 kB
+VmHWM:     130000 kB
+VmSwap:        0 kB
+PROCSTATUS
+  export UI_DIFF_LOCATEANYTHING_PROC_STATUS_FILE_INTERNAL="$CASE_DIR/proc-status"
+  write_meminfo "$CASE_DIR/meminfo" "$REQUIRED_MEM_AVAILABLE_KIB"
+  export UI_DIFF_LOCATEANYTHING_MEMINFO_INTERNAL="$CASE_DIR/meminfo"
+  export FAKE_PYTHON_CWD="$CASE_DIR/cwd" FAKE_PYTHON_ARGS="$CASE_DIR/args" FAKE_PYTHON_ENV="$CASE_DIR/env"
+  export FAKE_PYTHON_CALLS="$CASE_DIR/calls"
+  export FAKE_CURL_COUNT="$CASE_DIR/count"
+  printf '{"ready":false,"error":null}\n{"ready":true,"error":null}\n' > "$CASE_DIR/responses"
+  export FAKE_CURL_RESPONSES="$CASE_DIR/responses" FAKE_PYTHON_SLEEP=5
+  run_launcher
+  assert_status 0 "$STATUS" "startup reaches ready for proc stats"
+  # The atomic final metrics file must contain backend, provenance, and process stats.
+  metrics_files="$(ls "$CASE_DIR/metrics/"*.json "$CASE_DIR/metrics/"*.metrics 2>/dev/null || true)"
+  if [ -n "$metrics_files" ]; then
+    metrics_content="$(cat "$metrics_files" 2>/dev/null || true)"
+    assert_contains "backend" "$metrics_content" "metrics file contains backend field"
+    assert_contains "engine_commit" "$metrics_content" "metrics file contains engine_commit"
+    assert_contains "model_sha256" "$metrics_content" "metrics file contains model_sha256"
+    assert_contains "VmRSS" "$metrics_content" "metrics file contains VmRSS"
+    assert_contains "VmHWM" "$metrics_content" "metrics file contains VmHWM"
+    assert_contains "VmSwap" "$metrics_content" "metrics file contains VmSwap"
+    assert_exact "VmRSS=123456" "$(grep '^VmRSS=' <<<"$metrics_content")" "metrics file contains exact VmRSS=123456"
+    assert_exact "VmHWM=130000" "$(grep '^VmHWM=' <<<"$metrics_content")" "metrics file contains exact VmHWM=130000"
+    assert_exact "VmSwap=0" "$(grep '^VmSwap=' <<<"$metrics_content")" "metrics file contains exact VmSwap=0"
+    assert_exact "concurrent_peak_rss_kib=130000" "$(grep '^concurrent_peak_rss_kib=' <<<"$metrics_content")" "metrics file contains exact concurrent_peak_rss_kib=130000"
+  else
+    fail "no metrics file produced after startup"
+  fi
+  pid="$(sed -n 's/^PID: //p' <<<"$OUTPUT")"; PIDS+=("$pid")
+
+  # ── Metrics: atomic file has no temp residue ──────────────────────────
+
+  new_case metrics-no-temp-residue 40506
+  make_python "$CASE_DIR/known-python"; make_curl
+  setup_cpp_hermetic_defaults
+  export UI_DIFF_LOCATEANYTHING_MACHINE_INTERNAL="aarch64"
+  write_meminfo "$CASE_DIR/meminfo" "$REQUIRED_MEM_AVAILABLE_KIB"
+  export UI_DIFF_LOCATEANYTHING_MEMINFO_INTERNAL="$CASE_DIR/meminfo"
+  export FAKE_PYTHON_CWD="$CASE_DIR/cwd" FAKE_PYTHON_ARGS="$CASE_DIR/args" FAKE_PYTHON_ENV="$CASE_DIR/env"
+  export FAKE_PYTHON_CALLS="$CASE_DIR/calls"
+  export FAKE_CURL_COUNT="$CASE_DIR/count"
+  printf '{"ready":false,"error":null}\n{"ready":true,"error":null}\n' > "$CASE_DIR/responses"
+  export FAKE_CURL_RESPONSES="$CASE_DIR/responses" FAKE_PYTHON_SLEEP=5
+  run_launcher
+  assert_status 0 "$STATUS" "startup reaches ready for residue check"
+  # After startup, no .tmp, .part, or ~ files should remain in metrics dir.
+  residue_files="$(find "$CASE_DIR/metrics/" -name '*.tmp' -o -name '*.part' -o -name '*~' -o -name '*.swp' 2>/dev/null || true)"
+  if [ -z "$residue_files" ]; then pass "no temp residue files in metrics dir"; else fail "temp residue files found: $residue_files"; fi
+  pid="$(sed -n 's/^PID: //p' <<<"$OUTPUT")"; PIDS+=("$pid")
+
+  # ── Metrics: positive child VmSwap fails and cleans ──────────────────
+
+  new_case metrics-positive-child-vmswap-fails 40507
+  make_python "$CASE_DIR/known-python"; make_curl
+  setup_cpp_hermetic_defaults
+  export UI_DIFF_LOCATEANYTHING_MACHINE_INTERNAL="aarch64"
+  # Proc-status with positive VmSwap — should cause failure and child cleanup.
+  cat > "$CASE_DIR/proc-status" <<'PROCSTATUS'
+Name:   python3
+State:  S (sleeping)
+VmRSS:     123456 kB
+VmHWM:     130000 kB
+VmSwap:     50000 kB
+PROCSTATUS
+  export UI_DIFF_LOCATEANYTHING_PROC_STATUS_FILE_INTERNAL="$CASE_DIR/proc-status"
+  write_meminfo "$CASE_DIR/meminfo" "$REQUIRED_MEM_AVAILABLE_KIB"
+  export UI_DIFF_LOCATEANYTHING_MEMINFO_INTERNAL="$CASE_DIR/meminfo"
+  export FAKE_PYTHON_CWD="$CASE_DIR/cwd" FAKE_PYTHON_ARGS="$CASE_DIR/args" FAKE_PYTHON_ENV="$CASE_DIR/env"
+  export FAKE_PYTHON_CALLS="$CASE_DIR/calls"
+  export FAKE_CURL_COUNT="$CASE_DIR/count"
+  printf '{"ready":false,"error":null}\n{"ready":true,"error":null}\n' > "$CASE_DIR/responses"
+  export FAKE_CURL_RESPONSES="$CASE_DIR/responses" FAKE_PYTHON_SLEEP=5
+  run_launcher
+  assert_status 1 "$STATUS" "positive child VmSwap fails"
+  assert_contains "VmSwap" "$OUTPUT" "error references child VmSwap"
+  pid="$(sed -n 's/^PID: //p' <<<"$OUTPUT" || true)"
+  sleep 0.05
+  if [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; then pass "positive child VmSwap cleans child"; else fail "positive child VmSwap cleans child"; fi
+
+  # ── Metrics: backend and provenance fields present ────────────────────
+
+  new_case metrics-backend-provenance-fields 40508
+  make_python "$CASE_DIR/known-python"; make_curl
+  setup_cpp_hermetic_defaults
+  export UI_DIFF_LOCATEANYTHING_MACHINE_INTERNAL="aarch64"
+  write_meminfo "$CASE_DIR/meminfo" "$REQUIRED_MEM_AVAILABLE_KIB"
+  export UI_DIFF_LOCATEANYTHING_MEMINFO_INTERNAL="$CASE_DIR/meminfo"
+  export FAKE_PYTHON_CWD="$CASE_DIR/cwd" FAKE_PYTHON_ARGS="$CASE_DIR/args" FAKE_PYTHON_ENV="$CASE_DIR/env"
+  export FAKE_PYTHON_CALLS="$CASE_DIR/calls"
+  export FAKE_CURL_COUNT="$CASE_DIR/count"
+  printf '{"ready":false,"error":null}\n{"ready":true,"error":null}\n' > "$CASE_DIR/responses"
+  export FAKE_CURL_RESPONSES="$CASE_DIR/responses" FAKE_PYTHON_SLEEP=5
+  run_launcher
+  assert_status 0 "$STATUS" "startup reaches ready for provenance check"
+  metrics_files="$(ls "$CASE_DIR/metrics/" 2>/dev/null || true)"
+  if [ -n "$metrics_files" ]; then
+    metrics_content="$(cat "$CASE_DIR/metrics/"* 2>/dev/null || true)"
+    assert_contains "backend=cpp" "$metrics_content" "metrics has backend=cpp"
+    assert_contains "$PINNED_ENGINE_COMMIT" "$metrics_content" "metrics has engine commit"
+    assert_contains "$PINNED_MODEL_SHA256" "$metrics_content" "metrics has model sha256"
+    assert_contains "abi_version" "$metrics_content" "metrics has abi_version"
+  else
+    fail "no metrics output for provenance check"
+  fi
+  pid="$(sed -n 's/^PID: //p' <<<"$OUTPUT")"; PIDS+=("$pid")
+
+  # ── ReDroid co-location: public evidence with internal hook unset ───
+
+  new_case redroid-public-evidence-passes 40601
+  make_python "$CASE_DIR/known-python"; make_curl
+  setup_cpp_hermetic_defaults
+  export UI_DIFF_LOCATEANYTHING_MACHINE_INTERNAL="aarch64"
+  unset UI_DIFF_LOCATEANYTHING_COLOCATION_EVIDENCE_INTERNAL
+  write_colocation_evidence "$CASE_DIR/evidence" "aarch64"
+  export LOCATEANYTHING_COLOCATION_EVIDENCE="$CASE_DIR/evidence"
+  export UI_DIFF_LOCATEANYTHING_REDROID_NAME_INTERNAL="redroid"
+  make_docker_running
+  export FAKE_PYTHON_CWD="$CASE_DIR/cwd" FAKE_PYTHON_ARGS="$CASE_DIR/args" FAKE_PYTHON_ENV="$CASE_DIR/env" FAKE_PYTHON_CALLS="$CASE_DIR/calls"
+  export FAKE_CURL_COUNT="$CASE_DIR/count"
+  printf '{"ready":false,"error":null}\n{"ready":true,"error":null}\n' > "$CASE_DIR/responses"
+  export FAKE_CURL_RESPONSES="$CASE_DIR/responses" FAKE_PYTHON_SLEEP=5
+  run_launcher
+  assert_status 0 "$STATUS" "public LOCATEANYTHING_COLOCATION_EVIDENCE permits startup"
+  assert_contains "PID:" "$OUTPUT" "public evidence startup prints child PID"
+  pid="$(sed -n 's/^PID: //p' <<<"$OUTPUT")"; PIDS+=("$pid")
+
+  # ── Metrics: SwapFree increase passes with zero swap delta ───────────
+
+  new_case metrics-swapfree-increase-passes 40602
+  make_python "$CASE_DIR/known-python"; make_curl
+  setup_cpp_hermetic_defaults
+  export UI_DIFF_LOCATEANYTHING_MACHINE_INTERNAL="aarch64"
+  write_meminfo "$CASE_DIR/meminfo" "$REQUIRED_MEM_AVAILABLE_KIB"
+  export UI_DIFF_LOCATEANYTHING_MEMINFO_INTERNAL="$CASE_DIR/meminfo"
+  export FAKE_PYTHON_CWD="$CASE_DIR/cwd" FAKE_PYTHON_ARGS="$CASE_DIR/args" FAKE_PYTHON_ENV="$CASE_DIR/env"
+  export FAKE_PYTHON_CALLS="$CASE_DIR/calls"
+  export FAKE_CURL_COUNT="$CASE_DIR/count"
+  printf '{"ready":false,"error":null}\n{"ready":true,"error":null}\n' > "$CASE_DIR/responses"
+  export FAKE_CURL_RESPONSES="$CASE_DIR/responses" FAKE_PYTHON_SLEEP=5
+  # SwapFree increases by 1000 after ready — new swap use is clamped at zero.
+  export UI_DIFF_LOCATEANYTHING_MUTATE_MEMINFO_INTERNAL="$CASE_DIR/meminfo-increased"
+  increased_swap=$((1542648 + 1000))
+  cat > "$CASE_DIR/meminfo-increased" <<EOF
+MemTotal:        8007460 kB
+MemFree:          191540 kB
+MemAvailable:    ${REQUIRED_MEM_AVAILABLE_KIB} kB
+SwapTotal:       2097148 kB
+SwapFree:        ${increased_swap} kB
+EOF
+  run_launcher
+  assert_status 0 "$STATUS" "SwapFree increase passes (swap delta clamped to zero)"
+  metrics_files="$(ls "$CASE_DIR/metrics/"*.metrics 2>/dev/null || true)"
+  if [ -n "$metrics_files" ]; then
+    metrics_content="$(cat "$metrics_files" 2>/dev/null || true)"
+    assert_exact "concurrent_swap_delta_kib=0" "$(grep '^concurrent_swap_delta_kib=' <<<"$metrics_content")" "persisted concurrent_swap_delta_kib=0 for SwapFree increase"
+  else
+    fail "no metrics file for SwapFree increase case"
+  fi
+  pid="$(sed -n 's/^PID: //p' <<<"$OUTPUT")"; PIDS+=("$pid")
+
+  # ── Metrics: malformed proc-status missing VmSwap fails ─────────────
+
+  new_case metrics-malformed-proc-status-missing-vmswap 40603
+  make_python "$CASE_DIR/known-python"; make_curl
+  setup_cpp_hermetic_defaults
+  export UI_DIFF_LOCATEANYTHING_MACHINE_INTERNAL="aarch64"
+  cat > "$CASE_DIR/proc-status" <<'PROCSTATUS'
+Name:   python3
+State:  S (sleeping)
+VmRSS:     123456 kB
+VmHWM:     130000 kB
+PROCSTATUS
+  export UI_DIFF_LOCATEANYTHING_PROC_STATUS_FILE_INTERNAL="$CASE_DIR/proc-status"
+  write_meminfo "$CASE_DIR/meminfo" "$REQUIRED_MEM_AVAILABLE_KIB"
+  export UI_DIFF_LOCATEANYTHING_MEMINFO_INTERNAL="$CASE_DIR/meminfo"
+  export FAKE_PYTHON_CWD="$CASE_DIR/cwd" FAKE_PYTHON_ARGS="$CASE_DIR/args" FAKE_PYTHON_ENV="$CASE_DIR/env"
+  export FAKE_PYTHON_CALLS="$CASE_DIR/calls"
+  export FAKE_CURL_COUNT="$CASE_DIR/count"
+  printf '{"ready":false,"error":null}\n{"ready":true,"error":null}\n' > "$CASE_DIR/responses"
+  export FAKE_CURL_RESPONSES="$CASE_DIR/responses" FAKE_PYTHON_SLEEP=5
+  run_launcher
+  assert_status 1 "$STATUS" "malformed proc-status missing VmSwap fails"
+  assert_contains "VmSwap" "$OUTPUT" "error names VmSwap for missing field"
+  assert_contains "VmRSS" "$OUTPUT" "error references VmRSS"
+  assert_contains "VmHWM" "$OUTPUT" "error references VmHWM"
+  pid="$(sed -n 's/^PID: //p' <<<"$OUTPUT" || true)"
+  sleep 0.05
+  if [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; then pass "malformed proc-status cleans child"; else fail "malformed proc-status cleans child"; fi
+
+  # ── Metrics: atomic write failure cleans child, no temp residue ──────
+
+  new_case metrics-atomic-write-failure 40604
+  make_python "$CASE_DIR/known-python"; make_curl
+  setup_cpp_hermetic_defaults
+  export UI_DIFF_LOCATEANYTHING_MACHINE_INTERNAL="aarch64"
+  write_meminfo "$CASE_DIR/meminfo" "$REQUIRED_MEM_AVAILABLE_KIB"
+  export UI_DIFF_LOCATEANYTHING_MEMINFO_INTERNAL="$CASE_DIR/meminfo"
+  export FAKE_PYTHON_CWD="$CASE_DIR/cwd" FAKE_PYTHON_ARGS="$CASE_DIR/args" FAKE_PYTHON_ENV="$CASE_DIR/env"
+  export FAKE_PYTHON_CALLS="$CASE_DIR/calls"
+  export FAKE_CURL_COUNT="$CASE_DIR/count"
+  printf '{"ready":false,"error":null}\n{"ready":true,"error":null}\n' > "$CASE_DIR/responses"
+  export FAKE_CURL_RESPONSES="$CASE_DIR/responses" FAKE_PYTHON_SLEEP=5
+  # Replace metrics directory with a regular file to force mkdir -p failure.
+  rm -rf "$CASE_DIR/metrics"
+  printf 'not-a-directory\n' > "$CASE_DIR/metrics"
+  export UI_DIFF_LOCATEANYTHING_METRICS_DIR_INTERNAL="$CASE_DIR/metrics"
+  run_launcher
+  assert_status 1 "$STATUS" "atomic metrics write failure fails startup"
+  assert_contains "write_metrics_file" "$OUTPUT" "error references write_metrics_file"
+  assert_contains "metrics" "$OUTPUT" "error references metrics"
+  pid="$(sed -n 's/^PID: //p' <<<"$OUTPUT" || true)"
+  sleep 0.05
+  if [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; then pass "atomic write failure cleans child"; else fail "atomic write failure cleans child"; fi
+  # Verify no temp residue in the metrics path.
+  residue_files="$(find "$CASE_DIR/metrics"* -name '*.tmp' -o -name '*.part' -o -name '*~' -o -name '*.swp' 2>/dev/null || true)"
+  if [ -z "$residue_files" ]; then pass "atomic write failure leaves no temp residue"; else fail "atomic write failure temp residue: $residue_files"; fi
 fi
 
 printf '%s run, %s passed, %s failed\n' "$((PASS + FAIL))" "$PASS" "$FAIL"

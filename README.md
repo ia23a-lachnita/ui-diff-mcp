@@ -302,14 +302,52 @@ bash scripts/start-locateanything-sidecar.sh
 
 The launcher accepts no host override. `UI_DIFF_LOCATEANYTHING_PORT_INTERNAL`
 is an internal diagnostic/test hook only; production uses port `39731`.
-`LOCATEANYTHING_TIMEOUT_MS` and `LOCATEANYTHING_POLL_MS` configure bounded
-readiness polling. A sidecar health response is accepted only when its JSON
-object contains `"ready": true`; a nonempty `error` is reported immediately.
+`LOCATEANYTHING_STARTUP_TIMEOUT_MS` (architecture default `600000` on
+ARM64/Pi / `aarch64`, `120000` on all other supported architectures; max
+`600000`) and `LOCATEANYTHING_STARTUP_POLL_MS` (default `500`, max `10000`)
+configure how long the launcher waits for `/health` to report `"ready": true`
+before failing; a nonempty `error` is reported immediately. The longer ARM64
+default exists because measured Pi Q4 cold start is about 473 seconds; a 120s
+default would kill a healthy Pi load. These are distinct from
+`LOCATEANYTHING_TIMEOUT_MS`, the separate Node-side inference-request timeout
+consumed by the MCP client for `/v1/locate-ui-elements` calls — it does not
+control launcher readiness.
 
 `LOCATEANYTHING_SKIP_MODEL=1` is only a diagnostic shortcut. It makes `/health.ready` true without loading the 3B model
 and still runs CV/OCR/optional lanes, but a run made with that flag is not full LocateAnything-model release evidence.
 
 The TypeScript client sends image bytes with each locator request, so `LOCATEANYTHING_SIDECAR_URL` can point to a remote GPU service that exposes the same contract.
+
+#### ReDroid Co-Location Evidence
+
+On the C++ backend, if a `ui-diff-redroid` (or
+`UI_DIFF_LOCATEANYTHING_REDROID_NAME_INTERNAL`-named) Docker/Podman container
+is running, the launcher refuses to start the locator unless
+`LOCATEANYTHING_COLOCATION_EVIDENCE` points to a file proving a prior
+measured concurrent run stayed within resource bounds. The file is `key=value`
+lines with exactly these 9 keys, no more and no fewer:
+
+| Key | Required value |
+|---|---|
+| `schema_version` | `1` |
+| `engine_commit` | the pinned `locate-anything.cpp` commit |
+| `model_sha256` | the pinned Q4_K model SHA-256 |
+| `abi_version` | `1` |
+| `quantization` | `Q4_K` |
+| `host_machine` | `aarch64` or `x86_64`, matching the host |
+| `concurrent_peak_rss_kib` | a positive integer |
+| `concurrent_swap_delta_kib` | `0` |
+| `status` | `pass` |
+
+Lines containing shell metacharacters (`$(`, `` ` ``, `;`, `|`, `&`, `>`, `<`,
+or quotes) are rejected without ever being evaluated as shell code; the file
+is only ever read with `case`/parameter-expansion string comparisons.
+
+`locateanything-startup.metrics`, written by the launcher after the sidecar
+becomes ready, is a **separate** post-ready artifact recording that one
+locator process's own RSS/swap. It is not proof of concurrent ReDroid
+co-location and must not be substituted for
+`LOCATEANYTHING_COLOCATION_EVIDENCE`.
 
 Parser-only sidecar tests:
 

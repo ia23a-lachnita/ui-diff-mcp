@@ -1,11 +1,30 @@
 #!/usr/bin/env bash
 # Start the LocateAnything sidecar on loopback only.
 #
+# Public startup-readiness overrides (optional):
+#   LOCATEANYTHING_STARTUP_TIMEOUT_MS  (architecture default: 600000 on
+#     aarch64/ARM64, 120000 on all other supported arches; max 600000)
+#   LOCATEANYTHING_STARTUP_POLL_MS     (default 500, max 10000)
+# These control only how long the launcher waits for /health to report
+# ready; they are unrelated to LOCATEANYTHING_TIMEOUT_MS, which is the
+# separate Node-side inference-request timeout consumed by the MCP client.
+# Measured Pi ARM64 Q4 cold start is ~473s, so a 120s default would kill a
+# healthy ARM load. Architecture defaults use resolve_arch (not raw uname).
+#
 # Internal test hooks, never required in production:
 #   UI_DIFF_LOCATEANYTHING_KNOWN_PYTHON_INTERNAL
 #   UI_DIFF_LOCATEANYTHING_EAGLE_DIR_INTERNAL
 #   UI_DIFF_LOCATEANYTHING_PORT_INTERNAL
 #   UI_DIFF_LOCATEANYTHING_LOG_DIR_INTERNAL
+#   UI_DIFF_LOCATEANYTHING_METRICS_DIR_INTERNAL
+#   UI_DIFF_LOCATEANYTHING_TIMEOUT_MS          (takes precedence over LOCATEANYTHING_STARTUP_TIMEOUT_MS)
+#   UI_DIFF_LOCATEANYTHING_POLL_MS             (takes precedence over LOCATEANYTHING_STARTUP_POLL_MS)
+#   UI_DIFF_LOCATEANYTHING_MACHINE_INTERNAL
+#   UI_DIFF_LOCATEANYTHING_MEMINFO_INTERNAL
+#   UI_DIFF_LOCATEANYTHING_MUTATE_MEMINFO_INTERNAL
+#   UI_DIFF_LOCATEANYTHING_PROC_STATUS_FILE_INTERNAL
+#   UI_DIFF_LOCATEANYTHING_REDROID_NAME_INTERNAL
+#   UI_DIFF_LOCATEANYTHING_COLOCATION_EVIDENCE_INTERNAL
 #   UI_DIFF_LOCATEANYTHING_CPP_CHECKOUT_INTERNAL
 #   UI_DIFF_LOCATEANYTHING_CPP_LIBRARY_INTERNAL
 #   UI_DIFF_LOCATEANYTHING_CPP_MODEL_INTERNAL
@@ -16,14 +35,17 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 HOST="127.0.0.1"
 DEFAULT_PORT="39731"
-DEFAULT_TIMEOUT_MS="120000"
+# Architecture-aware startup-readiness defaults (resolved after resolve_arch is
+# defined, before validate_settings). ARM64/Pi Q4 cold start measured ~473s.
+DEFAULT_TIMEOUT_MS_ARM="600000"
+DEFAULT_TIMEOUT_MS_NON_ARM="120000"
 DEFAULT_POLL_MS="500"
 KNOWN_PYTHON="${UI_DIFF_LOCATEANYTHING_KNOWN_PYTHON_INTERNAL:-/home/agent-runner/projects/.venvs/ui-diff-mcp-locateanything/bin/python}"
 DEFAULT_EAGLE_DIR="${UI_DIFF_LOCATEANYTHING_EAGLE_DIR_INTERNAL:-/home/agent-runner/projects/Eagle/Embodied}"
 LOG_DIR="${UI_DIFF_LOCATEANYTHING_LOG_DIR_INTERNAL:-${XDG_STATE_HOME:-$HOME/.local/state}/ui-diff-mcp}"
 PORT="${UI_DIFF_LOCATEANYTHING_PORT_INTERNAL:-$DEFAULT_PORT}"
-TIMEOUT_MS="${UI_DIFF_LOCATEANYTHING_TIMEOUT_MS:-$DEFAULT_TIMEOUT_MS}"
-POLL_MS="${UI_DIFF_LOCATEANYTHING_POLL_MS:-$DEFAULT_POLL_MS}"
+# TIMEOUT_MS is deferred until resolve_arch / default_startup_timeout_ms exist.
+POLL_MS="${UI_DIFF_LOCATEANYTHING_POLL_MS:-${LOCATEANYTHING_STARTUP_POLL_MS:-$DEFAULT_POLL_MS}}"
 CHECK_ONLY=0
 HELP=0
 
@@ -172,9 +194,9 @@ resolve_eagle_dir() {
 
 validate_settings() {
   is_positive_bounded_int "$PORT" 65535 || fail "LocateAnything port must be an integer from 1 through 65535; got '$PORT'."
-  is_positive_bounded_int "$TIMEOUT_MS" 600000 || fail "LOCATEANYTHING_TIMEOUT_MS must be an integer from 1 through 600000 milliseconds; got '$TIMEOUT_MS'."
-  is_positive_bounded_int "$POLL_MS" 10000 || fail "LOCATEANYTHING_POLL_MS must be an integer from 1 through 10000 milliseconds; got '$POLL_MS'."
-  [ "$POLL_MS" -le "$TIMEOUT_MS" ] || fail "LOCATEANYTHING_POLL_MS must not exceed LOCATEANYTHING_TIMEOUT_MS."
+  is_positive_bounded_int "$TIMEOUT_MS" 600000 || fail "LOCATEANYTHING_STARTUP_TIMEOUT_MS must be an integer from 1 through 600000 milliseconds; got '$TIMEOUT_MS'."
+  is_positive_bounded_int "$POLL_MS" 10000 || fail "LOCATEANYTHING_STARTUP_POLL_MS must be an integer from 1 through 10000 milliseconds; got '$POLL_MS'."
+  [ "$POLL_MS" -le "$TIMEOUT_MS" ] || fail "LOCATEANYTHING_STARTUP_POLL_MS must not exceed LOCATEANYTHING_STARTUP_TIMEOUT_MS."
 }
 
 require_health_dependencies() {
@@ -234,6 +256,18 @@ resolve_arch() {
     aarch64|arm64) printf 'aarch64' ;;
     x86_64|amd64)  printf 'x86_64' ;;
     *) fail "Unrecognised host architecture '$raw'. Set UI_DIFF_LOCATEANYTHING_MACHINE_INTERNAL to override." ;;
+  esac
+}
+
+# Architecture-aware startup-readiness default. Uses resolve_arch so ARM aliases
+# (aarch64/arm64) share one branch; public/internal env overrides are applied
+# by the caller after this returns.
+default_startup_timeout_ms() {
+  local arch
+  arch="$(resolve_arch)"
+  case "$arch" in
+    aarch64) printf '%s' "$DEFAULT_TIMEOUT_MS_ARM" ;;
+    *)       printf '%s' "$DEFAULT_TIMEOUT_MS_NON_ARM" ;;
   esac
 }
 
@@ -333,6 +367,203 @@ normalize_machine() {
   esac
 }
 
+detect_running_container() {
+  local name="${1:-ui-diff-redroid}" out
+  if ! command -v docker >/dev/null 2>&1; then
+    return 1
+  fi
+  out="$(docker inspect --format='{{.State.Running}}' "$name" 2>/dev/null || true)"
+  [ "$out" = "true" ]
+}
+
+validate_colocation_evidence() {
+  local file="${1:-}" line="" key="" value="" seen_schema="" seen_commit="" seen_model=""
+  local seen_abi="" seen_quant="" seen_machine="" seen_peak="" seen_swap="" seen_status=""
+  local val_schema="" val_commit="" val_model="" val_abi="" val_quant="" val_machine=""
+  local val_peak="" val_swap="" val_status=""
+  [ -n "$file" ] || fail "co-location evidence: file path is empty."
+  [ -f "$file" ] || fail "co-location evidence: file '$file' does not exist."
+
+  while IFS= read -r line || [ -n "$line" ]; do
+    [ -z "$line" ] && continue
+    # Reject lines containing shell metacharacters.
+    case "$line" in
+      *'$('*|*'`'*|*';'*|*'|'*|*'&'*|*'>'*|*'<'*)
+        fail "co-location evidence: line contains shell metacharacters: '$line'. Reject and never evaluate." ;;
+    esac
+    if printf '%s' "$line" | grep -q "[\"']" 2>/dev/null; then
+      fail "co-location evidence: line contains shell metacharacters: '$line'. Reject and never evaluate."
+    fi
+    case "$line" in
+      *=*) ;;
+      *) fail "co-location evidence: malformed line (expected key=value): '$line'." ;;
+    esac
+    key="${line%%=*}"
+    value="${line#*=}"
+    # Reject unknown keys.
+    case "$key" in
+      schema_version|engine_commit|model_sha256|abi_version|quantization|host_machine|concurrent_peak_rss_kib|concurrent_swap_delta_kib|status) ;;
+      *) fail "co-location evidence: unknown key '$key' in '$file'." ;;
+    esac
+    # Reject duplicate keys and capture first value.
+    case "$key" in
+      schema_version)
+        [ -z "$seen_schema" ] || fail "co-location evidence: duplicate key 'schema_version' in '$file'."
+        seen_schema=1; val_schema="$value" ;;
+      engine_commit)
+        [ -z "$seen_commit" ] || fail "co-location evidence: duplicate key 'engine_commit' in '$file'."
+        seen_commit=1; val_commit="$value" ;;
+      model_sha256)
+        [ -z "$seen_model" ] || fail "co-location evidence: duplicate key 'model_sha256' in '$file'."
+        seen_model=1; val_model="$value" ;;
+      abi_version)
+        [ -z "$seen_abi" ] || fail "co-location evidence: duplicate key 'abi_version' in '$file'."
+        seen_abi=1; val_abi="$value" ;;
+      quantization)
+        [ -z "$seen_quant" ] || fail "co-location evidence: duplicate key 'quantization' in '$file'."
+        seen_quant=1; val_quant="$value" ;;
+      host_machine)
+        [ -z "$seen_machine" ] || fail "co-location evidence: duplicate key 'host_machine' in '$file'."
+        seen_machine=1; val_machine="$value" ;;
+      concurrent_peak_rss_kib)
+        [ -z "$seen_peak" ] || fail "co-location evidence: duplicate key 'concurrent_peak_rss_kib' in '$file'."
+        seen_peak=1; val_peak="$value" ;;
+      concurrent_swap_delta_kib)
+        [ -z "$seen_swap" ] || fail "co-location evidence: duplicate key 'concurrent_swap_delta_kib' in '$file'."
+        seen_swap=1; val_swap="$value" ;;
+      status)
+        [ -z "$seen_status" ] || fail "co-location evidence: duplicate key 'status' in '$file'."
+        seen_status=1; val_status="$value" ;;
+    esac
+  done < "$file"
+
+  # Require all nine fields.
+  for pair in "schema_version:$seen_schema" "engine_commit:$seen_commit" "model_sha256:$seen_model" "abi_version:$seen_abi" "quantization:$seen_quant" "host_machine:$seen_machine" "concurrent_peak_rss_kib:$seen_peak" "concurrent_swap_delta_kib:$seen_swap" "status:$seen_status"; do
+    local fname="${pair%%:*}" fval="${pair#*:}"
+    [ -n "$fval" ] || fail "co-location evidence: missing required key '$fname' in '$file'."
+  done
+
+  # Validate captured field values.
+  [ "$val_schema" = "1" ] || fail "co-location evidence: schema_version must be 1, got '$val_schema'."
+  [ "$val_commit" = "$STAGE4_ENGINE_COMMIT" ] || fail "co-location evidence: engine_commit must be '$STAGE4_ENGINE_COMMIT', got '$val_commit'."
+  [ "$val_model" = "$STAGE4_MODEL_SHA" ] || fail "co-location evidence: model_sha256 must be '$STAGE4_MODEL_SHA', got '$val_model'."
+  [ "$val_abi" = "1" ] || fail "co-location evidence: abi_version must be 1, got '$val_abi'."
+  [ "$val_quant" = "Q4_K" ] || fail "co-location evidence: quantization must be Q4_K, got '$val_quant'."
+
+  local host_arch
+  host_arch="$(resolve_arch)"
+  [ "$val_machine" = "$host_arch" ] || fail "co-location evidence: host_machine must be '$host_arch', got '$val_machine'."
+
+  [ -n "$val_peak" ] && [[ "$val_peak" =~ ^[0-9]+$ ]] && [ "$val_peak" -ge 1 ] || fail "co-location evidence: concurrent_peak_rss_kib must be a positive integer, got '$val_peak'."
+  [ "$val_swap" = "0" ] || fail "co-location evidence: concurrent_swap_delta_kib must be 0, got '$val_swap'."
+  [ "$val_status" = "pass" ] || fail "co-location evidence: status must be pass, got '$val_status'."
+}
+
+check_redroid_colocation() {
+  local redroid_name="${UI_DIFF_LOCATEANYTHING_REDROID_NAME_INTERNAL:-ui-diff-redroid}"
+  if ! detect_running_container "$redroid_name"; then
+    return 0
+  fi
+  # Container is running; require evidence.
+  local evidence_file="${UI_DIFF_LOCATEANYTHING_COLOCATION_EVIDENCE_INTERNAL:-${LOCATEANYTHING_COLOCATION_EVIDENCE:-}}"
+  if [ -z "$evidence_file" ] || [ ! -f "$evidence_file" ]; then
+    fail "co-location evidence: ReDroid container '$redroid_name' is running but no co-location evidence file was provided. Set UI_DIFF_LOCATEANYTHING_COLOCATION_EVIDENCE_INTERNAL or provide evidence via LOCATEANYTHING_COLOCATION_EVIDENCE."
+  fi
+  validate_colocation_evidence "$evidence_file"
+}
+
+read_swap_free_kb() {
+  local meminfo_path="${1:-/proc/meminfo}" line=""
+  if [ ! -f "$meminfo_path" ]; then
+    return 1
+  fi
+  line="$(awk '/^SwapFree:/{print $2; exit}' "$meminfo_path" 2>/dev/null || true)"
+  if [ -n "$line" ] && [[ "$line" =~ ^[0-9]+$ ]]; then
+    printf '%s' "$line"
+    return 0
+  fi
+  return 1
+}
+
+read_child_proc_metrics() {
+  local proc_file="${1:-}"
+  [ -n "$proc_file" ] || return 1
+  [ -f "$proc_file" ] || return 1
+  awk '
+    /^VmRSS:/ { if ($2 ~ /^[0-9]+$/) { rss=$2 } }
+    /^VmHWM:/ { if ($2 ~ /^[0-9]+$/) { hwm=$2 } }
+    /^VmSwap:/ { if ($2 ~ /^[0-9]+$/) { swap=$2 } }
+    END {
+      if (rss == "" || hwm == "" || swap == "") exit 1
+      print rss
+      print hwm
+      print swap
+    }
+  ' "$proc_file" || return 1
+}
+
+write_metrics_file() {
+  local metrics_dir="${1:-}" backend="${2:-}" engine_commit="${3:-}" model_sha256="${4:-}"
+  local abi_version="${5:-}" quantization="${6:-}" host_machine="${7:-}"
+  local baseline_swap_kb="${8:-}" post_swap_kb="${9:-}" child_rss="${10:-}"
+  local child_hwm="${11:-}" child_swap="${12:-}"
+  local swap_delta="" peak_rss="" status="pass"
+
+  # Never call fail() here: fail() exits the whole shell, which would skip the
+  # caller's child cleanup and its diagnostic. Return nonzero instead and let
+  # the caller clean up and report.
+  [ -n "$metrics_dir" ] || return 1
+  mkdir -p "$metrics_dir" 2>/dev/null || return 1
+
+  # A SwapFree increase means swap was freed, not consumed; clamp to zero to
+  # match the caller's system-swap-delta handling.
+  swap_delta=$((baseline_swap_kb - post_swap_kb))
+  [ "$swap_delta" -ge 0 ] || swap_delta=0
+  peak_rss="${child_hwm}"
+
+  # Determine status from constraints.
+  if [ "$swap_delta" -gt 0 ]; then
+    status="fail"
+  fi
+  if [ -n "$child_swap" ] && [ "$child_swap" -gt 0 ]; then
+    status="fail"
+  fi
+
+  local tmp_file metrics_file
+  metrics_file="$metrics_dir/locateanything-startup.metrics"
+  tmp_file="${metrics_file}.tmp.$$"
+
+  if ! cat > "$tmp_file" 2>/dev/null <<METRICS
+backend=${backend}
+engine_commit=${engine_commit}
+model_sha256=${model_sha256}
+abi_version=${abi_version}
+quantization=${quantization}
+host_machine=${host_machine}
+concurrent_peak_rss_kib=${peak_rss}
+concurrent_swap_delta_kib=${swap_delta}
+VmRSS=${child_rss}
+VmHWM=${child_hwm}
+VmSwap=${child_swap}
+status=${status}
+METRICS
+  then
+    rm -f "$tmp_file" 2>/dev/null || true
+    return 1
+  fi
+
+  mv -f "$tmp_file" "$metrics_file" 2>/dev/null || { rm -f "$tmp_file" 2>/dev/null || true; return 1; }
+  printf '%s' "$metrics_file"
+}
+
+# Resolve TIMEOUT_MS after functions exist so the architecture default can use
+# resolve_arch. Precedence (highest first):
+#   1. UI_DIFF_LOCATEANYTHING_TIMEOUT_MS (internal test hook)
+#   2. LOCATEANYTHING_STARTUP_TIMEOUT_MS (public override)
+#   3. architecture default from default_startup_timeout_ms
+DEFAULT_TIMEOUT_MS="$(default_startup_timeout_ms)"
+TIMEOUT_MS="${UI_DIFF_LOCATEANYTHING_TIMEOUT_MS:-${LOCATEANYTHING_STARTUP_TIMEOUT_MS:-$DEFAULT_TIMEOUT_MS}}"
+
 validate_settings
 
 if [ "$CHECK_ONLY" -eq 1 ]; then
@@ -346,15 +577,16 @@ if [ "$CHECK_ONLY" -eq 1 ]; then
     verify_cpp_abi "$CPP_LIB_PATH"
     preflight_cpp_provenance "$CPP_CHECKOUT_DIR" "$CPP_LIB_PATH" "$CPP_MODEL_PATH"
     preflight_cpp_memory
+    check_redroid_colocation
   else
     preflight_python_launch_surface "$BACKEND"
     resolve_eagle_dir
   fi
   require_startup_dependencies
   if [ "$BACKEND" = "cpp" ]; then
-    printf 'LocateAnything sidecar check passed: backend=cpp Python=%s host=%s port=%s library=%s model=%s\n' "$PYTHON_BIN" "$HOST" "$PORT" "$CPP_LIB_PATH" "$CPP_MODEL_PATH"
+    printf 'LocateAnything sidecar check passed: backend=cpp Python=%s host=%s port=%s library=%s model=%s startup_timeout_ms=%s\n' "$PYTHON_BIN" "$HOST" "$PORT" "$CPP_LIB_PATH" "$CPP_MODEL_PATH" "$TIMEOUT_MS"
   else
-    printf 'LocateAnything sidecar check passed: backend=official Python=%s Eagle=%s host=%s port=%s\n' "$PYTHON_BIN" "$EAGLE_DIR" "$HOST" "$PORT"
+    printf 'LocateAnything sidecar check passed: backend=official Python=%s Eagle=%s host=%s port=%s startup_timeout_ms=%s\n' "$PYTHON_BIN" "$EAGLE_DIR" "$HOST" "$PORT" "$TIMEOUT_MS"
   fi
   exit 0
 fi
@@ -371,15 +603,43 @@ esac
 
 ARCH="$(resolve_arch)"
 BACKEND="$(resolve_backend "$ARCH")"
+printf 'Selected backend: backend=%s\n' "$BACKEND"
+
 resolve_python
-preflight_python_launch_surface ""
-resolve_eagle_dir
-require_startup_dependencies
+
+# Backend-specific preflights and setup.
+if [ "$BACKEND" = "cpp" ]; then
+  preflight_python_launch_surface "$BACKEND"
+  resolve_cpp_paths
+  verify_cpp_abi "$CPP_LIB_PATH"
+  preflight_cpp_provenance "$CPP_CHECKOUT_DIR" "$CPP_LIB_PATH" "$CPP_MODEL_PATH"
+  preflight_cpp_memory
+  check_redroid_colocation
+  require_startup_dependencies
+  # Capture baseline swap for post-ready delta check.
+  BASELINE_SWAP_KB=""
+  BASELINE_MEMINFO_PATH="${UI_DIFF_LOCATEANYTHING_MEMINFO_INTERNAL:-/proc/meminfo}"
+  BASELINE_SWAP_KB="$(read_swap_free_kb "$BASELINE_MEMINFO_PATH" 2>/dev/null || true)"
+  [ -n "$BASELINE_SWAP_KB" ] || fail "baseline swap: could not read SwapFree from '$BASELINE_MEMINFO_PATH'."
+else
+  preflight_python_launch_surface "$BACKEND"
+  resolve_eagle_dir
+  require_startup_dependencies
+  printf 'Backend preflight passed: backend=official Eagle=%s\n' "$EAGLE_DIR"
+fi
 
 : "${LOCATEANYTHING_IN_TOKEN_LIMIT:=4096}"
 : "${LOCATEANYTHING_GENERATION_MODE:=hybrid}"
 : "${LOCATEANYTHING_MAX_NEW_TOKENS:=512}"
 export LOCATEANYTHING_IN_TOKEN_LIMIT LOCATEANYTHING_GENERATION_MODE LOCATEANYTHING_MAX_NEW_TOKENS
+
+# Export backend and backend-specific env for the child.
+export LOCATEANYTHING_BACKEND="$BACKEND"
+if [ "$BACKEND" = "cpp" ]; then
+  export LOCATEANYTHING_CPP_CHECKOUT_DIR="$CPP_CHECKOUT_DIR"
+  export LOCATEANYTHING_CPP_LIBRARY_PATH="$CPP_LIB_PATH"
+  export LOCATEANYTHING_CPP_MODEL_PATH="$CPP_MODEL_PATH"
+fi
 
 mkdir -p "$LOG_DIR" || fail "Cannot create sidecar log directory '$LOG_DIR'. Create it with writable permissions and retry."
 LOG_FILE="$LOG_DIR/locateanything-sidecar-${PORT}.log"
@@ -397,15 +657,61 @@ for ((attempt = 1; attempt <= attempts; attempt++)); do
   case "$status" in
     ready)
       printf 'LocateAnything sidecar ready at http://%s:%s/health\n' "$HOST" "$PORT"
-      exit 0
+      break
       ;;
     error:*)
       cleanup_child "$CHILD_PID"
-      fail "LocateAnything sidecar reported a load error: ${status#error:}. Inspect '$LOG_FILE', repair Eagle/Python/model dependencies, then retry."
+      fail "LocateAnything sidecar reported a load error: ${status#error:}. Inspect '$LOG_FILE', repair dependencies, then retry."
       ;;
   esac
-  [ "$attempt" -lt "$attempts" ] && sleep_for_poll
+  if [ "$attempt" -eq "$attempts" ]; then
+    cleanup_child "$CHILD_PID"
+    fail "LocateAnything sidecar did not become ready within ${TIMEOUT_MS}ms. Inspect '$LOG_FILE', confirm 127.0.0.1:${PORT} is free, and retry."
+  fi
+  sleep_for_poll
 done
 
-cleanup_child "$CHILD_PID"
-fail "LocateAnything sidecar did not become ready within ${TIMEOUT_MS}ms. Inspect '$LOG_FILE', confirm 127.0.0.1:${PORT} is free, and retry."
+# Post-ready: capture system swap delta and child process metrics (cpp backend only).
+if [ "$BACKEND" = "cpp" ]; then
+  # Read post-ready swap from meminfo (use mutated fixture when set).
+  POST_MEMINFO_PATH="${UI_DIFF_LOCATEANYTHING_MUTATE_MEMINFO_INTERNAL:-$BASELINE_MEMINFO_PATH}"
+  POST_SWAP_KB=""
+  POST_SWAP_KB="$(read_swap_free_kb "$POST_MEMINFO_PATH" 2>/dev/null || true)"
+  [ -n "$POST_SWAP_KB" ] || { cleanup_child "$CHILD_PID"; fail "post-ready swap: could not read SwapFree from '$POST_MEMINFO_PATH'."; }
+
+  SWAP_DELTA=$((BASELINE_SWAP_KB - POST_SWAP_KB))
+  [ "$SWAP_DELTA" -ge 0 ] || SWAP_DELTA=0
+  if [ "$SWAP_DELTA" -gt 0 ]; then
+    cleanup_child "$CHILD_PID"
+    fail "positive system swap delta: baseline ${BASELINE_SWAP_KB} KiB, post-ready ${POST_SWAP_KB} KiB (delta ${SWAP_DELTA}). ReDroid co-location may be leaking memory."
+  fi
+
+  # Read child process metrics.
+  PROC_STATUS_PATH="${UI_DIFF_LOCATEANYTHING_PROC_STATUS_FILE_INTERNAL:-}"
+  if [ -z "$PROC_STATUS_PATH" ]; then
+    PROC_STATUS_PATH="/proc/${CHILD_PID}/status"
+  fi
+  CHILD_METRICS=""
+  if CHILD_METRICS="$(read_child_proc_metrics "$PROC_STATUS_PATH" 2>/dev/null)"; then
+    CHILD_RSS="$(printf '%s' "$CHILD_METRICS" | sed -n '1p')"
+    CHILD_HWM="$(printf '%s' "$CHILD_METRICS" | sed -n '2p')"
+    CHILD_SWAP="$(printf '%s' "$CHILD_METRICS" | sed -n '3p')"
+  else
+    cleanup_child "$CHILD_PID"
+    fail "child proc metrics: could not read or parse VmRSS/VmHWM/VmSwap from '$PROC_STATUS_PATH'."
+  fi
+
+  # Fail on missing or malformed metrics.
+  [ -n "$CHILD_RSS" ] && [[ "$CHILD_RSS" =~ ^[0-9]+$ ]] || { cleanup_child "$CHILD_PID"; fail "child proc metrics: VmRSS missing or not an unsigned integer: '${CHILD_RSS:-}'."; }
+  [ -n "$CHILD_HWM" ] && [[ "$CHILD_HWM" =~ ^[0-9]+$ ]] || { cleanup_child "$CHILD_PID"; fail "child proc metrics: VmHWM missing or not an unsigned integer: '${CHILD_HWM:-}'."; }
+  [ -n "$CHILD_SWAP" ] && [[ "$CHILD_SWAP" =~ ^[0-9]+$ ]] || { cleanup_child "$CHILD_PID"; fail "child proc metrics: VmSwap missing or not an unsigned integer: '${CHILD_SWAP:-}'."; }
+
+  # Fail on positive child VmSwap.
+  if [ "$CHILD_SWAP" -gt 0 ]; then
+    cleanup_child "$CHILD_PID"
+    fail "positive child VmSwap: ${CHILD_SWAP} kB. ReDroid co-location is swapping the worker."
+  fi
+
+  # Write atomic metrics file; no temp residue on failure.
+  write_metrics_file "$STAGE4_METRICS_DIR" "$BACKEND" "$STAGE4_ENGINE_COMMIT" "$STAGE4_MODEL_SHA" "$STAGE4_ABI" "Q4_K" "$ARCH" "$BASELINE_SWAP_KB" "$POST_SWAP_KB" "$CHILD_RSS" "$CHILD_HWM" "$CHILD_SWAP" >/dev/null 2>&1 || { cleanup_child "$CHILD_PID"; fail "write_metrics_file: atomic write failed. No metrics file written."; }
+fi
