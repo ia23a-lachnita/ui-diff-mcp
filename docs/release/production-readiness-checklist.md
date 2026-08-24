@@ -6,13 +6,26 @@ Run this checklist before calling `ui-diff-mcp` production-ready.
 
 The Calorix owner restored the active reference at Calorix commit `8cc20bb` (`restore canonical design references`). Every Calorix visual gate uses `docs/design-handoff/placeholder-app/reference-images/today--dark.png`, as configured by `ui-diff.config.json`, and validates it against `docs/design-handoff/placeholder-app/reference-images-manifest.json` before capture or pipeline work. The approved SHA-256 is `73BA85F25489C8D45BEAB57DD1B317138870CE8360FE0F4399AB0737A5E505F1`; the restored manifest records its source content commit `307dfc04ee23bee022f85059cc09dc363b2e80f6`.
 
-`reference-images-buggy` and `good-screenshots` are not fallback expected evidence. `UI_DIFF_LIVE_EXPECTED_IMAGE` is an explicit readable override; setting it to the canonical path still performs manifest and hash validation. For fresh release evidence, leave `UI_DIFF_LIVE_ACTUAL_IMAGE` unset so the actual source is recorded as `auto_capture`; a supplied actual path is recorded as `env_override` with a freshness warning.
+`reference-images-buggy` and `good-screenshots` are not fallback expected evidence. `UI_DIFF_LIVE_EXPECTED_IMAGE` is an explicit readable override; setting it to the canonical path still performs manifest and hash validation. For fresh release evidence, `UI_DIFF_LIVE_ACTUAL_IMAGE` must be unset so the actual source is recorded as `auto_capture`; a supplied actual path is recorded as `env_override` with a freshness warning. The current MCP capture and Calorix live helper still invoke literal `adb`, so fresh physical-phone release evidence is blocked until both accept and test an explicit Samsung executable/serial route. Manual `/home/agent-runner/.local/bin/phone-adb` capture is diagnostic input, not a substitute for this gate.
+
+## Physical Samsung Preflight
+
+The only default local Android target is the dedicated Samsung `SM-G780G`, Android `13`, serial `R58R61161NA`. Never use plain `adb` or implicit device selection. Cuttlefish, `android-vm`, ReDroid, desktop AVDs, and local emulators are retired and are not release-evidence routes.
+
+```bash
+/home/agent-runner/.local/bin/phone-adb devices -l
+/home/agent-runner/.local/bin/phone-adb shell getprop ro.product.model
+/home/agent-runner/.local/bin/phone-adb shell getprop ro.build.version.release
+/home/agent-runner/.local/bin/phone-adb get-serialno
+```
+
+Required result: exactly the authorized device is online, with model `SM-G780G`, Android `13`, and serial `R58R61161NA`.
 
 The persisted `report.json` must contain report-safe `inputProvenance` for Calorix: the pipeline computes expected and actual SHA-256 identities from the image bytes, and a manifest entry appears only after it matches the computed expected identity. `auto_capture` and `env_override` remain `caller_attested` acquisition sources, never independently verified claims. Public MCP input accepts no computed hashes; it can supply only this attestation and an expected-manifest path for pipeline verification. On resume, omission inherits the prior effective provenance; a replacement requires matching recomputed expected and actual identities. Do not place environment values, provider keys, or other credentials in this object.
 
 ## Deterministic Gates
 
-```powershell
+```bash
 npm run verify
 npm run test:coverage
 npm audit --audit-level=critical
@@ -27,8 +40,8 @@ Required result:
 
 ## OpenCode Zen Free Visual Gate
 
-```powershell
-$env:RUN_OPENCODE_LIVE="1"
+```bash
+export RUN_OPENCODE_LIVE="1"
 # OPENCODE_API_KEY is optional; the current free route defaults to public.
 npm run verify:opencode-live
 ```
@@ -43,10 +56,10 @@ Required result:
 
 ## OpenRouter-Only Free Live Gate
 
-```powershell
-$env:RUN_OPENROUTER_FREE_LIVE="1"
-$env:OPENROUTER_API_KEY="<real-openrouter-key>"
-$env:LOCATEANYTHING_SIDECAR_URL="http://127.0.0.1:39731"
+```bash
+export RUN_OPENROUTER_FREE_LIVE="1"
+export OPENROUTER_API_KEY="<real-openrouter-key>"
+export LOCATEANYTHING_SIDECAR_URL="http://127.0.0.1:39731"
 npm run verify:openrouter-free-live
 ```
 
@@ -59,10 +72,10 @@ Required result:
 
 ## NVIDIA Endpoint Live Gate
 
-```powershell
-$env:RUN_NVIDIA_LIVE="1"
-$env:NVIDIA_API_KEY="<real-nvidia-key>"
-# $env:NVIDIA_VLM_BASE_URL="https://integrate.api.nvidia.com/v1"  # default
+```bash
+export RUN_NVIDIA_LIVE="1"
+export NVIDIA_API_KEY="<real-nvidia-key>"
+# export NVIDIA_VLM_BASE_URL="https://integrate.api.nvidia.com/v1"  # default
 npm run verify:nvidia-live
 ```
 
@@ -74,13 +87,13 @@ Required result:
 
 ## Default Free MCP Live Gate
 
-```powershell
-$env:RUN_UI_DIFF_LIVE="1"
-$env:LOCATEANYTHING_SIDECAR_URL="http://127.0.0.1:39731"
-$env:LOCATEANYTHING_IN_TOKEN_LIMIT="4096"
-$env:LOCATEANYTHING_GENERATION_MODE="hybrid"
-$env:LOCATEANYTHING_MAX_NEW_TOKENS="512"
-$env:LOCATEANYTHING_TIMEOUT_MS="300000"
+```bash
+export RUN_UI_DIFF_LIVE="1"
+export LOCATEANYTHING_SIDECAR_URL="http://127.0.0.1:39731"
+export LOCATEANYTHING_IN_TOKEN_LIMIT="4096"
+export LOCATEANYTHING_GENERATION_MODE="hybrid"
+export LOCATEANYTHING_MAX_NEW_TOKENS="512"
+export LOCATEANYTHING_TIMEOUT_MS="300000"
 npm run verify:mcp-live
 ```
 
@@ -103,26 +116,15 @@ Deterministic displacement findings retain separate expected and translated chil
 
 Run this preflight before full or strict Calorix release evidence. It must use a freshly restarted sidecar with the model enabled; a sidecar started with `LOCATEANYTHING_SKIP_MODEL=1` is not valid release evidence.
 
-```powershell
-# Run this block in a dedicated PowerShell terminal. It intentionally targets only the configured LocateAnything port 39731.
-$sidecarPort = 39731
-$listener = Get-NetTCPConnection -LocalPort $sidecarPort -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
-if ($listener) {
-  $owner = Get-CimInstance Win32_Process -Filter "ProcessId = $($listener.OwningProcess)"
-  $commandLine = [string]$owner.CommandLine
-  if ($commandLine -notlike "*sidecars.locateanything.server:app*") {
-    throw "Refusing to stop PID $($listener.OwningProcess) on port $sidecarPort. CommandLine: $commandLine. Resolve the listener manually before continuing."
-  }
-  Stop-Process -Id ([int]$listener.OwningProcess) -Force
-  Start-Sleep -Seconds 1
-}
+```bash
+# Run from the ui-diff-mcp root. A sidecar already started with the skip flag
+# must be stopped through its recorded owner/PID before this block; never kill
+# an unidentified listener on port 39731.
+unset LOCATEANYTHING_SKIP_MODEL
+bash scripts/start-locateanything-sidecar.sh
 
-# Remove the skip flag, then restart the sidecar from the ui-diff-mcp root.
-Remove-Item Env:LOCATEANYTHING_SKIP_MODEL -ErrorAction SilentlyContinue
-.\scripts\start-locateanything-sidecar.ps1
-
-$env:LOCATEANYTHING_SIDECAR_URL="http://127.0.0.1:39731"
-$env:RUN_LOCATEANYTHING_LIVE="1"
+export LOCATEANYTHING_SIDECAR_URL="http://127.0.0.1:39731"
+export RUN_LOCATEANYTHING_LIVE="1"
 npm run verify:locateanything-live
 ```
 
@@ -138,14 +140,14 @@ The strict Calorix release gate below repeats the same lane contract from its pe
 
 Run this before provider-backed Calorix gates so displacement, consolidation, coverage, and recovery scheduling are evaluated independently of model availability:
 
-```powershell
-$env:RUN_CALORIX_DETERMINISTIC_LIVE="1"
-$env:UI_DIFF_LIVE_EXPECTED_IMAGE="C:\Users\xursc\projects\calorix\docs\design-handoff\placeholder-app\reference-images\today--dark.png"
-$env:LOCATEANYTHING_SIDECAR_URL="http://127.0.0.1:39731"
+```bash
+export RUN_CALORIX_DETERMINISTIC_LIVE="1"
+export UI_DIFF_LIVE_EXPECTED_IMAGE="/home/agent-runner/projects/calorix/docs/design-handoff/placeholder-app/reference-images/today--dark.png"
+export LOCATEANYTHING_SIDECAR_URL="http://127.0.0.1:39731"
 npm run verify:calorix-deterministic-live
 ```
 
-By default this gate builds/installs Calorix only when the debug APK is stale, opens `calorix://debug/reseed`, and captures the actual screenshot from ADB into `C:\Users\xursc\projects\calorix\.ui-diff\captures`. Set `UI_DIFF_LIVE_ACTUAL_IMAGE` only for an explicit historical-file override.
+The gate is designed to build/install Calorix only when the APK is stale, open `calorix://debug/reseed`, and auto-capture into `/home/agent-runner/projects/calorix/.ui-diff/captures`. Its current literal-`adb` implementation is not serial-safe on this host; do not count it as physical-phone release evidence until the executable/serial route is fixed. Set `UI_DIFF_LIVE_ACTUAL_IMAGE` only for an explicit diagnostic or historical-file override.
 
 Required evidence:
 
@@ -159,15 +161,15 @@ Latest provider-independent result: `run-1782187460179-53f4c9` on 2026-06-23. It
 
 ## Bounded Calorix Smoke Gate
 
-```powershell
-$env:RUN_CALORIX_UI_DIFF_LIVE="1"
-$env:LOCATEANYTHING_SIDECAR_URL="http://127.0.0.1:39731"
-$env:LOCATEANYTHING_IN_TOKEN_LIMIT="4096"
-$env:LOCATEANYTHING_GENERATION_MODE="hybrid"
-$env:LOCATEANYTHING_MAX_NEW_TOKENS="512"
-$env:LOCATEANYTHING_TIMEOUT_MS="300000"
-$env:UI_DIFF_MAX_AUDIT_PAIRS="3"
-$env:UI_DIFF_LIVE_EXPECTED_IMAGE="C:\Users\xursc\projects\calorix\docs\design-handoff\placeholder-app\reference-images\today--dark.png"
+```bash
+export RUN_CALORIX_UI_DIFF_LIVE="1"
+export LOCATEANYTHING_SIDECAR_URL="http://127.0.0.1:39731"
+export LOCATEANYTHING_IN_TOKEN_LIMIT="4096"
+export LOCATEANYTHING_GENERATION_MODE="hybrid"
+export LOCATEANYTHING_MAX_NEW_TOKENS="512"
+export LOCATEANYTHING_TIMEOUT_MS="300000"
+export UI_DIFF_MAX_AUDIT_PAIRS="3"
+export UI_DIFF_LIVE_EXPECTED_IMAGE="/home/agent-runner/projects/calorix/docs/design-handoff/placeholder-app/reference-images/today--dark.png"
 npm run verify:calorix-live
 ```
 
@@ -197,15 +199,16 @@ If any of these fail in the bounded smoke, fix the underlying code issue before 
 
 ## Full Calorix All-Target Audit Gate
 
-```powershell
-$env:RUN_CALORIX_FULL_LIVE="1"
-$env:LOCATEANYTHING_SIDECAR_URL="http://127.0.0.1:39731"
-$env:LOCATEANYTHING_IN_TOKEN_LIMIT="4096"
-$env:LOCATEANYTHING_GENERATION_MODE="hybrid"
-$env:LOCATEANYTHING_MAX_NEW_TOKENS="512"
-$env:LOCATEANYTHING_TIMEOUT_MS="300000"
+```bash
+export RUN_CALORIX_FULL_LIVE="1"
+export LOCATEANYTHING_SIDECAR_URL="http://127.0.0.1:39731"
+export LOCATEANYTHING_IN_TOKEN_LIMIT="4096"
+export LOCATEANYTHING_GENERATION_MODE="hybrid"
+export LOCATEANYTHING_MAX_NEW_TOKENS="512"
+export LOCATEANYTHING_TIMEOUT_MS="300000"
 # Do NOT set UI_DIFF_MAX_AUDIT_PAIRS — unbounded audit required
-$env:UI_DIFF_LIVE_EXPECTED_IMAGE="C:\Users\xursc\projects\calorix\docs\design-handoff\placeholder-app\reference-images\today--dark.png"
+unset UI_DIFF_MAX_AUDIT_PAIRS
+export UI_DIFF_LIVE_EXPECTED_IMAGE="/home/agent-runner/projects/calorix/docs/design-handoff/placeholder-app/reference-images/today--dark.png"
 npm run verify:calorix-full-live
 ```
 
@@ -229,12 +232,12 @@ Required result:
 
 ## Strict Calorix Release Gate
 
-```powershell
-$env:RUN_CALORIX_RELEASE_LIVE="1"
-$env:LOCATEANYTHING_SIDECAR_URL="http://127.0.0.1:39731"
-$env:UI_DIFF_LIVE_EXPECTED_IMAGE="C:\Users\xursc\projects\calorix\docs\design-handoff\placeholder-app\reference-images\today--dark.png"
-Remove-Item Env:UI_DIFF_MAX_AUDIT_PAIRS -ErrorAction SilentlyContinue
-Remove-Item Env:UI_DIFF_LIVE_ACTUAL_IMAGE -ErrorAction SilentlyContinue
+```bash
+export RUN_CALORIX_RELEASE_LIVE="1"
+export LOCATEANYTHING_SIDECAR_URL="http://127.0.0.1:39731"
+export UI_DIFF_LIVE_EXPECTED_IMAGE="/home/agent-runner/projects/calorix/docs/design-handoff/placeholder-app/reference-images/today--dark.png"
+unset UI_DIFF_MAX_AUDIT_PAIRS
+unset UI_DIFF_LIVE_ACTUAL_IMAGE
 npm run verify:calorix-release-live
 ```
 
@@ -252,15 +255,17 @@ Required result:
 
 A bounded or full diagnostic pass never substitutes for this gate.
 
+This strict gate is currently blocked before execution by the hardcoded literal `adb` calls in the MCP capture path and Calorix live helper. Do not weaken the unset-actual requirement to work around that defect; implement and test explicit Samsung executable/serial routing first.
+
 ## Dual-Locator Diagnostic Command
 
 Dual-locator mode is **not** part of any release gate and must not be enabled without an explicit guard:
 
-```powershell
+```bash
 # Only for diagnostics — must NOT be used in release gate runs
-$env:UI_DIFF_DUAL_LOCATOR="1"
-$env:UI_DIFF_ALLOW_DUAL_LOCATOR="1"
-$env:UI_DIFF_DUAL_LOCATOR_REASON="investigating lane coverage discrepancy on <date>"
+export UI_DIFF_DUAL_LOCATOR="1"
+export UI_DIFF_ALLOW_DUAL_LOCATOR="1"
+export UI_DIFF_DUAL_LOCATOR_REASON="investigating lane coverage discrepancy on <date>"
 ```
 
 Without all three variables, `UI_DIFF_DUAL_LOCATOR=1` alone is silently ignored and the run falls back to projection mode with a warning in `report.warnings`.

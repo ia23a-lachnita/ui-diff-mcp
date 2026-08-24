@@ -83,13 +83,15 @@ Notes:
 
 Target host: Raspberry Pi 4 ARM64 Debian, bash shell.
 
-- Docker with `/dev/kvm` (optional, detected/reported) and binder device support for ReDroid.
-- ReDroid ARM64 container with software rendering, loopback-only ADB (`127.0.0.1:5555`), persistent data at `${XDG_STATE_HOME:-$HOME/.local/state}/ui-diff-mcp/redroid-data`.
-- platform-tools/adb and Linux udev for future physical phone.
+- The only default Android target is the USB-connected Samsung `SM-G780G`, Android `13`, serial `R58R61161NA`.
+- Use `/home/agent-runner/.local/bin/phone-adb` for every device operation. It pins `adb -s R58R61161NA`; never use plain `adb` or implicit device selection.
+- Cuttlefish, `android-vm`, ReDroid, desktop AVDs, and local emulators are retired. Do not start, troubleshoot, or use them unless the user explicitly changes this policy. GitHub's x86_64 emulator remains an independent CI gate.
+- Before device evidence, verify `/home/agent-runner/.local/bin/phone-adb devices -l`, model `SM-G780G`, Android `13`, and serial `R58R61161NA`.
+- Current implementation limitation: `src/capture/mobile-capture.ts` and `tests/helpers/calorix-device.ts` invoke the literal `adb` executable. Until both accept and test an explicit executable/serial route, do not use MCP/live-gate auto-capture as physical-phone release evidence. Capture manually with the absolute wrapper for diagnostic comparison and track configurable capture plumbing as a release blocker.
 - LocateAnything sidecar: Linux bash launcher (`scripts/start-locateanything-sidecar.sh`); resolves `LOCATEANYTHING_PYTHON` → `/home/agent-runner/projects/.venvs/ui-diff-mcp-locateanything/bin/python` (sibling project venv) → `python3`; resolves `LOCATEANYTHING_EAGLE_EMBODIED_DIR` → `/home/agent-runner/projects/Eagle/Embodied`; starts uvicorn at loopback port `39731`.
 - Calorix Actions APK fetcher: source-SHA match + SHA256 verification required (`--source-sha`, `--source-clean`, `--workflow android-build.yml`, `--artifact-name android-apk-<sha>`, checksum `.sha256`).
 - `package-lock.json` root bin must stay `dist/src/index.js`.
-- Root/bootstrap blockers: adb install, docker-group membership, binder node setup, and ReDroid smoke may require root/sudo; scripts must record exact blocker and remediation.
+- Historical ReDroid/bootstrap scripts and tests remain for provenance, but they are not active operator guidance or a release gate.
 
 ## 5. External Review Contract (Antigravity MCP)
 
@@ -154,6 +156,18 @@ These must be set in the shell before running live tests or the sidecar. They ar
 | `LOCATEANYTHING_EAGLE_EMBODIED_DIR` | Sidecar startup | `/home/agent-runner/projects/Eagle/Embodied` |
 | `UI_DIFF_LIVE_EXPECTED_IMAGE` | Calorix live tests | Path to expected screenshot |
 | `UI_DIFF_LIVE_ACTUAL_IMAGE` | Historical-override only; leave unset for fresh release evidence | Path to actual screenshot |
+
+### Physical Samsung device (Linux / Raspberry Pi)
+
+```bash
+/home/agent-runner/.local/bin/phone-adb devices -l
+/home/agent-runner/.local/bin/phone-adb shell getprop ro.product.model
+/home/agent-runner/.local/bin/phone-adb shell getprop ro.build.version.release
+/home/agent-runner/.local/bin/phone-adb get-serialno
+/home/agent-runner/.local/bin/phone-adb exec-out screencap -p > /absolute/path/to/actual.png
+```
+
+The manual screenshot command is the current serial-safe diagnostic path. Do not treat `capture_mobile_screen` or Calorix live-gate auto-capture as physical-phone release evidence until their hardcoded `adb` calls are replaced by a tested explicit executable/serial configuration. `UI_DIFF_LIVE_ACTUAL_IMAGE` remains a historical/manual override and therefore is not fresh auto-capture release proof.
 
 ### Starting the LocateAnything sidecar (Linux / Raspberry Pi)
 

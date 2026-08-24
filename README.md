@@ -98,18 +98,27 @@ All generated images (pixel diff, directional overlay, crop pairs, recovery crop
 
 `600` is a local timeout workaround, not a quality default. It shrinks a `1206x2622` Calorix mockup to roughly `276x600` for the locator, which can hide small icons, thin borders, and text. Prefer the highest dimension that fits the sidecar budget, and run the sequential locator benchmark before production sign-off:
 
-```powershell
-$env:UI_DIFF_LIVE_EXPECTED_IMAGE = "C:\Users\xursc\projects\calorix\docs\design-handoff\placeholder-app\reference-images\today--dark.png"
-$env:LOCATEANYTHING_SIDECAR_URL = "http://127.0.0.1:39731"
-$env:UI_DIFF_LOCATOR_BENCHMARK_DIMENSIONS = "600,900,1200"
+```bash
+export UI_DIFF_LIVE_EXPECTED_IMAGE="/home/agent-runner/projects/calorix/docs/design-handoff/placeholder-app/reference-images/today--dark.png"
+export LOCATEANYTHING_SIDECAR_URL="http://127.0.0.1:39731"
+export UI_DIFF_LOCATOR_BENCHMARK_DIMENSIONS="600,900,1200"
 npm run benchmark:locator
 ```
 
-For Calorix release evidence, do not set `UI_DIFF_LIVE_ACTUAL_IMAGE` by default. The live gates build the debug APK only when stale, install it when needed, open `calorix://debug/reseed`, and capture a fresh ADB screenshot into `C:\Users\xursc\projects\calorix\.ui-diff\captures`. Set `UI_DIFF_LIVE_ACTUAL_IMAGE` only when you intentionally want to compare against a historical file; that path is logged as an explicit override and is not fresh release evidence.
+For Calorix release evidence, `UI_DIFF_LIVE_ACTUAL_IMAGE` normally stays unset so the gate can prove fresh acquisition. On this Pi, however, both the MCP capture implementation and Calorix live helper still invoke literal `adb`, so auto-capture is not yet serial-safe. Until they accept and test the explicit Samsung executable/serial route, use `/home/agent-runner/.local/bin/phone-adb exec-out screencap -p` only for diagnostic/manual comparisons and treat strict fresh auto-capture release evidence as blocked. An explicit `UI_DIFF_LIVE_ACTUAL_IMAGE` is logged as an override and is not fresh release proof.
 
-### Raspberry Pi/ReDroid Evidence Policy
+### Raspberry Pi Physical-Phone Evidence Policy
 
-ReDroid evidence is valid for platform-independent UI, layout, state, and navigation assertions. Phone-only properties remain phone-gated, including OEM rendering, physical-camera behavior, device-specific insets, and device-specific performance. The absence of a physical phone does not globally block production validation when ReDroid covers the property being asserted.
+The dedicated Samsung `SM-G780G`, Android `13`, serial `R58R61161NA` is the only default local Android target. Every device command must use `/home/agent-runner/.local/bin/phone-adb`, which pins the serial. Never use plain `adb` or implicit device selection. Cuttlefish, `android-vm`, ReDroid, desktop AVDs, and local emulators are retired; GitHub's x86_64 emulator remains an independent CI gate.
+
+Identity preflight:
+
+```bash
+/home/agent-runner/.local/bin/phone-adb devices -l
+/home/agent-runner/.local/bin/phone-adb shell getprop ro.product.model
+/home/agent-runner/.local/bin/phone-adb shell getprop ro.build.version.release
+/home/agent-runner/.local/bin/phone-adb get-serialno
+```
 
 ### Verified Calorix Actions APKs
 
@@ -127,7 +136,7 @@ bash scripts/fetch-calorix-actions-apk.sh \
 
 `--source-clean` is an affirmative trust-boundary attestation. The script intentionally does not inspect any local Calorix checkout, so an omitted clean proof or `--source-dirty` rejects with `uncommitted_source`. This prevents the known dirty local `.mcp.json` from being mistaken for clean, current APK evidence. The script queries only the exact successful `Build Android APK` run for the requested SHA, downloads the named artifact from its immutable numeric run ID, accepts exactly the APK plus same-basename checksum, verifies the SHA-256, then atomically writes the APK and an adjacent `.verified.json` provenance record. It never overwrites an existing output or verification record.
 
-Calorix live gates validate the canonical default expected reference before any device or pipeline work: `C:\Users\xursc\projects\calorix\docs\design-handoff\placeholder-app\reference-images\today--dark.png`, its adjacent `reference-images-manifest.json`, and SHA-256 `73BA85F25489C8D45BEAB57DD1B317138870CE8360FE0F4399AB0737A5E505F1`. An explicit `UI_DIFF_LIVE_EXPECTED_IMAGE` remains supported, but must be readable; `reference-images-buggy` and `good-screenshots` are never fallback sources.
+Calorix live gates validate the canonical default expected reference before any device or pipeline work: `/home/agent-runner/projects/calorix/docs/design-handoff/placeholder-app/reference-images/today--dark.png`, its adjacent `reference-images-manifest.json`, and SHA-256 `73BA85F25489C8D45BEAB57DD1B317138870CE8360FE0F4399AB0737A5E505F1`. An explicit `UI_DIFF_LIVE_EXPECTED_IMAGE` remains supported, but must be readable; `reference-images-buggy` and `good-screenshots` are never fallback sources.
 
 Calorix reports persist a report-safe `inputProvenance` record whose expected and actual SHA-256 identities are computed from the exact image bytes by the pipeline. A manifest entry is included only after the pipeline verifies that its recorded hash matches the expected image bytes. Acquisition sources such as `auto_capture` and `env_override` are stored separately with `verification:"caller_attested"`; they are not presented as independently verified facts. Public MCP requests cannot supply computed hashes. On resume, omitted provenance inherits the stored effective record; an explicit replacement is accepted only when the recomputed expected and actual image identities match the resumed report.
 
@@ -318,7 +327,9 @@ and still runs CV/OCR/optional lanes, but a run made with that flag is not full 
 
 The TypeScript client sends image bytes with each locator request, so `LOCATEANYTHING_SIDECAR_URL` can point to a remote GPU service that exposes the same contract.
 
-#### ReDroid Co-Location Evidence
+#### Legacy ReDroid Co-Location Evidence (Historical Only)
+
+The following contract is retained to explain and test historical artifacts. Do not start ReDroid or use this section as current operator guidance or release evidence.
 
 On the C++ backend, if a `ui-diff-redroid` (or
 `UI_DIFF_LOCATEANYTHING_REDROID_NAME_INTERNAL`-named) Docker/Podman container
@@ -358,14 +369,15 @@ Parser-only sidecar tests:
 ### Raspberry Pi Operator Commands
 
 ```bash
-# Install Android platform tools and udev rules (may require root/sudo)
-bash scripts/install-android-platform-tools.sh
+# Verify the dedicated Samsung identity. Use this absolute wrapper for every
+# device operation; never use plain adb or implicit device selection.
+/home/agent-runner/.local/bin/phone-adb devices -l
+/home/agent-runner/.local/bin/phone-adb shell getprop ro.product.model
+/home/agent-runner/.local/bin/phone-adb shell getprop ro.build.version.release
+/home/agent-runner/.local/bin/phone-adb get-serialno
 
-# Start ReDroid ARM64 container with software rendering, loopback-only ADB
-bash scripts/start-redroid.sh
-
-# Verify ADB connects to ReDroid on loopback
-bash scripts/check-adb.sh --expect-redroid
+# Capture a serial-safe diagnostic screenshot.
+/home/agent-runner/.local/bin/phone-adb exec-out screencap -p > /absolute/path/to/actual.png
 
 # Validate, then start or reuse, the loopback-only LocateAnything sidecar
 bash scripts/start-locateanything-sidecar.sh --check-only
@@ -382,12 +394,6 @@ bash scripts/fetch-calorix-actions-apk.sh \
   --artifact-name android-apk-1f538641f5e5f5c4a48c95cdfb97462838187106 \
   --output "$HOME/Downloads/calorix-release.apk"
 
-# Stop ReDroid (preserves persistent data)
-bash scripts/stop-redroid.sh
-
-# Reset ReDroid (wipes data, starts clean)
-bash scripts/reset-redroid.sh --yes
-
 # Verify package-lock.json root bin is dist/src/index.js
 bash scripts/verify-package-bin-lock.sh
 
@@ -395,7 +401,7 @@ bash scripts/verify-package-bin-lock.sh
 PATH=/home/agent-runner/projects/.venvs/ui-diff-mcp-locateanything/bin:$PATH npm run verify
 ```
 
-> **Evidence boundary:** ReDroid is sufficient for platform-independent UI, layout, state, and navigation assertions. Phone-only properties remain phone-gated, including OEM rendering, physical-camera behavior, device-specific insets, and device-specific performance. The absence of a physical phone does not globally block production validation when ReDroid covers the property being asserted.
+> **Evidence boundary:** manual wrapper capture is serial-safe diagnostic input, but `UI_DIFF_LIVE_ACTUAL_IMAGE` is an override rather than fresh auto-capture proof. Strict physical-phone release evidence remains blocked until the MCP capture and Calorix live helper stop invoking literal `adb` and have focused serial-routing coverage.
 
 ## MCP Integration
 
@@ -406,7 +412,7 @@ PATH=/home/agent-runner/projects/.venvs/ui-diff-mcp-locateanything/bin:$PATH npm
   "mcpServers": {
     "ui-diff": {
       "command": "node",
-      "args": ["C:\\Users\\xursc\\projects\\ui-diff-mcp\\dist\\src\\index.js"],
+      "args": ["/home/agent-runner/projects/ui-diff-mcp/dist/src/index.js"],
       "env": {
         "OPENROUTER_API_KEY": "<your-key>"
       }
@@ -420,7 +426,7 @@ PATH=/home/agent-runner/projects/.venvs/ui-diff-mcp-locateanything/bin:$PATH npm
 ```toml
 [mcp_servers.ui-diff]
 command = "node"
-args = ['C:\Users\xursc\projects\ui-diff-mcp\dist\src\index.js']
+args = ['/home/agent-runner/projects/ui-diff-mcp/dist/src/index.js']
 enabled = true
 ```
 
@@ -436,8 +442,8 @@ enabled = true
 | Free OpenRouter models | `npm run verify:free-live` | `RUN_FREE_LIVE=1`, `OPENROUTER_API_KEY` |
 | Native NVIDIA models | `npm run verify:nvidia-live` | `RUN_NVIDIA_LIVE=1`, `NVIDIA_API_KEY` |
 | Full pipeline | `npm run verify:mcp-live` | `RUN_UI_DIFF_LIVE=1`, `LOCATEANYTHING_SIDECAR_URL`; provider keys optional fallbacks |
-| Bounded Calorix smoke | `npm run verify:calorix-live` | `RUN_CALORIX_UI_DIFF_LIVE=1`, canonical expected reference, sidecar, ADB device; actual screenshot is auto-captured unless `UI_DIFF_LIVE_ACTUAL_IMAGE` is explicitly set |
-| Full Calorix all-target | `npm run verify:calorix-full-live` | `RUN_CALORIX_FULL_LIVE=1`, canonical expected reference, sidecar, ADB device; **do not set `UI_DIFF_MAX_AUDIT_PAIRS`** |
+| Bounded Calorix smoke | `npm run verify:calorix-live` | `RUN_CALORIX_UI_DIFF_LIVE=1`, canonical expected reference, sidecar, dedicated Samsung; serial-safe auto-capture plumbing is currently an open blocker |
+| Full Calorix all-target | `npm run verify:calorix-full-live` | `RUN_CALORIX_FULL_LIVE=1`, canonical expected reference, sidecar, dedicated Samsung; **do not set `UI_DIFF_MAX_AUDIT_PAIRS`**; serial-safe auto-capture plumbing required |
 
 ### Bounded Smoke vs Full Classification
 
