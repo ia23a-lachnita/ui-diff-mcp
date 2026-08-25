@@ -17,6 +17,59 @@ export interface CommandRunner {
 export interface CaptureOptions {
   runner?: CommandRunner;
   makeOutputPath?: () => string;
+  adbExecutable?: string;
+  adbSerial?: string;
+}
+
+export interface AdbConfig {
+  executable: string;
+  serial: string | undefined;
+}
+
+export function resolveAdbConfig(
+  opts: { adbExecutable?: string; adbSerial?: string } = {}
+): AdbConfig {
+  const rawExecutable = opts.adbExecutable ?? process.env["UI_DIFF_ADB_EXECUTABLE"] ?? "adb";
+  const rawSerial = opts.adbSerial ?? process.env["UI_DIFF_ADB_SERIAL"] ?? undefined;
+
+  if (hasControlChars(rawExecutable)) {
+    throw new Error("adbExecutable must not contain ASCII control characters");
+  }
+  if (rawSerial !== undefined && hasControlChars(rawSerial)) {
+    throw new Error("adbSerial must not contain ASCII control characters");
+  }
+
+  const executable = rawExecutable.trim();
+  const serial = rawSerial?.trim();
+
+  if (!executable) {
+    throw new Error("adbExecutable must not be blank or whitespace-only");
+  }
+  if (serial !== undefined && !serial) {
+    throw new Error("adbSerial must not be blank or whitespace-only");
+  }
+
+  return { executable, serial: serial ?? undefined };
+}
+
+function hasControlChars(value: string): boolean {
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i);
+    if (code <= 0x1f || code === 0x7f) return true;
+  }
+  return false;
+}
+
+export function buildAdbArgs(
+  config: AdbConfig,
+  ...args: string[]
+): string[] {
+  const result: string[] = [];
+  if (config.serial !== undefined) {
+    result.push("-s", config.serial);
+  }
+  result.push(...args);
+  return result;
 }
 
 export interface CaptureResult {
@@ -81,8 +134,9 @@ export async function captureMobileScreen(
   const outPath = opts.makeOutputPath?.() ?? defaultOutputPath();
 
   if (target === "adb") {
+    const config = resolveAdbConfig(opts);
     try {
-      const result = await runner("adb", ["exec-out", "screencap", "-p"], {
+      const result = await runner(config.executable, buildAdbArgs(config, "exec-out", "screencap", "-p"), {
         encoding: "buffer",
         timeout: 30000
       }) as { stdout?: Buffer } | undefined;

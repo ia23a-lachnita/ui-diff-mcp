@@ -24,6 +24,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  vi.unstubAllEnvs();
   await fs.rm(tmpDir, { recursive: true, force: true });
 });
 
@@ -108,5 +109,247 @@ describe("captureMobileScreen (ios-simctl)", () => {
 describe("captureMobileScreen (unknown target)", () => {
   it("rejects unknown target kinds", async () => {
     await expect(captureMobileScreen("unknown" as "adb")).rejects.toThrow(/Unsupported capture target/);
+  });
+});
+
+describe("captureMobileScreen (adbExecutable plumbing)", () => {
+  it("uses default 'adb' when no adbExecutable is provided", async () => {
+    const pngBuf = await makeValidPngBuffer();
+    const outPath = path.join(tmpDir, "default-exec.png");
+    const runner = vi.fn<CommandRunner>().mockResolvedValue({ stdout: pngBuf });
+    await captureMobileScreen("adb", { runner, makeOutputPath: () => outPath });
+
+    expect(runner).toHaveBeenCalledOnce();
+    expect(runner).toHaveBeenCalledWith(
+      "adb",
+      ["exec-out", "screencap", "-p"],
+      { encoding: "buffer", timeout: 30000 }
+    );
+  });
+
+  it("uses explicit adbExecutable instead of default 'adb'", async () => {
+    const pngBuf = await makeValidPngBuffer();
+    const outPath = path.join(tmpDir, "custom-exec.png");
+    const runner = vi.fn<CommandRunner>().mockResolvedValue({ stdout: pngBuf });
+    await captureMobileScreen("adb", {
+      runner,
+      makeOutputPath: () => outPath,
+      adbExecutable: "/usr/local/bin/adb"
+    });
+
+    expect(runner).toHaveBeenCalledOnce();
+    expect(runner).toHaveBeenCalledWith(
+      "/usr/local/bin/adb",
+      ["exec-out", "screencap", "-p"],
+      { encoding: "buffer", timeout: 30000 }
+    );
+  });
+
+  it("prepends -s SERIAL when adbSerial is provided", async () => {
+    const pngBuf = await makeValidPngBuffer();
+    const outPath = path.join(tmpDir, "serial-exec.png");
+    const runner = vi.fn<CommandRunner>().mockResolvedValue({ stdout: pngBuf });
+    await captureMobileScreen("adb", {
+      runner,
+      makeOutputPath: () => outPath,
+      adbExecutable: "/usr/local/bin/adb",
+      adbSerial: "R58R61161NA"
+    });
+
+    expect(runner).toHaveBeenCalledOnce();
+    expect(runner).toHaveBeenCalledWith(
+      "/usr/local/bin/adb",
+      ["-s", "R58R61161NA", "exec-out", "screencap", "-p"],
+      { encoding: "buffer", timeout: 30000 }
+    );
+  });
+
+  it("respects UI_DIFF_ADB_EXECUTABLE and UI_DIFF_ADB_SERIAL environment variables as fallback", async () => {
+    const pngBuf = await makeValidPngBuffer();
+    const outPath = path.join(tmpDir, "env-exec.png");
+    const runner = vi.fn<CommandRunner>().mockResolvedValue({ stdout: pngBuf });
+    vi.stubEnv("UI_DIFF_ADB_EXECUTABLE", "/env/adb");
+    vi.stubEnv("UI_DIFF_ADB_SERIAL", "ENV_SERIAL");
+    await captureMobileScreen("adb", { runner, makeOutputPath: () => outPath });
+
+    expect(runner).toHaveBeenCalledOnce();
+    expect(runner).toHaveBeenCalledWith(
+      "/env/adb",
+      ["-s", "ENV_SERIAL", "exec-out", "screencap", "-p"],
+      { encoding: "buffer", timeout: 30000 }
+    );
+  });
+
+  it("rejects blank adbExecutable before calling runner", async () => {
+    const runner = vi.fn<CommandRunner>();
+    await expect(
+      captureMobileScreen("adb", { runner, adbExecutable: "" })
+    ).rejects.toThrow(/adbExecutable/);
+    expect(runner).not.toHaveBeenCalled();
+  });
+
+  it("rejects whitespace-only adbExecutable before calling runner", async () => {
+    const runner = vi.fn<CommandRunner>();
+    await expect(
+      captureMobileScreen("adb", { runner, adbExecutable: "   " })
+    ).rejects.toThrow(/adbExecutable/);
+    expect(runner).not.toHaveBeenCalled();
+  });
+
+  it("rejects control-character adbExecutable before calling runner", async () => {
+    const runner = vi.fn<CommandRunner>();
+    await expect(
+      captureMobileScreen("adb", { runner, adbExecutable: "/tmp/adb\x01injection" })
+    ).rejects.toThrow(/adbExecutable/);
+    expect(runner).not.toHaveBeenCalled();
+  });
+
+  it("rejects blank adbSerial before calling runner", async () => {
+    const pngBuf = await makeValidPngBuffer();
+    const runner = vi.fn<CommandRunner>().mockResolvedValue({ stdout: pngBuf });
+    await expect(
+      captureMobileScreen("adb", { runner, adbSerial: "" })
+    ).rejects.toThrow(/adbSerial/);
+    expect(runner).not.toHaveBeenCalled();
+  });
+
+  it("rejects whitespace-only adbSerial before calling runner", async () => {
+    const pngBuf = await makeValidPngBuffer();
+    const runner = vi.fn<CommandRunner>().mockResolvedValue({ stdout: pngBuf });
+    await expect(
+      captureMobileScreen("adb", { runner, adbSerial: "   " })
+    ).rejects.toThrow(/adbSerial/);
+    expect(runner).not.toHaveBeenCalled();
+  });
+
+  it("rejects control-character adbSerial before calling runner", async () => {
+    const runner = vi.fn<CommandRunner>();
+    await expect(
+      captureMobileScreen("adb", { runner, adbSerial: "R58\x01R61" })
+    ).rejects.toThrow(/adbSerial/);
+    expect(runner).not.toHaveBeenCalled();
+  });
+
+  it("rejects whitespace-only UI_DIFF_ADB_EXECUTABLE env before calling runner", async () => {
+    vi.stubEnv("UI_DIFF_ADB_EXECUTABLE", "   ");
+    const runner = vi.fn<CommandRunner>();
+    await expect(
+      captureMobileScreen("adb", { runner })
+    ).rejects.toThrow(/adbExecutable/);
+    expect(runner).not.toHaveBeenCalled();
+  });
+
+  it("rejects control-character UI_DIFF_ADB_SERIAL env before calling runner", async () => {
+    vi.stubEnv("UI_DIFF_ADB_SERIAL", "R58\x01R61");
+    const runner = vi.fn<CommandRunner>();
+    await expect(
+      captureMobileScreen("adb", { runner })
+    ).rejects.toThrow(/adbSerial/);
+    expect(runner).not.toHaveBeenCalled();
+  });
+
+  it("rejects whitespace-only UI_DIFF_ADB_SERIAL env before calling runner", async () => {
+    vi.stubEnv("UI_DIFF_ADB_SERIAL", "   ");
+    const runner = vi.fn<CommandRunner>();
+    await expect(
+      captureMobileScreen("adb", { runner })
+    ).rejects.toThrow(/adbSerial/);
+    expect(runner).not.toHaveBeenCalled();
+  });
+
+  it("trims explicit adbExecutable whitespace before use", async () => {
+    const pngBuf = await makeValidPngBuffer();
+    const outPath = path.join(tmpDir, "trim-exec.png");
+    const runner = vi.fn<CommandRunner>().mockResolvedValue({ stdout: pngBuf });
+    await captureMobileScreen("adb", {
+      runner,
+      makeOutputPath: () => outPath,
+      adbExecutable: "  /usr/local/bin/adb  "
+    });
+
+    expect(runner).toHaveBeenCalledOnce();
+    expect(runner).toHaveBeenCalledWith(
+      "/usr/local/bin/adb",
+      ["exec-out", "screencap", "-p"],
+      { encoding: "buffer", timeout: 30000 }
+    );
+  });
+
+  it("trims explicit adbSerial whitespace before use", async () => {
+    const pngBuf = await makeValidPngBuffer();
+    const outPath = path.join(tmpDir, "trim-serial.png");
+    const runner = vi.fn<CommandRunner>().mockResolvedValue({ stdout: pngBuf });
+    await captureMobileScreen("adb", {
+      runner,
+      makeOutputPath: () => outPath,
+      adbExecutable: "/usr/local/bin/adb",
+      adbSerial: "  R58R61161NA  "
+    });
+
+    expect(runner).toHaveBeenCalledOnce();
+    expect(runner).toHaveBeenCalledWith(
+      "/usr/local/bin/adb",
+      ["-s", "R58R61161NA", "exec-out", "screencap", "-p"],
+      { encoding: "buffer", timeout: 30000 }
+    );
+  });
+
+  it("explicit adbExecutable and adbSerial override conflicting env values", async () => {
+    const pngBuf = await makeValidPngBuffer();
+    const outPath = path.join(tmpDir, "override-env.png");
+    const runner = vi.fn<CommandRunner>().mockResolvedValue({ stdout: pngBuf });
+    vi.stubEnv("UI_DIFF_ADB_EXECUTABLE", "/env/adb");
+    vi.stubEnv("UI_DIFF_ADB_SERIAL", "ENV_SERIAL");
+    await captureMobileScreen("adb", {
+      runner,
+      makeOutputPath: () => outPath,
+      adbExecutable: "/explicit/adb",
+      adbSerial: "EXPLICIT_SERIAL"
+    });
+
+    expect(runner).toHaveBeenCalledOnce();
+    expect(runner).toHaveBeenCalledWith(
+      "/explicit/adb",
+      ["-s", "EXPLICIT_SERIAL", "exec-out", "screencap", "-p"],
+      { encoding: "buffer", timeout: 30000 }
+    );
+  });
+
+  it("trims UI_DIFF_ADB_EXECUTABLE env whitespace before use", async () => {
+    const pngBuf = await makeValidPngBuffer();
+    const outPath = path.join(tmpDir, "trim-env-exec.png");
+    const runner = vi.fn<CommandRunner>().mockResolvedValue({ stdout: pngBuf });
+    vi.stubEnv("UI_DIFF_ADB_EXECUTABLE", "  /env/adb  ");
+    await captureMobileScreen("adb", { runner, makeOutputPath: () => outPath });
+
+    expect(runner).toHaveBeenCalledOnce();
+    expect(runner).toHaveBeenCalledWith(
+      "/env/adb",
+      ["exec-out", "screencap", "-p"],
+      { encoding: "buffer", timeout: 30000 }
+    );
+  });
+
+  it("trims UI_DIFF_ADB_SERIAL env whitespace before use", async () => {
+    const pngBuf = await makeValidPngBuffer();
+    const outPath = path.join(tmpDir, "trim-env-serial.png");
+    const runner = vi.fn<CommandRunner>().mockResolvedValue({ stdout: pngBuf });
+    vi.stubEnv("UI_DIFF_ADB_SERIAL", "  ENV_SERIAL  ");
+    await captureMobileScreen("adb", { runner, makeOutputPath: () => outPath });
+
+    expect(runner).toHaveBeenCalledOnce();
+    expect(runner).toHaveBeenCalledWith(
+      "adb",
+      ["-s", "ENV_SERIAL", "exec-out", "screencap", "-p"],
+      { encoding: "buffer", timeout: 30000 }
+    );
+  });
+
+  it("rejects adbExecutable with control char in middle after trim", async () => {
+    const runner = vi.fn<CommandRunner>();
+    await expect(
+      captureMobileScreen("adb", { runner, adbExecutable: "/tmp/adb\tinjection" })
+    ).rejects.toThrow(/adbExecutable/);
+    expect(runner).not.toHaveBeenCalled();
   });
 });

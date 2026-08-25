@@ -105,7 +105,7 @@ export UI_DIFF_LOCATOR_BENCHMARK_DIMENSIONS="600,900,1200"
 npm run benchmark:locator
 ```
 
-For Calorix release evidence, `UI_DIFF_LIVE_ACTUAL_IMAGE` normally stays unset so the gate can prove fresh acquisition. On this Pi, however, both the MCP capture implementation and Calorix live helper still invoke literal `adb`, so auto-capture is not yet serial-safe. Until they accept and test the explicit Samsung executable/serial route, use `/home/agent-runner/.local/bin/phone-adb exec-out screencap -p` only for diagnostic/manual comparisons and treat strict fresh auto-capture release evidence as blocked. An explicit `UI_DIFF_LIVE_ACTUAL_IMAGE` is logged as an override and is not fresh release proof.
+For Calorix release evidence, `UI_DIFF_LIVE_ACTUAL_IMAGE` normally stays unset so the gate can prove fresh acquisition. The MCP capture implementation and Calorix live helper now accept `adbExecutable`/`adbSerial` options (or `UI_DIFF_ADB_EXECUTABLE`/`UI_DIFF_ADB_SERIAL` environment fallbacks) and route every ADB invocation through the resolved executable with optional `-s` serial prefix. On this Pi, set `UI_DIFF_ADB_EXECUTABLE=/home/agent-runner/.local/bin/phone-adb` and leave `UI_DIFF_ADB_SERIAL` unset — the wrapper already pins the serial. For generic ADB executables that do not embed a serial, set `UI_DIFF_ADB_SERIAL` to the target device serial. Manual `/home/agent-runner/.local/bin/phone-adb exec-out screencap -p` remains valid for diagnostic comparisons. An explicit `UI_DIFF_LIVE_ACTUAL_IMAGE` is logged as an override and is not fresh release proof.
 
 ### Raspberry Pi Physical-Phone Evidence Policy
 
@@ -198,6 +198,8 @@ Copy `.env.example` and fill in the relevant keys.
 | `LOCATEANYTHING_GENERATION_MODE` | No | `hybrid` | Sidecar worker mode: `fast`, `slow`, or `hybrid`. |
 | `LOCATEANYTHING_MAX_NEW_TOKENS` | No | `512` | Sidecar generation cap. |
 | `UI_DIFF_MAX_AUDIT_PAIRS` | No | — | Cap the number of element pairs audited. Bounded runs are marked `auditLimited: true` in the report. Bounded smoke and full classification are distinguishable via `visualClassificationStatus` and `auditScope`. |
+| `UI_DIFF_ADB_EXECUTABLE` | No | `adb` | Override the ADB executable for mobile capture. Used by `captureMobileScreen` and Calorix device helpers. On the Pi, set to `/home/agent-runner/.local/bin/phone-adb` which already pins the serial; leave `UI_DIFF_ADB_SERIAL` unset. |
+| `UI_DIFF_ADB_SERIAL` | No | — | ADB serial for device targeting. Prepends `-s <serial>` to every ADB invocation. Only needed when `UI_DIFF_ADB_EXECUTABLE` points to a generic adb that does not embed a serial. |
 
 This implementation requires no user-authored target map, ROI map, ignore mask, or anchor dump.
 
@@ -401,7 +403,7 @@ bash scripts/verify-package-bin-lock.sh
 PATH=/home/agent-runner/projects/.venvs/ui-diff-mcp-locateanything/bin:$PATH npm run verify
 ```
 
-> **Evidence boundary:** manual wrapper capture is serial-safe diagnostic input, but `UI_DIFF_LIVE_ACTUAL_IMAGE` is an override rather than fresh auto-capture proof. Strict physical-phone release evidence remains blocked until the MCP capture and Calorix live helper stop invoking literal `adb` and have focused serial-routing coverage.
+> **Evidence boundary:** Fresh auto-capture release evidence requires `UI_DIFF_ADB_EXECUTABLE` set to the authorized wrapper and `UI_DIFF_ADB_SERIAL` left unset (the wrapper already pins the serial) — or explicit `adbExecutable`/`adbSerial` options — so every ADB call routes through the authorized Samsung wrapper. For generic executables, set `UI_DIFF_ADB_SERIAL` to the target device serial. Manual wrapper capture is serial-safe diagnostic input, and `UI_DIFF_LIVE_ACTUAL_IMAGE` is an override rather than fresh auto-capture proof.
 
 ## MCP Integration
 
@@ -442,8 +444,8 @@ enabled = true
 | Free OpenRouter models | `npm run verify:free-live` | `RUN_FREE_LIVE=1`, `OPENROUTER_API_KEY` |
 | Native NVIDIA models | `npm run verify:nvidia-live` | `RUN_NVIDIA_LIVE=1`, `NVIDIA_API_KEY` |
 | Full pipeline | `npm run verify:mcp-live` | `RUN_UI_DIFF_LIVE=1`, `LOCATEANYTHING_SIDECAR_URL`; provider keys optional fallbacks |
-| Bounded Calorix smoke | `npm run verify:calorix-live` | `RUN_CALORIX_UI_DIFF_LIVE=1`, canonical expected reference, sidecar, dedicated Samsung; serial-safe auto-capture plumbing is currently an open blocker |
-| Full Calorix all-target | `npm run verify:calorix-full-live` | `RUN_CALORIX_FULL_LIVE=1`, canonical expected reference, sidecar, dedicated Samsung; **do not set `UI_DIFF_MAX_AUDIT_PAIRS`**; serial-safe auto-capture plumbing required |
+| Bounded Calorix smoke | `npm run verify:calorix-live` | `RUN_CALORIX_UI_DIFF_LIVE=1`, canonical expected reference, sidecar, dedicated Samsung; serial-safe auto-capture plumbing is implemented — set `UI_DIFF_ADB_EXECUTABLE` to the authorized wrapper with `UI_DIFF_ADB_SERIAL` unset; fresh physical-phone evidence from the authorized Samsung through this route is still pending |
+| Full Calorix all-target | `npm run verify:calorix-full-live` | `RUN_CALORIX_FULL_LIVE=1`, canonical expected reference, sidecar, dedicated Samsung; **do not set `UI_DIFF_MAX_AUDIT_PAIRS`**; serial-safe auto-capture plumbing is implemented — set `UI_DIFF_ADB_EXECUTABLE` to the authorized wrapper with `UI_DIFF_ADB_SERIAL` unset; fresh physical-phone evidence from the authorized Samsung through this route is still pending |
 
 ### Bounded Smoke vs Full Classification
 

@@ -87,7 +87,7 @@ Target host: Raspberry Pi 4 ARM64 Debian, bash shell.
 - Use `/home/agent-runner/.local/bin/phone-adb` for every device operation. It pins `adb -s R58R61161NA`; never use plain `adb` or implicit device selection.
 - Cuttlefish, `android-vm`, ReDroid, desktop AVDs, and local emulators are retired. Do not start, troubleshoot, or use them unless the user explicitly changes this policy. GitHub's x86_64 emulator remains an independent CI gate.
 - Before device evidence, verify `/home/agent-runner/.local/bin/phone-adb devices -l`, model `SM-G780G`, Android `13`, and serial `R58R61161NA`.
-- Current implementation limitation: `src/capture/mobile-capture.ts` and `tests/helpers/calorix-device.ts` invoke the literal `adb` executable. Until both accept and test an explicit executable/serial route, do not use MCP/live-gate auto-capture as physical-phone release evidence. Capture manually with the absolute wrapper for diagnostic comparison and track configurable capture plumbing as a release blocker.
+- Serial-safe ADB plumbing is implemented and tested. Set `UI_DIFF_ADB_EXECUTABLE=/home/agent-runner/.local/bin/phone-adb` and leave `UI_DIFF_ADB_SERIAL` unset (the wrapper already pins the serial). For generic executables, set `UI_DIFF_ADB_SERIAL` to the target device serial. Fresh physical-phone auto-capture evidence from the authorized Samsung through the new route is still pending.
 - LocateAnything sidecar: Linux bash launcher (`scripts/start-locateanything-sidecar.sh`); resolves `LOCATEANYTHING_PYTHON` → `/home/agent-runner/projects/.venvs/ui-diff-mcp-locateanything/bin/python` (sibling project venv) → `python3`; resolves `LOCATEANYTHING_EAGLE_EMBODIED_DIR` → `/home/agent-runner/projects/Eagle/Embodied`; starts uvicorn at loopback port `39731`.
 - Calorix Actions APK fetcher: source-SHA match + SHA256 verification required (`--source-sha`, `--source-clean`, `--workflow android-build.yml`, `--artifact-name android-apk-<sha>`, checksum `.sha256`).
 - `package-lock.json` root bin must stay `dist/src/index.js`.
@@ -167,7 +167,7 @@ These must be set in the shell before running live tests or the sidecar. They ar
 /home/agent-runner/.local/bin/phone-adb exec-out screencap -p > /absolute/path/to/actual.png
 ```
 
-The manual screenshot command is the current serial-safe diagnostic path. Do not treat `capture_mobile_screen` or Calorix live-gate auto-capture as physical-phone release evidence until their hardcoded `adb` calls are replaced by a tested explicit executable/serial configuration. `UI_DIFF_LIVE_ACTUAL_IMAGE` remains a historical/manual override and therefore is not fresh auto-capture release proof.
+The manual screenshot command is the current serial-safe diagnostic path. The MCP capture and Calorix live helper now accept `adbExecutable`/`adbSerial` options (or `UI_DIFF_ADB_EXECUTABLE`/`UI_DIFF_ADB_SERIAL` env fallbacks) and route every ADB invocation through the resolved executable with optional `-s` serial prefix. On this Pi, set `UI_DIFF_ADB_EXECUTABLE` to the wrapper and leave `UI_DIFF_ADB_SERIAL` unset. `UI_DIFF_LIVE_ACTUAL_IMAGE` remains a historical/manual override and therefore is not fresh auto-capture release proof.
 
 ### Starting the LocateAnything sidecar (Linux / Raspberry Pi)
 
@@ -200,6 +200,9 @@ npx vitest run tests/live/mcp-openrouter-free.live.test.ts
 # Calorix smoke (real project images, sidecar auto-starts, ~20 min):
 export RUN_CALORIX_UI_DIFF_LIVE="1"
 export LOCATEANYTHING_EAGLE_EMBODIED_DIR="/home/agent-runner/projects/Eagle/Embodied"
+export UI_DIFF_ADB_EXECUTABLE="/home/agent-runner/.local/bin/phone-adb"
+unset UI_DIFF_ADB_SERIAL
+unset UI_DIFF_LIVE_ACTUAL_IMAGE
 npx vitest run tests/live/calorix-smoke.live.test.ts
 ```
 

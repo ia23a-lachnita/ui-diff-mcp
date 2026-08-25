@@ -6,7 +6,7 @@ Run this checklist before calling `ui-diff-mcp` production-ready.
 
 The Calorix owner restored the active reference at Calorix commit `8cc20bb` (`restore canonical design references`). Every Calorix visual gate uses `docs/design-handoff/placeholder-app/reference-images/today--dark.png`, as configured by `ui-diff.config.json`, and validates it against `docs/design-handoff/placeholder-app/reference-images-manifest.json` before capture or pipeline work. The approved SHA-256 is `73BA85F25489C8D45BEAB57DD1B317138870CE8360FE0F4399AB0737A5E505F1`; the restored manifest records its source content commit `307dfc04ee23bee022f85059cc09dc363b2e80f6`.
 
-`reference-images-buggy` and `good-screenshots` are not fallback expected evidence. `UI_DIFF_LIVE_EXPECTED_IMAGE` is an explicit readable override; setting it to the canonical path still performs manifest and hash validation. For fresh release evidence, `UI_DIFF_LIVE_ACTUAL_IMAGE` must be unset so the actual source is recorded as `auto_capture`; a supplied actual path is recorded as `env_override` with a freshness warning. The current MCP capture and Calorix live helper still invoke literal `adb`, so fresh physical-phone release evidence is blocked until both accept and test an explicit Samsung executable/serial route. Manual `/home/agent-runner/.local/bin/phone-adb` capture is diagnostic input, not a substitute for this gate.
+`reference-images-buggy` and `good-screenshots` are not fallback expected evidence. `UI_DIFF_LIVE_EXPECTED_IMAGE` is an explicit readable override; setting it to the canonical path still performs manifest and hash validation. For fresh release evidence, `UI_DIFF_LIVE_ACTUAL_IMAGE` must be unset so the actual source is recorded as `auto_capture`; a supplied actual path is recorded as `env_override` with a freshness warning. The MCP capture and Calorix live helper now accept `adbExecutable`/`adbSerial` options (or `UI_DIFF_ADB_EXECUTABLE`/`UI_DIFF_ADB_SERIAL` env fallbacks) and route every ADB invocation through the resolved executable with optional `-s` serial prefix. Fresh physical-phone auto-capture evidence is still pending: the plumbing is implemented but fresh physical-phone release evidence from the authorized Samsung has not yet been captured through the new route.
 
 ## Physical Samsung Preflight
 
@@ -144,10 +144,13 @@ Run this before provider-backed Calorix gates so displacement, consolidation, co
 export RUN_CALORIX_DETERMINISTIC_LIVE="1"
 export UI_DIFF_LIVE_EXPECTED_IMAGE="/home/agent-runner/projects/calorix/docs/design-handoff/placeholder-app/reference-images/today--dark.png"
 export LOCATEANYTHING_SIDECAR_URL="http://127.0.0.1:39731"
+export UI_DIFF_ADB_EXECUTABLE="/home/agent-runner/.local/bin/phone-adb"
+unset UI_DIFF_ADB_SERIAL
+unset UI_DIFF_LIVE_ACTUAL_IMAGE
 npm run verify:calorix-deterministic-live
 ```
 
-The gate is designed to build/install Calorix only when the APK is stale, open `calorix://debug/reseed`, and auto-capture into `/home/agent-runner/projects/calorix/.ui-diff/captures`. Its current literal-`adb` implementation is not serial-safe on this host; do not count it as physical-phone release evidence until the executable/serial route is fixed. Set `UI_DIFF_LIVE_ACTUAL_IMAGE` only for an explicit diagnostic or historical-file override.
+The gate is designed to build/install Calorix only when the APK is stale, open `calorix://debug/reseed`, and auto-capture into `/home/agent-runner/projects/calorix/.ui-diff/captures`. Set `UI_DIFF_ADB_EXECUTABLE` to the authorized wrapper (which already pins the serial) and leave `UI_DIFF_ADB_SERIAL` unset for serial-safe auto-capture. For generic executables, set `UI_DIFF_ADB_SERIAL` to the target device serial. Fresh physical-phone auto-capture evidence from the authorized Samsung has not yet been captured through the new route. Set `UI_DIFF_LIVE_ACTUAL_IMAGE` only for an explicit diagnostic or historical-file override.
 
 Required evidence:
 
@@ -170,6 +173,9 @@ export LOCATEANYTHING_MAX_NEW_TOKENS="512"
 export LOCATEANYTHING_TIMEOUT_MS="300000"
 export UI_DIFF_MAX_AUDIT_PAIRS="3"
 export UI_DIFF_LIVE_EXPECTED_IMAGE="/home/agent-runner/projects/calorix/docs/design-handoff/placeholder-app/reference-images/today--dark.png"
+export UI_DIFF_ADB_EXECUTABLE="/home/agent-runner/.local/bin/phone-adb"
+unset UI_DIFF_ADB_SERIAL
+unset UI_DIFF_LIVE_ACTUAL_IMAGE
 npm run verify:calorix-live
 ```
 
@@ -209,6 +215,9 @@ export LOCATEANYTHING_TIMEOUT_MS="300000"
 # Do NOT set UI_DIFF_MAX_AUDIT_PAIRS — unbounded audit required
 unset UI_DIFF_MAX_AUDIT_PAIRS
 export UI_DIFF_LIVE_EXPECTED_IMAGE="/home/agent-runner/projects/calorix/docs/design-handoff/placeholder-app/reference-images/today--dark.png"
+export UI_DIFF_ADB_EXECUTABLE="/home/agent-runner/.local/bin/phone-adb"
+unset UI_DIFF_ADB_SERIAL
+unset UI_DIFF_LIVE_ACTUAL_IMAGE
 npm run verify:calorix-full-live
 ```
 
@@ -236,7 +245,9 @@ Required result:
 export RUN_CALORIX_RELEASE_LIVE="1"
 export LOCATEANYTHING_SIDECAR_URL="http://127.0.0.1:39731"
 export UI_DIFF_LIVE_EXPECTED_IMAGE="/home/agent-runner/projects/calorix/docs/design-handoff/placeholder-app/reference-images/today--dark.png"
+export UI_DIFF_ADB_EXECUTABLE="/home/agent-runner/.local/bin/phone-adb"
 unset UI_DIFF_MAX_AUDIT_PAIRS
+unset UI_DIFF_ADB_SERIAL
 unset UI_DIFF_LIVE_ACTUAL_IMAGE
 npm run verify:calorix-release-live
 ```
@@ -255,7 +266,7 @@ Required result:
 
 A bounded or full diagnostic pass never substitutes for this gate.
 
-This strict gate is currently blocked before execution by the hardcoded literal `adb` calls in the MCP capture path and Calorix live helper. Do not weaken the unset-actual requirement to work around that defect; implement and test explicit Samsung executable/serial routing first.
+This strict gate is currently blocked before execution because fresh physical-phone auto-capture evidence from the authorized Samsung has not yet been captured through the new serial-safe routing. Do not weaken the unset-actual requirement to work around that defect; run fresh bounded/full/release gates with `UI_DIFF_ADB_EXECUTABLE` set to the authorized wrapper and `UI_DIFF_ADB_SERIAL` left unset (the wrapper already pins the serial).
 
 ## Dual-Locator Diagnostic Command
 

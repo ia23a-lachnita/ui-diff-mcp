@@ -6,7 +6,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
-import { captureMobileScreen, type CaptureResult } from "../../src/capture/mobile-capture.js";
+import { captureMobileScreen, type CaptureResult, resolveAdbConfig, buildAdbArgs, type AdbConfig } from "../../src/capture/mobile-capture.js";
 import type { InputProvenanceRequest } from "../../src/schemas/core.js";
 
 const execFileAsync = promisify(execFile);
@@ -71,9 +71,11 @@ export interface CalorixDeviceOptions {
   projectRoot?: string;
   runner?: CalorixCommandRunner;
   now?: () => number;
-  capture?: (target: "adb", opts: { makeOutputPath: () => string }) => Promise<CaptureResult>;
+  capture?: (target: "adb", opts: { makeOutputPath: () => string; adbExecutable?: string; adbSerial?: string }) => Promise<CaptureResult>;
   sleepMs?: (ms: number) => Promise<void>;
   validateImage?: (filePath: string, firstPixelBuffer: Buffer | undefined) => Promise<CalorixScreenshotReadiness>;
+  adbExecutable?: string;
+  adbSerial?: string;
 }
 
 export interface CalorixPreparedActual {
@@ -257,8 +259,8 @@ async function runFirstAvailableFlutterBuild(runner: CalorixCommandRunner, proje
   throw new Error(`Failed to build Calorix debug APK: ${errors.join("; ")}`);
 }
 
-async function isPackageInstalled(runner: CalorixCommandRunner, packageName: string): Promise<boolean> {
-  const result = await runner("adb", ["shell", "pm", "list", "packages", packageName], { timeout: 30000, encoding: "utf8" });
+async function isPackageInstalled(runner: CalorixCommandRunner, packageName: string, adbConfig: AdbConfig): Promise<boolean> {
+  const result = await runner(adbConfig.executable, buildAdbArgs(adbConfig, "shell", "pm", "list", "packages", packageName), { timeout: 30000, encoding: "utf8" });
   const stdout = toText((result as ProcessResult | undefined)?.stdout);
   return stdout.split(/\r?\n/).some(line => line.trim() === `package:${packageName}`);
 }
@@ -266,14 +268,15 @@ async function isPackageInstalled(runner: CalorixCommandRunner, packageName: str
 export async function ensureCalorixDebugAppFresh(opts: CalorixDeviceOptions = {}): Promise<void> {
   const projectRoot = opts.projectRoot ?? getCalorixProjectRoot();
   const runner = opts.runner ?? defaultRunner;
+  const adbConfig = resolveAdbConfig(opts);
   const packageName = await discoverCalorixAndroidPackage(projectRoot);
   const apkPath = path.join(projectRoot, CALORIX_DEBUG_APK_RELATIVE);
   const forceBuild = process.env["UI_DIFF_FORCE_CALORIX_BUILD"] === "1";
   const apkFresh = !forceBuild && await isDebugApkUpToDate(projectRoot);
   if (!apkFresh) await runFirstAvailableFlutterBuild(runner, projectRoot);
-  const installed = await isPackageInstalled(runner, packageName);
+  const installed = await isPackageInstalled(runner, packageName, adbConfig);
   if (!apkFresh || !installed) {
-    await runner("adb", ["install", "-r", apkPath], { timeout: 180000, encoding: "utf8" });
+    await runner(adbConfig.executable, buildAdbArgs(adbConfig, "install", "-r", apkPath), { timeout: 180000, encoding: "utf8" });
   }
 }
 
@@ -520,12 +523,13 @@ export async function reseedAndCaptureCalorixToday(opts: CalorixDeviceOptions = 
   const now = opts.now ?? Date.now;
   const sleepMs = opts.sleepMs ?? ((ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms)));
   const validateImg = opts.validateImage ?? validateCalorixTodayScreenshotForReadiness;
+  const adbConfig = resolveAdbConfig(opts);
 
-  await runner("adb", ["shell", "input", "keyevent", "KEYCODE_WAKEUP"], { timeout: 30000, encoding: "utf8" });
-  await runner("adb", ["shell", "wm", "dismiss-keyguard"], { timeout: 30000, encoding: "utf8" });
-  await runner("adb", ["shell", "settings", "put", "secure", "immersive_mode_confirmations", "confirmed"], { timeout: 30000, encoding: "utf8" }).catch(() => undefined);
-  await runner("adb", ["shell", "input", "keyevent", "BACK"], { timeout: 30000, encoding: "utf8" }).catch(() => undefined);
-  await runner("adb", ["shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", "calorix://debug/reseed"], { timeout: 30000, encoding: "utf8" });
+  await runner(adbConfig.executable, buildAdbArgs(adbConfig, "shell", "input", "keyevent", "KEYCODE_WAKEUP"), { timeout: 30000, encoding: "utf8" });
+  await runner(adbConfig.executable, buildAdbArgs(adbConfig, "shell", "wm", "dismiss-keyguard"), { timeout: 30000, encoding: "utf8" });
+  await runner(adbConfig.executable, buildAdbArgs(adbConfig, "shell", "settings", "put", "secure", "immersive_mode_confirmations", "confirmed"), { timeout: 30000, encoding: "utf8" }).catch(() => undefined);
+  await runner(adbConfig.executable, buildAdbArgs(adbConfig, "shell", "input", "keyevent", "BACK"), { timeout: 30000, encoding: "utf8" }).catch(() => undefined);
+  await runner(adbConfig.executable, buildAdbArgs(adbConfig, "shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", "calorix://debug/reseed"), { timeout: 30000, encoding: "utf8" });
 
   const captureDir = path.join(projectRoot, ".ui-diff", "captures");
   await fs.mkdir(captureDir, { recursive: true });
@@ -546,7 +550,9 @@ export async function reseedAndCaptureCalorixToday(opts: CalorixDeviceOptions = 
     const outputPath = path.join(captureDir, `today-${new Date(now()).toISOString().replace(/[:.]/g, "-")}-attempt-${attempt}.png`);
     let capture: CaptureResult;
     try {
-      capture = await (opts.capture ?? captureMobileScreen)("adb", { makeOutputPath: () => outputPath });
+      const captureOpts: { makeOutputPath: () => string; adbExecutable?: string; adbSerial?: string } = { makeOutputPath: () => outputPath, adbExecutable: adbConfig.executable };
+      if (adbConfig.serial !== undefined) captureOpts.adbSerial = adbConfig.serial;
+      capture = await (opts.capture ?? captureMobileScreen)("adb", captureOpts);
     } catch (err) {
       if (attempt === maxAttempts) throw err;
       continue;
@@ -576,7 +582,7 @@ export async function reseedAndCaptureCalorixToday(opts: CalorixDeviceOptions = 
         return { actualImagePath: finalPath, capture, source: "auto_capture" };
       }
       if (validationResult.reason.includes("immersive_overlay")) {
-        await runner("adb", ["shell", "input", "tap", String(Math.round(capture.width / 2)), String(Math.round(capture.height * 0.86))], { timeout: 30000, encoding: "utf8" }).catch(() => undefined);
+        await runner(adbConfig.executable, buildAdbArgs(adbConfig, "shell", "input", "tap", String(Math.round(capture.width / 2)), String(Math.round(capture.height * 0.86))), { timeout: 30000, encoding: "utf8" }).catch(() => undefined);
       }
       continue;
     }
@@ -588,7 +594,7 @@ export async function reseedAndCaptureCalorixToday(opts: CalorixDeviceOptions = 
       return { actualImagePath: finalPath, capture, source: "auto_capture" };
     }
     if (validationResult.reason.includes("immersive_overlay")) {
-      await runner("adb", ["shell", "input", "tap", String(Math.round(capture.width / 2)), String(Math.round(capture.height * 0.86))], { timeout: 30000, encoding: "utf8" }).catch(() => undefined);
+      await runner(adbConfig.executable, buildAdbArgs(adbConfig, "shell", "input", "tap", String(Math.round(capture.width / 2)), String(Math.round(capture.height * 0.86))), { timeout: 30000, encoding: "utf8" }).catch(() => undefined);
     }
   }
 

@@ -531,3 +531,159 @@ describe("calorix-device helpers", () => {
     expect(capture).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("calorix-device adbExecutable/adbSerial propagation", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    resetCalorixActualImageMemoForTests();
+  });
+
+  function runnerWithAdbTracking(
+    calls: Array<{ file: string; args: string[] }>
+  ): CalorixCommandRunner {
+    return async (file, args, options) => {
+      calls.push({ file, args });
+      if (args.join(" ") === "shell pm list packages com.calorix.calorix") {
+        return { stdout: "package:com.calorix.calorix" };
+      }
+      return { stdout: "" };
+    };
+  }
+
+  it("propagates adbExecutable to package discovery and forces install when package is absent", async () => {
+    const root = await makeProject();
+    const apk = path.join(root, CALORIX_DEBUG_APK_RELATIVE);
+    await fs.writeFile(apk, "apk");
+    const future = new Date(Date.now() + 60_000);
+    await fs.utimes(apk, future, future);
+    const calls: Array<{ file: string; args: string[] }> = [];
+    const customAdb = "/usr/local/bin/adb";
+    const serial = "R58R61161NA";
+    const runner = runnerWithAdbTracking(calls);
+
+    await ensureCalorixDebugAppFresh({
+      projectRoot: root,
+      runner,
+      adbExecutable: customAdb,
+      adbSerial: serial
+    });
+
+    const packageCalls = calls.filter(call => call.file === customAdb && call.args.join(" ").includes("pm list packages"));
+    expect(packageCalls.length).toBe(1);
+    expect(packageCalls[0]!.args).toEqual(["-s", serial, "shell", "pm", "list", "packages", "com.calorix.calorix"]);
+    const installCalls = calls.filter(call => call.file === customAdb && call.args[2] === "install");
+    expect(installCalls.length).toBe(1);
+    expect(installCalls[0]!.args.slice(0, 4)).toEqual(["-s", serial, "install", "-r"]);
+    expect(calls.some(call => call.file === "adb")).toBe(false);
+    expect(calls.some(call => call.file === "fvm" || call.file === "flutter")).toBe(false);
+  });
+
+  it("propagates adbExecutable and adbSerial with -s prefix to shell commands", async () => {
+    const root = await makeProject();
+    const calls: Array<{ file: string; args: string[] }> = [];
+    const customAdb = "/usr/local/bin/adb";
+    const serial = "R58R61161NA";
+    const runner = runnerWithAdbTracking(calls);
+
+    await reseedAndCaptureCalorixToday({
+      projectRoot: root,
+      runner,
+      capture: vi.fn(async (_target: "adb", opts: { makeOutputPath: () => string }): Promise<CaptureResult> => {
+        const out = opts.makeOutputPath();
+        await fs.writeFile(out, "png");
+        return { path: out, width: 1080, height: 2400, blankPixelRatio: 0.1, validationStatus: "ok", warnings: [] };
+      }),
+      sleepMs: async () => {},
+      now: () => Date.UTC(2026, 6, 4, 12, 0, 0),
+      validateImage: async () => readiness(true),
+      adbExecutable: customAdb,
+      adbSerial: serial
+    });
+
+    const shellCalls = calls.filter(call => call.file === customAdb);
+    expect(shellCalls.length).toBeGreaterThan(0);
+    for (const call of shellCalls) {
+      expect(call.args[0]).toBe("-s");
+      expect(call.args[1]).toBe(serial);
+    }
+    expect(calls.some(call => call.file === "adb")).toBe(false);
+
+    const postPrefixCommands = shellCalls.map(call => call.args.slice(2).join(" "));
+    expect(postPrefixCommands).toEqual([
+      "shell input keyevent KEYCODE_WAKEUP",
+      "shell wm dismiss-keyguard",
+      "shell settings put secure immersive_mode_confirmations confirmed",
+      "shell input keyevent BACK",
+      "shell am start -a android.intent.action.VIEW -d calorix://debug/reseed"
+    ]);
+  });
+
+  it("propagates adbExecutable and adbSerial to nested captureMobileScreen with zero literal adb calls", async () => {
+    const root = await makeProject();
+    const calls: Array<{ file: string; args: string[] }> = [];
+    const customAdb = "/custom/adb";
+    const serial = "DEVICE123";
+    const runner = runnerWithAdbTracking(calls);
+    let capturedOpts: { makeOutputPath: () => string; adbExecutable?: string; adbSerial?: string } | undefined;
+
+    const capture = vi.fn(async (_target: "adb", opts: { makeOutputPath: () => string; adbExecutable?: string; adbSerial?: string }): Promise<CaptureResult> => {
+      capturedOpts = opts;
+      const out = opts.makeOutputPath();
+      await fs.writeFile(out, "png");
+      return { path: out, width: 1080, height: 2400, blankPixelRatio: 0.1, validationStatus: "ok", warnings: [] };
+    });
+
+    await reseedAndCaptureCalorixToday({
+      projectRoot: root,
+      runner,
+      capture,
+      sleepMs: async () => {},
+      now: () => Date.UTC(2026, 6, 4, 12, 0, 0),
+      validateImage: async () => readiness(true),
+      adbExecutable: customAdb,
+      adbSerial: serial
+    });
+
+    expect(capturedOpts).toBeDefined();
+    expect(capturedOpts!.adbExecutable).toBe(customAdb);
+    expect(capturedOpts!.adbSerial).toBe(serial);
+    const literalAdbCalls = calls.filter(call => call.file === "adb");
+    expect(literalAdbCalls).toHaveLength(0);
+  });
+
+  it("propagates adbExecutable through tap commands for immersive overlay dismissal", async () => {
+    const root = await makeProject();
+    const calls: Array<{ file: string; args: string[] }> = [];
+    const customAdb = "/custom/adb";
+    const runner = runnerWithAdbTracking(calls);
+    let attemptCount = 0;
+
+    const capture = vi.fn(async (_target: "adb", opts: { makeOutputPath: () => string }): Promise<CaptureResult> => {
+      attemptCount++;
+      const out = opts.makeOutputPath();
+      await fs.writeFile(out, "png");
+      return { path: out, width: 1080, height: 2400, blankPixelRatio: 0.1, validationStatus: "ok", warnings: [] };
+    });
+
+    const validateImage = vi.fn(async () => {
+      if (attemptCount <= 1) {
+        return readiness(false, { reason: "immersive_overlay" });
+      }
+      return readiness(true);
+    });
+
+    await reseedAndCaptureCalorixToday({
+      projectRoot: root,
+      runner,
+      capture,
+      sleepMs: async () => {},
+      now: () => Date.UTC(2026, 6, 4, 12, 0, 0),
+      validateImage,
+      adbExecutable: customAdb
+    });
+
+    const tapCalls = calls.filter(call => call.file === customAdb && call.args.some(a => a.includes("tap")));
+    expect(tapCalls.length).toBeGreaterThan(0);
+    expect(calls.some(call => call.file === "adb")).toBe(false);
+  });
+});
