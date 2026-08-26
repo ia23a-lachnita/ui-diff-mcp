@@ -930,4 +930,77 @@ describe("consolidateFindings", () => {
       claimValidationDiagnostics: { code: "missing_target_literal" }
     });
   });
+
+  it("keeps parent resize and child translation findings on their own explicit targets", () => {
+    const parent = element("parent-card", "card", 0, 200, 200, 150);
+    const child = element("child-text", "text", 10, 220, 80, 30, parent.id);
+    parent.childIds = [child.id];
+
+    const parentFinding = finding("parent-resize", "pair-parent", "geometry", 0, 200, 200, 150);
+    parentFinding.targetIds = [parent.id];
+    parentFinding.measurements = [
+      { name: "deltaWidth", value: -9, unit: "px" },
+      { name: "deltaHeight", value: 0, unit: "px" }
+    ];
+    parentFinding.evidence = ["parent resize evidence"];
+
+    const childFinding = finding("child-translation", "pair-child", "geometry", 10, 220, 80, 30, "deterministic_projected_mismatch");
+    childFinding.targetIds = [child.id];
+    childFinding.measurements = [
+      { name: "horizontal_shift", value: 57, unit: "px" },
+      { name: "vertical_shift", value: 152, unit: "px" }
+    ];
+    childFinding.evidence = ["child translation evidence"];
+
+    const canvas = { width: 400, height: 800 };
+    const result = consolidateFindings(
+      [parentFinding, childFinding],
+      [parent, child],
+      [pair("pair-parent", parent.id), pair("pair-child", child.id)],
+      { canvas, imagePairTransform: createImagePairTransform(canvas, { width: 400, height: 800 }) }
+    );
+
+    expect(result).toHaveLength(2);
+    const parentResult = result.find(item => item.id === "parent-resize")!;
+    const childResult = result.find(item => item.id === "child-translation")!;
+    expect(parentResult.targetIds).toContain(parent.id);
+    expect(parentResult.targetIds).not.toContain(child.id);
+    expect(childResult.targetIds).toContain(child.id);
+    expect(childResult.targetIds).not.toContain(parent.id);
+  });
+
+  it("merges two findings on the same child with coherent displacement evidence", () => {
+    const container = element("container-card", "card", 0, 0, 200, 150);
+    const child = element("child-text", "text", 10, 20, 80, 30, container.id);
+    container.childIds = [child.id];
+
+    const findingA = finding("source-a", "pair-a", "geometry", 10, 20, 80, 30);
+    findingA.targetIds = [child.id];
+    findingA.measurements = [
+      { name: "deltaX", value: 4, unit: "px" },
+      { name: "deltaY", value: 5, unit: "px" }
+    ];
+    findingA.evidence = ["evidence A"];
+
+    const findingB = finding("source-b", "pair-b", "geometry", 10, 20, 80, 30);
+    findingB.targetIds = [child.id];
+    findingB.measurements = [
+      { name: "deltaX", value: 4, unit: "px" },
+      { name: "deltaY", value: 5, unit: "px" }
+    ];
+    findingB.evidence = ["evidence B"];
+
+    const result = consolidateFindings(
+      [findingA, findingB],
+      [container, child],
+      [pair("pair-a", child.id), pair("pair-b", child.id)],
+      { canvas: { width: 400, height: 800 } }
+    );
+
+    expect(result).toHaveLength(1);
+    expectMergedChildIds(result[0]!, ["source-a", "source-b"]);
+    expect(result[0]?.evidence).toEqual(expect.arrayContaining(["evidence A", "evidence B"]));
+    expect(result[0]?.targetIds).toContain(child.id);
+    expect(result[0]?.targetIds).not.toContain(container.id);
+  });
 });
