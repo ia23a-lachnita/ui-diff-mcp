@@ -18,6 +18,7 @@ interface OwnedFinding {
   finding: DiffRecord;
   parent?: UiElement;
   targetIds: string[];
+  explicitTargetIds: string[];
   fallbackKey: string;
 }
 
@@ -227,12 +228,14 @@ function resolveOwnership(
       const sourceRank = (element: UiElement) => element.source === "projected" ? 1 : 0;
       return sourceRank(a) - sourceRank(b) || boxArea(a.box) - boxArea(b.box) || a.id.localeCompare(b.id);
     });
+  const explicitTargetIds = [...new Set([...(finding.targetIds ?? []), ...pairTargets])];
   const parent = semanticParents[0] ?? (targetIds.length === 0 ? overlappingSemanticParent(finding, elements) : undefined);
   if (parent && !targetIds.includes(parent.id)) targetIds.push(parent.id);
   return {
     finding,
     ...(parent ? { parent } : {}),
     targetIds,
+    explicitTargetIds,
     fallbackKey: `${finding.pairId ?? finding.id}:${finding.criterion}`
   };
 }
@@ -271,7 +274,7 @@ function mergeGroup(group: OwnedFinding[], context?: StructuralMergeContext): Di
   const childFindingIds = [...new Set(allFindings.flatMap(finding => [finding.id, ...(finding.childFindingIds ?? [])]))]
     .filter(id => id !== primary.finding.id)
     .sort((a, b) => a.localeCompare(b));
-  const targetIds = [...new Set(group.flatMap(entry => [...entry.targetIds, ...(entry.finding.targetIds ?? [])]))];
+  const targetIds = [...new Set(group.flatMap(entry => [...entry.explicitTargetIds, ...(entry.finding.targetIds ?? [])]))];
   const criterionLabel = primary.finding.criterion.replaceAll("_", " ");
   const coverageLocations = new Map<string, Box>();
   for (const location of allFindings.flatMap(finding => finding.coverageLocations ?? [finding.location])) {
@@ -332,6 +335,7 @@ function mergeFinalFindingGroup(group: DiffRecord[], context: StructuralMergeCon
   const merged = mergeGroup(group.map(finding => ({
     finding,
     targetIds: finding.targetIds ?? [],
+    explicitTargetIds: finding.targetIds ?? [],
     fallbackKey: `${finding.id}:${finding.criterion}`
   })), context);
   const retainedFindingIds = [...new Set(merged.childFindingIds ?? group.map(finding => finding.id))]

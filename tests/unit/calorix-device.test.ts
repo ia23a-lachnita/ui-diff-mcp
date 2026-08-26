@@ -254,6 +254,7 @@ describe("calorix-device helpers", () => {
       "shell wm dismiss-keyguard",
       "shell settings put secure immersive_mode_confirmations confirmed",
       "shell input keyevent BACK",
+      "shell am force-stop com.calorix.calorix",
       "shell am start -a android.intent.action.VIEW -d calorix://debug/reseed"
     ]);
   });
@@ -479,6 +480,66 @@ describe("calorix-device helpers", () => {
     expect(partialSpinner.reason).toContain("partial_loading");
   });
 
+  it("force-stops the discovered package before deep-link reseed", async () => {
+    const root = await makeProject();
+    const calls: Array<{ file: string; args: string[]; shell?: boolean }> = [];
+    const runner = runnerWithPackages(["com.calorix.calorix"], calls);
+
+    await reseedAndCaptureCalorixToday({
+      projectRoot: root,
+      runner,
+      capture: vi.fn(async (_target: "adb", opts: { makeOutputPath: () => string }): Promise<CaptureResult> => {
+        const out = opts.makeOutputPath();
+        await fs.writeFile(out, "png");
+        return { path: out, width: 1080, height: 2400, blankPixelRatio: 0.1, validationStatus: "ok", warnings: [] };
+      }),
+      sleepMs: async () => {},
+      now: () => Date.UTC(2026, 6, 4, 12, 0, 0),
+      validateImage: async () => readiness(true)
+    });
+
+    const postPrefixCommands = calls.map(call => call.args.join(" "));
+    const forceStopIndex = postPrefixCommands.findIndex(a => a.includes("am force-stop"));
+    const deepLinkIndex = postPrefixCommands.findIndex(a => a.includes("am start"));
+    expect(forceStopIndex).toBeGreaterThanOrEqual(0);
+    expect(deepLinkIndex).toBeGreaterThanOrEqual(0);
+    expect(forceStopIndex + 1).toBe(deepLinkIndex);
+    expect(postPrefixCommands[forceStopIndex]).toContain("am force-stop com.calorix.calorix");
+  });
+
+  it("rejects when am force-stop fails and never invokes the deep-link", async () => {
+    const root = await makeProject();
+    const calls: Array<{ file: string; args: string[]; shell?: boolean }> = [];
+    const runner = runnerWithPackages(["com.calorix.calorix"], calls);
+
+    const forceStopError = new Error("adb: error: device unauthorized");
+    const originalRunner = runner;
+    const failingRunner: CalorixCommandRunner = async (file, args, options) => {
+      if (args.join(" ") === "shell am force-stop com.calorix.calorix") {
+        throw forceStopError;
+      }
+      return originalRunner(file, args, options);
+    };
+
+    await expect(
+      reseedAndCaptureCalorixToday({
+        projectRoot: root,
+        runner: failingRunner,
+        capture: vi.fn(async (_target: "adb", opts: { makeOutputPath: () => string }): Promise<CaptureResult> => {
+          const out = opts.makeOutputPath();
+          await fs.writeFile(out, "png");
+          return { path: out, width: 1080, height: 2400, blankPixelRatio: 0.1, validationStatus: "ok", warnings: [] };
+        }),
+        sleepMs: async () => {},
+        now: () => Date.UTC(2026, 6, 4, 12, 0, 0),
+        validateImage: async () => readiness(true)
+      })
+    ).rejects.toThrow(forceStopError);
+
+    const postPrefixCommands = calls.map(call => call.args.join(" "));
+    expect(postPrefixCommands.some(a => a.includes("am start"))).toBe(false);
+  });
+
   it("uses explicit actual image override without auto capture", async () => {
     vi.stubEnv("UI_DIFF_LIVE_ACTUAL_IMAGE", "C:/screens/actual.png");
     const capture = vi.fn();
@@ -614,6 +675,7 @@ describe("calorix-device adbExecutable/adbSerial propagation", () => {
       "shell wm dismiss-keyguard",
       "shell settings put secure immersive_mode_confirmations confirmed",
       "shell input keyevent BACK",
+      "shell am force-stop com.calorix.calorix",
       "shell am start -a android.intent.action.VIEW -d calorix://debug/reseed"
     ]);
   });
