@@ -245,7 +245,7 @@ describe.skipIf(!calorixDeterministicLive)("Calorix deterministic pipeline quali
 
   beforeAll(async () => {
     gate = await prepareCalorixLiveGate();
-  }, 130000);
+  }, 630000);
 
   afterAll(() => { gate?.sidecarHandle.close(); });
 
@@ -298,7 +298,7 @@ describe.skipIf(!calorixLive)("Calorix live UI diff smoke", () => {
 
   beforeAll(async () => {
     gate = await prepareCalorixLiveGate();
-  }, 130000);
+  }, 630000);
 
   afterAll(() => { gate?.sidecarHandle.close(); });
 
@@ -418,7 +418,7 @@ describe.skipIf(!calorixFullLive)("verify:calorix-full-live unbounded all-target
 
   beforeAll(async () => {
     gate = await prepareCalorixLiveGate();
-  }, 130000);
+  }, 630000);
 
   afterAll(() => { gate?.sidecarHandle.close(); });
 
@@ -631,7 +631,7 @@ describe.skipIf(!calorixReleaseLive)("Calorix release sign-off gate", () => {
 
   beforeAll(async () => {
     gate = await prepareCalorixLiveGate();
-  }, 130000);
+  }, 630000);
 
   afterAll(() => { gate?.sidecarHandle.close(); });
 

@@ -88,7 +88,7 @@ Target host: Raspberry Pi 4 ARM64 Debian, bash shell.
 - Cuttlefish, `android-vm`, ReDroid, desktop AVDs, and local emulators are retired. Do not start, troubleshoot, or use them unless the user explicitly changes this policy. GitHub's x86_64 emulator remains an independent CI gate.
 - Before device evidence, verify `/home/agent-runner/.local/bin/phone-adb devices -l`, model `SM-G780G`, Android `13`, and serial `R58R61161NA`.
 - Serial-safe ADB plumbing is implemented and tested. Set `UI_DIFF_ADB_EXECUTABLE=/home/agent-runner/.local/bin/phone-adb` and leave `UI_DIFF_ADB_SERIAL` unset (the wrapper already pins the serial). For generic executables, set `UI_DIFF_ADB_SERIAL` to the target device serial. Fresh physical-phone auto-capture evidence from the authorized Samsung through the new route is still pending.
-- LocateAnything sidecar: Linux bash launcher (`scripts/start-locateanything-sidecar.sh`); resolves `LOCATEANYTHING_PYTHON` → `/home/agent-runner/projects/.venvs/ui-diff-mcp-locateanything/bin/python` (sibling project venv) → `python3`; resolves `LOCATEANYTHING_EAGLE_EMBODIED_DIR` → `/home/agent-runner/projects/Eagle/Embodied`; starts uvicorn at loopback port `39731`.
+- LocateAnything sidecar: **broker-only.** The Pi never starts, spawns, or resolves a Python interpreter for LocateAnything locally; every locator call goes through the broker at `LOCATEANYTHING_SIDECAR_URL` (default `http://127.0.0.1:39731`), served by a remote Windows RTX 3070 GPU host. The broker's first `/health` response after a cold start can legitimately hold for minutes. A healthy response is HTTP status exactly `200` with JSON exactly `model: "nvidia/LocateAnything-3B"`, `ready: true`, `error: null`, `inTokenLimit: 4096`; any other response (unreachable, non-200, malformed, wrong model/token contract, or a model-load error) must fail/report — never fall back to a local spawn. Never SSH into or manually power-manage the Windows host. `scripts/start-locateanything-sidecar.sh`/`.ps1` are archival/local-development provenance only and must not be run on this Pi under the current topology.
 - Calorix Actions APK fetcher: source-SHA match + SHA256 verification required (`--source-sha`, `--source-clean`, `--workflow android-build.yml`, `--artifact-name android-apk-<sha>`, checksum `.sha256`).
 - `package-lock.json` root bin must stay `dist/src/index.js`.
 - Historical ReDroid/bootstrap scripts and tests remain for provenance, but they are not active operator guidance or a release gate.
@@ -151,9 +151,8 @@ These must be set in the shell before running live tests or the sidecar. They ar
 | `OPENCODE_ZEN_BASE_URL` | Optional OpenCode endpoint override | `https://opencode.ai/zen/v1` (default) |
 | `OPENROUTER_API_KEY` | Live model tests, free-mode pipeline | OpenRouter secret key |
 | `NVIDIA_API_KEY` | NVIDIA model probes and free-mode inference | NVIDIA API secret key |
-| `LOCATEANYTHING_SIDECAR_URL` | Any non-deterministic run | `http://127.0.0.1:39731` (default) |
-| `LOCATEANYTHING_PYTHON` | Sidecar interpreter override | `/home/agent-runner/projects/.venvs/ui-diff-mcp-locateanything/bin/python` |
-| `LOCATEANYTHING_EAGLE_EMBODIED_DIR` | Sidecar startup | `/home/agent-runner/projects/Eagle/Embodied` |
+| `LOCATEANYTHING_SIDECAR_URL` | Any non-deterministic run | `http://127.0.0.1:39731` (default; the broker on the remote Windows GPU host) |
+| `LOCATEANYTHING_BROKER_STARTUP_TIMEOUT_MS` | Optional broker cold-start budget override | Unset (default `600000`; must be a finite positive integer, max `600000`) |
 | `UI_DIFF_LIVE_EXPECTED_IMAGE` | Calorix live tests | Path to expected screenshot |
 | `UI_DIFF_LIVE_ACTUAL_IMAGE` | Historical-override only; leave unset for fresh release evidence | Path to actual screenshot |
 
@@ -169,24 +168,23 @@ These must be set in the shell before running live tests or the sidecar. They ar
 
 The manual screenshot command is the current serial-safe diagnostic path. The MCP capture and Calorix live helper now accept `adbExecutable`/`adbSerial` options (or `UI_DIFF_ADB_EXECUTABLE`/`UI_DIFF_ADB_SERIAL` env fallbacks) and route every ADB invocation through the resolved executable with optional `-s` serial prefix. On this Pi, set `UI_DIFF_ADB_EXECUTABLE` to the wrapper and leave `UI_DIFF_ADB_SERIAL` unset. `UI_DIFF_LIVE_ACTUAL_IMAGE` remains a historical/manual override and therefore is not fresh auto-capture release proof.
 
-### Starting the LocateAnything sidecar (Linux / Raspberry Pi)
+### LocateAnything broker (Linux / Raspberry Pi)
+
+The Pi never starts LocateAnything locally. Every locator call goes through the broker at `LOCATEANYTHING_SIDECAR_URL` (default `http://127.0.0.1:39731`), served by the remote Windows RTX 3070 host. `ensureSidecarRunning()` in `tests/helpers/sidecar-manager.ts` only waits for the broker's `/health` contract (exact HTTP `200`, `model: "nvidia/LocateAnything-3B"`, `ready: true`, `error: null`, `inTokenLimit: 4096`) and returns a non-owning handle — it contains no local spawn or Python-resolution fallback. If the broker is unreachable, cold, or returns a contract mismatch, the correct response is to fail/report; never start a local sidecar, SSH into the Windows host, or manually power-manage it. Optionally set `LOCATEANYTHING_BROKER_STARTUP_TIMEOUT_MS` (finite positive integer, max `600000`) to override the default `600000`ms cold-start budget.
+
+### LocateAnything sidecar launcher scripts (archival / local-development provenance only)
+
+The scripts below start a LocateAnything process directly on the machine that runs them. They remain for historical/local-development reference (e.g. a non-Pi developer machine that hosts the model itself) and are **not permitted on this Pi** under the current broker-only topology.
 
 ```bash
-# From the ui-diff-mcp project root:
+# Historical/local-development only — do not run on this Pi.
 bash scripts/start-locateanything-sidecar.sh
 ```
 
-The script resolves Python as `LOCATEANYTHING_PYTHON` → known LocateAnything venv → plain `python3`, and defaults `LOCATEANYTHING_EAGLE_EMBODIED_DIR` to `/home/agent-runner/projects/Eagle/Embodied`.
-The live tests (`RUN_CALORIX_UI_DIFF_LIVE=1`) auto-start the sidecar via `ensureSidecarRunning()` in `tests/helpers/sidecar-manager.ts` — no manual startup needed as long as `LOCATEANYTHING_EAGLE_EMBODIED_DIR` is set.
-
-### Starting the LocateAnything sidecar (legacy / Windows)
-
 ```powershell
-# From the ui-diff-mcp project root:
+# Historical/local-development only — do not run on this Pi.
 .\scripts\start-locateanything-sidecar.ps1
 ```
-
-The script resolves Python as `LOCATEANYTHING_PYTHON` → known LocateAnything venv → plain `python`, and defaults `LOCATEANYTHING_EAGLE_EMBODIED_DIR` to `C:\Users\xursc\projects\Eagle\Embodied`.
 
 ### Running live gates (Linux / Raspberry Pi)
 
@@ -197,21 +195,23 @@ export OPENROUTER_API_KEY="sk-..."
 export LOCATEANYTHING_SIDECAR_URL="http://127.0.0.1:39731"
 npx vitest run tests/live/mcp-openrouter-free.live.test.ts
 
-# Calorix smoke (real project images, sidecar auto-starts, ~20 min):
+# Calorix smoke (real project images, broker-only — no local sidecar start, ~20 min):
 export RUN_CALORIX_UI_DIFF_LIVE="1"
-export LOCATEANYTHING_EAGLE_EMBODIED_DIR="/home/agent-runner/projects/Eagle/Embodied"
+export LOCATEANYTHING_SIDECAR_URL="http://127.0.0.1:39731"
 export UI_DIFF_ADB_EXECUTABLE="/home/agent-runner/.local/bin/phone-adb"
 unset UI_DIFF_ADB_SERIAL
 unset UI_DIFF_LIVE_ACTUAL_IMAGE
 npx vitest run tests/live/calorix-smoke.live.test.ts
 ```
 
-### Running live gates (legacy / Windows)
+### Running live gates (legacy / Windows local-sidecar developer workflow, not used on the Pi)
+
+This workflow never auto-starts a sidecar anywhere — `ensureSidecarRunning()` only waits on a `LOCATEANYTHING_SIDECAR_URL` endpoint that must already be running before the gate is invoked. On a non-Pi developer machine that hosts the model directly (not through the Windows broker described above), start it manually first (see the archival launcher script section), then point `LOCATEANYTHING_SIDECAR_URL` at it. This section is archival/local-development reference only; current Pi agents always use the broker and never this local-sidecar path.
 
 ```powershell
 # OpenRouter free-mode smoke (fixture images, ~5 min):
 $env:RUN_OPENROUTER_FREE_LIVE="1"; $env:OPENROUTER_API_KEY="sk-..."; $env:LOCATEANYTHING_SIDECAR_URL="http://127.0.0.1:39731"; npx vitest run tests/live/mcp-openrouter-free.live.test.ts
 
-# Calorix smoke (real project images, sidecar auto-starts, ~20 min):
-$env:RUN_CALORIX_UI_DIFF_LIVE="1"; $env:LOCATEANYTHING_EAGLE_EMBODIED_DIR="C:\Users\xursc\projects\Eagle\Embodied"; npx vitest run tests/live/calorix-smoke.live.test.ts
+# Calorix smoke (real project images, requires an already-running sidecar at LOCATEANYTHING_SIDECAR_URL, ~20 min):
+$env:RUN_CALORIX_UI_DIFF_LIVE="1"; $env:LOCATEANYTHING_SIDECAR_URL="http://127.0.0.1:39731"; npx vitest run tests/live/calorix-smoke.live.test.ts
 ```

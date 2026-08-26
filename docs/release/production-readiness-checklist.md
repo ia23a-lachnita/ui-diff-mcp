@@ -114,23 +114,23 @@ Deterministic displacement findings retain separate expected and translated chil
 
 ## LocateAnything Direct Live Preflight
 
-Run this preflight before full or strict Calorix release evidence. It must use a freshly restarted sidecar with the model enabled; a sidecar started with `LOCATEANYTHING_SKIP_MODEL=1` is not valid release evidence.
+Run this preflight before full or strict Calorix release evidence. It must use a broker whose remote worker is running the full model; a broker health response captured while the worker was started with `LOCATEANYTHING_SKIP_MODEL=1` is not valid release evidence. The Pi never starts, restarts, or power-manages the worker itself — that lives on the remote Windows GPU host behind the broker, and must never be reached by SSH or manual power control from this preflight. If the broker's `/health` is stale, unavailable, or shows a skip-model state, fail/report and stop; do not attempt to restart or otherwise remediate the Windows worker, and do not work around this with a local Pi sidecar.
 
 ```bash
-# Run from the ui-diff-mcp root. A sidecar already started with the skip flag
-# must be stopped through its recorded owner/PID before this block; never kill
-# an unidentified listener on port 39731.
-unset LOCATEANYTHING_SKIP_MODEL
-bash scripts/start-locateanything-sidecar.sh
+# Run from the ui-diff-mcp root. Confirms the broker (never a local process) reports the
+# exact pinned contract before spending release-gate time.
+curl --fail --silent --show-error --max-time 600 http://127.0.0.1:39731/health
 
 export LOCATEANYTHING_SIDECAR_URL="http://127.0.0.1:39731"
 export RUN_LOCATEANYTHING_LIVE="1"
 npm run verify:locateanything-live
 ```
 
+The operator must verify the `curl` output body exactly: `model: "nvidia/LocateAnything-3B"`, `ready: true`, `error: null`, `inTokenLimit: 4096`. Any other body (missing/non-null `error`, wrong `model`, wrong `inTokenLimit`, or a non-200/failed `curl`) means the broker is not release-ready — fail/report and stop rather than proceeding to the gate below.
+
 Required result:
 
-- The direct locator gate runs rather than skipping and uses the restarted sidecar.
+- The direct locator gate runs rather than skipping and uses the broker's currently running worker.
 - `metadata.lanes.locateanything.status === "complete"`.
 - `metadata.lanes.locateanything.count > 0`.
 

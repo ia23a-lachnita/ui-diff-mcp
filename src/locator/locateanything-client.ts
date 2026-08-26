@@ -229,8 +229,9 @@ function postJsonWithTimeout(endpoint: string, pathname: string, body: unknown, 
 export async function locateUiElements(options: LocateClientOptions): Promise<LocateAnythingResponse> {
   const { endpoint, request, timeoutMs, maxDimension, debugImagePath } = options;
 
-  // Fast pre-flight: fail in 5s rather than waiting the full locator timeout
-  const health = await checkSidecarHealth(endpoint);
+  // Preflight bounded by the caller's own timeoutMs, so a slow/unavailable broker fails
+  // within the caller's budget instead of waiting on a fixed internal timeout.
+  const health = await checkSidecarHealth(endpoint, timeoutMs);
   if (!health.ready) {
     throw new LocatorUnavailableError(
       health.error ? `Sidecar not ready: ${health.error}` : "Sidecar not ready"

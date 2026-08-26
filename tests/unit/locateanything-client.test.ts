@@ -523,4 +523,43 @@ describe("locateUiElements", () => {
       engineCommit: "77376ab332de918220f7a7e391542eefb5407c9f"
     });
   });
+
+  it("applies the caller's timeoutMs to the health preflight instead of a fixed 5000ms", async () => {
+    // The broker can legitimately take a while to answer /health (cold start), but a caller
+    // that asked for a short timeoutMs must not be stuck waiting on a hardcoded 5000ms
+    // preflight — the locate POST below would otherwise succeed once health finally responds,
+    // which is exactly the false-positive this test is proving still happens today.
+    const HEALTH_DELAY_MS = 150;
+    const s = http.createServer((req, res) => {
+      if (req.url === "/health" && req.method === "GET") {
+        setTimeout(() => {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ model: "nvidia/LocateAnything-3B", ready: true, error: null, inTokenLimit: 4096 }));
+        }, HEALTH_DELAY_MS);
+        return;
+      }
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({
+        model: "nvidia/LocateAnything-3B",
+        image: { width: 200, height: 400 },
+        elements: [],
+        warnings: []
+      }));
+    });
+    await new Promise<void>(resolve => s.listen(0, "127.0.0.1", () => resolve()));
+    server = s;
+    const addr = s.address();
+    if (!addr || typeof addr === "string") throw new Error("Unexpected server address");
+
+    const startedAt = Date.now();
+    const err = await locateUiElements({
+      endpoint: `http://127.0.0.1:${addr.port}`,
+      request: BASE_REQUEST,
+      timeoutMs: 20
+    }).catch(e => e);
+    const elapsedMs = Date.now() - startedAt;
+
+    expect(err).toBeInstanceOf(LocatorUnavailableError);
+    expect(elapsedMs).toBeLessThan(HEALTH_DELAY_MS);
+  });
 });

@@ -190,9 +190,10 @@ Copy `.env.example` and fill in the relevant keys.
 | `NVIDIA_API_KEY` | For NVIDIA free mode | — | NVIDIA Build/NIM API key for native NVIDIA free VLM endpoints. |
 | `NVIDIA_VLM_BASE_URL` | No | `https://integrate.api.nvidia.com/v1` | Override NVIDIA base URL for self-hosted NIM. |
 | `UI_DIFF_ENABLE_PAID_MODE` | For paid mode only | — | Must be exactly `1` before `mode: "paid"` can use paid routes. |
-| `LOCATEANYTHING_SIDECAR_URL` | No | `http://127.0.0.1:39731` | URL of the LocateAnything sidecar. |
-| `LOCATEANYTHING_EAGLE_EMBODIED_DIR` | For local sidecar only | — | Path to Eagle Embodied install. |
-| `LOCATEANYTHING_PYTHON` | No | Known local venv, then `python` | Python interpreter for local sidecar startup. Set this when your shell's `python` points at the wrong environment. |
+| `LOCATEANYTHING_SIDECAR_URL` | No | `http://127.0.0.1:39731` | URL of the LocateAnything sidecar. On the Pi this is the broker for the remote GPU host, never a locally started process. |
+| `LOCATEANYTHING_BROKER_STARTUP_TIMEOUT_MS` | No | `600000` | Broker cold-start budget. Must be a finite positive integer, max `600000`. |
+| `LOCATEANYTHING_EAGLE_EMBODIED_DIR` | For the local launcher only (archival/local-development; not permitted on the Pi) | — | Path to Eagle Embodied install. |
+| `LOCATEANYTHING_PYTHON` | For the local launcher only (archival/local-development; not permitted on the Pi) | Known local venv, then `python` | Python interpreter for local sidecar startup. |
 | `LOCATEANYTHING_SKIP_MODEL` | No | — | Diagnostic mode only. `1` skips the LocateAnything 3B worker and uses CV/OCR/optional parser lanes; do not use as full locator-model sign-off. |
 | `LOCATEANYTHING_IN_TOKEN_LIMIT` | No | `4096` | Image token budget for local sidecar. |
 | `LOCATEANYTHING_GENERATION_MODE` | No | `hybrid` | Sidecar worker mode: `fast`, `slow`, or `hybrid`. |
@@ -272,6 +273,8 @@ npm run verify:free-live
 
 ## LocateAnything Sidecar (Windows)
 
+This section is explicitly operator-managed historical/reference setup for the Windows GPU host itself. Agents must never act on it — no SSH into the Windows host, no remote power management, and no running these local-startup commands from the Pi or any other agent-controlled machine. On the Pi, every locator call goes through the broker (`LOCATEANYTHING_SIDECAR_URL`) described below; the commands below are kept only as provenance for how the broker's host machine is set up by its human operator.
+
 The MCP calls a sidecar endpoint at `POST /v1/locate-ui-elements`. Start the local wrapper after installing NVIDIA's Eagle Embodied package:
 
 ```powershell
@@ -288,14 +291,41 @@ $env:LOCATEANYTHING_PYTHON="C:\Users\xursc\projects\.venvs\ui-diff-mcp-locateany
 .\scripts\start-locateanything-sidecar.ps1
 ```
 
-The startup script and Calorix live-test helper prefer `LOCATEANYTHING_PYTHON`, then the known local venv at
-`C:\Users\xursc\projects\.venvs\ui-diff-mcp-locateanything\Scripts\python.exe`, then plain `python`. The script prints
-the interpreter it selected; if `/health` returns an `error`, live tests fail fast with that load error instead of
-waiting for the full readiness timeout.
+The startup script prefers `LOCATEANYTHING_PYTHON`, then the known local venv at
+`C:\Users\xursc\projects\.venvs\ui-diff-mcp-locateanything\Scripts\python.exe`, then plain `python`, and prints the
+interpreter it selected. This is the machine that hosts the model behind the broker; consumers (including the Pi's
+Calorix live-test helper) never resolve a Python interpreter themselves — they only wait on the broker's `/health`
+contract, and fail fast if it reports an `error` instead of waiting for the full readiness timeout.
 
-### LocateAnything Sidecar (Linux / Raspberry Pi)
+### LocateAnything (Linux / Raspberry Pi)
 
-The Linux launcher binds only to `127.0.0.1:39731`. It resolves an explicit
+The Pi never starts LocateAnything locally. Every locator call goes through the broker at
+`LOCATEANYTHING_SIDECAR_URL` (default `http://127.0.0.1:39731`), served by the remote Windows
+RTX 3070 host described above. `ensureSidecarRunning()` in `tests/helpers/sidecar-manager.ts` is
+the broker-only live harness manager: it validates the full pinned `/health` contract — exact
+HTTP `200` with JSON `model: "nvidia/LocateAnything-3B"`, `ready: true`, `error: null` (rejecting
+both a non-null error and an omitted/`undefined` error field when `ready: true`), and
+`inTokenLimit: 4096` — and never spawns a local process or resolves a Python interpreter. The
+`checkSidecarHealth()` preflight in `src/locator/locateanything-client.ts`, used by
+`locateUiElements()` on the request path, is a lighter check: it runs within the caller's own
+`timeoutMs` and only requires HTTP success and `ready: true` — it does not duplicate the
+manager's full model/token/exact-null validation. The broker's first response after a cold start
+can legitimately hold for minutes; treat any other response (unreachable, non-200, malformed,
+wrong model/token contract, or a model-load error) as fail/report, never as a trigger to start a
+local sidecar, SSH into the Windows host, or manually power-manage it. Optionally set
+`LOCATEANYTHING_BROKER_STARTUP_TIMEOUT_MS` (finite positive integer, max `600000`) to override
+the default `600000`ms cold-start budget.
+
+The TypeScript client sends image bytes with each locator request, so `LOCATEANYTHING_SIDECAR_URL` can point to a remote GPU service that exposes the same contract.
+
+#### Local Linux launcher (archival / local-development provenance only)
+
+The launcher below starts a LocateAnything process directly on the machine that runs it and
+binds only to `127.0.0.1:39731`. It remains for historical/local-development reference (e.g. a
+non-Pi developer machine that hosts the model itself) and is **not permitted on this Pi** under
+the current broker-only topology.
+
+It resolves an explicit
 `LOCATEANYTHING_PYTHON` without fallback, then
 `/home/agent-runner/projects/.venvs/ui-diff-mcp-locateanything/bin/python`,
 then `python3`. It likewise requires an explicit
@@ -304,9 +334,11 @@ then `python3`. It likewise requires an explicit
 `locateanything_worker` package supplied by Eagle Embodied.
 
 ```bash
+# Historical/local-development only — do not run on this Pi.
 # Validate Python, Eagle Embodied, and the loopback-only configuration only.
 bash scripts/start-locateanything-sidecar.sh --check-only
 
+# Historical/local-development only — do not run on this Pi.
 # Start or reuse a healthy local sidecar. It prints the child PID and log path.
 bash scripts/start-locateanything-sidecar.sh
 ```
@@ -326,8 +358,6 @@ control launcher readiness.
 
 `LOCATEANYTHING_SKIP_MODEL=1` is only a diagnostic shortcut. It makes `/health.ready` true without loading the 3B model
 and still runs CV/OCR/optional lanes, but a run made with that flag is not full LocateAnything-model release evidence.
-
-The TypeScript client sends image bytes with each locator request, so `LOCATEANYTHING_SIDECAR_URL` can point to a remote GPU service that exposes the same contract.
 
 #### Legacy ReDroid Co-Location Evidence (Historical Only)
 
@@ -381,9 +411,13 @@ Parser-only sidecar tests:
 # Capture a serial-safe diagnostic screenshot.
 /home/agent-runner/.local/bin/phone-adb exec-out screencap -p > /absolute/path/to/actual.png
 
-# Validate, then start or reuse, the loopback-only LocateAnything sidecar
-bash scripts/start-locateanything-sidecar.sh --check-only
-bash scripts/start-locateanything-sidecar.sh
+# Check the LocateAnything broker's health directly. Never start a local sidecar on this
+# Pi — the launcher scripts below are archival/local-development only.
+curl --fail --silent --show-error --max-time 600 http://127.0.0.1:39731/health
+# Verify the output body exactly: model: "nvidia/LocateAnything-3B", ready: true,
+# error: null, inTokenLimit: 4096. Any other body (missing/non-null error, wrong
+# model, wrong inTokenLimit, or a non-200/failed curl) means the broker is not
+# ready/release-ready — fail/report and stop rather than proceeding.
 
 # Fetch verified Calorix Actions APK (source-SHA + SHA256 required)
 # Workflow: .github/workflows/android-build.yml (named "Build Android APK")
