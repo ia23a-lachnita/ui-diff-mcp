@@ -404,6 +404,79 @@ describe("validateClaim structured diagnostics", () => {
   });
 });
 
+describe("ancestor-visible-literal traversal", () => {
+  it("cycle returns both cycle labels and terminates", () => {
+    const elA = { ...makeElement("el-a", "LabelA"), parentId: "el-b" } as UiElement;
+    const elB = { ...makeElement("el-b", "LabelB"), parentId: "el-a" } as UiElement;
+    const diff = makeDiff({ targetIds: ["el-a"] });
+    const literals = collectVisibleClaimLiterals(diff, [elA, elB]);
+    expect(literals).toEqual(["LabelA", "LabelB"]);
+  });
+
+  it("missing parent returns only direct literal", () => {
+    const child = { ...makeElement("orphan", "Child only"), parentId: "nonexistent-parent" } as UiElement;
+    const diff = makeDiff({ targetIds: ["orphan"] });
+    const literals = collectVisibleClaimLiterals(diff, [child]);
+    expect(literals).toEqual(["Child only"]);
+  });
+
+  it("grandparent chain returns child, parent, grandparent", () => {
+    const grandparent = makeElement("gp", "Grandparent label");
+    const parent = { ...makeElement("p", "Parent label"), parentId: "gp" } as UiElement;
+    const child = { ...makeElement("c", "Child label"), parentId: "p" } as UiElement;
+    const diff = makeDiff({ targetIds: ["c"] });
+    const literals = collectVisibleClaimLiterals(diff, [grandparent, parent, child]);
+    expect(literals).toEqual(["Child label", "Grandparent label", "Parent label"]);
+  });
+
+  it("descendant and unrelated nodes are excluded while ancestor is included", () => {
+    const ancestor = makeElement("anc", "Ancestor label");
+    const child = { ...makeElement("ch", "Child label"), parentId: "anc" } as UiElement;
+    const descendant = { ...makeElement("desc", "Descendant label"), parentId: "ch" } as UiElement;
+    const unrelated = makeElement("unrelated", "Unrelated label");
+    const diff = makeDiff({ targetIds: ["ch"] });
+    const literals = collectVisibleClaimLiterals(diff, [ancestor, child, descendant, unrelated]);
+    expect(literals).toEqual(["Ancestor label", "Child label"]);
+  });
+
+  it("accepts title 38/70g54%: color appearance when direct child target has ancestor label 38/70g54%", () => {
+    const ancestor = makeElement("ancestor-el", "38/70g54%");
+    const child = { ...makeElement("child-el", "Calorie ring"), parentId: "ancestor-el" } as UiElement;
+    const diff = makeDiff({
+      title: "38/70g54%: color appearance",
+      targetIds: ["child-el"],
+      reviewerStatus: "accepted"
+    });
+    const result = validateFinalizedClaim(diff, [ancestor, child]);
+    expect(result.valid).toBe(true);
+  });
+
+  it("accepts title with ancestor text when direct child has no matching label/text", () => {
+    const ancestor = makeElement("parent-card", "Macro card", "96/170mg5%");
+    const child = { ...makeElement("child-text", "Inner text"), parentId: "parent-card" } as UiElement;
+    const diff = makeDiff({
+      title: "96/170mg5%",
+      targetIds: ["child-text"],
+      reviewerStatus: "accepted"
+    });
+    const result = validateFinalizedClaim(diff, [ancestor, child]);
+    expect(result.valid).toBe(true);
+  });
+
+  it("does not change targetIds of the diff", () => {
+    const ancestor = makeElement("anc", "Ancestor text");
+    const child = { ...makeElement("ch", "Child text"), parentId: "anc" } as UiElement;
+    const diff = makeDiff({
+      title: "Ancestor text geometry",
+      targetIds: ["ch"],
+      reviewerStatus: "accepted"
+    });
+    const originalTargetIds = [...(diff.targetIds ?? [])];
+    validateFinalizedClaim(diff, [ancestor, child]);
+    expect(diff.targetIds).toEqual(originalTargetIds);
+  });
+});
+
 describe("RecoveryComponentTrace structured candidate fields", () => {
   it("supports optional candidateTitle, candidateEvidence, candidateMeasurements, claimValidationDiagnostics", () => {
     const trace: Partial<RecoveryComponentTrace> = {

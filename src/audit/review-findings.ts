@@ -114,14 +114,22 @@ export function collectVisibleClaimLiterals(
   diff: Pick<DiffRecord, "targetIds">,
   elements: readonly UiElement[]
 ): string[] {
-  const targetIds = new Set(diff.targetIds ?? []);
+  const elementById = new Map(elements.map(e => [e.id, e]));
   const literals = new Set<string>();
-  for (const element of elements) {
-    if (!targetIds.has(element.id)) continue;
-    for (const value of [element.label, element.text]) {
-      if (value === undefined) continue;
-      const normalized = normalizeVisibleClaimLiteral(value);
-      if (normalized.length > 0) literals.add(normalized);
+  for (const targetId of diff.targetIds ?? []) {
+    const start = elementById.get(targetId);
+    if (start === undefined) continue;
+    const visited = new Set<string>();
+    let current: UiElement | undefined = start;
+    while (current !== undefined) {
+      for (const value of [current.label, current.text]) {
+        if (value === undefined) continue;
+        const normalized = normalizeVisibleClaimLiteral(value);
+        if (normalized.length > 0) literals.add(normalized);
+      }
+      if (current.parentId === undefined || visited.has(current.parentId)) break;
+      visited.add(current.parentId);
+      current = elementById.get(current.parentId);
     }
   }
   return [...literals].sort((a, b) => a.localeCompare(b));
