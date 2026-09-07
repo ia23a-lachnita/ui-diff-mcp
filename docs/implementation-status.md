@@ -4,6 +4,8 @@ This file is the persistent handoff state for implementation agents. Read it bef
 
 ## Current State
 
+- **2026-09-07 Documentation sync / Antigravity model routing update.** Authoritative list-models route: `gemini-3.8-flash` primary, `gemini-3.7-flash` fallback, `gemini-3.6-flash` final; `gemini-3.1-pro` opt-in max-reasoning only (failure returns to 3.8); `gemini-3.5-flash` SDK/OpenRouter-only removed from agy external review only, not internal UI-diff VLM routes. Green review conversation `antigravity-model-routing-20260907` model `gemini-3.8-flash` exact `AGREEMENT_STATUS: agree` / `MUST_FIX: none`. No runtime or registry change. Failures recorded: (1) `2026-09-07T08:23:57+02:00` grok-4.5 `unavailable_model/no_mutation` exact message `Couldn't set model 'grok-4.5': Invalid params: "unknown model id". Run 'grok models' to see available models.` (2) `2026-09-07T08:25:58+02:00` qwen3.7-max `quota_exhausted/no_mutation` exact message `[API Error: 403 The free quota has been exhausted. To continue accessing the model on a paid basis, please complete your payment information （or disable the "use free tier only" mode in the management console if already completed).]` (3) `2026-09-07T08:45:32+02:00` model `opencode/nemotron-3-ultra-free` category `upstream_overloaded/partial_mutation`, exit `1` after editing docs and removing the accidental file, exact provider message: `Streaming response failed: [502] Upstream error from Nvidia: Service temporarily overloaded`.
+
 - Status: **Fresh strict pipeline/release-integrity evidence passed, but visual parity is NOT achieved: 47 final differences and 2.16% viewport aspect mismatch remain.** No production-readiness claim.
 - Branch: `master`.
 - Current HEAD: `0225cc8` (`Record strict release evidence`).
